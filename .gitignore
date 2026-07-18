@@ -1,0 +1,24 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Editor and operating system
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+# Logs
+*.log
+
+# JavaScript and TypeScript
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.browser-profile/
+
+# Local environment
+.env
+.env.*
+!.env.example
