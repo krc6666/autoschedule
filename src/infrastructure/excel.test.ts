@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../defaults";
 import { generateSchedule } from "../domain/scheduler";
-import { buildScheduleWorkbook, parseWorkbook } from "./excel";
+import { buildConfigWorkbook, buildScheduleWorkbook, parseWorkbook } from "./excel";
 
 describe("workbook boundary", () => {
   it("maps workbook rows into stable domain models", () => {
@@ -28,5 +28,36 @@ describe("workbook boundary", () => {
     expect(workbook.SheetNames).toHaveLength(3);
     expect(workbook.Sheets[workbook.SheetNames[0]!]!["!ref"]).toBeTruthy();
     expect(workbook.Sheets[workbook.SheetNames[1]!]!["!ref"]).toBeTruthy();
+  });
+
+  it("imports a flight configuration sheet as reusable templates", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+      ["航班号", "开始时间", "结束时间", "涉及岗位", "备注"],
+      ["AB123", "08:30", "10:30", "P1,P2", "到岗"]
+    ]), "航班配置");
+    const imported = parseWorkbook(workbook, []);
+    expect(imported.templates?.[0]).toMatchObject({ flightNo: "AB123", positions: ["P1", "P2"], remark: "到岗" });
+  });
+
+  it("round-trips flight templates and passenger thresholds in configuration workbooks", () => {
+    const state = createDefaultState();
+    state.positionRules[0]!.minPassengers = 30;
+    const imported = parseWorkbook(buildConfigWorkbook(state), state.staff);
+    expect(imported.templates).toHaveLength(state.templates.length);
+    expect(imported.positionRules?.find((rule) => rule.id !== "")?.minPassengers).toBe(30);
+  });
+
+  it("exports manual support names and cell remarks in the horizontal detail", () => {
+    const state = createDefaultState();
+    state.flights = [state.flights[0]!];
+    const assignments = generateSchedule(state, "2026-07-18").assignments;
+    const support = assignments.find((item) => item.position === "柜台引导2")!;
+    support.staffName = "行政支援";
+    support.manualRemark = "09:00-10:00";
+    support.status = "assigned";
+    const workbook = buildScheduleWorkbook(assignments, "2026-07-18");
+    const detail = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets["保障明细"]!, { header: 1, raw: false, defval: "" }).flat();
+    expect(detail).toContain("行政支援\n09:00-10:00");
   });
 });

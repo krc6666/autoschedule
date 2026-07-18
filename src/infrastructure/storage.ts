@@ -9,6 +9,7 @@ function isState(value: unknown): value is AppState {
   return candidate.version === 1
     && Array.isArray(candidate.staff)
     && Array.isArray(candidate.flights)
+    && Array.isArray(candidate.templates)
     && Array.isArray(candidate.positionRules)
     && Array.isArray(candidate.history)
     && Array.isArray(candidate.assignments)
@@ -22,11 +23,14 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     if (!raw) return fallback;
     const parsed: unknown = JSON.parse(raw);
     if (!isState(parsed)) return fallback;
-    return {
+    const next: AppState = {
       ...fallback,
       ...parsed,
       settings: { ...fallback.settings, ...parsed.settings }
     };
+    next.positionRules = next.positionRules.map((rule) => ({ ...rule, minPassengers: Number(rule.minPassengers) || 0 }));
+    next.assignments = next.assignments.map((assignment) => ({ ...assignment, manualRemark: assignment.manualRemark ?? "" }));
+    return next;
   } catch {
     return fallback;
   }

@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx-js-style";
 
-import type { AppState, Assignment, Flight, HistoryRecord, PositionRule, Staff } from "../model";
-import { createId, normalizeText, splitList } from "../utils";
+import type { AppState, Assignment, Flight, FlightTemplate, HistoryRecord, PositionRule, Staff } from "../model";
+import { combinedAssignmentRemark, createId, normalizeText, splitList } from "../utils";
 import { durationHours, normalizeTime } from "../domain/time";
 
 type Row = unknown[];
@@ -9,6 +9,7 @@ type Row = unknown[];
 export interface WorkbookImport {
   staff?: Staff[];
   flights?: Flight[];
+  templates?: FlightTemplate[];
   positionRules?: PositionRule[];
   history?: HistoryRecord[];
   warnings: string[];
@@ -60,7 +61,35 @@ function parseStaff(workbook: XLSX.WorkBook): Staff[] | undefined {
 }
 
 function parseFlights(workbook: XLSX.WorkBook): Flight[] | undefined {
-  const sheetName = findSheet(workbook, ["航班计划", "航班配置"]);
+  const sheetName = findSheet(workbook, ["航班计划"]);
+  if (!sheetName) return undefined;
+  const data = rows(workbook, sheetName);
+  const header = data[0] ?? [];
+  const flightIndex = headerIndex(header, ["航班号"], 0);
+  const startIndex = headerIndex(header, ["开始时间"], 1);
+  const endIndex = headerIndex(header, ["结束时间"], 2);
+  const passengerIndex = headerIndex(header, ["预定人数", "旅客人数", "运力人数"], 3);
+  const positionIndex = headerIndex(header, ["涉及岗位", "岗位"], 4);
+  const remarkIndex = headerIndex(header, ["备注"], 5);
+  return data.slice(1).flatMap((row) => {
+    const flightNo = normalizeText(row[flightIndex]).toUpperCase();
+    const startTime = normalizeTime(normalizeText(row[startIndex]));
+    const endTime = normalizeTime(normalizeText(row[endIndex]));
+    if (!flightNo || !startTime || !endTime) return [];
+    return [{
+      id: createId("flight"),
+      flightNo,
+      startTime,
+      endTime,
+      bookedPassengers: Number(row[passengerIndex]) || 0,
+      positions: splitList(row[positionIndex]).map(normalizePosition),
+      remark: normalizeText(row[remarkIndex])
+    }];
+  });
+}
+
+function parseTemplates(workbook: XLSX.WorkBook): FlightTemplate[] | undefined {
+  const sheetName = findSheet(workbook, ["航班配置", "航班模板"]);
   if (!sheetName) return undefined;
   const data = rows(workbook, sheetName);
   const header = data[0] ?? [];
@@ -75,13 +104,8 @@ function parseFlights(workbook: XLSX.WorkBook): Flight[] | undefined {
     const endTime = normalizeTime(normalizeText(row[endIndex]));
     if (!flightNo || !startTime || !endTime) return [];
     return [{
-      id: createId("flight"),
-      flightNo,
-      startTime,
-      endTime,
-      bookedPassengers: 0,
-      positions: splitList(row[positionIndex]).map(normalizePosition),
-      remark: normalizeText(row[remarkIndex])
+      id: createId("template"), flightNo, startTime, endTime,
+      positions: splitList(row[positionIndex]).map(normalizePosition), remark: normalizeText(row[remarkIndex])
     }];
   });
 }
@@ -112,6 +136,8 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
   const nameIndex = headerIndex(header, ["岗位名称"], 2);
   const remarkIndex = headerIndex(header, ["备注"], 3);
   const qualifiedIndex = headerIndex(header, ["可胜任人员"], 4);
+  const fatiguePointsIndex = headerIndex(header, ["疲劳点数"], 5);
+  const minPassengersIndex = headerIndex(header, ["启用旅客人数", "最少旅客人数", "运力阈值"], fatiguePointsIndex + 1);
   const result: PositionRule[] = [];
   let currentFlight = "";
   for (const row of data.slice(1)) {
@@ -127,7 +153,8 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
       remark: normalizeText(row[remarkIndex]),
       qualifiedStaffIds: splitList(rawQualified),
       manual: rawQualified.includes("手动输入"),
-      fatiguePoints: fatigueMap.get(`${currentFlight}|${name}`) ?? 1
+      fatiguePoints: fatigueMap.get(`${currentFlight}|${name}`) ?? (Number(row[fatiguePointsIndex]) || 1),
+      minPassengers: Number(row[minPassengersIndex]) || 0
     });
   }
   const unique = new Map(result.map((rule) => [`${rule.flightNo}|${rule.name}`, rule]));
@@ -180,14 +207,16 @@ export function parseWorkbook(workbook: XLSX.WorkBook, currentStaff: Staff[]): W
   const staff = parseStaff(workbook);
   const effectiveStaff = staff?.length ? staff : currentStaff;
   const flights = parseFlights(workbook);
+  const templates = parseTemplates(workbook);
   const positionRules = parsePositions(workbook);
   const history = parseHistory(workbook, effectiveStaff);
   const warnings: string[] = [];
   if (staff && staff.length === 0) warnings.push("人员信息工作表没有有效数据");
   if (flights && flights.length === 0) warnings.push("航班计划工作表没有有效数据");
+  if (templates && templates.length === 0) warnings.push("航班配置工作表没有有效数据");
   if (positionRules && positionRules.length === 0) warnings.push("岗位配置工作表没有有效数据");
-  if (!staff && !flights && !positionRules && !history) warnings.push("未识别到受支持的工作表");
-  return { staff, flights, positionRules, history, warnings };
+  if (!staff && !flights && !templates && !positionRules && !history) warnings.push("未识别到受支持的工作表");
+  return { staff, flights, templates, positionRules, history, warnings };
 }
 
 export async function importWorkbook(file: File, currentStaff: Staff[]): Promise<WorkbookImport> {
@@ -212,13 +241,17 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
     ...state.staff.map((person) => [person.id, person.name, person.nightShift ? "是" : "否", person.status, person.remark])
   ], [10, 14, 16, 10, 24]);
   append(workbook, "航班计划", [
-    ["航班号", "开始时间", "结束时间", "预定人数", "涉及岗位（用逗号分隔）", "备注"],
+    ["航班号", "开始时间", "结束时间", "预定人数（当天填写）", "涉及岗位（用逗号分隔）", "备注"],
     ...state.flights.map((flight) => [flight.flightNo, flight.startTime, flight.endTime, flight.bookedPassengers, flight.positions.join(","), flight.remark])
   ], [12, 12, 12, 12, 48, 24]);
+  append(workbook, "航班配置", [
+    ["航班号", "开始时间", "结束时间", "涉及岗位（用逗号分隔）", "备注"],
+    ...state.templates.map((template) => [template.flightNo, template.startTime, template.endTime, template.positions.join(","), template.remark])
+  ], [12, 12, 12, 48, 24]);
   append(workbook, "岗位配置", [
-    ["航班号", "项目分类", "岗位名称", "备注", "可胜任人员（用逗号分隔）", "疲劳点数"],
-    ...state.positionRules.map((rule) => [rule.flightNo, rule.category, rule.name, rule.remark, rule.manual ? "手动输入项" : rule.qualifiedStaffIds.join(","), rule.fatiguePoints])
-  ], [12, 18, 16, 24, 48, 12]);
+    ["航班号", "项目分类", "岗位名称", "备注", "可胜任人员（用逗号分隔）", "疲劳点数", "启用旅客人数"],
+    ...state.positionRules.map((rule) => [rule.flightNo, rule.category, rule.name, rule.remark, rule.manual || rule.category === "支援" ? "手动输入项" : rule.qualifiedStaffIds.join(","), rule.fatiguePoints, rule.minPassengers])
+  ], [12, 18, 16, 24, 48, 12, 18]);
   return workbook;
 }
 
@@ -234,7 +267,10 @@ export function buildScheduleWorkbook(assignments: Assignment[], date: string): 
   for (let row = 0; row < maxPositions; row += 1) {
     matrix.push(grouped.flatMap((items) => {
       const item = items[row];
-      return item ? [item.position, item.staffName || "待补位"] : ["", ""];
+      if (!item) return ["", ""];
+      const remark = combinedAssignmentRemark(item.remark, item.manualRemark);
+      const staff = item.staffName || (item.status === "manual" ? "" : "待补位");
+      return [item.position, [staff, remark].filter(Boolean).join("\n")];
     }));
   }
   const matrixSheet = sheet(matrix, flights.flatMap(() => [20, 22]));
@@ -259,7 +295,7 @@ export function buildScheduleWorkbook(assignments: Assignment[], date: string): 
   XLSX.utils.book_append_sheet(workbook, matrixSheet, "保障明细");
   append(workbook, "排班结果", [
     ["日期", "航班号", "岗位", "姓名", "开始时间", "结束时间", "工作时长(小时)", "疲劳点数", "备注", "状态"],
-    ...assignments.map((item) => [date, item.flightNo, item.position, item.staffName, item.startTime, item.endTime, item.workHours, item.fatiguePoints, item.remark, item.status === "assigned" ? "已排" : "待补位"])
+    ...assignments.map((item) => [date, item.flightNo, item.position, item.staffName, item.startTime, item.endTime, item.workHours, item.fatiguePoints, combinedAssignmentRemark(item.remark, item.manualRemark), item.status === "assigned" ? "已排" : item.status === "manual" ? "可留空" : "待补位"])
   ], [12, 12, 16, 14, 12, 12, 16, 12, 24, 12]);
   const people = new Map<string, Assignment[]>();
   assignments.filter((item) => item.staffId).forEach((item) => people.set(item.staffName, [...(people.get(item.staffName) ?? []), item]));

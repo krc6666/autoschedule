@@ -1,5 +1,5 @@
 import type { AppState, Assignment } from "../model";
-import { downloadBlob, escapeHtml } from "../utils";
+import { combinedAssignmentRemark, downloadBlob, escapeHtml } from "../utils";
 
 const shareStyles = `
   *{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#1f2328;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei UI",sans-serif}
@@ -30,11 +30,11 @@ export function buildShareMarkup(state: AppState, date: string): string {
     assignments: state.assignments.filter((assignment) => assignment.flightId === flight.id)
   }));
   const people = groupedByStaff(state.assignments);
-  const assignedCount = state.assignments.filter((item) => item.staffId).length;
-  const unfilledCount = state.assignments.length - assignedCount;
+  const assignedCount = state.assignments.filter((item) => item.status === "assigned").length;
+  const unfilledCount = state.assignments.filter((item) => item.status === "unfilled").length;
   return `<div class="share-page" id="share-sheet">
     <header class="share-head"><div><h1>国际航班保障排班</h1><div class="date">${escapeHtml(date)}</div></div><div class="meta">${flights.length} 个航班 · ${assignedCount} 个岗位已排${unfilledCount ? ` · ${unfilledCount} 个待补位` : ""}</div></header>
-    <main class="flight-grid">${flights.map(({ flight, assignments }) => `<section class="flight"><div class="flight-title"><strong>${escapeHtml(flight.flightNo)}</strong><span>${escapeHtml(flight.startTime)}–${escapeHtml(flight.endTime)} · ${escapeHtml(flight.remark)}</span></div><table><thead><tr><th>岗位</th><th>保障人员</th><th>备注</th></tr></thead><tbody>${assignments.map((item) => `<tr><td>${escapeHtml(item.position)}</td><td class="${item.staffName ? "" : "unfilled"}">${escapeHtml(item.staffName || "待补位")}</td><td>${escapeHtml(item.remark)}</td></tr>`).join("")}</tbody></table></section>`).join("")}</main>
+    <main class="flight-grid">${flights.map(({ flight, assignments }) => `<section class="flight"><div class="flight-title"><strong>${escapeHtml(flight.flightNo)}</strong><span>${escapeHtml(flight.startTime)}–${escapeHtml(flight.endTime)} · ${escapeHtml(flight.remark)}</span></div><table><thead><tr><th>岗位</th><th>保障人员</th><th>备注</th></tr></thead><tbody>${assignments.map((item) => `<tr><td>${escapeHtml(item.position)}</td><td class="${item.staffName || item.status === "manual" ? "" : "unfilled"}">${escapeHtml(item.staffName || (item.status === "manual" ? "" : "待补位"))}</td><td>${escapeHtml(combinedAssignmentRemark(item.remark, item.manualRemark))}</td></tr>`).join("")}</tbody></table></section>`).join("")}</main>
     <section class="people"><h2>人员排班一览</h2><table><thead><tr><th>人员</th><th>航班与岗位</th><th>工作时段</th><th>合计工时</th></tr></thead><tbody>${people.map(({ name, items }) => `<tr><td class="person-name">${escapeHtml(name)}</td><td>${items.map((item) => `${escapeHtml(item.flightNo)} / ${escapeHtml(item.position)}`).join("<br>")}</td><td>${items.map((item) => `${escapeHtml(item.startTime)}–${escapeHtml(item.endTime)}`).join("<br>")}</td><td>${items.reduce((sum, item) => sum + item.workHours, 0).toFixed(1)}h</td></tr>`).join("")}</tbody></table></section>
     <footer class="footer"><span>自动排班</span><span>生成时间 ${escapeHtml(new Date().toLocaleString("zh-CN", { hour12: false }))}</span></footer>
   </div>`;

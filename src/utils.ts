@@ -22,6 +22,17 @@ export function splitList(value: unknown): string[] {
     .filter(Boolean);
 }
 
+export function visiblePositionRemark(value: unknown): string {
+  return normalizeText(value)
+    .replaceAll("一号", "")
+    .replaceAll(/^[\s，、,/]+|[\s，、,/]+$/g, "")
+    .trim();
+}
+
+export function combinedAssignmentRemark(positionRemark: unknown, manualRemark: unknown): string {
+  return [visiblePositionRemark(positionRemark), normalizeText(manualRemark)].filter(Boolean).join("；");
+}
+
 export function todayIso(): string {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);

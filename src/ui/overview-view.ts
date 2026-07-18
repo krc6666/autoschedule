@@ -1,16 +1,17 @@
 import type { AppState } from "../model";
 import { buildStaffLoads } from "../domain/fatigue";
+import { activeFlightPositions } from "../domain/scheduler";
 import { escapeHtml } from "../utils";
 
 export function renderOverview(state: AppState, date: string): string {
   const available = state.staff.filter((person) => person.status === "正常").length;
   const assigned = state.assignments.filter((item) => item.status === "assigned").length;
-  const unfilled = state.assignments.length - assigned;
+  const unfilled = state.assignments.filter((item) => item.status === "unfilled").length;
   const loads = buildStaffLoads(state.staff, state.assignments, state.history, date, state.settings)
     .filter((item) => item.workHours > 0 || item.historyFatigue > 0)
     .sort((left, right) => right.totalFatigue - left.totalFatigue)
     .slice(0, 8);
-  const missingRules = state.flights.flatMap((flight) => flight.positions.map((position) => ({ flight, position })))
+  const missingRules = state.flights.flatMap((flight) => activeFlightPositions(state, flight).map((position) => ({ flight, position })))
     .filter(({ flight, position }) => !state.positionRules.some((rule) => rule.flightNo === flight.flightNo && rule.name === position));
 
   return `
@@ -30,7 +31,7 @@ export function renderOverview(state: AppState, date: string): string {
             <span class="flight-time">${escapeHtml(flight.startTime)}</span>
             <span class="flight-dot ${own.length && done === own.length ? "done" : own.length ? "warning" : ""}"></span>
             <strong>${escapeHtml(flight.flightNo)}</strong>
-            <small>${done}/${flight.positions.length} 岗</small>
+            <small>${done}/${activeFlightPositions(state, flight).length} 岗</small>
           </button>`;
         }).join("") : `<div class="empty-state"><i class="bi bi-airplane"></i><span>尚无航班</span></div>`}
       </div>

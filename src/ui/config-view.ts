@@ -7,9 +7,17 @@ function names(state: AppState, ids: string[]): string {
 }
 
 export function renderConfig(state: AppState): string {
+  const flightNumbers = [...new Set([
+    ...state.templates.map((item) => item.flightNo),
+    ...state.flights.map((item) => item.flightNo),
+    ...state.positionRules.map((item) => item.flightNo)
+  ].filter(Boolean))].sort((left, right) => left.localeCompare(right));
+  const positionGroups = flightNumbers
+    .map((flightNo) => ({ flightNo, rules: state.positionRules.filter((rule) => rule.flightNo === flightNo) }))
+    .filter((group) => group.rules.length);
   return `
     <section class="workspace-section">
-      <div class="section-heading"><div><h3>人员信息</h3><span>${state.staff.length} 人 · ${state.staff.filter((item) => item.status !== "正常").length} 人不可用</span></div><div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="./template/排班工具配置模板.xlsx" download><i class="bi bi-download me-2"></i>配置模板</a><button class="btn btn-primary" type="button" data-action="add-staff"><i class="bi bi-person-plus me-2"></i>新增人员</button></div></div>
+      <div class="section-heading"><div><h3>人员信息</h3><span>${state.staff.length} 人 · ${state.staff.filter((item) => item.status !== "正常").length} 人不可用</span></div><div class="d-flex gap-2"><button class="btn btn-outline-secondary" type="button" data-action="import-config"><i class="bi bi-file-earmark-arrow-up me-2"></i>导入配置模板</button><a class="btn btn-outline-secondary" href="./template/排班工具配置模板.xlsx" download><i class="bi bi-download me-2"></i>下载模板</a><button class="btn btn-primary" type="button" data-action="add-staff"><i class="bi bi-person-plus me-2"></i>新增人员</button></div></div>
       <div class="table-responsive"><table class="table align-middle data-table"><thead><tr><th>编号</th><th>姓名</th><th>夜班</th><th>状态</th><th>备注</th><th class="action-col"><span class="visually-hidden">操作</span></th></tr></thead><tbody>
         ${state.staff.map((person) => `<tr>
           <td><input class="form-control form-control-sm code-input" value="${escapeHtml(person.id)}" data-entity="staff" data-id="${person.id}" data-field="id" aria-label="编号"></td>
@@ -22,18 +30,21 @@ export function renderConfig(state: AppState): string {
       </tbody></table></div>
     </section>
     <section class="workspace-section">
-      <div class="section-heading"><div><h3>岗位规则</h3><span>${state.positionRules.length} 条规则</span></div><button class="btn btn-primary" type="button" data-action="add-position"><i class="bi bi-plus-lg me-2"></i>新增规则</button></div>
-      <div class="table-responsive"><table class="table align-middle data-table"><thead><tr><th>航班</th><th>岗位</th><th>分类</th><th>疲劳点</th><th>资质人员</th><th>备注</th><th class="action-col"><span class="visually-hidden">操作</span></th></tr></thead><tbody>
-        ${state.positionRules.map((rule) => `<tr>
+      <div class="section-heading"><div><h3>岗位规则</h3><span>${state.positionRules.length} 条规则 · 按航班折叠</span></div><div class="position-batch-controls"><select class="form-select form-select-sm" id="position-flight" aria-label="新增规则所属航班">${flightNumbers.map((flightNo) => `<option>${escapeHtml(flightNo)}</option>`).join("")}</select><input class="form-control form-control-sm" id="position-batch-count" type="number" min="1" max="30" value="5" aria-label="新增规则数量"><button class="btn btn-primary btn-sm" type="button" data-action="add-positions"><i class="bi bi-plus-lg me-1"></i>批量新增</button></div></div>
+      <div class="position-rule-groups">${positionGroups.map(({ flightNo, rules }) => {
+        const regularCount = rules.filter((rule) => rule.category === "常规").length;
+        const supportCount = rules.length - regularCount;
+        return `<details class="position-rule-group" data-position-flight="${escapeHtml(flightNo)}"><summary><strong>${escapeHtml(flightNo)}</strong><span>${regularCount} 个常规 · ${supportCount} 个支援</span><i class="bi bi-chevron-down"></i></summary><div class="table-responsive"><table class="table align-middle data-table position-rule-table"><thead><tr><th>航班</th><th>岗位</th><th>分类</th><th>疲劳点</th><th>启用旅客人数</th><th>资质人员</th><th>备注</th><th class="action-col"><span class="visually-hidden">操作</span></th></tr></thead><tbody>${rules.map((rule) => `<tr>
           <td><input class="form-control form-control-sm code-input" value="${escapeHtml(rule.flightNo)}" data-entity="position" data-id="${rule.id}" data-field="flightNo" aria-label="航班号"></td>
           <td><input class="form-control form-control-sm" value="${escapeHtml(rule.name)}" data-entity="position" data-id="${rule.id}" data-field="name" aria-label="岗位名称"></td>
           <td><select class="form-select form-select-sm" data-entity="position" data-id="${rule.id}" data-field="category" aria-label="分类"><option ${rule.category === "常规" ? "selected" : ""}>常规</option><option ${rule.category === "支援" ? "selected" : ""}>支援</option></select></td>
           <td><input class="form-control form-control-sm number-input" type="number" min="0" step="0.5" value="${rule.fatiguePoints}" data-entity="position" data-id="${rule.id}" data-field="fatiguePoints" aria-label="疲劳点数"></td>
-          <td><button class="qualified-button" type="button" data-action="edit-qualified" data-id="${rule.id}"><span>${rule.manual ? "手动补位" : escapeHtml(names(state, rule.qualifiedStaffIds))}</span><i class="bi bi-chevron-right"></i></button></td>
+          <td><input class="form-control form-control-sm number-input" type="number" min="0" step="1" value="${rule.minPassengers ?? 0}" data-entity="position" data-id="${rule.id}" data-field="minPassengers" aria-label="启用旅客人数"></td>
+          <td>${rule.category === "支援" ? `<span class="support-manual-label"><i class="bi bi-pencil-square"></i>结果中任意输入</span>` : `<button class="qualified-button" type="button" data-action="edit-qualified" data-id="${rule.id}"><span>${rule.manual ? "手动补位" : escapeHtml(names(state, rule.qualifiedStaffIds))}</span><i class="bi bi-chevron-right"></i></button>`}</td>
           <td><input class="form-control form-control-sm" value="${escapeHtml(rule.remark)}" data-entity="position" data-id="${rule.id}" data-field="remark" aria-label="备注"></td>
           <td><button class="btn btn-sm btn-outline-danger icon-btn" type="button" data-action="delete-position" data-id="${rule.id}" title="删除规则"><i class="bi bi-trash3"></i></button></td>
-        </tr>`).join("")}
-      </tbody></table></div>
+        </tr>`).join("")}</tbody></table></div></details>`;
+      }).join("") || `<div class="empty-state">尚无岗位规则</div>`}</div>
     </section>
     <section class="workspace-section split-section settings-section">
       <div>
@@ -46,9 +57,14 @@ export function renderConfig(state: AppState): string {
         </div>
       </div>
       <div>
-        <div class="section-heading"><div><h3>航班模板</h3><span>${state.templates.length} 个</span></div></div>
-        <div class="template-list">${state.templates.map((template) => `<div><span class="template-code">${escapeHtml(template.flightNo)}</span><span>${escapeHtml(template.startTime)}–${escapeHtml(template.endTime)}</span><small>${template.positions.length} 岗</small><button class="btn btn-sm btn-outline-danger icon-btn" type="button" data-action="delete-template" data-id="${template.id}" title="删除模板"><i class="bi bi-trash3"></i></button></div>`).join("") || `<div class="empty-state">尚无模板</div>`}</div>
-        <button class="btn btn-outline-secondary mt-3" type="button" data-action="save-flights-as-templates"><i class="bi bi-bookmark-plus me-2"></i>以当前航班更新模板</button>
+        <div class="section-heading"><div><h3>航班计划模板</h3><span>每日航班页输入航班号后自动带出时间、岗位和备注</span></div><button class="btn btn-primary" type="button" data-action="add-template"><i class="bi bi-plus-lg me-2"></i>新增航班模板</button></div>
+        <div class="template-editor">${state.templates.map((template) => `<div class="template-row">
+          <input class="form-control form-control-sm code-input" value="${escapeHtml(template.flightNo)}" data-entity="template" data-id="${template.id}" data-field="flightNo" aria-label="模板航班号">
+          <div class="time-range"><input class="form-control form-control-sm" type="time" value="${escapeHtml(template.startTime)}" data-entity="template" data-id="${template.id}" data-field="startTime" aria-label="模板开始时间"><span>至</span><input class="form-control form-control-sm" type="time" value="${escapeHtml(template.endTime)}" data-entity="template" data-id="${template.id}" data-field="endTime" aria-label="模板结束时间"></div>
+          <input class="form-control form-control-sm template-positions" value="${escapeHtml(template.positions.join(", "))}" data-entity="template" data-id="${template.id}" data-field="positions" aria-label="模板岗位">
+          <input class="form-control form-control-sm" value="${escapeHtml(template.remark)}" data-entity="template" data-id="${template.id}" data-field="remark" aria-label="模板备注">
+          <button class="btn btn-sm btn-outline-danger icon-btn" type="button" data-action="delete-template" data-id="${template.id}" title="删除模板"><i class="bi bi-trash3"></i></button>
+        </div>`).join("") || `<div class="empty-state">尚无航班模板</div>`}</div>
       </div>
     </section>`;
 }

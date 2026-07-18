@@ -94,7 +94,8 @@ function positionRule(
     remark,
     qualifiedStaffIds: [...qualifiedStaffIds],
     manual: options.manual ?? false,
-    fatiguePoints
+    fatiguePoints,
+    minPassengers: 0
   };
 }
 
@@ -103,6 +104,7 @@ export const defaultPositionRules: PositionRule[] = [
   positionRule("CX937", "柜台引导1", "", allRegular, 2.5),
   positionRule("CX937", "柜台引导2", "", [], 2.5, { category: "支援", manual: true }),
   positionRule("CX937", "超规柜台", "", [], 2.5, { category: "支援", manual: true }),
+  positionRule("CX937", "超规行李引导", "", [], 2.5, { category: "支援", manual: true }),
   positionRule("FD573", "G07", "一号", allRegular, 4),
   positionRule("FD573", "G08", "申报", allRegular, 3),
   positionRule("FD573", "G09", "排查", allRegular, 2.5),

@@ -31,6 +31,7 @@ export interface PositionRule {
   qualifiedStaffIds: string[];
   manual: boolean;
   fatiguePoints: number;
+  minPassengers: number;
 }
 
 export interface HistoryRecord {
@@ -60,6 +61,7 @@ export interface Assignment {
   workHours: number;
   fatiguePoints: number;
   remark: string;
+  manualRemark: string;
   status: "assigned" | "unfilled" | "manual";
 }
 

@@ -11,7 +11,7 @@ const navigation: Array<{ id: AppSection; label: string; icon: string }> = [
 
 export function renderShell(state: AppState, active: AppSection, date: string, content: string): string {
   const assigned = state.assignments.filter((item) => item.status === "assigned").length;
-  const unfilled = state.assignments.length - assigned;
+  const unfilled = state.assignments.filter((item) => item.status === "unfilled").length;
   return `
     <header class="app-header border-bottom bg-white sticky-top">
       <div class="container-fluid app-container d-flex align-items-center gap-3 py-2">
@@ -34,11 +34,11 @@ export function renderShell(state: AppState, active: AppSection, date: string, c
             <i class="bi bi-${item.icon}"></i><span>${item.label}</span>
           </button>`).join("")}
         <div class="nav-spacer"></div>
-        <button class="nav-item" type="button" data-action="import-workbook" title="导入 Excel">
-          <i class="bi bi-file-earmark-arrow-up"></i><span>导入</span>
+        <button class="nav-item" type="button" data-action="import-workbook" title="导入配置、航班计划或历史排班结果">
+          <i class="bi bi-file-earmark-arrow-up"></i><span>导入数据</span>
         </button>
         <button class="nav-item" type="button" data-action="export-config" title="导出配置">
-          <i class="bi bi-file-earmark-arrow-down"></i><span>导出</span>
+          <i class="bi bi-file-earmark-arrow-down"></i><span>导出配置</span>
         </button>
       </nav>
       <main class="app-main">
