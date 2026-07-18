@@ -1,5 +1,6 @@
 import { createDefaultState } from "../defaults";
 import type { AppState } from "../model";
+import { orderPositionRules } from "../utils";
 
 export const STORAGE_KEY = "autoschedule.state.v1";
 
@@ -28,8 +29,22 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
       ...parsed,
       settings: { ...fallback.settings, ...parsed.settings }
     };
-    next.positionRules = next.positionRules.map((rule) => ({ ...rule, minPassengers: Number(rule.minPassengers) || 0 }));
-    next.assignments = next.assignments.map((assignment) => ({ ...assignment, manualRemark: assignment.manualRemark ?? "" }));
+    next.positionRules = orderPositionRules(next.positionRules.map((rule) => ({
+      ...rule,
+      minPassengers: Number(rule.minPassengers) || 0,
+      earlyReleaseMinutes: Number(rule.earlyReleaseMinutes) || 0
+    })));
+    next.assignments = next.assignments
+      .map((assignment) => ({ ...assignment, manualRemark: assignment.manualRemark ?? "" }))
+      .filter((assignment) => {
+        if (assignment.positionRuleId || assignment.layoutGroup) return true;
+        if (assignment.position === "临时支援") {
+          return (next.flights.find((flight) => flight.id === assignment.flightId)?.startTime ?? "12:00") < "12:00";
+        }
+        const obsoleteSharedRow = assignment.workHours === 0
+          && (assignment.position.includes("柜台引导") || assignment.position.includes("超规") || assignment.position.includes("逾重/引导"));
+        return !obsoleteSharedRow;
+      });
     return next;
   } catch {
     return fallback;

@@ -22,4 +22,28 @@ describe("state persistence", () => {
     expect(values.has(STORAGE_KEY)).toBe(true);
     expect(loadState(storage).staff[0]!.remark).toBe("changed");
   });
+
+  it("removes obsolete generic support cells from afternoon and evening flights", () => {
+    const state = createDefaultState();
+    const afternoon = state.flights.find((flight) => flight.flightNo === "FD573")!;
+    state.assignments = [{
+      id: "obsolete-support", flightId: afternoon.id, flightNo: afternoon.flightNo, positionRuleId: null,
+      position: "临时支援", staffId: null, staffName: "", startTime: afternoon.startTime, endTime: afternoon.endTime,
+      workHours: 2, fatiguePoints: 1, remark: "", manualRemark: "", status: "manual"
+    }];
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+    expect(loaded.assignments).toHaveLength(0);
+  });
+
+  it("removes obsolete guide rows that were copied into flights without a position rule", () => {
+    const state = createDefaultState();
+    const flight = state.flights.find((item) => item.flightNo === "TR121")!;
+    state.assignments = [{
+      id: "copied-guide", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: null,
+      position: "柜台引导1", staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
+      workHours: 0, fatiguePoints: 1, remark: "", manualRemark: "", status: "manual"
+    }];
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+    expect(loaded.assignments).toHaveLength(0);
+  });
 });

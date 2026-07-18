@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx-js-style";
 
 import type { AppState, Assignment, Flight, FlightTemplate, HistoryRecord, PositionRule, Staff } from "../model";
-import { combinedAssignmentRemark, createId, normalizeText, splitList } from "../utils";
+import { combinedAssignmentRemark, createId, normalizeText, orderPositionRules, splitList } from "../utils";
 import { durationHours, normalizeTime } from "../domain/time";
 
 type Row = unknown[];
@@ -138,6 +138,7 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
   const qualifiedIndex = headerIndex(header, ["可胜任人员"], 4);
   const fatiguePointsIndex = headerIndex(header, ["疲劳点数"], 5);
   const minPassengersIndex = headerIndex(header, ["启用旅客人数", "最少旅客人数", "运力阈值"], fatiguePointsIndex + 1);
+  const earlyReleaseIndex = headerIndex(header, ["提前撤岗分钟", "提前撤岗", "分流分钟"], minPassengersIndex + 1);
   const result: PositionRule[] = [];
   let currentFlight = "";
   for (const row of data.slice(1)) {
@@ -145,20 +146,22 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
     const name = normalizePosition(row[nameIndex]);
     if (!currentFlight || !name) continue;
     const rawQualified = normalizeText(row[qualifiedIndex]);
+    const categoryText = normalizeText(row[categoryIndex]);
     result.push({
       id: createId("position"),
       flightNo: currentFlight,
       name,
-      category: normalizeText(row[categoryIndex]).includes("支援") ? "支援" : "常规",
+      category: categoryText.includes("行政支援") ? "行政支援" : categoryText.includes("支援") ? "支援" : categoryText.includes("分流") ? "分流" : "常规",
       remark: normalizeText(row[remarkIndex]),
       qualifiedStaffIds: splitList(rawQualified),
       manual: rawQualified.includes("手动输入"),
       fatiguePoints: fatigueMap.get(`${currentFlight}|${name}`) ?? (Number(row[fatiguePointsIndex]) || 1),
-      minPassengers: Number(row[minPassengersIndex]) || 0
+      minPassengers: Number(row[minPassengersIndex]) || 0,
+      earlyReleaseMinutes: Number(row[earlyReleaseIndex]) || 0
     });
   }
   const unique = new Map(result.map((rule) => [`${rule.flightNo}|${rule.name}`, rule]));
-  return [...unique.values()];
+  return orderPositionRules([...unique.values()]);
 }
 
 function staffIdByName(staff: Staff[], name: string): string {
@@ -249,9 +252,9 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
     ...state.templates.map((template) => [template.flightNo, template.startTime, template.endTime, template.positions.join(","), template.remark])
   ], [12, 12, 12, 48, 24]);
   append(workbook, "岗位配置", [
-    ["航班号", "项目分类", "岗位名称", "备注", "可胜任人员（用逗号分隔）", "疲劳点数", "启用旅客人数"],
-    ...state.positionRules.map((rule) => [rule.flightNo, rule.category, rule.name, rule.remark, rule.manual || rule.category === "支援" ? "手动输入项" : rule.qualifiedStaffIds.join(","), rule.fatiguePoints, rule.minPassengers])
-  ], [12, 18, 16, 24, 48, 12, 18]);
+    ["航班号", "项目分类", "岗位名称", "备注", "可胜任人员（用逗号分隔）", "疲劳点数", "启用旅客人数", "提前撤岗分钟"],
+    ...state.positionRules.map((rule) => [rule.flightNo, rule.category, rule.name, rule.remark, rule.manual || rule.category === "支援" ? "手动输入项" : rule.qualifiedStaffIds.join(","), rule.fatiguePoints, rule.minPassengers, rule.earlyReleaseMinutes])
+  ], [12, 18, 16, 24, 48, 12, 18, 18]);
   return workbook;
 }
 

@@ -1,4 +1,5 @@
 import type { AppState, Flight, PositionRule, Staff } from "./model";
+import { orderPositionRules } from "./utils";
 
 const allRegular = Array.from({ length: 17 }, (_, index) => String(index + 2));
 
@@ -95,7 +96,8 @@ function positionRule(
     qualifiedStaffIds: [...qualifiedStaffIds],
     manual: options.manual ?? false,
     fatiguePoints,
-    minPassengers: 0
+    minPassengers: 0,
+    earlyReleaseMinutes: 0
   };
 }
 
@@ -132,7 +134,7 @@ export function createDefaultState(): AppState {
       ...structuredClone(flight),
       id: `template-${id}`
     })),
-    positionRules: structuredClone(defaultPositionRules),
+    positionRules: orderPositionRules(structuredClone(defaultPositionRules)),
     history: [],
     assignments: [],
     activeScheduleDate: null,

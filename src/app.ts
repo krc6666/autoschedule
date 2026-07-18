@@ -2,7 +2,7 @@ import Modal from "bootstrap/js/dist/modal";
 import Toast from "bootstrap/js/dist/toast";
 
 import { createDefaultState } from "./defaults";
-import { generateSchedule, canAssignStaff, isSameFlightReusePosition } from "./domain/scheduler";
+import { applyEarlyReleaseForStaff, generateSchedule, canAssignStaff, isAuxiliaryCategory, isDiversionTransfer, isSameFlightReusePosition } from "./domain/scheduler";
 import { durationHours } from "./domain/time";
 import { clearState, loadState, saveState } from "./infrastructure/storage";
 import type { AppSection, AppState, Flight, FlightTemplate, HistoryRecord } from "./model";
@@ -12,7 +12,7 @@ import { renderHistory } from "./ui/history-view";
 import { renderOverview } from "./ui/overview-view";
 import { renderSchedule } from "./ui/schedule-view";
 import { renderShell } from "./ui/shell";
-import { assertElement, combinedAssignmentRemark, createId, escapeHtml, normalizeText, splitList, todayIso } from "./utils";
+import { assertElement, combinedAssignmentRemark, createId, escapeHtml, normalizeText, orderPositionRules, sortFlightCountersDescending, splitList, todayIso } from "./utils";
 
 export class AutoScheduleApp {
   private state: AppState = loadState();
@@ -20,6 +20,7 @@ export class AutoScheduleApp {
   private scheduleDate = localStorage.getItem("autoschedule.scheduleDate") || todayIso();
   private importMode: "all" | "config" | "history" = "all";
   private openPositionFlights = new Set<string>();
+  private pointerDrag: { assignmentId: string; pointerId: number; startX: number; startY: number; active: boolean } | null = null;
   private readonly root: HTMLElement;
 
   constructor(root: HTMLElement) {
@@ -29,6 +30,10 @@ export class AutoScheduleApp {
     this.root.addEventListener("dragstart", (event) => this.handleDragStart(event));
     this.root.addEventListener("dragover", (event) => this.handleDragOver(event));
     this.root.addEventListener("drop", (event) => this.handleDrop(event));
+    this.root.addEventListener("pointerdown", (event) => this.handlePointerDown(event));
+    this.root.addEventListener("pointermove", (event) => this.handlePointerMove(event));
+    this.root.addEventListener("pointerup", (event) => this.handlePointerUp(event));
+    this.root.addEventListener("pointercancel", () => this.cancelPointerDrag());
   }
 
   start(): void {
@@ -123,6 +128,57 @@ export class AutoScheduleApp {
     this.assignStaff(assignmentId, payload.staffId, payload.assignmentId);
   }
 
+  private handlePointerDown(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    const drag = (event.target as Element).closest<HTMLElement>("[data-drag-assignment]");
+    if (!drag?.dataset.dragAssignment) return;
+    this.pointerDrag = {
+      assignmentId: drag.dataset.dragAssignment,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false
+    };
+  }
+
+  private handlePointerMove(event: PointerEvent): void {
+    const drag = this.pointerDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+    drag.active = true;
+    event.preventDefault();
+    this.root.classList.add("is-pointer-dragging");
+    const board = this.root.querySelector<HTMLElement>(".schedule-board");
+    if (board) {
+      const bounds = board.getBoundingClientRect();
+      if (event.clientX < bounds.left + 28) board.scrollLeft -= 18;
+      else if (event.clientX > bounds.right - 28) board.scrollLeft += 18;
+    }
+    this.root.querySelectorAll(".schedule-cell.is-drop-target").forEach((element) => element.classList.remove("is-drop-target"));
+    document.elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-drop-assignment]")
+      ?.classList.add("is-drop-target");
+  }
+
+  private handlePointerUp(event: PointerEvent): void {
+    const drag = this.pointerDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const target = drag.active
+      ? document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-drop-assignment]")
+      : null;
+    this.cancelPointerDrag();
+    const targetId = target?.dataset.dropAssignment ?? "";
+    if (!targetId || targetId === drag.assignmentId) return;
+    const source = this.state.assignments.find((assignment) => assignment.id === drag.assignmentId);
+    if (source?.staffId) this.assignStaff(targetId, source.staffId, source.id);
+  }
+
+  private cancelPointerDrag(): void {
+    this.pointerDrag = null;
+    this.root.classList.remove("is-pointer-dragging");
+    this.root.querySelectorAll(".schedule-cell.is-drop-target").forEach((element) => element.classList.remove("is-drop-target"));
+  }
+
   private handleClick(event: Event): void {
     const target = (event.target as Element).closest<HTMLElement>("[data-nav], [data-action]");
     if (!target) return;
@@ -152,6 +208,9 @@ export class AutoScheduleApp {
       "add-staff": () => this.addStaff(),
       "delete-staff": () => this.deleteStaff(id),
       "add-positions": () => this.addPositions(),
+      "move-position-up": () => this.movePosition(id, -1),
+      "move-position-down": () => this.movePosition(id, 1),
+      "sort-counters-desc": () => this.sortCountersDescending(target.dataset.flightNo ?? ""),
       "delete-position": () => this.deletePosition(id),
       "edit-qualified": () => this.showQualified(id),
       "select-all-qualified": () => this.setQualifiedSelection(true),
@@ -165,7 +224,9 @@ export class AutoScheduleApp {
       "clear-history": () => this.clearHistory(),
       "delete-history": () => this.deleteHistory(id),
       "clear-assignment": () => this.assignStaff(id, ""),
-      "add-schedule-slot": () => this.addScheduleSlot(id),
+      "add-schedule-slot": () => this.showSupportPositions(id),
+      "select-support-position": () => this.addSupportPosition(target.dataset.flightId ?? "", id),
+      "add-generic-support": () => this.addGenericSupport(id),
       "delete-assignment": () => this.deleteAssignment(id),
       "reset-all": () => this.resetAll()
     };
@@ -193,6 +254,10 @@ export class AutoScheduleApp {
     }
     if (target.dataset.action === "assign-staff") {
       this.assignStaff(target.dataset.id ?? "", target.value);
+      return;
+    }
+    if (target.dataset.action === "create-temporary-assignment") {
+      this.createTemporaryAssignment(target);
       return;
     }
     const entity = target.dataset.entity;
@@ -291,7 +356,7 @@ export class AutoScheduleApp {
     this.state.assignments = this.state.assignments.map((item) => {
       if (item.staffId !== id) return item;
       const rule = item.positionRuleId ? this.state.positionRules.find((ruleItem) => ruleItem.id === item.positionRuleId) : undefined;
-      return { ...item, staffId: null, staffName: "", status: rule?.category === "支援" || !item.positionRuleId ? "manual" : "unfilled" };
+      return { ...item, staffId: null, staffName: "", status: isAuxiliaryCategory(rule?.category) || !item.positionRuleId ? "manual" : "unfilled" };
     });
     this.commit("人员已删除");
   }
@@ -306,7 +371,7 @@ export class AutoScheduleApp {
       while (existingNames.has(`新岗位${nextNumber}`)) nextNumber += 1;
       const name = `新岗位${nextNumber}`;
       existingNames.add(name);
-      this.state.positionRules.push({ id: createId("position"), flightNo, name, category: "常规", remark: "", qualifiedStaffIds: [], manual: false, fatiguePoints: 1, minPassengers: 0 });
+      this.state.positionRules.push({ id: createId("position"), flightNo, name, category: "常规", remark: "", qualifiedStaffIds: [], manual: false, fatiguePoints: 1, minPassengers: 0, earlyReleaseMinutes: 0 });
       nextNumber += 1;
     }
     this.state.assignments = [];
@@ -321,6 +386,48 @@ export class AutoScheduleApp {
     this.state.assignments = [];
     this.state.activeScheduleDate = null;
     this.commit("岗位规则已删除");
+  }
+
+  private movePosition(id: string, direction: -1 | 1): void {
+    const rule = this.state.positionRules.find((item) => item.id === id);
+    if (!rule) return;
+    const siblingIndexes = this.state.positionRules
+      .map((item, index) => item.flightNo === rule.flightNo ? index : -1)
+      .filter((index) => index >= 0);
+    const currentSiblingIndex = siblingIndexes.indexOf(this.state.positionRules.indexOf(rule));
+    const targetIndex = siblingIndexes[currentSiblingIndex + direction];
+    if (targetIndex === undefined) return;
+    const currentIndex = this.state.positionRules.indexOf(rule);
+    [this.state.positionRules[currentIndex], this.state.positionRules[targetIndex]] = [this.state.positionRules[targetIndex]!, this.state.positionRules[currentIndex]!];
+    this.state.positionRules = orderPositionRules(this.state.positionRules);
+    this.state.assignments = [];
+    this.state.activeScheduleDate = null;
+    this.commit("岗位顺序已调整");
+  }
+
+  private sortCountersDescending(flightNo: string): void {
+    if (!flightNo) return;
+    this.state.positionRules = sortFlightCountersDescending(this.state.positionRules, flightNo);
+    this.state.assignments = [];
+    this.state.activeScheduleDate = null;
+    this.commit(`${flightNo} 柜台已按编号从大到小排列`);
+  }
+
+  private createTemporaryAssignment(input: HTMLInputElement | HTMLSelectElement): void {
+    const slot = input.closest<HTMLElement>("[data-empty-slot]");
+    const flightId = slot?.dataset.flightId ?? "";
+    const flight = this.state.flights.find((item) => item.id === flightId);
+    if (!slot || !flight) return;
+    const position = normalizeText(slot.querySelector<HTMLInputElement>('[data-empty-field="position"]')?.value) || "临时岗位";
+    const staffName = normalizeText(slot.querySelector<HTMLInputElement>('[data-empty-field="staffName"]')?.value);
+    this.state.assignments.push({
+      id: createId("assignment"), flightId: flight.id, flightNo: flight.flightNo, positionRuleId: null,
+      position, staffId: null, staffName, startTime: flight.startTime, endTime: flight.endTime,
+      workHours: 0, fatiguePoints: 0, remark: "", manualRemark: "", status: staffName ? "assigned" : "manual",
+      layoutGroup: slot.dataset.layoutGroup === "bottom" ? "bottom" : "primary",
+      layoutIndex: Number(slot.dataset.layoutIndex) || 0
+    });
+    this.commit("已增加临时岗位");
   }
 
   private showQualified(id: string): void {
@@ -356,35 +463,99 @@ export class AutoScheduleApp {
     if (sourceAssignmentId === assignmentId) return;
     if (!staffId) {
       const rule = assignment.positionRuleId ? this.state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-      assignment.staffId = null; assignment.staffName = ""; assignment.status = rule?.manual || rule?.category === "支援" ? "manual" : "unfilled";
+      assignment.staffId = null; assignment.staffName = ""; assignment.status = rule?.manual || isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId ? "manual" : "unfilled";
+      this.refreshSameFlightGuides([assignment.flightId]);
       this.commit("岗位已设为待补位");
       return;
     }
-    const error = canAssignStaff(this.state, assignmentId, staffId, sourceAssignmentId);
+    const source = sourceAssignmentId ? this.state.assignments.find((item) => item.id === sourceAssignmentId) : undefined;
+    const targetStaffId = assignment.staffId;
+    const targetStaffName = assignment.staffName;
+    const copySource = Boolean(sourceAssignmentId && (isSameFlightReusePosition(assignment.position)
+      || (!targetStaffId && isDiversionTransfer(this.state, sourceAssignmentId, assignmentId))));
+    const error = canAssignStaff(this.state, assignmentId, staffId, copySource ? undefined : sourceAssignmentId);
     if (error) { this.render(); this.toast(error, "danger"); return; }
     const person = this.state.staff.find((item) => item.id === staffId);
     if (!person) return;
+    if (source && !copySource && targetStaffId) {
+      const reverseError = canAssignStaff(this.state, source.id, targetStaffId, assignment.id);
+      if (reverseError) { this.render(); this.toast(`无法交换：${reverseError}`, "danger"); return; }
+    }
     assignment.staffId = person.id; assignment.staffName = person.name; assignment.status = "assigned";
-    if (sourceAssignmentId && !isSameFlightReusePosition(assignment.position)) {
-      const source = this.state.assignments.find((item) => item.id === sourceAssignmentId);
-      if (source) {
+    if (source && !copySource) {
+      if (targetStaffId) {
+        source.staffId = targetStaffId;
+        source.staffName = targetStaffName;
+        source.status = "assigned";
+      } else {
         const sourceRule = source.positionRuleId ? this.state.positionRules.find((item) => item.id === source.positionRuleId) : undefined;
-        source.staffId = null; source.staffName = ""; source.status = sourceRule?.manual || sourceRule?.category === "支援" || !source.positionRuleId ? "manual" : "unfilled";
+        source.staffId = null; source.staffName = ""; source.status = sourceRule?.manual || isAuxiliaryCategory(sourceRule?.category) || !source.positionRuleId ? "manual" : "unfilled";
       }
     }
-    this.commit("人员分配已更新");
+    applyEarlyReleaseForStaff(this.state, assignment.id, person.id);
+    if (source && targetStaffId && !copySource) applyEarlyReleaseForStaff(this.state, source.id, targetStaffId);
+    this.refreshSameFlightGuides([assignment.flightId, ...(source ? [source.flightId] : [])]);
+    this.commit(source && targetStaffId && !copySource ? "人员岗位已交换" : copySource ? "分流人员已转派" : "人员分配已更新");
   }
 
-  private addScheduleSlot(flightId: string): void {
+  private refreshSameFlightGuides(flightIds: string[]): void {
+    for (const flightId of new Set(flightIds)) {
+      const guideAssignments = this.state.assignments.filter((item) => item.flightId === flightId && isSameFlightReusePosition(item.position));
+      for (const guide of guideAssignments) {
+        const rule = guide.positionRuleId ? this.state.positionRules.find((item) => item.id === guide.positionRuleId) : undefined;
+        if (!rule) continue;
+        const candidates = this.state.assignments
+          .filter((item) => item.flightId === flightId && item.id !== guide.id && item.status === "assigned")
+          .filter((item) => !isSameFlightReusePosition(item.position) && !item.remark.trim() && item.staffId)
+          .map((item) => this.state.staff.find((person) => person.id === item.staffId))
+          .filter((person): person is NonNullable<typeof person> => Boolean(person && person.status === "正常" && rule.qualifiedStaffIds.includes(person.id)));
+        const selected = candidates.find((person) => person.id === guide.staffId)
+          ?? candidates[Math.floor(Math.random() * candidates.length)];
+        guide.staffId = selected?.id ?? null;
+        guide.staffName = selected?.name ?? "";
+        guide.status = selected ? "assigned" : "unfilled";
+      }
+    }
+  }
+
+  private showSupportPositions(flightId: string): void {
     const flight = this.state.flights.find((item) => item.id === flightId);
     if (!flight) return;
+    const rules = this.state.positionRules.filter((rule) => rule.flightNo === flight.flightNo && rule.category === "支援");
+    const regularShortage = this.state.assignments.some((assignment) => assignment.flightId === flight.id && assignment.status === "unfilled");
+    const allowGenericSupport = flight.startTime < "12:00" && regularShortage;
+    const body = rules.length
+      ? `<div class="list-group">${rules.map((rule) => `<button class="list-group-item list-group-item-action d-flex align-items-center justify-content-between" type="button" data-action="select-support-position" data-id="${rule.id}" data-flight-id="${flight.id}"><span><strong>${escapeHtml(rule.name)}</strong>${rule.remark ? `<small class="text-secondary ms-2">${escapeHtml(rule.remark)}</small>` : ""}</span><i class="bi bi-plus-lg"></i></button>`).join("")}</div>`
+      : `<div class="empty-state">该航班尚未配置支援岗位</div>`;
+    this.modal(`${flight.flightNo} 添加支援岗位`, body, `${allowGenericSupport ? `<button class="btn btn-outline-secondary" type="button" data-action="add-generic-support" data-id="${flight.id}">添加临时支援</button>` : ""}<button class="btn btn-secondary" type="button" data-bs-dismiss="modal">关闭</button>`);
+  }
+
+  private addSupportPosition(flightId: string, ruleId: string): void {
+    const flight = this.state.flights.find((item) => item.id === flightId);
+    const rule = this.state.positionRules.find((item) => item.id === ruleId && item.category === "支援");
+    if (!flight || !rule || rule.flightNo !== flight.flightNo) return;
+    this.state.assignments.push({
+      id: createId("assignment"), flightId: flight.id, flightNo: flight.flightNo, positionRuleId: rule.id,
+      position: rule.name, staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
+      workHours: durationHours(flight.startTime, flight.endTime),
+      fatiguePoints: rule.fatiguePoints, remark: rule.remark, manualRemark: "", status: "manual"
+    });
+    this.closeModal();
+    this.commit(`已增加支援岗位：${rule.name}`);
+  }
+
+  private addGenericSupport(flightId: string): void {
+    const flight = this.state.flights.find((item) => item.id === flightId);
+    const regularShortage = this.state.assignments.some((assignment) => assignment.flightId === flightId && assignment.status === "unfilled");
+    if (!flight || flight.startTime >= "12:00" || !regularShortage) return;
     this.state.assignments.push({
       id: createId("assignment"), flightId: flight.id, flightNo: flight.flightNo, positionRuleId: null,
       position: "临时支援", staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
-      workHours: durationHours(flight.startTime, flight.endTime),
-      fatiguePoints: 1, remark: "临时增加岗位", manualRemark: "", status: "manual"
+      workHours: durationHours(flight.startTime, flight.endTime), fatiguePoints: 1,
+      remark: "", manualRemark: "", status: "manual"
     });
-    this.commit("已增加临时岗位");
+    this.closeModal();
+    this.commit("已增加临时支援岗位");
   }
 
   private deleteAssignment(id: string): void {
@@ -466,7 +637,7 @@ export class AutoScheduleApp {
       const importConfig = this.importMode !== "history";
       const importHistory = this.importMode !== "config";
       if (importConfig && imported.staff?.length) this.state.staff = imported.staff;
-      if (importConfig && imported.positionRules?.length) this.state.positionRules = imported.positionRules;
+      if (importConfig && imported.positionRules?.length) this.state.positionRules = orderPositionRules(imported.positionRules);
       if (importConfig && imported.templates?.length) this.state.templates = imported.templates;
       if (importConfig && imported.flights?.length && !imported.templates?.length) {
         this.state.templates = imported.flights.map(({ id, bookedPassengers: _bookedPassengers, ...flight }) => ({ ...structuredClone(flight), id: createId("template") }));
@@ -521,6 +692,11 @@ export class AutoScheduleApp {
       const rule = this.state.positionRules.find((item) => item.id === id);
       if (!rule) return;
       (rule as unknown as Record<string, unknown>)[field] = typeof value === "string" && field === "flightNo" ? value.toUpperCase() : value;
+      if (field === "category") {
+        if (value === "分流" && !rule.earlyReleaseMinutes) rule.earlyReleaseMinutes = 60;
+        if (value !== "分流") rule.earlyReleaseMinutes = 0;
+      }
+      if (field === "name" || field === "flightNo") this.state.positionRules = orderPositionRules(this.state.positionRules);
       this.state.assignments = [];
       this.state.activeScheduleDate = null;
     } else if (entity === "template") {
@@ -535,19 +711,21 @@ export class AutoScheduleApp {
       else if (field === "staffName") {
         const staffName = normalizeText(value);
         const rule = assignment.positionRuleId ? this.state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-        if (rule?.category === "支援" || !assignment.positionRuleId) {
-          assignment.staffId = null;
-          assignment.staffName = staffName;
-          assignment.status = staffName ? "assigned" : "manual";
-        } else if (!staffName) {
+        if (!staffName) {
           this.assignStaff(id, "");
           return;
+        }
+        const person = this.state.staff.find((item) => item.name === staffName);
+        if (!person || isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId) {
+          assignment.staffId = null;
+          assignment.staffName = staffName;
+          assignment.status = "assigned";
         } else {
-          const person = this.state.staff.find((item) => item.name === staffName);
-          if (!person) { this.render(); this.toast("常规岗位只能填写人员名单中的姓名", "danger"); return; }
           this.assignStaff(id, person.id);
           return;
         }
+      } else if (field === "position" && !assignment.positionRuleId) {
+        assignment.position = normalizeText(value) || "临时岗位";
       }
     } else if (entity === "staff") {
       const person = this.state.staff.find((item) => item.id === id);

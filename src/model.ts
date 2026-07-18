@@ -26,12 +26,13 @@ export interface PositionRule {
   id: string;
   flightNo: string;
   name: string;
-  category: "常规" | "支援";
+  category: "常规" | "支援" | "分流" | "行政支援";
   remark: string;
   qualifiedStaffIds: string[];
   manual: boolean;
   fatiguePoints: number;
   minPassengers: number;
+  earlyReleaseMinutes: number;
 }
 
 export interface HistoryRecord {
@@ -63,6 +64,8 @@ export interface Assignment {
   remark: string;
   manualRemark: string;
   status: "assigned" | "unfilled" | "manual";
+  layoutGroup?: "primary" | "bottom";
+  layoutIndex?: number;
 }
 
 export interface ScheduleSettings {
