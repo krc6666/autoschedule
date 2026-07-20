@@ -33,6 +33,11 @@ function monthlyDutyDates(date: string): string[] {
     .map((day) => `${String(parsed.year).padStart(4, "0")}-${String(parsed.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
 }
 
+function monthlyRotationSeed(date: string): number {
+  const parsed = parseDate(date);
+  return parsed ? parsed.year * 12 + parsed.month - 1 : 0;
+}
+
 export function rosterEligibleStaff(state: AppState): Staff[] {
   return state.staff.filter((person) => person.staffType === "常规" && person.status === "正常");
 }
@@ -45,19 +50,93 @@ export function dutyQualifiedStaff(state: AppState): Staff[] {
   return rosterEligibleStaff(state).filter((person) => person.dutyQualified);
 }
 
-function pickFairly(pool: Staff[], counts: Map<string, number>, start: number, excludedIds: Set<string>, count: number): Array<string | null> {
-  if (!pool.length) return Array.from({ length: count }, () => null);
-  const selected = pool
-    .filter((person) => !excludedIds.has(person.id))
-    .map((person, index) => ({
-      person,
-      count: counts.get(person.id) ?? 0,
-      rotationDistance: (index - (start % pool.length) + pool.length) % pool.length
-    }))
-    .sort((left, right) => left.count - right.count || left.rotationDistance - right.rotationDistance)
-    .slice(0, count)
-    .map(({ person }) => person.id);
-  return [...selected, ...Array.from({ length: count - selected.length }, () => null)];
+function rotateStaff(pool: Staff[], start: number): Staff[] {
+  if (!pool.length) return [];
+  const offset = ((start % pool.length) + pool.length) % pool.length;
+  return [...pool.slice(offset), ...pool.slice(0, offset)];
+}
+
+function assignDutyRounds(dates: string[], dutyPool: Staff[], rotationStart: number): Array<string | null> {
+  const dutyByDate: Array<string | null> = dates.map(() => null);
+  const counts = new Map(dutyPool.map((person) => [person.id, 0]));
+  const remainingDates = new Set(dates.map((_, index) => index));
+
+  for (let round = 1; remainingDates.size && round <= dates.length + 1; round += 1) {
+    const candidates = rotateStaff(dutyPool, rotationStart + round - 1).filter((person) => (counts.get(person.id) ?? 0) < round);
+    const matchedByDate = new Map<number, string>();
+    const tryAssign = (staffId: string, visitedDates: Set<number>): boolean => {
+      for (const dateIndex of remainingDates) {
+        if (visitedDates.has(dateIndex)) continue;
+        visitedDates.add(dateIndex);
+        const current = matchedByDate.get(dateIndex);
+        if (!current || tryAssign(current, visitedDates)) {
+          matchedByDate.set(dateIndex, staffId);
+          return true;
+        }
+      }
+      return false;
+    };
+    candidates.forEach((person) => { tryAssign(person.id, new Set()); });
+    if (!matchedByDate.size) continue;
+    matchedByDate.forEach((staffId, dateIndex) => {
+      dutyByDate[dateIndex] = staffId;
+      counts.set(staffId, (counts.get(staffId) ?? 0) + 1);
+      remainingDates.delete(dateIndex);
+    });
+  }
+  return dutyByDate;
+}
+
+function assignCxAfterDuty(dates: string[], dutyByDate: Array<string | null>, cxPool: Staff[], rotationStart: number): Array<string | null> {
+  return dates.map((_, ordinal) => {
+    const rotated = rotateStaff(cxPool, rotationStart + ordinal);
+    return rotated.find((person) => person.id !== dutyByDate[ordinal])?.id ?? null;
+  });
+}
+
+function assignStandbyRounds(
+  dates: string[],
+  cxByDate: Array<string | null>,
+  dutyByDate: Array<string | null>,
+  regular: Staff[],
+  rotationStart: number
+): Array<[string | null, string | null]> {
+  const standbyByDate: Array<[string | null, string | null]> = dates.map(() => [null, null]);
+  const counts = new Map(regular.map((person) => [person.id, 0]));
+  const assignedDates = new Map(regular.map((person) => [person.id, new Set<number>()]));
+  const remainingSlots = new Set(Array.from({ length: dates.length * 2 }, (_, index) => index));
+
+  for (let round = 1; remainingSlots.size && round <= dates.length * 2 + 1; round += 1) {
+    const candidates = rotateStaff(regular, rotationStart + round - 1).filter((person) => (counts.get(person.id) ?? 0) < round);
+    const matchedBySlot = new Map<number, string>();
+    const tryAssign = (staffId: string, visitedSlots: Set<number>): boolean => {
+      for (const slotIndex of remainingSlots) {
+        const dateIndex = Math.floor(slotIndex / 2);
+        if (cxByDate[dateIndex] === staffId
+          || dutyByDate[dateIndex] === staffId
+          || assignedDates.get(staffId)?.has(dateIndex)
+          || visitedSlots.has(slotIndex)) continue;
+        visitedSlots.add(slotIndex);
+        const current = matchedBySlot.get(slotIndex);
+        if (!current || tryAssign(current, visitedSlots)) {
+          matchedBySlot.set(slotIndex, staffId);
+          return true;
+        }
+      }
+      return false;
+    };
+    candidates.forEach((person) => { tryAssign(person.id, new Set()); });
+    if (!matchedBySlot.size) continue;
+    matchedBySlot.forEach((staffId, slotIndex) => {
+      const dateIndex = Math.floor(slotIndex / 2);
+      const position = slotIndex % 2;
+      standbyByDate[dateIndex]![position] = staffId;
+      counts.set(staffId, (counts.get(staffId) ?? 0) + 1);
+      assignedDates.get(staffId)?.add(dateIndex);
+      remainingSlots.delete(slotIndex);
+    });
+  }
+  return standbyByDate;
 }
 
 function defaultMonthlyDutyRoster(state: AppState, date: string): DutyRosterAssignment[] {
@@ -65,35 +144,17 @@ function defaultMonthlyDutyRoster(state: AppState, date: string): DutyRosterAssi
   const regular = rosterEligibleStaff(state);
   const cxPool = cxPreflightEligibleStaff(state);
   const dutyPool = dutyQualifiedStaff(state);
-  const dutyCounts = new Map(dutyPool.map((person) => [person.id, 0]));
-  const standbyCounts = new Map(regular.map((person) => [person.id, 0]));
-  const cxByDate = dates.map((_, ordinal) => cxPool.length ? cxPool[ordinal % cxPool.length]!.id : null);
-  const dutyByDate = dates.map((_, ordinal) => {
-    const cxPreflightStaffId = cxByDate[ordinal] ?? null;
-    const excluded = new Set(cxPreflightStaffId ? [cxPreflightStaffId] : []);
-    const dutyStaffId = pickFairly(dutyPool, dutyCounts, ordinal, excluded, 1)[0] ?? null;
-    if (dutyStaffId) dutyCounts.set(dutyStaffId, (dutyCounts.get(dutyStaffId) ?? 0) + 1);
-    return dutyStaffId;
-  });
-  for (let pass = 0; pass < dates.length * dutyPool.length; pass += 1) {
-    const ordered = [...dutyPool].sort((left, right) => (dutyCounts.get(left.id) ?? 0) - (dutyCounts.get(right.id) ?? 0));
-    const least = ordered[0];
-    const most = ordered.at(-1);
-    if (!least || !most || (dutyCounts.get(most.id) ?? 0) - (dutyCounts.get(least.id) ?? 0) <= 1) break;
-    const replaceIndex = dutyByDate.findIndex((staffId, index) => staffId === most.id && cxByDate[index] !== least.id);
-    if (replaceIndex < 0) break;
-    dutyByDate[replaceIndex] = least.id;
-    dutyCounts.set(most.id, (dutyCounts.get(most.id) ?? 0) - 1);
-    dutyCounts.set(least.id, (dutyCounts.get(least.id) ?? 0) + 1);
-  }
+  const rotationSeed = monthlyRotationSeed(date);
+  const dutyRotationStart = dutyPool.length ? rotationSeed % dutyPool.length : 0;
+  const cxRotationStart = cxPool.length ? rotationSeed % cxPool.length : 0;
+  const standbyRotationStart = regular.length ? (rotationSeed * 2) % regular.length : 0;
+  const dutyByDate = assignDutyRounds(dates, dutyPool, dutyRotationStart);
+  const cxByDate = assignCxAfterDuty(dates, dutyByDate, cxPool, cxRotationStart);
+  const standbyByDate = assignStandbyRounds(dates, cxByDate, dutyByDate, regular, standbyRotationStart);
   return dates.map((item, ordinal) => {
     const cxPreflightStaffId = cxByDate[ordinal] ?? null;
     const dutyStaffId = dutyByDate[ordinal] ?? null;
-    const excluded = new Set([cxPreflightStaffId, dutyStaffId].filter((staffId): staffId is string => Boolean(staffId)));
-    const standbyStaffIds = pickFairly(regular, standbyCounts, ordinal * 2, excluded, 2) as [string | null, string | null];
-    standbyStaffIds.forEach((staffId) => {
-      if (staffId) standbyCounts.set(staffId, (standbyCounts.get(staffId) ?? 0) + 1);
-    });
+    const standbyStaffIds = standbyByDate[ordinal] ?? [null, null];
     return { date: item, cxPreflightStaffId, dutyStaffId, standbyStaffIds, adjusted: false };
   });
 }
@@ -169,6 +230,11 @@ export function updateDutyRosterSlot(state: AppState, date: string, slot: DutyRo
 
 export function clearDutyRosterOverride(state: AppState, date: string): void {
   state.dutyRosterOverrides = state.dutyRosterOverrides.filter((item) => item.date !== date);
+}
+
+export function clearMonthlyDutyRosterOverrides(state: AppState, date: string): void {
+  const month = date.slice(0, 7);
+  state.dutyRosterOverrides = state.dutyRosterOverrides.filter((item) => item.date.slice(0, 7) !== month);
 }
 
 export function dutyFatigueByStaff(state: AppState, date: string): Map<string, number> {

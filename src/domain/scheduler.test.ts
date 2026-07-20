@@ -47,6 +47,7 @@ describe("scheduler domain", () => {
     const state = createDefaultState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
     state.flights = [
       { id: "first-flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
       { id: "second-base-flight", flightNo: "F0", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
@@ -102,6 +103,7 @@ describe("scheduler domain", () => {
     const state = createDefaultState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
     state.flights = [
       { id: "source-flight", flightNo: "CX931", startTime: "17:50", endTime: "19:50", bookedPassengers: 100, positions: [], remark: "" },
       { id: "second-base-flight", flightNo: "BASE", startTime: "17:50", endTime: "19:50", bookedPassengers: 100, positions: [], remark: "" },
@@ -133,6 +135,7 @@ describe("scheduler domain", () => {
     const state = createDefaultState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
     state.flights = [
       { id: "first-flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
       { id: "second-base-flight", flightNo: "F0", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
@@ -160,6 +163,7 @@ describe("scheduler domain", () => {
     const state = createDefaultState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
     state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
     const base = state.positionRules[0]!;
     state.positionRules = [{ ...base, id: "g20", flightNo: "F1", name: "G20", fatiguePoints: 4, remark: "", qualifiedStaffIds: [first!.id, second!.id] }];
@@ -562,6 +566,7 @@ describe("scheduler domain", () => {
     const state = createDefaultState();
     state.settings.dutyFatiguePoints = 0;
     state.staff = state.staff.filter((person) => ["2", "3"].includes(person.id));
+    state.staff.forEach((person) => { person.dutyQualified = false; });
     state.flights = [state.flights[0]!];
     state.flights[0]!.positions = ["G12"];
     state.positionRules = state.positionRules.filter((rule) => rule.flightNo === "CX937" && rule.name === "G12");

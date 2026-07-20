@@ -4,7 +4,7 @@ import Toast from "bootstrap/js/dist/toast";
 import { createDefaultState } from "./defaults";
 import { activeFlightRules, applyEarlyReleaseForStaff, generateSchedule, canAssignStaff, isAuxiliaryCategory, isDiversionTransfer, isGuideAssignment } from "./domain/scheduler";
 import { addIsoDays } from "./domain/time";
-import { clearDutyRosterOverride, getDutyRosterForDate, updateDutyRosterSlot, type DutyRosterSlot } from "./domain/duty-roster";
+import { clearDutyRosterOverride, clearMonthlyDutyRosterOverrides, getDutyRosterForDate, updateDutyRosterSlot, type DutyRosterSlot } from "./domain/duty-roster";
 import { clearState, loadState, saveState } from "./infrastructure/storage";
 import type { AppSection, AppState, Flight, FlightTemplate, HistoryRecord, PositionTransitionPolicy, Staff } from "./model";
 import { renderConfig } from "./ui/config-view";
@@ -261,6 +261,7 @@ export class AutoScheduleApp {
       "zoom-schedule-in": () => this.changeScheduleZoom(0.1),
       "delete-assignment": () => this.deleteAssignment(id),
       "reset-duty-roster": () => this.resetDutyRoster(id),
+      "rebalance-duty-roster-month": () => this.rebalanceDutyRosterMonth(id),
       "reset-all": () => this.resetAll()
     };
     actions[action]?.();
@@ -735,6 +736,12 @@ export class AutoScheduleApp {
   private resetDutyRoster(date: string): void {
     clearDutyRosterOverride(this.state, date);
     this.commit(`${date} 已恢复顺序轮值`);
+  }
+
+  private rebalanceDutyRosterMonth(date: string): void {
+    if (!confirm(`清除 ${date.slice(0, 7)} 的人工轮值调整，并按值班优先规则重新均衡？`)) return;
+    clearMonthlyDutyRosterOverrides(this.state, date);
+    this.commit(`${date.slice(0, 7)} 已重新均衡轮值`);
   }
 
   private updateDutyRoster(date: string, slot: DutyRosterSlot, staffId: string): void {

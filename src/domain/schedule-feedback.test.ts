@@ -13,6 +13,7 @@ describe("schedule feedback", () => {
     expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "疲劳分布", "航班衔接", "连续高负荷", "上一工作日晚班", "轮值安排"]);
     expect(feedback.find((item) => item.key === "previous-late")?.text).toContain("暂无最近工作日归档");
     expect(feedback.find((item) => item.key === "duty-roster")?.text).toContain("值班");
+    expect(feedback.find((item) => item.key === "duty-roster")?.text).toContain(`+${state.settings.dutyFatiguePoints} 点疲劳`);
   });
 
   it("identifies tight transitions, repeated high load, uncovered staff, and late-shift overload", () => {

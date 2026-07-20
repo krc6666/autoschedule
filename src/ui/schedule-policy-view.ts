@@ -37,7 +37,7 @@ function ruleLedgerRows(state: AppState): string {
     ["R07", "岗位生成", "运力阈值", "低于启用旅客人数时岗位保留但不自动派人", "岗位规则 / 启用旅客人数"],
     ["R08", "分配优先级", "稀缺岗位优先", "先处理合格人数更少的岗位，并为后续重叠稀缺岗位预留人员", "岗位资质"],
     ["R09", "分配优先级", "在岗人员全覆盖", "岗位与资质允许时，优先安排当天尚未获得实际工时的常规人员", "人员状态 / 岗位资质"],
-    ["R10", "月度轮值", "CX航前 / 值班 / 备勤", `四个人选互不重复并按月均衡；CX航前和值班分别限资质人员；值班计 ${state.settings.dutyFatiguePoints} 点并优先最晚航班的一号、督导、申报或送资料岗位`, "人员信息 / 排班页轮值表"],
+    ["R10", "月度轮值", "值班优先", `四个人选互不重复；值班先完成全员第1轮再进入第2轮，CX航前和备勤不参与次数公平；值班计 ${state.settings.dutyFatiguePoints} 点并优先最晚航班晚撤岗位`, "人员信息 / 排班页轮值表"],
     ["R11", "分配优先级", "特殊岗位衔接", `${state.settings.positionTransitionPolicies.filter((item) => item.enabled).length} 条启用，按前序晚撤岗位和最小间隔判断`, "策略 / 岗位衔接"],
     ["R12", "分配优先级", "高负荷衔接保护", state.settings.highLoadProtectionEnabled ? `疲劳点 ≥ ${state.settings.highLoadFatigueThreshold} 或带备注，恢复 ${state.settings.highLoadRecoveryMinutes} 分钟` : "已停用", "策略"],
     ["R13", "分配优先级", "滚动负荷上限", state.settings.rollingLoadProtectionEnabled ? `${state.settings.rollingLoadWindowMinutes} 分钟内投放新岗位后不超过 ${state.settings.rollingLoadMaxFatigue} 疲劳点` : "已停用", "策略"],

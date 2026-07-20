@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../defaults";
 import { generateSchedule } from "./scheduler";
-import { getDutyRosterForDate, getMonthlyDutyRoster, getMonthlyDutyRosterStats, updateDutyRosterSlot } from "./duty-roster";
+import { clearMonthlyDutyRosterOverrides, getDutyRosterForDate, getMonthlyDutyRoster, getMonthlyDutyRosterStats, updateDutyRosterSlot } from "./duty-roster";
 
 describe("monthly duty roster", () => {
   it("rotates four distinct people and limits CX preflight to its qualified pool", () => {
@@ -29,6 +29,54 @@ describe("monthly duty roster", () => {
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
     const unqualified = state.staff.find((person) => !person.dutyQualified && person.status === "正常")!;
     expect(updateDutyRosterSlot(state, "2026-07-20", "duty", unqualified.id)).toContain("值班资质");
+  });
+
+  it("finishes the first duty round before assigning a second duty", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.filter((person) => person.status === "正常");
+    state.staff.forEach((person, index) => {
+      person.dutyQualified = true;
+      person.cxPreflightQualified = index < 3;
+    });
+    const stats = getMonthlyDutyRosterStats(state, "2026-07-20");
+    const dutyCounts = stats.map((item) => item.dutyDates.length).sort((left, right) => left - right);
+    expect(dutyCounts).toEqual([0, ...Array.from({ length: 15 }, () => 1)]);
+    const fullMonthStats = getMonthlyDutyRosterStats(state, "2026-08-01");
+    expect(fullMonthStats.every((item) => item.dutyDates.length === 1)).toBe(true);
+  });
+
+  it("rotates a monthly duty shortage instead of always skipping the same person", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.filter((person) => person.status === "正常");
+    state.staff.forEach((person) => { person.dutyQualified = true; });
+    const julyMissing = getMonthlyDutyRosterStats(state, "2026-07-20").find((item) => item.dutyDates.length === 0)?.staff.id;
+    const septemberMissing = getMonthlyDutyRosterStats(state, "2026-09-02").find((item) => item.dutyDates.length === 0)?.staff.id;
+    expect(julyMissing).toBeTruthy();
+    expect(septemberMissing).toBeTruthy();
+    expect(septemberMissing).not.toBe(julyMissing);
+  });
+
+  it("gives duty priority even when the same person is the only CX-qualified worker", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.filter((person) => person.status === "正常");
+    state.staff.forEach((person) => {
+      person.dutyQualified = true;
+      person.cxPreflightQualified = person.name === "刘翔";
+    });
+    const stats = getMonthlyDutyRosterStats(state, "2026-08-01");
+    expect(stats.find((item) => item.staff.name === "刘翔")?.dutyDates).toHaveLength(1);
+    expect(stats.every((item) => item.dutyDates.length === 1)).toBe(true);
+    expect(getMonthlyDutyRoster(state, "2026-08-01").filter((row) => !row.cxPreflightStaffId)).toHaveLength(1);
+  });
+
+  it("clears only the selected month when restoring automatic balance", () => {
+    const state = createDefaultState();
+    state.dutyRosterOverrides = [
+      { date: "2026-07-02", cxPreflightStaffId: null, dutyStaffId: "2", standbyStaffIds: ["3", "4"] },
+      { date: "2026-08-01", cxPreflightStaffId: null, dutyStaffId: "5", standbyStaffIds: ["6", "7"] }
+    ];
+    clearMonthlyDutyRosterOverrides(state, "2026-07-20");
+    expect(state.dutyRosterOverrides.map((item) => item.date)).toEqual(["2026-08-01"]);
   });
 
   it("swaps duty and standby people directly in the monthly table", () => {

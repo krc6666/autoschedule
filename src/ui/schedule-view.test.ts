@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../defaults";
+import { getMonthlyDutyRoster, updateDutyRosterSlot } from "../domain/duty-roster";
 import { generateSchedule } from "../domain/scheduler";
 import { renderSchedule } from "./schedule-view";
 
@@ -58,10 +59,44 @@ describe("schedule view", () => {
     expect(html).toContain("值班与备勤轮换");
     expect(html).toContain("本月值班");
     expect(html).toContain("本月备勤");
+    expect(html).toContain("首轮覆盖");
+    expect(html).toContain("值班保障");
+    expect(html).toContain("计划疲劳");
+    expect(html).toContain(`本次值班 +${state.settings.dutyFatiguePoints} 疲劳点`);
     expect(html).toContain("轮值日期");
     expect(html).toContain("duty-roster-table");
     expect(html).toContain('data-entity="duty-roster"');
     expect(html).toContain('data-duty-slot="standby-1"');
+  });
+
+  it("keeps a sole CX-qualified worker in the first duty round", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.filter((person) => person.status === "正常");
+    state.staff.forEach((person) => {
+      person.dutyQualified = true;
+      person.cxPreflightQualified = person.name === "刘翔";
+    });
+    state.assignments = generateSchedule(state, "2026-08-01").assignments;
+    const html = renderSchedule(state, "2026-08-01");
+    expect(html).not.toContain("值班首轮未完成");
+    expect(html).toContain("值班优先后，本月 1 个工作日没有剩余CX航前资质人员");
+    expect(html).toContain("首轮覆盖 <strong>16/16</strong>");
+  });
+
+  it("offers monthly rebalancing when a manual change creates zero and repeated duty counts", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.filter((person) => person.status === "正常");
+    state.staff.forEach((person) => { person.dutyQualified = true; });
+    const rows = getMonthlyDutyRoster(state, "2026-08-01");
+    const repeated = state.staff.find((person) => rows.some((row) => row.dutyStaffId === person.id))!;
+    const target = rows.find((row) => row.dutyStaffId !== repeated.id && row.cxPreflightStaffId !== repeated.id && !row.standbyStaffIds.includes(repeated.id))!;
+    expect(updateDutyRosterSlot(state, target.date, "duty", repeated.id)).toBeNull();
+    state.assignments = generateSchedule(state, "2026-08-01").assignments;
+    const html = renderSchedule(state, "2026-08-01");
+    expect(html).toContain("值班首轮未完成");
+    expect(html).toContain(`${repeated.name} 2 次`);
+    expect(html).toContain("月度值班需纠偏");
+    expect(html).toContain('data-action="rebalance-duty-roster-month"');
   });
 
   it("renders position details and personnel details in separate table cells", () => {

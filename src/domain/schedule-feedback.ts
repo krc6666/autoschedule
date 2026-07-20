@@ -1,6 +1,6 @@
 import type { AppState, Assignment, HistoryRecord } from "../model";
 import { buildStaffLoads, recentHistory } from "./fatigue";
-import { dutyFatigueByStaff, getDutyRosterForDate } from "./duty-roster";
+import { dutyFatigueByStaff, getDutyRosterForDate, getMonthlyDutyRosterStats } from "./duty-roster";
 import { dutyLatePositionPriority, isHighLoadPosition, isInFinalLateBatch } from "./scheduler";
 import { timeToMinutes } from "./time";
 
@@ -177,15 +177,22 @@ function dutyRosterFeedback(state: AppState, date: string): ScheduleFeedbackItem
   const rosterIds = [roster.cxPreflightStaffId, roster.dutyStaffId, ...roster.standbyStaffIds].filter((id): id is string => Boolean(id));
   const cxName = staffName(state, roster.cxPreflightStaffId);
   const dutyName = staffName(state, roster.dutyStaffId);
+  const dutyDescription = `值班${dutyName}（+${state.settings.dutyFatiguePoints} 点疲劳）`;
   const standbyAssignments = roster.standbyStaffIds.map((staffId) => ({ name: staffName(state, staffId), summary: assignmentSummary(state, staffId) }));
   const standbyDetails = standbyAssignments.map((item) => `${item.name}（${item.summary}）`).join("、");
   const standbyMissingWork = standbyAssignments.filter((item) => item.summary === "未安排实际岗位").map((item) => item.name);
+  const monthlyStats = getMonthlyDutyRosterStats(state, date).filter((item) => item.staff.dutyQualified);
+  const monthlyMissing = monthlyStats.filter((item) => item.dutyDates.length === 0);
+  const monthlyRepeated = monthlyStats.filter((item) => item.dutyDates.length > 1);
+  const monthlyDutyNote = monthlyMissing.length && monthlyRepeated.length
+    ? ` 月度值班需纠偏：${monthlyMissing.map((item) => `${item.staff.name} 0 次`).join("、")}；${monthlyRepeated.map((item) => `${item.staff.name} ${item.dutyDates.length} 次`).join("、")}。`
+    : "";
   if (rosterIds.length < 4 || new Set(rosterIds).size !== rosterIds.length) {
-    return { key: "duty-roster", label: "轮值安排", level: "attention", text: `CX航前${cxName}；值班${dutyName}；备勤${standbyDetails}。四个人选未完整配置或发生重合，需要调整。` };
+    return { key: "duty-roster", label: "轮值安排", level: "attention", text: `CX航前${cxName}；${dutyDescription}；备勤${standbyDetails}。四个人选未完整配置或发生重合，需要调整。${monthlyDutyNote}` };
   }
   const dutyAssignments = state.assignments.filter((assignment) => assignment.staffId === roster.dutyStaffId && assignment.status === "assigned" && assignment.workHours > 0);
   if (!state.flights.length || !dutyAssignments.length) {
-    return { key: "duty-roster", label: "轮值安排", level: "attention", text: `CX航前${cxName}；值班${dutyName}未安排实际航班岗位；备勤${standbyDetails}。需要复核值班人员的最晚航班安排。` };
+    return { key: "duty-roster", label: "轮值安排", level: "attention", text: `CX航前${cxName}；${dutyDescription}未安排实际航班岗位；备勤${standbyDetails}。需要复核值班人员的最晚航班安排。${monthlyDutyNote}` };
   }
   const latestStart = Math.max(...state.flights.map((flight) => operationalStart(flight.startTime, state)));
   const latestDutyAssignments = dutyAssignments.filter((assignment) => operationalStart(assignment.startTime, state) === latestStart);
@@ -194,14 +201,14 @@ function dutyRosterFeedback(state: AppState, date: string): ScheduleFeedbackItem
     .sort((left, right) => dutyLatePositionPriority(left.position, left.remark) - dutyLatePositionPriority(right.position, right.remark))[0];
   if (preferred) {
     const standbyNote = standbyMissingWork.length ? `；${conciseNames(standbyMissingWork)}作为备勤但未安排实际岗位，需要复核` : "";
-    return { key: "duty-roster", label: "轮值安排", level: standbyMissingWork.length ? "attention" : "ok", text: `CX航前${cxName}；值班${dutyName}安排在最晚航班 ${preferred.flightNo}/${preferred.position}，符合晚撤岗位优先；备勤${standbyDetails}${standbyNote}。` };
+    return { key: "duty-roster", label: "轮值安排", level: standbyMissingWork.length || Boolean(monthlyDutyNote) ? "attention" : "ok", text: `CX航前${cxName}；${dutyDescription}安排在最晚航班 ${preferred.flightNo}/${preferred.position}，符合晚撤岗位优先；备勤${standbyDetails}${standbyNote}。${monthlyDutyNote}` };
   }
   const latestDuty = latestDutyAssignments[0];
   if (latestDuty) {
-    return { key: "duty-roster", label: "轮值安排", level: "attention", text: `CX航前${cxName}；值班${dutyName}虽在最晚航班 ${latestDuty.flightNo}/${latestDuty.position}，但未落在一号、督导、申报或送资料岗位；备勤${standbyDetails}。` };
+    return { key: "duty-roster", label: "轮值安排", level: "attention", text: `CX航前${cxName}；${dutyDescription}虽在最晚航班 ${latestDuty.flightNo}/${latestDuty.position}，但未落在一号、督导、申报或送资料岗位；备勤${standbyDetails}。${monthlyDutyNote}` };
   }
   const lastDuty = [...dutyAssignments].sort((left, right) => operationalStart(right.startTime, state) - operationalStart(left.startTime, state))[0]!;
-  return { key: "duty-roster", label: "轮值安排", level: "attention", text: `CX航前${cxName}；值班${dutyName}最晚只排到 ${lastDuty.flightNo}/${lastDuty.position}，未进入当日最晚航班；备勤${standbyDetails}。` };
+  return { key: "duty-roster", label: "轮值安排", level: "attention", text: `CX航前${cxName}；${dutyDescription}最晚只排到 ${lastDuty.flightNo}/${lastDuty.position}，未进入当日最晚航班；备勤${standbyDetails}。${monthlyDutyNote}` };
 }
 
 export function buildScheduleFeedback(state: AppState, date: string): ScheduleFeedbackItem[] {
