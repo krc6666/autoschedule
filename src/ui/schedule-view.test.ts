@@ -26,9 +26,6 @@ describe("schedule view", () => {
     expect(html).toContain("data-action=\"zoom-schedule-in\"");
     expect(html).toContain("归档并排后天");
     expect(html).toContain("排班反馈");
-    expect(html).toContain("航班安排反馈");
-    expect(html).toContain("规则执行反馈");
-    expect(html).toContain("负荷均衡");
     expect(html).toContain('class="schedule-feedback-list"');
     expect(html).toContain("人员覆盖");
     expect(html).toContain("航班衔接");

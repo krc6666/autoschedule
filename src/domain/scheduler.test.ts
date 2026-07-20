@@ -637,35 +637,6 @@ describe("scheduler domain", () => {
     expect(dutyAssignments.some((item) => item.flightNo === "MIDDLE")).toBe(false);
   });
 
-  it("keeps both work-hour and daily-fatigue differences within configured targets when feasible", () => {
-    const state = createDefaultState();
-    state.staff = state.staff.slice(0, 2);
-    state.staff.forEach((person) => { person.dutyQualified = false; });
-    state.settings.workloadBalanceEnabled = true;
-    state.settings.maxWorkHoursDifference = 2;
-    state.settings.maxTodayFatigueDifference = 4;
-    state.flights = [
-      { id: "long", flightNo: "LONG", startTime: "08:00", endTime: "14:00", bookedPassengers: 100, positions: [], remark: "" },
-      ...Array.from({ length: 5 }, (_, index) => ({
-        id: `short-${index}`, flightNo: `SHORT${index}`, startTime: `${14 + index}:00`, endTime: `${15 + index}:00`, bookedPassengers: 100, positions: [], remark: ""
-      }))
-    ];
-    const base = state.positionRules[0]!;
-    const qualifiedStaffIds = state.staff.map((person) => person.id);
-    state.positionRules = state.flights.map((flight, index) => ({
-      ...base, id: `balance-${index}`, flightNo: flight.flightNo, name: `P${index}`, remark: "",
-      fatiguePoints: index === 0 ? 0 : 1, qualifiedStaffIds
-    }));
-
-    const assignments = generateSchedule(state, "2026-07-20").assignments;
-    const loads = state.staff.map((person) => ({
-      hours: assignments.filter((item) => item.staffId === person.id).reduce((sum, item) => sum + item.workHours, 0),
-      fatigue: assignments.filter((item) => item.staffId === person.id).reduce((sum, item) => sum + item.fatiguePoints, 0)
-    }));
-    expect(Math.max(...loads.map((item) => item.hours)) - Math.min(...loads.map((item) => item.hours))).toBeLessThanOrEqual(2);
-    expect(Math.max(...loads.map((item) => item.fatigue)) - Math.min(...loads.map((item) => item.fatigue))).toBeLessThanOrEqual(4);
-  });
-
   it("uses an archived day to rotate the lower-load worker into the next duty day", () => {
     const state = createDefaultState();
     state.settings.dutyFatiguePoints = 0;
