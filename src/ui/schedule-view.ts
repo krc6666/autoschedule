@@ -4,7 +4,7 @@ import { buildScheduleFeedback } from "../domain/schedule-feedback";
 import { dutyFatigueByStaff } from "../domain/duty-roster";
 import { isFixedBottomPosition } from "../domain/scheduler";
 import { escapeHtml, visiblePositionRemark } from "../utils";
-import { renderDutyRoster } from "./duty-roster-view";
+import { renderDutyRosterDetails, renderDutyRosterSummary } from "./duty-roster-view";
 
 export type LoadSortField = "workHours" | "todayFatigue" | "historyFatigue" | "totalFatigue";
 export type LoadSortDirection = "asc" | "desc";
@@ -122,7 +122,6 @@ export function renderSchedule(
   const feedbackIcon = (level: "ok" | "attention" | "info"): string => level === "ok" ? "check-circle-fill" : level === "attention" ? "exclamation-triangle-fill" : "info-circle-fill";
   return `
     <section class="toolbar-band schedule-toolbar"><div class="d-flex gap-1 flex-wrap"><button class="btn btn-sm btn-primary" type="button" data-action="generate-schedule"><i class="bi bi-arrow-repeat me-1"></i>重新排班</button><button class="btn btn-sm btn-success" type="button" data-action="archive-and-next-duty"><i class="bi bi-calendar2-plus me-1"></i>归档并排后天</button><button class="btn btn-sm btn-outline-success" type="button" data-action="export-schedule"><i class="bi bi-file-earmark-excel me-1"></i>导出结果</button><button class="btn btn-sm btn-outline-primary icon-btn" type="button" data-action="export-share-html" title="导出 HTML"><i class="bi bi-filetype-html"></i></button><button class="btn btn-sm btn-outline-primary icon-btn" type="button" data-action="export-share-png" title="导出图片"><i class="bi bi-file-earmark-image"></i></button><button class="btn btn-sm btn-outline-secondary" type="button" data-action="archive-schedule"><i class="bi bi-archive me-1"></i>仅归档</button><button class="btn btn-sm btn-outline-danger icon-btn" type="button" data-action="clear-schedule" title="清空排班"><i class="bi bi-x-circle"></i></button></div><div class="schedule-toolbar-meta"><div class="schedule-zoom-control" role="group" aria-label="排班表缩放"><button class="btn btn-sm icon-btn" type="button" data-action="zoom-schedule-out" title="缩小排班表" ${zoom <= 0.7 ? "disabled" : ""}><i class="bi bi-zoom-out"></i></button><output aria-label="当前排班表比例">${zoomPercent}%</output><button class="btn btn-sm icon-btn" type="button" data-action="zoom-schedule-reset" title="恢复 100%"><i class="bi bi-arrow-counterclockwise"></i></button><button class="btn btn-sm icon-btn" type="button" data-action="zoom-schedule-in" title="放大排班表" ${zoom >= 1.6 ? "disabled" : ""}><i class="bi bi-zoom-in"></i></button></div><label class="form-check form-switch admin-support-switch" title="切换后会按当前模式重新排班"><input class="form-check-input" type="checkbox" data-action="toggle-admin-support-mode" ${state.settings.adminSupportEnabled ? "checked" : ""}><span class="form-check-label">是否启用行政支援模式</span></label><span class="small text-secondary">${escapeHtml(date)}</span></div></section>
-    ${renderDutyRoster(state, date)}
     <section class="schedule-workspace">
       <aside class="staff-palette"><div class="staff-palette-section"><div class="staff-palette-head"><strong>常规人员</strong><span>${regularStaff.filter((person) => person.status === "正常").length} 人可用</span></div>
         <div class="staff-palette-list">${regularStaff.map((person) => staffPaletteItem(person, false)).join("")}</div></div>
@@ -135,7 +134,9 @@ export function renderSchedule(
           <tbody>${primaryRows}${auxiliaryDivider}${bottomRows}</tbody>
         </table>
       </div>
+      ${renderDutyRosterSummary(state, date)}
     </section>
+    ${renderDutyRosterDetails(state, date)}
     <section class="workspace-section schedule-feedback"><div class="section-heading"><div><h3>排班反馈</h3><span>${escapeHtml(date)} · 自动核对当前结果与最近工作日归档</span></div></div><div class="schedule-feedback-list">
       ${feedback.map((item) => `<div class="schedule-feedback-item is-${item.level}"><i class="bi bi-${feedbackIcon(item.level)}"></i><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.text)}</span></div>`).join("")}
     </div></section>

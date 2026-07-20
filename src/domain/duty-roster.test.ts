@@ -36,13 +36,18 @@ describe("monthly duty roster", () => {
     state.staff = state.staff.filter((person) => person.status === "正常");
     state.staff.forEach((person, index) => {
       person.dutyQualified = true;
-      person.cxPreflightQualified = index < 3;
+      person.cxPreflightQualified = index < 6;
     });
     const stats = getMonthlyDutyRosterStats(state, "2026-07-20");
     const dutyCounts = stats.map((item) => item.dutyDates.length).sort((left, right) => left - right);
+    const cxCounts = stats.filter((item) => item.staff.cxPreflightQualified).map((item) => item.cxPreflightDates.length).sort((left, right) => left - right);
+    const standbyCounts = stats.map((item) => item.standbyDates.length).sort((left, right) => left - right);
     expect(dutyCounts).toEqual([0, ...Array.from({ length: 15 }, () => 1)]);
+    expect(cxCounts).toEqual([2, 2, 2, 3, 3, 3]);
+    expect(Math.max(...standbyCounts) - Math.min(...standbyCounts)).toBeLessThanOrEqual(1);
     const fullMonthStats = getMonthlyDutyRosterStats(state, "2026-08-01");
     expect(fullMonthStats.every((item) => item.dutyDates.length === 1)).toBe(true);
+    expect(fullMonthStats.every((item) => item.standbyDates.length === 2)).toBe(true);
   });
 
   it("rotates a monthly duty shortage instead of always skipping the same person", () => {
@@ -98,7 +103,7 @@ describe("monthly duty roster", () => {
     state.staff = workers;
     workers[3]!.cxPreflightQualified = true;
     state.flights = [
-      { id: "early", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "early", flightNo: "F1", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" },
       { id: "late", flightNo: "F2", startTime: "20:00", endTime: "22:00", bookedPassengers: 100, positions: [], remark: "" }
     ];
     const base = state.positionRules[0]!;

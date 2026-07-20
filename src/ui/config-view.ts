@@ -17,7 +17,7 @@ export function renderConfig(state: AppState): string {
     .filter((group) => group.rules.length);
   return `
     <details class="workspace-section config-collapsible" data-config-section="staff">
-      <summary><span><strong>人员信息</strong><small>${state.staff.length} 人 · ${state.staff.filter((item) => item.staffType === "行政支援").length} 人行政支援 · ${state.staff.filter((item) => item.status !== "正常").length} 人不可用</small></span><i class="bi bi-chevron-down"></i></summary>
+      <summary><span><strong>人员信息</strong><small>${state.staff.length} 人 · ${state.staff.filter((item) => item.staffType === "常规" && item.dutyQualified).length} 人值班资质 · ${state.staff.filter((item) => item.staffType === "行政支援").length} 人行政支援 · ${state.staff.filter((item) => item.status !== "正常").length} 人不可用</small></span><i class="bi bi-chevron-down"></i></summary>
       <div class="config-collapsible-content"><div class="config-collapsible-toolbar"><button class="btn btn-outline-secondary" type="button" data-action="import-config"><i class="bi bi-file-earmark-arrow-up me-2"></i>导入配置模板</button><a class="btn btn-outline-secondary" href="./template/排班工具配置模板.xlsx" download><i class="bi bi-download me-2"></i>下载模板</a><button class="btn btn-primary" type="button" data-action="add-staff"><i class="bi bi-person-plus me-2"></i>新增人员</button></div>
       <div class="table-responsive"><table class="table align-middle data-table"><thead><tr><th>编号</th><th>姓名</th><th>人员类型</th><th>CX航前资质</th><th>值班资质</th><th>夜班</th><th>状态</th><th>备注</th><th class="action-col"><span class="visually-hidden">操作</span></th></tr></thead><tbody>
         ${state.staff.map((person) => `<tr>

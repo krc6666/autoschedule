@@ -167,6 +167,9 @@ export function createDefaultState(): AppState {
       nextDayLateMaxFatigue: 2,
       lateShiftRecoveryMode: "prefer",
       dutyFatiguePoints: 12,
+      workloadBalanceEnabled: true,
+      maxWorkHoursDifference: 2,
+      maxTodayFatigueDifference: 4,
       positionTransitionPolicies: [{
         id: "transition-cx931-tr121-h02",
         name: "TR121 H02 准备保护",

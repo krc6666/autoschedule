@@ -56,17 +56,22 @@ function rotateStaff(pool: Staff[], start: number): Staff[] {
   return [...pool.slice(offset), ...pool.slice(0, offset)];
 }
 
-function assignDutyRounds(dates: string[], dutyPool: Staff[], rotationStart: number): Array<string | null> {
-  const dutyByDate: Array<string | null> = dates.map(() => null);
-  const counts = new Map(dutyPool.map((person) => [person.id, 0]));
+function assignSingleSlotRounds(
+  dates: string[],
+  pool: Staff[],
+  rotationStart: number,
+  excludedStaffByDate: Array<string | null>
+): Array<string | null> {
+  const assignmentsByDate: Array<string | null> = dates.map(() => null);
+  const counts = new Map(pool.map((person) => [person.id, 0]));
   const remainingDates = new Set(dates.map((_, index) => index));
 
   for (let round = 1; remainingDates.size && round <= dates.length + 1; round += 1) {
-    const candidates = rotateStaff(dutyPool, rotationStart + round - 1).filter((person) => (counts.get(person.id) ?? 0) < round);
+    const candidates = rotateStaff(pool, rotationStart + round - 1).filter((person) => (counts.get(person.id) ?? 0) < round);
     const matchedByDate = new Map<number, string>();
     const tryAssign = (staffId: string, visitedDates: Set<number>): boolean => {
       for (const dateIndex of remainingDates) {
-        if (visitedDates.has(dateIndex)) continue;
+        if (excludedStaffByDate[dateIndex] === staffId || visitedDates.has(dateIndex)) continue;
         visitedDates.add(dateIndex);
         const current = matchedByDate.get(dateIndex);
         if (!current || tryAssign(current, visitedDates)) {
@@ -79,19 +84,12 @@ function assignDutyRounds(dates: string[], dutyPool: Staff[], rotationStart: num
     candidates.forEach((person) => { tryAssign(person.id, new Set()); });
     if (!matchedByDate.size) continue;
     matchedByDate.forEach((staffId, dateIndex) => {
-      dutyByDate[dateIndex] = staffId;
+      assignmentsByDate[dateIndex] = staffId;
       counts.set(staffId, (counts.get(staffId) ?? 0) + 1);
       remainingDates.delete(dateIndex);
     });
   }
-  return dutyByDate;
-}
-
-function assignCxAfterDuty(dates: string[], dutyByDate: Array<string | null>, cxPool: Staff[], rotationStart: number): Array<string | null> {
-  return dates.map((_, ordinal) => {
-    const rotated = rotateStaff(cxPool, rotationStart + ordinal);
-    return rotated.find((person) => person.id !== dutyByDate[ordinal])?.id ?? null;
-  });
+  return assignmentsByDate;
 }
 
 function assignStandbyRounds(
@@ -148,8 +146,8 @@ function defaultMonthlyDutyRoster(state: AppState, date: string): DutyRosterAssi
   const dutyRotationStart = dutyPool.length ? rotationSeed % dutyPool.length : 0;
   const cxRotationStart = cxPool.length ? rotationSeed % cxPool.length : 0;
   const standbyRotationStart = regular.length ? (rotationSeed * 2) % regular.length : 0;
-  const dutyByDate = assignDutyRounds(dates, dutyPool, dutyRotationStart);
-  const cxByDate = assignCxAfterDuty(dates, dutyByDate, cxPool, cxRotationStart);
+  const dutyByDate = assignSingleSlotRounds(dates, dutyPool, dutyRotationStart, dates.map(() => null));
+  const cxByDate = assignSingleSlotRounds(dates, cxPool, cxRotationStart, dutyByDate);
   const standbyByDate = assignStandbyRounds(dates, cxByDate, dutyByDate, regular, standbyRotationStart);
   return dates.map((item, ordinal) => {
     const cxPreflightStaffId = cxByDate[ordinal] ?? null;

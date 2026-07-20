@@ -9,5 +9,7 @@ describe("application shell", () => {
     expect(html).toContain('data-nav="policy"');
     expect(html.indexOf('data-nav="schedule"')).toBeLessThan(html.indexOf('data-nav="policy"'));
     expect(html.indexOf('data-nav="policy"')).toBeLessThan(html.indexOf('data-nav="history"'));
+    expect(html).toContain('data-nav="policy" title="规则"');
+    expect(html).not.toContain('title="策略"');
   });
 });

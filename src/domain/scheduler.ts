@@ -3,6 +3,7 @@ import { createId } from "../utils";
 import { getDutyRosterForDate } from "./duty-roster";
 import { historyFatigue, recentHistory } from "./fatigue";
 import { durationHours, intervalsOverlap, isNightInterval, timeToMinutes } from "./time";
+import { analyzeWorkloadPressure, workloadBalanceCost } from "./workload-balance";
 
 export function isAuxiliaryCategory(category: PositionRule["category"] | undefined): boolean {
   return category === "行政支援";
@@ -229,25 +230,60 @@ export function dutyLatePositionPriority(position: string, remark: string): numb
   return 4;
 }
 
+export const DUTY_MORNING_CUTOFF = "08:30";
+
+export function isDutyMorningFlight(target: Pick<Flight, "startTime">, state: AppState): boolean {
+  const start = timeToMinutes(target.startTime);
+  const morningStart = timeToMinutes(state.settings.nightEnd);
+  const cutoff = timeToMinutes(DUTY_MORNING_CUTOFF);
+  return [start, morningStart, cutoff].every(Number.isFinite) && start >= morningStart && start <= cutoff;
+}
+
 function operationalStartMinutes(startTime: string, state: AppState): number {
   const start = timeToMinutes(startTime);
   const nightEnd = timeToMinutes(state.settings.nightEnd);
   return start < nightEnd ? start + 24 * 60 : start;
 }
 
-function preferredDutyTask(state: AppState, date: string, tasks: AssignmentTask[]): AssignmentTask | undefined {
+function preferredDutyLateTask(state: AppState, date: string, tasks: AssignmentTask[]): AssignmentTask | undefined {
   const dutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;
   if (!dutyStaffId || !tasks.length) return undefined;
-  const latestStart = Math.max(...tasks.map((task) => operationalStartMinutes(task.flight.startTime, state)));
-  return tasks
-    .filter((task) => operationalStartMinutes(task.flight.startTime, state) === latestStart)
-    .filter((task) => eligibleStaffForRule(state, task.flight, task.rule).some((person) => person.id === dutyStaffId))
-    .sort((left, right) => dutyLatePositionPriority(left.rule.name, left.rule.remark) - dutyLatePositionPriority(right.rule.name, right.rule.remark))[0];
+  const latestStarts = [...new Set(state.flights.map((flight) => operationalStartMinutes(flight.startTime, state)))]
+    .sort((left, right) => right - left)
+    .slice(0, 2);
+  for (const start of latestStarts) {
+    const target = tasks
+      .filter((task) => operationalStartMinutes(task.flight.startTime, state) === start)
+      .filter((task) => dutyLatePositionPriority(task.rule.name, task.rule.remark) < 4)
+      .filter((task) => durationHours(task.flight.startTime, task.flight.endTime) <= state.settings.maxDailyHours)
+      .filter((task) => eligibleStaffForRule(state, task.flight, task.rule).some((person) => person.id === dutyStaffId))
+      .filter((task) => state.settings.positionRotationMode !== "forbid"
+        || positionRotationCost(state, dutyStaffId, task.flight.flightNo, task.rule.name, date) === 0)
+      .filter((task) => state.settings.lateShiftRecoveryMode !== "forbid"
+        || lateShiftRecoveryRisk(state, dutyStaffId, task.flight, task.rule.fatiguePoints, date).excess === 0)
+      .sort((left, right) => dutyLatePositionPriority(left.rule.name, left.rule.remark)
+        - dutyLatePositionPriority(right.rule.name, right.rule.remark))[0];
+    if (target) return target;
+  }
+  return undefined;
 }
 
-function dutyAssignmentCost(staffId: string, taskKey: string, dutyStaffId: string | null, preferredTaskKey: string | null): number {
-  if (!dutyStaffId || !preferredTaskKey || staffId !== dutyStaffId) return 0;
-  return taskKey === preferredTaskKey ? -1 : 1;
+function preferredDutyMorningTask(state: AppState, date: string, tasks: AssignmentTask[]): AssignmentTask | undefined {
+  const dutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;
+  if (!dutyStaffId) return undefined;
+  return tasks
+    .filter((task) => isDutyMorningFlight(task.flight, state))
+    .filter((task) => durationHours(task.flight.startTime, task.flight.endTime) <= state.settings.maxDailyHours)
+    .filter((task) => eligibleStaffForRule(state, task.flight, task.rule).some((person) => person.id === dutyStaffId))
+    .filter((task) => state.settings.positionRotationMode !== "forbid"
+      || positionRotationCost(state, dutyStaffId, task.flight.flightNo, task.rule.name, date) === 0)
+    .sort((left, right) => timeToMinutes(right.flight.startTime) - timeToMinutes(left.flight.startTime)
+      || left.rule.fatiguePoints - right.rule.fatiguePoints)[0];
+}
+
+function dutyAssignmentCost(staffId: string, taskKey: string, dutyStaffId: string | null, targetTaskKeys: ReadonlySet<string>): number {
+  if (!dutyStaffId || !targetTaskKeys.size || staffId !== dutyStaffId) return 0;
+  return targetTaskKeys.has(taskKey) ? -1 : 1;
 }
 
 function eligibleStaffForRule(state: AppState, flight: Flight, rule: PositionRule): Staff[] {
@@ -324,8 +360,11 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
     .map((rule) => ({ key: `${flight.id}:${rule.id}`, flight, rule })));
   const eligibleStaffIds = new Map(tasks.map((task) => [task.key, new Set(eligibleStaffForRule(state, task.flight, task.rule).map((person) => person.id))]));
   const eligibleCounts = new Map(tasks.map((task) => [task.key, eligibleStaffIds.get(task.key)?.size ?? 0]));
+  const workloadPressure = analyzeWorkloadPressure(state);
   const dutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;
-  const preferredDutyTaskKey = preferredDutyTask(state, date, tasks)?.key ?? null;
+  const preferredDutyMorningTaskKey = preferredDutyMorningTask(state, date, tasks)?.key ?? null;
+  const preferredDutyLateTaskKey = preferredDutyLateTask(state, date, tasks)?.key ?? null;
+  const dutyTargetTaskKeys = new Set([preferredDutyMorningTaskKey, preferredDutyLateTaskKey].filter((key): key is string => Boolean(key)));
   const processedTasks = new Set<string>();
 
   for (const flight of flights) {
@@ -336,7 +375,7 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
       .sort((left, right) => {
         const leftKey = `${flight.id}:${left.id}`;
         const rightKey = `${flight.id}:${right.id}`;
-        if (leftKey === preferredDutyTaskKey || rightKey === preferredDutyTaskKey) return leftKey === preferredDutyTaskKey ? -1 : 1;
+        if (dutyTargetTaskKeys.has(leftKey) || dutyTargetTaskKeys.has(rightKey)) return dutyTargetTaskKeys.has(leftKey) ? -1 : 1;
         const leftDeferred = left.manual || (left.minPassengers ?? 0) > flight.bookedPassengers;
         const rightDeferred = right.manual || (right.minPassengers ?? 0) > flight.bookedPassengers;
         if (leftDeferred !== rightDeferred) return leftDeferred ? 1 : -1;
@@ -349,7 +388,8 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
     const flightAssignmentStart = assignments.length;
     for (const rule of processingRules) {
       const position = rule.name;
-      processedTasks.add(`${flight.id}:${rule.id}`);
+      const taskKey = `${flight.id}:${rule.id}`;
+      processedTasks.add(taskKey);
       if (rule.category === "行政支援") {
         assignments.push({ ...makeUnfilled(flight, position, rule), status: "manual" });
         continue;
@@ -395,7 +435,11 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
         assignments.push(makeUnfilled(flight, position, rule));
         continue;
       }
+      const reserveDutyForTarget = Boolean(dutyStaffId
+        && !dutyTargetTaskKeys.has(taskKey)
+        && [...dutyTargetTaskKeys].some((targetKey) => !processedTasks.has(targetKey)));
       let candidates = eligibleStaffForRule(state, flight, rule)
+        .filter((person) => !reserveDutyForTarget || person.id !== dutyStaffId)
         .filter((person) => staffConflicts(assignments, person.id, flight).every((assignment) => canReleaseForFlight(assignment, flight, state)))
         .filter((person) => projectedAssignedHours(assignments, person.id, flight, state) + hours <= state.settings.maxDailyHours);
       if (state.settings.highLoadTransitionMode === "forbid") {
@@ -411,7 +455,9 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
       if (state.settings.lateShiftRecoveryMode === "forbid") {
         candidates = candidates.filter((person) => lateShiftRecoveryRisk(state, person.id, flight, rule.fatiguePoints, date).excess === 0);
       }
-      candidates.sort((left, right) => positionTransitionCost(assignments, left.id, flight.flightNo, rule.name, flight.startTime, state, "prefer")
+      candidates.sort((left, right) => dutyAssignmentCost(left.id, taskKey, dutyStaffId, dutyTargetTaskKeys)
+        - dutyAssignmentCost(right.id, taskKey, dutyStaffId, dutyTargetTaskKeys)
+        || positionTransitionCost(assignments, left.id, flight.flightNo, rule.name, flight.startTime, state, "prefer")
         - positionTransitionCost(assignments, right.id, flight.flightNo, rule.name, flight.startTime, state, "prefer")
         || (state.settings.lateShiftRecoveryMode === "prefer"
           ? lateShiftRecoveryCost(state, left.id, flight, rule.fatiguePoints, date)
@@ -429,11 +475,11 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
         ? Number(hasHighLoadTransition(assignments, left.id, flight.startTime, rule.fatiguePoints, rule.remark, state))
           - Number(hasHighLoadTransition(assignments, right.id, flight.startTime, rule.fatiguePoints, rule.remark, state))
         : 0)
-          || dutyAssignmentCost(left.id, `${flight.id}:${rule.id}`, dutyStaffId, preferredDutyTaskKey)
-            - dutyAssignmentCost(right.id, `${flight.id}:${rule.id}`, dutyStaffId, preferredDutyTaskKey)
           || Number(assignments.some((item) => item.staffId === left.id && item.workHours > 0))
             - Number(assignments.some((item) => item.staffId === right.id && item.workHours > 0))
           || reservationCost(left, flight, tasks, processedTasks, eligibleCounts, eligibleStaffIds) - reservationCost(right, flight, tasks, processedTasks, eligibleCounts, eligibleStaffIds)
+          || workloadBalanceCost(left, assignments, state, hours, dutyStaffId, date, workloadPressure)
+            - workloadBalanceCost(right, assignments, state, hours, dutyStaffId, date, workloadPressure)
           || candidateScore(left, assignments, state, date) - candidateScore(right, assignments, state, date)
           || left.id.localeCompare(right.id, undefined, { numeric: true }));
 

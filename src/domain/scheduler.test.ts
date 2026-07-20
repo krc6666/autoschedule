@@ -562,6 +562,110 @@ describe("scheduler domain", () => {
     expect(assignments.find((item) => item.positionRuleId === "late-first")?.staffId).toBe(dutyStaffId);
   });
 
+  it("keeps the duty person off earlier high-load work so they cover the latest noted position", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 6);
+    state.staff.forEach((person) => { person.dutyQualified = true; });
+    state.staff[5]!.cxPreflightQualified = true;
+    const dutyStaffId = getDutyRosterForDate(state, "2026-07-20").dutyStaffId!;
+    const other = state.staff.find((person) => person.id !== dutyStaffId)!;
+    state.flights = [
+      { id: "early", flightNo: "EARLY", startTime: "17:00", endTime: "19:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "late", flightNo: "LATE", startTime: "21:00", endTime: "23:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "early-control", flightNo: "EARLY", name: "G18", remark: "控制", fatiguePoints: 5, qualifiedStaffIds: [dutyStaffId, other.id] },
+      { ...base, id: "late-first", flightNo: "LATE", name: "H02", remark: "一号", fatiguePoints: 5, qualifiedStaffIds: [dutyStaffId, other.id] }
+    ];
+    state.history = [{
+      id: "other-history", date: "2026-07-18", flightNo: "EARLY", position: "G18", staffId: other.id, staffName: other.name,
+      startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 50, remark: ""
+    }];
+
+    const assignments = generateSchedule(state, "2026-07-20").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "early-control")?.staffId).toBe(other.id);
+    expect(assignments.find((item) => item.positionRuleId === "late-first")?.staffId).toBe(dutyStaffId);
+  });
+
+  it("falls back to a noted position on the second-latest flight when the latest has no eligible target", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 6);
+    state.staff.forEach((person) => { person.dutyQualified = true; });
+    state.staff[5]!.cxPreflightQualified = true;
+    const dutyStaffId = getDutyRosterForDate(state, "2026-07-20").dutyStaffId!;
+    const other = state.staff.find((person) => person.id !== dutyStaffId)!;
+    state.flights = [
+      { id: "early", flightNo: "EARLY", startTime: "17:00", endTime: "19:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "second-latest", flightNo: "SECOND", startTime: "20:00", endTime: "22:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "latest", flightNo: "LATEST", startTime: "22:30", endTime: "00:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "early-position", flightNo: "EARLY", name: "P1", remark: "", fatiguePoints: 1, qualifiedStaffIds: [dutyStaffId, other.id] },
+      { ...base, id: "second-declare", flightNo: "SECOND", name: "G17", remark: "申报", fatiguePoints: 4, qualifiedStaffIds: [dutyStaffId, other.id] },
+      { ...base, id: "latest-first", flightNo: "LATEST", name: "H02", remark: "一号", fatiguePoints: 5, qualifiedStaffIds: [other.id] }
+    ];
+
+    const assignments = generateSchedule(state, "2026-07-20").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "second-declare")?.staffId).toBe(dutyStaffId);
+    expect(assignments.find((item) => item.positionRuleId === "latest-first")?.staffId).toBe(other.id);
+  });
+
+  it("assigns the duty person to both a flight by 08:30 and the protected late position", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 6);
+    state.staff.forEach((person) => { person.dutyQualified = true; });
+    state.staff[5]!.cxPreflightQualified = true;
+    const dutyStaffId = getDutyRosterForDate(state, "2026-07-20").dutyStaffId!;
+    const qualifiedStaffIds = state.staff.map((person) => person.id);
+    state.flights = [
+      { id: "morning", flightNo: "MORNING", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "middle", flightNo: "MIDDLE", startTime: "15:00", endTime: "17:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "late", flightNo: "LATE", startTime: "21:00", endTime: "23:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "morning-position", flightNo: "MORNING", name: "G12", remark: "", fatiguePoints: 1, qualifiedStaffIds },
+      { ...base, id: "middle-position", flightNo: "MIDDLE", name: "G13", remark: "", fatiguePoints: 1, qualifiedStaffIds },
+      { ...base, id: "late-first", flightNo: "LATE", name: "H02", remark: "一号", fatiguePoints: 5, qualifiedStaffIds }
+    ];
+
+    const dutyAssignments = generateSchedule(state, "2026-07-20").assignments.filter((item) => item.staffId === dutyStaffId);
+    expect(dutyAssignments.some((item) => item.flightNo === "MORNING")).toBe(true);
+    expect(dutyAssignments.some((item) => item.positionRuleId === "late-first")).toBe(true);
+    expect(dutyAssignments.some((item) => item.flightNo === "MIDDLE")).toBe(false);
+  });
+
+  it("keeps both work-hour and daily-fatigue differences within configured targets when feasible", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 2);
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.settings.workloadBalanceEnabled = true;
+    state.settings.maxWorkHoursDifference = 2;
+    state.settings.maxTodayFatigueDifference = 4;
+    state.flights = [
+      { id: "long", flightNo: "LONG", startTime: "08:00", endTime: "14:00", bookedPassengers: 100, positions: [], remark: "" },
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `short-${index}`, flightNo: `SHORT${index}`, startTime: `${14 + index}:00`, endTime: `${15 + index}:00`, bookedPassengers: 100, positions: [], remark: ""
+      }))
+    ];
+    const base = state.positionRules[0]!;
+    const qualifiedStaffIds = state.staff.map((person) => person.id);
+    state.positionRules = state.flights.map((flight, index) => ({
+      ...base, id: `balance-${index}`, flightNo: flight.flightNo, name: `P${index}`, remark: "",
+      fatiguePoints: index === 0 ? 0 : 1, qualifiedStaffIds
+    }));
+
+    const assignments = generateSchedule(state, "2026-07-20").assignments;
+    const loads = state.staff.map((person) => ({
+      hours: assignments.filter((item) => item.staffId === person.id).reduce((sum, item) => sum + item.workHours, 0),
+      fatigue: assignments.filter((item) => item.staffId === person.id).reduce((sum, item) => sum + item.fatiguePoints, 0)
+    }));
+    expect(Math.max(...loads.map((item) => item.hours)) - Math.min(...loads.map((item) => item.hours))).toBeLessThanOrEqual(2);
+    expect(Math.max(...loads.map((item) => item.fatigue)) - Math.min(...loads.map((item) => item.fatigue))).toBeLessThanOrEqual(4);
+  });
+
   it("uses an archived day to rotate the lower-load worker into the next duty day", () => {
     const state = createDefaultState();
     state.settings.dutyFatiguePoints = 0;

@@ -51,6 +51,9 @@ describe("state persistence", () => {
     delete legacy.settings.positionRotationLookbackDays;
     delete legacy.settings.positionRotationMode;
     delete legacy.settings.dutyFatiguePoints;
+    delete legacy.settings.workloadBalanceEnabled;
+    delete legacy.settings.maxWorkHoursDifference;
+    delete legacy.settings.maxTodayFatigueDifference;
     delete legacy.settings.lateShiftRecoveryEnabled;
     delete legacy.settings.lateShiftStartTime;
     delete legacy.settings.lateShiftLatestWindowMinutes;
@@ -76,6 +79,9 @@ describe("state persistence", () => {
     expect(loaded.settings.positionRotationLookbackDays).toBe(3);
     expect(loaded.settings.positionRotationMode).toBe("prefer");
     expect(loaded.settings.dutyFatiguePoints).toBe(12);
+    expect(loaded.settings.workloadBalanceEnabled).toBe(true);
+    expect(loaded.settings.maxWorkHoursDifference).toBe(2);
+    expect(loaded.settings.maxTodayFatigueDifference).toBe(4);
     expect(loaded.settings.lateShiftRecoveryEnabled).toBe(true);
     expect(loaded.settings.lateShiftStartTime).toBe("20:00");
     expect(loaded.settings.lateShiftLatestWindowMinutes).toBe(180);

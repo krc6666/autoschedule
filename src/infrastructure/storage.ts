@@ -61,6 +61,11 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     next.settings.lateShiftRecoveryMode = next.settings.lateShiftRecoveryMode === "forbid" ? "forbid" : "prefer";
     const dutyFatiguePoints = Number(next.settings.dutyFatiguePoints);
     next.settings.dutyFatiguePoints = Math.min(50, Math.max(0, Number.isFinite(dutyFatiguePoints) ? dutyFatiguePoints : fallback.settings.dutyFatiguePoints));
+    next.settings.workloadBalanceEnabled = next.settings.workloadBalanceEnabled !== false;
+    const maxWorkHoursDifference = Number(next.settings.maxWorkHoursDifference);
+    next.settings.maxWorkHoursDifference = Math.min(24, Math.max(0, Number.isFinite(maxWorkHoursDifference) ? maxWorkHoursDifference : fallback.settings.maxWorkHoursDifference));
+    const maxTodayFatigueDifference = Number(next.settings.maxTodayFatigueDifference);
+    next.settings.maxTodayFatigueDifference = Math.min(100, Math.max(0, Number.isFinite(maxTodayFatigueDifference) ? maxTodayFatigueDifference : fallback.settings.maxTodayFatigueDifference));
     next.staff = next.staff.map((person) => ({
       ...person,
       staffType: person.staffType === "行政支援" ? "行政支援" : "常规",

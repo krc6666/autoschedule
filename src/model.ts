@@ -117,6 +117,9 @@ export interface ScheduleSettings {
   nextDayLateMaxFatigue: number;
   lateShiftRecoveryMode: "prefer" | "forbid";
   dutyFatiguePoints: number;
+  workloadBalanceEnabled: boolean;
+  maxWorkHoursDifference: number;
+  maxTodayFatigueDifference: number;
 }
 
 export interface AppState {

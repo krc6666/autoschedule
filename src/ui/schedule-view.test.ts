@@ -26,6 +26,9 @@ describe("schedule view", () => {
     expect(html).toContain("data-action=\"zoom-schedule-in\"");
     expect(html).toContain("归档并排后天");
     expect(html).toContain("排班反馈");
+    expect(html).toContain("航班安排反馈");
+    expect(html).toContain("规则执行反馈");
+    expect(html).toContain("负荷均衡");
     expect(html).toContain('class="schedule-feedback-list"');
     expect(html).toContain("人员覆盖");
     expect(html).toContain("航班衔接");
@@ -60,6 +63,8 @@ describe("schedule view", () => {
     expect(html).toContain("本月值班");
     expect(html).toContain("本月备勤");
     expect(html).toContain("首轮覆盖");
+    expect(html).toContain("航前差值");
+    expect(html).toContain("备勤差值");
     expect(html).toContain("值班保障");
     expect(html).toContain("计划疲劳");
     expect(html).toContain(`本次值班 +${state.settings.dutyFatiguePoints} 疲劳点`);
@@ -67,6 +72,8 @@ describe("schedule view", () => {
     expect(html).toContain("duty-roster-table");
     expect(html).toContain('data-entity="duty-roster"');
     expect(html).toContain('data-duty-slot="standby-1"');
+    expect(html).toMatch(/<section class="schedule-workspace">[\s\S]*?class="[^"]*schedule-board[^"]*"[\s\S]*?class="duty-roster-summary"[\s\S]*?<\/section>/);
+    expect(html.indexOf('class="duty-roster-summary"')).toBeLessThan(html.indexOf("duty-roster-details-section"));
   });
 
   it("keeps a sole CX-qualified worker in the first duty round", () => {

@@ -37,16 +37,17 @@ function ruleLedgerRows(state: AppState): string {
     ["R07", "岗位生成", "运力阈值", "低于启用旅客人数时岗位保留但不自动派人", "岗位规则 / 启用旅客人数"],
     ["R08", "分配优先级", "稀缺岗位优先", "先处理合格人数更少的岗位，并为后续重叠稀缺岗位预留人员", "岗位资质"],
     ["R09", "分配优先级", "在岗人员全覆盖", "岗位与资质允许时，优先安排当天尚未获得实际工时的常规人员", "人员状态 / 岗位资质"],
-    ["R10", "月度轮值", "值班优先", `四个人选互不重复；值班先完成全员第1轮再进入第2轮，CX航前和备勤不参与次数公平；值班计 ${state.settings.dutyFatiguePoints} 点并优先最晚航班晚撤岗位`, "人员信息 / 排班页轮值表"],
-    ["R11", "分配优先级", "特殊岗位衔接", `${state.settings.positionTransitionPolicies.filter((item) => item.enabled).length} 条启用，按前序晚撤岗位和最小间隔判断`, "策略 / 岗位衔接"],
-    ["R12", "分配优先级", "高负荷衔接保护", state.settings.highLoadProtectionEnabled ? `疲劳点 ≥ ${state.settings.highLoadFatigueThreshold} 或带备注，恢复 ${state.settings.highLoadRecoveryMinutes} 分钟` : "已停用", "策略"],
-    ["R13", "分配优先级", "滚动负荷上限", state.settings.rollingLoadProtectionEnabled ? `${state.settings.rollingLoadWindowMinutes} 分钟内投放新岗位后不超过 ${state.settings.rollingLoadMaxFatigue} 疲劳点` : "已停用", "策略"],
-    ["R14", "分配优先级", "同岗轮换", state.settings.positionRotationEnabled ? `回看 ${state.settings.positionRotationLookbackDays} 天，同航班同岗位优先更换合格人员` : "已停用", "策略 / 历史"],
-    ["R15", "分配优先级", "跨工作日晚班减负", state.settings.lateShiftRecoveryEnabled ? `最近工作日最后一批晚班高负荷人员，下个工作日晚班岗位负荷优先不超过 ${state.settings.nextDayLateMaxFatigue} 点` : "已停用", "策略 / 历史"],
-    ["R16", "分配优先级", "疲劳均衡", `历史 ${state.settings.historyWindowDays} 天 + 当日岗位疲劳 + 连续工作惩罚`, "排班约束 / 历史"],
-    ["R17", "岗位复用", "引导岗位", "按显示顺序从下向上复用同航班常规岗位人员，不重复累计工时", "岗位分类 / 岗位顺序"],
-    ["R18", "岗位衔接", "分流提前撤岗", "下午及晚间按岗位提前撤岗分钟释放人员，早班不适用", "岗位规则 / 提前撤岗"],
-    ["R19", "稳定排序", "同分人员顺序", "策略风险、在岗覆盖、稀缺预留和疲劳相同时按人员编号稳定排序", "人员编号"]
+    ["R10", "月度轮值", "三级均衡与值班双班", `四个人选互不重复；值班计 ${state.settings.dutyFatiguePoints} 点，必须承担08:30前早班，并锁定最晚或倒数第二晚航班的一号、督导、申报、送资料岗位`, "规则 / 排班页轮值表"],
+    ["R11", "分配优先级", "当日负荷均衡", state.settings.workloadBalanceEnabled ? `正常常规人员工时差尽量不超过 ${state.settings.maxWorkHoursDifference} 小时，当日疲劳差尽量不超过 ${state.settings.maxTodayFatigueDifference} 点` : "已停用", "规则 / 负荷均衡"],
+    ["R12", "分配优先级", "特殊岗位衔接", `${state.settings.positionTransitionPolicies.filter((item) => item.enabled).length} 条启用，按前序晚撤岗位和最小间隔判断`, "规则 / 岗位衔接"],
+    ["R13", "分配优先级", "高负荷衔接保护", state.settings.highLoadProtectionEnabled ? `疲劳点 ≥ ${state.settings.highLoadFatigueThreshold} 或带备注，恢复 ${state.settings.highLoadRecoveryMinutes} 分钟` : "已停用", "规则"],
+    ["R14", "分配优先级", "滚动负荷上限", state.settings.rollingLoadProtectionEnabled ? `${state.settings.rollingLoadWindowMinutes} 分钟内投放新岗位后不超过 ${state.settings.rollingLoadMaxFatigue} 疲劳点` : "已停用", "规则"],
+    ["R15", "分配优先级", "同岗轮换", state.settings.positionRotationEnabled ? `回看 ${state.settings.positionRotationLookbackDays} 天，同航班同岗位优先更换合格人员` : "已停用", "规则 / 历史"],
+    ["R16", "分配优先级", "跨工作日晚班减负", state.settings.lateShiftRecoveryEnabled ? `最近工作日最后一批晚班高负荷人员，下个工作日晚班岗位负荷优先不超过 ${state.settings.nextDayLateMaxFatigue} 点` : "已停用", "规则 / 历史"],
+    ["R17", "分配优先级", "历史疲劳均衡", `历史 ${state.settings.historyWindowDays} 天 + 当日岗位疲劳 + 连续工作惩罚`, "排班约束 / 历史"],
+    ["R18", "岗位复用", "引导岗位", "按显示顺序从下向上复用同航班常规岗位人员，不重复累计工时", "岗位分类 / 岗位顺序"],
+    ["R19", "岗位衔接", "分流提前撤岗", "下午及晚间按岗位提前撤岗分钟释放人员，早班不适用", "岗位规则 / 提前撤岗"],
+    ["R20", "稳定排序", "同分人员顺序", "规则风险、在岗覆盖、稀缺预留和疲劳相同时按人员编号稳定排序", "人员编号"]
   ];
   return rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join("")}</tr>`).join("");
 }
@@ -54,7 +55,31 @@ function ruleLedgerRows(state: AppState): string {
 export function renderSchedulePolicy(state: AppState): string {
   return `
     <section class="workspace-section schedule-policy-section">
-      <div class="section-heading"><div><h3>排班策略</h3><span>${state.settings.positionTransitionPolicies.length + 4} 条可编辑规则 · 点击规则可展开编辑</span></div><button class="btn btn-primary" type="button" data-action="save-schedule-policy"><i class="bi bi-check2-circle me-2"></i>保存并应用</button></div>
+      <div class="section-heading"><div><h3>排班规则</h3><span>${state.settings.positionTransitionPolicies.length + 6} 条可编辑规则 · 点击规则可展开编辑</span></div><button class="btn btn-primary" type="button" data-action="save-schedule-policy"><i class="bi bi-check2-circle me-2"></i>保存并应用</button></div>
+
+      <details class="policy-rule-card" data-policy-card="workload-balance">
+        <summary><span><strong>当日工时与疲劳均衡</strong><small>${state.settings.workloadBalanceEnabled ? "已启用" : "已停用"} · 同时控制两个差值</small></span><i class="bi bi-chevron-down"></i></summary>
+        <div class="policy-rule-content">
+          <div class="schedule-policy-controls policy-controls-three">
+            <label class="policy-switch"><span><strong>启用规则</strong><small>优先安排当日负荷较轻的合格人员</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-workload-balance-enabled" type="checkbox" ${state.settings.workloadBalanceEnabled ? "checked" : ""}></span></label>
+            <label class="form-label">最大工时差（小时）<input class="form-control" id="policy-max-work-hours-difference" type="number" min="0" max="24" step="0.5" value="${state.settings.maxWorkHoursDifference}"></label>
+            <label class="form-label">最大当日疲劳差<input class="form-control" id="policy-max-today-fatigue-difference" type="number" min="0" max="100" step="0.5" value="${state.settings.maxTodayFatigueDifference}"></label>
+          </div>
+          <div class="policy-expression"><span>目标</span><strong>工时差 ≤ ${state.settings.maxWorkHoursDifference} 小时</strong><i class="bi bi-plus-lg"></i><strong>当日疲劳差 ≤ ${state.settings.maxTodayFatigueDifference} 点</strong><i class="bi bi-arrow-right"></i><span>资质和时段允许时优先补低负荷人员</span></div>
+        </div>
+      </details>
+
+      <details class="policy-rule-card" data-policy-card="duty-rules">
+        <summary><span><strong>值班任务规则</strong><small>08:30前早班 + 最晚两档晚撤 · 当前 ${state.settings.dutyFatiguePoints} 疲劳点</small></span><i class="bi bi-chevron-down"></i></summary>
+        <div class="policy-rule-content">
+          <div class="schedule-policy-controls policy-controls-three">
+            <label class="form-label">每次值班疲劳点<input class="form-control" id="policy-duty-fatigue-points" type="number" min="0" max="50" step="0.5" value="${state.settings.dutyFatiguePoints}"></label>
+            <div class="policy-switch"><span><strong>08:30前早班</strong><small>值班人员必须承担一班08:30及以前开始的航班</small></span><i class="bi bi-sunrise"></i></div>
+            <div class="policy-switch"><span><strong>指定晚撤岗位</strong><small>最晚或倒数第二晚的一号、督导、申报、送资料</small></span><i class="bi bi-moon-stars"></i></div>
+          </div>
+          <div class="policy-expression"><span>执行</span><strong>先锁定早班实际岗位</strong><i class="bi bi-arrow-right"></i><span>中间岗位为其他人员保留</span><i class="bi bi-arrow-right"></i><strong>再锁定晚撤指定岗位</strong></div>
+        </div>
+      </details>
 
       <details class="policy-rule-card" data-policy-card="high-load">
         <summary><span><strong>高负荷岗位衔接保护</strong><small>${policyState(state.settings.highLoadProtectionEnabled, state.settings.highLoadTransitionMode)} · 同日恢复保护</small></span><i class="bi bi-chevron-down"></i></summary>

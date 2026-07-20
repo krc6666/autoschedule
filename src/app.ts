@@ -395,6 +395,10 @@ export class AutoScheduleApp {
     const lateShiftLatestWindowMinutes = Number(assertElement<HTMLInputElement>("#policy-late-shift-latest-window").value);
     const nextDayLateMaxFatigue = Number(assertElement<HTMLInputElement>("#policy-next-day-late-max-fatigue").value);
     const lateShiftRecoveryMode = assertElement<HTMLSelectElement>("#policy-late-shift-recovery-mode").value === "forbid" ? "forbid" : "prefer";
+    const workloadBalanceEnabled = assertElement<HTMLInputElement>("#policy-workload-balance-enabled").checked;
+    const maxWorkHoursDifference = Number(assertElement<HTMLInputElement>("#policy-max-work-hours-difference").value);
+    const maxTodayFatigueDifference = Number(assertElement<HTMLInputElement>("#policy-max-today-fatigue-difference").value);
+    const dutyFatiguePoints = Number(assertElement<HTMLInputElement>("#policy-duty-fatigue-points").value);
     this.state.settings.highLoadProtectionEnabled = enabled;
     this.state.settings.highLoadFatigueThreshold = Math.min(50, Math.max(0.5, Number.isFinite(threshold) ? threshold : 4));
     this.state.settings.highLoadRecoveryMinutes = Math.min(1440, Math.max(0, Number.isFinite(recoveryMinutes) ? Math.round(recoveryMinutes) : 360));
@@ -412,6 +416,10 @@ export class AutoScheduleApp {
     this.state.settings.lateShiftLatestWindowMinutes = Math.min(720, Math.max(0, Number.isFinite(lateShiftLatestWindowMinutes) ? Math.round(lateShiftLatestWindowMinutes) : 180));
     this.state.settings.nextDayLateMaxFatigue = Math.min(50, Math.max(0, Number.isFinite(nextDayLateMaxFatigue) ? nextDayLateMaxFatigue : 2));
     this.state.settings.lateShiftRecoveryMode = lateShiftRecoveryMode;
+    this.state.settings.workloadBalanceEnabled = workloadBalanceEnabled;
+    this.state.settings.maxWorkHoursDifference = Math.min(24, Math.max(0, Number.isFinite(maxWorkHoursDifference) ? maxWorkHoursDifference : 2));
+    this.state.settings.maxTodayFatigueDifference = Math.min(100, Math.max(0, Number.isFinite(maxTodayFatigueDifference) ? maxTodayFatigueDifference : 4));
+    this.state.settings.dutyFatiguePoints = Math.min(50, Math.max(0, Number.isFinite(dutyFatiguePoints) ? dutyFatiguePoints : 12));
     this.state.settings.positionTransitionPolicies = this.state.settings.positionTransitionPolicies.map((policy) => ({
       ...policy,
       name: normalizeText(policy.name) || "未命名衔接规则",
@@ -428,7 +436,7 @@ export class AutoScheduleApp {
       this.state.assignments = result.assignments;
       this.state.activeScheduleDate = this.scheduleDate;
     }
-    this.commit(regenerate ? "排班策略已保存，当前排班已重新生成" : "排班策略已保存，将用于下次排班");
+    this.commit(regenerate ? "排班规则已保存，当前排班已重新生成" : "排班规则已保存，将用于下次排班");
   }
 
   private addTransitionPolicy(): void {

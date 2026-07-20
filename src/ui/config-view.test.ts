@@ -7,18 +7,25 @@ import { renderSchedulePolicy } from "./schedule-policy-view";
 describe("config view", () => {
   it("keeps scheduling policies out of the base configuration module", () => {
     const html = renderConfig(createDefaultState());
-    expect(html).not.toContain("排班策略");
+    expect(html).not.toContain("排班规则");
     expect(html).toContain('<details class="workspace-section config-collapsible" data-config-section="staff">');
     expect(html).not.toContain('<details class="workspace-section config-collapsible" data-config-section="staff" open');
     expect(html).toContain("CX航前资质");
     expect(html).toContain('data-field="cxPreflightQualified"');
     expect(html).toContain("值班资质");
     expect(html).toContain('data-field="dutyQualified"');
+    expect(html).toMatch(/\d+ 人值班资质/);
   });
 
   it("renders scheduling policies in an independent collapsible module", () => {
     const html = renderSchedulePolicy(createDefaultState());
-    expect(html).toContain("排班策略");
+    expect(html).toContain("排班规则");
+    expect(html).not.toContain("排班策略");
+    expect(html).toContain('id="policy-workload-balance-enabled"');
+    expect(html).toContain('id="policy-max-work-hours-difference"');
+    expect(html).toContain('id="policy-max-today-fatigue-difference"');
+    expect(html).toContain('id="policy-duty-fatigue-points"');
+    expect(html).toContain("08:30前早班");
     expect(html).toContain('id="policy-enabled"');
     expect(html).toContain('id="policy-fatigue-threshold"');
     expect(html).toContain('id="policy-recovery-minutes"');

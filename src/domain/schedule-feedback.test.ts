@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../defaults";
+import { getDutyRosterForDate } from "./duty-roster";
 import { generateSchedule } from "./scheduler";
 import { buildScheduleFeedback } from "./schedule-feedback";
 
@@ -10,10 +11,19 @@ describe("schedule feedback", () => {
     state.assignments = generateSchedule(state, "2026-07-20").assignments;
     const feedback = buildScheduleFeedback(state, "2026-07-20");
     expect(feedback).toHaveLength(6);
-    expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "疲劳分布", "航班衔接", "连续高负荷", "上一工作日晚班", "轮值安排"]);
+    expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "负荷均衡", "航班衔接", "连续高负荷", "上一工作日晚班", "值班与轮值"]);
+    expect(feedback.slice(0, 3).every((item) => item.group === "flight-staff")).toBe(true);
+    expect(feedback.slice(3).every((item) => item.group === "rule-execution")).toBe(true);
+    expect(feedback.every((item) => ["已执行", "需复核", "无基准"].includes(item.status))).toBe(true);
+    expect(feedback.every((item) => item.evidence === item.text && item.evidence.length > 0)).toBe(true);
+    expect(feedback.find((item) => item.key === "previous-late")).toMatchObject({ status: "无基准", group: "rule-execution" });
     expect(feedback.find((item) => item.key === "previous-late")?.text).toContain("暂无最近工作日归档");
     expect(feedback.find((item) => item.key === "duty-roster")?.text).toContain("值班");
     expect(feedback.find((item) => item.key === "duty-roster")?.text).toContain(`+${state.settings.dutyFatiguePoints} 点疲劳`);
+    expect(feedback.find((item) => item.key === "duty-roster")?.text).toContain("08:30前早班");
+    expect(feedback.find((item) => item.key === "fatigue")?.text).toContain("工时差");
+    expect(feedback.find((item) => item.key === "fatigue")?.text).toContain("当日疲劳差");
+    expect(feedback.find((item) => item.key === "coverage")?.text).toContain("相邻航班起飞间隔");
   });
 
   it("identifies tight transitions, repeated high load, uncovered staff, and late-shift overload", () => {
@@ -61,6 +71,7 @@ describe("schedule feedback", () => {
     state.staff[5]!.cxPreflightQualified = true;
     state.flights = [
       { id: "early", flightNo: "EARLY", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "middle", flightNo: "MIDDLE", startTime: "15:00", endTime: "17:00", bookedPassengers: 100, positions: [], remark: "" },
       { id: "late", flightNo: "LATE", startTime: "21:00", endTime: "23:00", bookedPassengers: 100, positions: [], remark: "" }
     ];
     const base = state.positionRules[0]!;
@@ -73,13 +84,38 @@ describe("schedule feedback", () => {
     const feedback = buildScheduleFeedback(state, "2026-07-20").find((item) => item.key === "duty-roster")!;
     expect(feedback.level).toBe("ok");
     expect(feedback.text).toContain("LATE/H02");
-    expect(feedback.text).toContain("符合晚撤岗位优先");
+    expect(feedback.text).toContain("最晚航班");
+    expect(feedback.text).toContain("符合值班晚撤规则");
     const dutyAssignment = state.assignments.find((item) => item.staffId && feedback.text.includes(item.staffName) && item.positionRuleId === "late-first")!;
     dutyAssignment.startTime = "08:00";
     dutyAssignment.endTime = "10:00";
     dutyAssignment.flightNo = "EARLY";
     const abnormal = buildScheduleFeedback(state, "2026-07-20").find((item) => item.key === "duty-roster")!;
     expect(abnormal.level).toBe("attention");
-    expect(abnormal.text).toContain("未进入当日最晚航班");
+    expect(abnormal.text).toContain("未满足值班晚撤规则");
+  });
+
+  it("explains the second-latest fallback when the latest flight has no executable duty target", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 6);
+    state.staff.forEach((person) => { person.dutyQualified = true; });
+    state.staff[5]!.cxPreflightQualified = true;
+    state.flights = [
+      { id: "early", flightNo: "EARLY", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "second", flightNo: "SECOND", startTime: "20:00", endTime: "22:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "latest", flightNo: "LATEST", startTime: "22:30", endTime: "00:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const roster = getDutyRosterForDate(state, "2026-07-20");
+    const duty = state.staff.find((person) => person.id === roster.dutyStaffId)!;
+    state.assignments = [{
+      id: "duty-second", flightId: "second", flightNo: "SECOND", positionRuleId: null, position: "G17",
+      staffId: duty.id, staffName: duty.name, startTime: "20:00", endTime: "22:00", workHours: 2,
+      fatiguePoints: 4, remark: "申报", manualRemark: "", status: "assigned"
+    }];
+
+    const feedback = buildScheduleFeedback(state, "2026-07-20").find((item) => item.key === "duty-roster")!;
+    expect(feedback.text).toContain("倒数第二晚航班 SECOND/G17");
+    expect(feedback.text).toContain("值班晚撤规则第二档位");
+    expect(feedback.text).toContain("符合值班晚撤规则");
   });
 });
