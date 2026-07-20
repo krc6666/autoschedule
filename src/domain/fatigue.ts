@@ -50,12 +50,13 @@ export function buildStaffLoads(
   assignments: Assignment[],
   history: HistoryRecord[],
   date: string,
-  settings: ScheduleSettings
+  settings: ScheduleSettings,
+  extraTodayFatigue: ReadonlyMap<string, number> = new Map()
 ): StaffLoad[] {
   return staff.map((person) => {
     const ownAssignments = assignments.filter((assignment) => assignment.staffId === person.id);
     const workHours = ownAssignments.reduce((sum, assignment) => sum + assignment.workHours, 0);
-    const todayFatigue = ownAssignments.reduce((sum, assignment) => sum + assignment.fatiguePoints, 0);
+    const todayFatigue = ownAssignments.reduce((sum, assignment) => sum + assignment.fatiguePoints, 0) + (extraTodayFatigue.get(person.id) ?? 0);
     const previousFatigue = historyFatigue(history, person.id, date, settings);
     return {
       staff: person,

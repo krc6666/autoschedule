@@ -44,15 +44,22 @@ function parseStaff(workbook: XLSX.WorkBook): Staff[] | undefined {
   const nightIndex = headerIndex(header, ["夜班"], 2);
   const statusIndex = headerIndex(header, ["状态"], 3);
   const remarkIndex = headerIndex(header, ["备注"], 4);
+  const staffTypeIndex = headerIndex(header, ["人员类型", "人员分类", "类型"], 5);
+  const cxPreflightIndex = headerIndex(header, ["CX航前资质", "CX航前", "航前资质"], 6);
+  const dutyIndex = header.findIndex((cell) => ["值班资质", "值班人员资质"].some((candidate) => normalizeText(cell).includes(candidate)));
   return data.slice(1).flatMap((row) => {
     const id = normalizeText(row[idIndex]);
     const name = normalizeText(row[nameIndex]);
     if (!id || !name) return [];
     const rawStatus = normalizeText(row[statusIndex]);
     const status: Staff["status"] = rawStatus === "病假" || rawStatus === "休假" ? rawStatus : "正常";
+    const staffType: Staff["staffType"] = normalizeText(row[staffTypeIndex]).includes("行政") ? "行政支援" : "常规";
     return [{
       id,
       name,
+      staffType,
+      cxPreflightQualified: staffType === "常规" && ["是", "有", "true", "1"].includes(normalizeText(row[cxPreflightIndex]).toLowerCase()),
+      dutyQualified: staffType === "常规" && (dutyIndex < 0 || !["否", "无", "false", "0"].includes(normalizeText(row[dutyIndex]).toLowerCase())),
       nightShift: !["否", "不可以", "false", "0"].includes(normalizeText(row[nightIndex]).toLowerCase()),
       status,
       remark: normalizeText(row[remarkIndex])
@@ -147,11 +154,19 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
     if (!currentFlight || !name) continue;
     const rawQualified = normalizeText(row[qualifiedIndex]);
     const categoryText = normalizeText(row[categoryIndex]);
+    if (categoryText.includes("支援") && !categoryText.includes("行政支援")) continue;
+    const category: PositionRule["category"] = categoryText.includes("行政支援")
+      ? "行政支援"
+      : categoryText.includes("引导")
+        ? "引导"
+        : categoryText.includes("分流")
+          ? "分流"
+          : "常规";
     result.push({
       id: createId("position"),
       flightNo: currentFlight,
       name,
-      category: categoryText.includes("行政支援") ? "行政支援" : categoryText.includes("支援") ? "支援" : categoryText.includes("分流") ? "分流" : "常规",
+      category,
       remark: normalizeText(row[remarkIndex]),
       qualifiedStaffIds: splitList(rawQualified),
       manual: rawQualified.includes("手动输入"),
@@ -160,7 +175,7 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
       earlyReleaseMinutes: Number(row[earlyReleaseIndex]) || 0
     });
   }
-  const unique = new Map(result.map((rule) => [`${rule.flightNo}|${rule.name}`, rule]));
+  const unique = new Map(result.map((rule) => [`${rule.flightNo}|${rule.name}|${rule.category}`, rule]));
   return orderPositionRules([...unique.values()]);
 }
 
@@ -240,9 +255,9 @@ function append(workbook: XLSX.WorkBook, name: string, rowsData: unknown[][], wi
 export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
   const workbook = XLSX.utils.book_new();
   append(workbook, "人员信息", [
-    ["编号", "姓名", "是否可上夜班", "状态", "备注"],
-    ...state.staff.map((person) => [person.id, person.name, person.nightShift ? "是" : "否", person.status, person.remark])
-  ], [10, 14, 16, 10, 24]);
+    ["编号", "姓名", "是否可上夜班", "状态", "备注", "人员类型", "CX航前资质", "值班资质"],
+    ...state.staff.map((person) => [person.id, person.name, person.nightShift ? "是" : "否", person.status, person.remark, person.staffType, person.cxPreflightQualified ? "是" : "否", person.dutyQualified ? "是" : "否"])
+  ], [10, 14, 16, 10, 24, 14, 14, 14]);
   append(workbook, "航班计划", [
     ["航班号", "开始时间", "结束时间", "预定人数（当天填写）", "涉及岗位（用逗号分隔）", "备注"],
     ...state.flights.map((flight) => [flight.flightNo, flight.startTime, flight.endTime, flight.bookedPassengers, flight.positions.join(","), flight.remark])
@@ -253,7 +268,7 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
   ], [12, 12, 12, 48, 24]);
   append(workbook, "岗位配置", [
     ["航班号", "项目分类", "岗位名称", "备注", "可胜任人员（用逗号分隔）", "疲劳点数", "启用旅客人数", "提前撤岗分钟"],
-    ...state.positionRules.map((rule) => [rule.flightNo, rule.category, rule.name, rule.remark, rule.manual || rule.category === "支援" ? "手动输入项" : rule.qualifiedStaffIds.join(","), rule.fatiguePoints, rule.minPassengers, rule.earlyReleaseMinutes])
+    ...state.positionRules.map((rule) => [rule.flightNo, rule.category, rule.name, rule.remark, rule.manual ? "手动输入项" : rule.qualifiedStaffIds.join(","), rule.fatiguePoints, rule.minPassengers, rule.earlyReleaseMinutes])
   ], [12, 18, 16, 24, 48, 12, 18, 18]);
   return workbook;
 }

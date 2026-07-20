@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { durationHours, intervalsOverlap, isNightInterval, normalizeTime, timeToMinutes } from "./time";
+import { addIsoDays, durationHours, intervalsOverlap, isNightInterval, normalizeTime, timeToMinutes } from "./time";
 
 describe("time domain", () => {
+  it("advances to the next duty day after one rest day", () => {
+    expect(addIsoDays("2026-07-18", 2)).toBe("2026-07-20");
+  });
+
   it("parses and normalizes valid clock values", () => {
     expect(timeToMinutes("08:30")).toBe(510);
     expect(normalizeTime("8:30:00")).toBe("08:30");

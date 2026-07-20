@@ -13,6 +13,12 @@ export function normalizeTime(value: string): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
+export function addIsoDays(value: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days)).toISOString().slice(0, 10);
+}
+
 export function durationHours(startTime: string, endTime: string): number {
   const start = timeToMinutes(startTime);
   let end = timeToMinutes(endTime);

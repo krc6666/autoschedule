@@ -2,15 +2,17 @@ import Modal from "bootstrap/js/dist/modal";
 import Toast from "bootstrap/js/dist/toast";
 
 import { createDefaultState } from "./defaults";
-import { applyEarlyReleaseForStaff, generateSchedule, canAssignStaff, isAuxiliaryCategory, isDiversionTransfer, isSameFlightReusePosition } from "./domain/scheduler";
-import { durationHours } from "./domain/time";
+import { activeFlightRules, applyEarlyReleaseForStaff, generateSchedule, canAssignStaff, isAuxiliaryCategory, isDiversionTransfer, isGuideAssignment } from "./domain/scheduler";
+import { addIsoDays } from "./domain/time";
+import { clearDutyRosterOverride, getDutyRosterForDate, updateDutyRosterSlot, type DutyRosterSlot } from "./domain/duty-roster";
 import { clearState, loadState, saveState } from "./infrastructure/storage";
-import type { AppSection, AppState, Flight, FlightTemplate, HistoryRecord } from "./model";
+import type { AppSection, AppState, Flight, FlightTemplate, HistoryRecord, PositionTransitionPolicy, Staff } from "./model";
 import { renderConfig } from "./ui/config-view";
 import { renderFlights } from "./ui/flights-view";
 import { renderHistory } from "./ui/history-view";
 import { renderOverview } from "./ui/overview-view";
-import { renderSchedule } from "./ui/schedule-view";
+import { renderSchedule, type LoadSortDirection, type LoadSortField } from "./ui/schedule-view";
+import { renderSchedulePolicy } from "./ui/schedule-policy-view";
 import { renderShell } from "./ui/shell";
 import { assertElement, combinedAssignmentRemark, createId, escapeHtml, normalizeText, orderPositionRules, sortFlightCountersDescending, splitList, todayIso } from "./utils";
 
@@ -18,8 +20,15 @@ export class AutoScheduleApp {
   private state: AppState = loadState();
   private activeSection: AppSection = "overview";
   private scheduleDate = localStorage.getItem("autoschedule.scheduleDate") || todayIso();
+  private loadSortField: LoadSortField = "totalFatigue";
+  private loadSortDirection: LoadSortDirection = "desc";
+  private loadDetailsOpen = false;
+  private openDutyRosterSections = new Set<string>();
+  private scheduleZoom = Math.min(1.6, Math.max(0.7, Number(localStorage.getItem("autoschedule.scheduleZoom")) || 1));
   private importMode: "all" | "config" | "history" = "all";
   private openPositionFlights = new Set<string>();
+  private openPolicyCards = new Set<string>();
+  private openConfigSections = new Set<string>();
   private pointerDrag: { assignmentId: string; pointerId: number; startX: number; startY: number; active: boolean } | null = null;
   private readonly root: HTMLElement;
 
@@ -44,18 +53,37 @@ export class AutoScheduleApp {
     switch (this.activeSection) {
       case "config": return renderConfig(this.state);
       case "flights": return renderFlights(this.state);
-      case "schedule": return renderSchedule(this.state, this.scheduleDate);
+      case "schedule": return renderSchedule(this.state, this.scheduleDate, { field: this.loadSortField, direction: this.loadSortDirection, zoom: this.scheduleZoom });
+      case "policy": return renderSchedulePolicy(this.state);
       case "history": return renderHistory(this.state);
       default: return renderOverview(this.state, this.scheduleDate);
     }
   }
 
   private render(): void {
+    this.loadDetailsOpen = this.root.querySelector<HTMLDetailsElement>(".load-details")?.open ?? this.loadDetailsOpen;
+    this.openDutyRosterSections = new Set([...this.root.querySelectorAll<HTMLDetailsElement>(".duty-roster-details[open]")]
+      .map((element) => element.dataset.dutyRosterSection ?? "").filter(Boolean));
     this.openPositionFlights = new Set([...this.root.querySelectorAll<HTMLDetailsElement>(".position-rule-group[open]")]
       .map((element) => element.dataset.positionFlight ?? "").filter(Boolean));
+    this.openPolicyCards = new Set([...this.root.querySelectorAll<HTMLDetailsElement>(".policy-rule-card[open]")]
+      .map((element) => element.dataset.policyCard ?? "").filter(Boolean));
+    this.openConfigSections = new Set([...this.root.querySelectorAll<HTMLDetailsElement>(".config-collapsible[open]")]
+      .map((element) => element.dataset.configSection ?? "").filter(Boolean));
     this.root.innerHTML = renderShell(this.state, this.activeSection, this.scheduleDate, this.view());
     this.root.querySelectorAll<HTMLDetailsElement>(".position-rule-group").forEach((element) => {
       element.open = this.openPositionFlights.has(element.dataset.positionFlight ?? "");
+    });
+    this.root.querySelectorAll<HTMLDetailsElement>(".policy-rule-card").forEach((element) => {
+      element.open = this.openPolicyCards.has(element.dataset.policyCard ?? "");
+    });
+    this.root.querySelectorAll<HTMLDetailsElement>(".config-collapsible").forEach((element) => {
+      element.open = this.openConfigSections.has(element.dataset.configSection ?? "");
+    });
+    const loadDetails = this.root.querySelector<HTMLDetailsElement>(".load-details");
+    if (loadDetails) loadDetails.open = this.loadDetailsOpen;
+    this.root.querySelectorAll<HTMLDetailsElement>(".duty-roster-details").forEach((element) => {
+      element.open = this.openDutyRosterSections.has(element.dataset.dutyRosterSection ?? "");
     });
   }
 
@@ -206,6 +234,7 @@ export class AutoScheduleApp {
       "add-from-template": () => this.showTemplates(),
       "select-template": () => this.addTemplateFlight(id),
       "add-staff": () => this.addStaff(),
+      "add-admin-staff": () => this.addAdministrativeStaff(),
       "delete-staff": () => this.deleteStaff(id),
       "add-positions": () => this.addPositions(),
       "move-position-up": () => this.movePosition(id, -1),
@@ -216,18 +245,22 @@ export class AutoScheduleApp {
       "select-all-qualified": () => this.setQualifiedSelection(true),
       "clear-all-qualified": () => this.setQualifiedSelection(false),
       "save-qualified": () => this.saveQualified(id),
+      "save-schedule-policy": () => this.saveSchedulePolicy(),
+      "add-transition-policy": () => this.addTransitionPolicy(),
+      "delete-transition-policy": () => this.deleteTransitionPolicy(id),
       "add-template": () => this.addTemplate(),
       "delete-template": () => this.deleteTemplate(id),
       "clear-schedule": () => this.clearSchedule(),
       "archive-schedule": () => this.archiveSchedule(),
-      "archive-and-next": () => this.archiveAndScheduleNextDay(),
+      "archive-and-next-duty": () => this.archiveAndScheduleNextDutyDay(),
       "clear-history": () => this.clearHistory(),
       "delete-history": () => this.deleteHistory(id),
       "clear-assignment": () => this.assignStaff(id, ""),
-      "add-schedule-slot": () => this.showSupportPositions(id),
-      "select-support-position": () => this.addSupportPosition(target.dataset.flightId ?? "", id),
-      "add-generic-support": () => this.addGenericSupport(id),
+      "zoom-schedule-out": () => this.changeScheduleZoom(-0.1),
+      "zoom-schedule-reset": () => this.setScheduleZoom(1),
+      "zoom-schedule-in": () => this.changeScheduleZoom(0.1),
       "delete-assignment": () => this.deleteAssignment(id),
+      "reset-duty-roster": () => this.resetDutyRoster(id),
       "reset-all": () => this.resetAll()
     };
     actions[action]?.();
@@ -254,6 +287,21 @@ export class AutoScheduleApp {
     }
     if (target.dataset.action === "assign-staff") {
       this.assignStaff(target.dataset.id ?? "", target.value);
+      return;
+    }
+    if (target.dataset.action === "toggle-admin-support-mode" && target instanceof HTMLInputElement) {
+      this.toggleAdministrativeSupport(target.checked);
+      return;
+    }
+    if (target.dataset.action === "load-sort-field") {
+      const field = target.value as LoadSortField;
+      if (["workHours", "todayFatigue", "historyFatigue", "totalFatigue"].includes(field)) this.loadSortField = field;
+      this.render();
+      return;
+    }
+    if (target.dataset.action === "load-sort-direction") {
+      this.loadSortDirection = target.value === "asc" ? "asc" : "desc";
+      this.render();
       return;
     }
     if (target.dataset.action === "create-temporary-assignment") {
@@ -310,6 +358,103 @@ export class AutoScheduleApp {
     this.commit("已新增航班");
   }
 
+  private toggleAdministrativeSupport(enabled: boolean): void {
+    this.state.settings.adminSupportEnabled = enabled;
+    const result = generateSchedule(this.state, this.scheduleDate);
+    this.state.assignments = result.assignments;
+    this.state.activeScheduleDate = this.scheduleDate;
+    this.commit(enabled ? "行政支援模式已启用，行政岗位已留空" : "行政支援模式已关闭");
+  }
+
+  private changeScheduleZoom(delta: number): void {
+    this.setScheduleZoom(this.scheduleZoom + delta);
+  }
+
+  private setScheduleZoom(value: number): void {
+    this.scheduleZoom = Math.min(1.6, Math.max(0.7, Number(value.toFixed(1))));
+    localStorage.setItem("autoschedule.scheduleZoom", String(this.scheduleZoom));
+    this.render();
+  }
+
+  private saveSchedulePolicy(): void {
+    const enabled = assertElement<HTMLInputElement>("#policy-enabled").checked;
+    const threshold = Number(assertElement<HTMLInputElement>("#policy-fatigue-threshold").value);
+    const recoveryMinutes = Number(assertElement<HTMLInputElement>("#policy-recovery-minutes").value);
+    const remarkedHighLoad = assertElement<HTMLInputElement>("#policy-remarked-high-load").checked;
+    const mode = assertElement<HTMLSelectElement>("#policy-transition-mode").value === "forbid" ? "forbid" : "prefer";
+    const rollingLoadEnabled = assertElement<HTMLInputElement>("#policy-rolling-load-enabled").checked;
+    const rollingWindowMinutes = Number(assertElement<HTMLInputElement>("#policy-rolling-window-minutes").value);
+    const rollingMaxFatigue = Number(assertElement<HTMLInputElement>("#policy-rolling-max-fatigue").value);
+    const rollingLoadMode = assertElement<HTMLSelectElement>("#policy-rolling-load-mode").value === "forbid" ? "forbid" : "prefer";
+    const rotationEnabled = assertElement<HTMLInputElement>("#policy-rotation-enabled").checked;
+    const rotationLookbackDays = Number(assertElement<HTMLInputElement>("#policy-rotation-lookback-days").value);
+    const rotationMode = assertElement<HTMLSelectElement>("#policy-rotation-mode").value === "forbid" ? "forbid" : "prefer";
+    const lateShiftRecoveryEnabled = assertElement<HTMLInputElement>("#policy-late-shift-recovery-enabled").checked;
+    const lateShiftStartTime = assertElement<HTMLInputElement>("#policy-late-shift-start-time").value;
+    const lateShiftLatestWindowMinutes = Number(assertElement<HTMLInputElement>("#policy-late-shift-latest-window").value);
+    const nextDayLateMaxFatigue = Number(assertElement<HTMLInputElement>("#policy-next-day-late-max-fatigue").value);
+    const lateShiftRecoveryMode = assertElement<HTMLSelectElement>("#policy-late-shift-recovery-mode").value === "forbid" ? "forbid" : "prefer";
+    this.state.settings.highLoadProtectionEnabled = enabled;
+    this.state.settings.highLoadFatigueThreshold = Math.min(50, Math.max(0.5, Number.isFinite(threshold) ? threshold : 4));
+    this.state.settings.highLoadRecoveryMinutes = Math.min(1440, Math.max(0, Number.isFinite(recoveryMinutes) ? Math.round(recoveryMinutes) : 360));
+    this.state.settings.remarkedPositionHighLoad = remarkedHighLoad;
+    this.state.settings.highLoadTransitionMode = mode;
+    this.state.settings.rollingLoadProtectionEnabled = rollingLoadEnabled;
+    this.state.settings.rollingLoadWindowMinutes = Math.min(1440, Math.max(0, Number.isFinite(rollingWindowMinutes) ? Math.round(rollingWindowMinutes) : 360));
+    this.state.settings.rollingLoadMaxFatigue = Math.min(100, Math.max(0.5, Number.isFinite(rollingMaxFatigue) ? rollingMaxFatigue : 8));
+    this.state.settings.rollingLoadMode = rollingLoadMode;
+    this.state.settings.positionRotationEnabled = rotationEnabled;
+    this.state.settings.positionRotationLookbackDays = Math.min(90, Math.max(1, Number.isFinite(rotationLookbackDays) ? Math.round(rotationLookbackDays) : 3));
+    this.state.settings.positionRotationMode = rotationMode;
+    this.state.settings.lateShiftRecoveryEnabled = lateShiftRecoveryEnabled;
+    this.state.settings.lateShiftStartTime = lateShiftStartTime || "20:00";
+    this.state.settings.lateShiftLatestWindowMinutes = Math.min(720, Math.max(0, Number.isFinite(lateShiftLatestWindowMinutes) ? Math.round(lateShiftLatestWindowMinutes) : 180));
+    this.state.settings.nextDayLateMaxFatigue = Math.min(50, Math.max(0, Number.isFinite(nextDayLateMaxFatigue) ? nextDayLateMaxFatigue : 2));
+    this.state.settings.lateShiftRecoveryMode = lateShiftRecoveryMode;
+    this.state.settings.positionTransitionPolicies = this.state.settings.positionTransitionPolicies.map((policy) => ({
+      ...policy,
+      name: normalizeText(policy.name) || "未命名衔接规则",
+      sourceFlightNo: normalizeText(policy.sourceFlightNo).toUpperCase(),
+      sourcePositions: policy.sourcePositions.map(normalizeText).filter(Boolean),
+      targetFlightNo: normalizeText(policy.targetFlightNo).toUpperCase(),
+      targetPosition: normalizeText(policy.targetPosition),
+      minimumGapMinutes: Math.min(1440, Math.max(0, Math.round(policy.minimumGapMinutes) || 0)),
+      mode: policy.mode === "forbid" ? "forbid" : "prefer"
+    }));
+    const regenerate = this.state.assignments.length > 0;
+    if (regenerate) {
+      const result = generateSchedule(this.state, this.scheduleDate);
+      this.state.assignments = result.assignments;
+      this.state.activeScheduleDate = this.scheduleDate;
+    }
+    this.commit(regenerate ? "排班策略已保存，当前排班已重新生成" : "排班策略已保存，将用于下次排班");
+  }
+
+  private addTransitionPolicy(): void {
+    const sourceFlight = this.state.flights[0];
+    const targetFlight = this.state.flights.at(-1) ?? sourceFlight;
+    const policy: PositionTransitionPolicy = {
+      id: createId("transition-policy"),
+      name: "新岗位衔接规则",
+      enabled: false,
+      sourceFlightNo: sourceFlight?.flightNo ?? "",
+      sourcePositions: [],
+      targetFlightNo: targetFlight?.flightNo ?? "",
+      targetPosition: "",
+      minimumGapMinutes: 180,
+      mode: "prefer"
+    };
+    this.state.settings.positionTransitionPolicies.push(policy);
+    this.commit("已新增衔接规则，请编辑后保存并应用");
+  }
+
+  private deleteTransitionPolicy(id: string): void {
+    const policy = this.state.settings.positionTransitionPolicies.find((item) => item.id === id);
+    if (!policy || !confirm(`确认删除衔接规则“${policy.name}”？`)) return;
+    this.state.settings.positionTransitionPolicies = this.state.settings.positionTransitionPolicies.filter((item) => item.id !== id);
+    this.commit("衔接规则已删除，保存并应用后重新排班");
+  }
+
   private addTemplate(): void {
     const template: FlightTemplate = {
       id: createId("template"), flightNo: "NEW", startTime: "08:00", endTime: "10:00", positions: [], remark: ""
@@ -344,8 +489,25 @@ export class AutoScheduleApp {
   private addStaff(): void {
     const numericIds = this.state.staff.map((item) => Number(item.id)).filter(Number.isFinite);
     const id = String(Math.max(0, ...numericIds) + 1);
-    this.state.staff.push({ id, name: "新人员", nightShift: true, status: "正常", remark: "" });
+    this.state.staff.push({ id, name: "新人员", staffType: "常规", cxPreflightQualified: false, dutyQualified: true, nightShift: true, status: "正常", remark: "" });
     this.commit("已新增人员");
+  }
+
+  private addAdministrativeStaff(): void {
+    let sequence = 1;
+    while (this.state.staff.some((person) => person.id === `A${sequence}`)) sequence += 1;
+    const person: Staff = {
+      id: `A${sequence}`,
+      name: `行政支援${sequence}`,
+      staffType: "行政支援",
+      cxPreflightQualified: false,
+      dutyQualified: false,
+      nightShift: true,
+      status: "正常",
+      remark: ""
+    };
+    this.state.staff.push(person);
+    this.commit("已新增行政支援人员");
   }
 
   private deleteStaff(id: string): void {
@@ -353,6 +515,12 @@ export class AutoScheduleApp {
     if (!person || !confirm(`确认删除 ${person.name}？相关岗位资质也会同步移除。`)) return;
     this.state.staff = this.state.staff.filter((item) => item.id !== id);
     this.state.positionRules.forEach((rule) => { rule.qualifiedStaffIds = rule.qualifiedStaffIds.filter((staffId) => staffId !== id); });
+    this.state.dutyRosterOverrides = this.state.dutyRosterOverrides.map((item) => ({
+      ...item,
+      cxPreflightStaffId: item.cxPreflightStaffId === id ? null : item.cxPreflightStaffId,
+      dutyStaffId: item.dutyStaffId === id ? null : item.dutyStaffId,
+      standbyStaffIds: item.standbyStaffIds.map((staffId) => staffId === id ? null : staffId) as [string | null, string | null]
+    }));
     this.state.assignments = this.state.assignments.map((item) => {
       if (item.staffId !== id) return item;
       const rule = item.positionRuleId ? this.state.positionRules.find((ruleItem) => ruleItem.id === item.positionRuleId) : undefined;
@@ -433,7 +601,7 @@ export class AutoScheduleApp {
   private showQualified(id: string): void {
     const rule = this.state.positionRules.find((item) => item.id === id);
     if (!rule) return;
-    const body = `<div class="d-flex align-items-center justify-content-between gap-2 border-bottom pb-3 mb-3"><div class="form-check form-switch m-0"><input class="form-check-input" id="qualified-manual" type="checkbox" ${rule.manual ? "checked" : ""}><label class="form-check-label" for="qualified-manual">手动补位岗位</label></div><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" type="button" data-action="select-all-qualified"><i class="bi bi-check2-square me-1"></i>全选</button><button class="btn btn-outline-secondary" type="button" data-action="clear-all-qualified"><i class="bi bi-square me-1"></i>全不选</button></div></div><div class="qualified-grid">${this.state.staff.map((person) => `<label class="form-check qualified-check"><input class="form-check-input" type="checkbox" name="qualified-staff" value="${escapeHtml(person.id)}" ${rule.qualifiedStaffIds.includes(person.id) ? "checked" : ""}><span class="form-check-label">${escapeHtml(person.name)} <small>#${escapeHtml(person.id)}</small></span></label>`).join("")}</div>`;
+    const body = `<div class="d-flex align-items-center justify-content-between gap-2 border-bottom pb-3 mb-3"><div class="form-check form-switch m-0"><input class="form-check-input" id="qualified-manual" type="checkbox" ${rule.manual ? "checked" : ""}><label class="form-check-label" for="qualified-manual">手动补位岗位</label></div><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" type="button" data-action="select-all-qualified"><i class="bi bi-check2-square me-1"></i>全选</button><button class="btn btn-outline-secondary" type="button" data-action="clear-all-qualified"><i class="bi bi-square me-1"></i>全不选</button></div></div><div class="qualified-grid">${this.state.staff.filter((person) => person.staffType !== "行政支援").map((person) => `<label class="form-check qualified-check"><input class="form-check-input" type="checkbox" name="qualified-staff" value="${escapeHtml(person.id)}" ${rule.qualifiedStaffIds.includes(person.id) ? "checked" : ""}><span class="form-check-label">${escapeHtml(person.name)} <small>#${escapeHtml(person.id)}</small></span></label>`).join("")}</div>`;
     this.modal(`${rule.flightNo} / ${rule.name} 资质`, body, `<button class="btn btn-secondary" type="button" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" type="button" data-action="save-qualified" data-id="${id}">保存</button>`);
   }
 
@@ -471,7 +639,7 @@ export class AutoScheduleApp {
     const source = sourceAssignmentId ? this.state.assignments.find((item) => item.id === sourceAssignmentId) : undefined;
     const targetStaffId = assignment.staffId;
     const targetStaffName = assignment.staffName;
-    const copySource = Boolean(sourceAssignmentId && (isSameFlightReusePosition(assignment.position)
+    const copySource = Boolean(sourceAssignmentId && (isGuideAssignment(this.state, assignment)
       || (!targetStaffId && isDiversionTransfer(this.state, sourceAssignmentId, assignmentId))));
     const error = canAssignStaff(this.state, assignmentId, staffId, copySource ? undefined : sourceAssignmentId);
     if (error) { this.render(); this.toast(error, "danger"); return; }
@@ -500,70 +668,35 @@ export class AutoScheduleApp {
 
   private refreshSameFlightGuides(flightIds: string[]): void {
     for (const flightId of new Set(flightIds)) {
-      const guideAssignments = this.state.assignments.filter((item) => item.flightId === flightId && isSameFlightReusePosition(item.position));
+      const guideAssignments = this.state.assignments.filter((item) => item.flightId === flightId && isGuideAssignment(this.state, item));
+      const flight = this.state.flights.find((item) => item.id === flightId);
+      const displayIndex = new Map((flight ? activeFlightRules(this.state, flight) : []).map((rule, index) => [rule.id, index]));
+      const usedStaffIds = new Set<string>();
       for (const guide of guideAssignments) {
-        const rule = guide.positionRuleId ? this.state.positionRules.find((item) => item.id === guide.positionRuleId) : undefined;
-        if (!rule) continue;
         const candidates = this.state.assignments
           .filter((item) => item.flightId === flightId && item.id !== guide.id && item.status === "assigned")
-          .filter((item) => !isSameFlightReusePosition(item.position) && !item.remark.trim() && item.staffId)
-          .map((item) => this.state.staff.find((person) => person.id === item.staffId))
-          .filter((person): person is NonNullable<typeof person> => Boolean(person && person.status === "正常" && rule.qualifiedStaffIds.includes(person.id)));
-        const selected = candidates.find((person) => person.id === guide.staffId)
-          ?? candidates[Math.floor(Math.random() * candidates.length)];
+          .filter((item) => item.staffId && !usedStaffIds.has(item.staffId))
+          .map((item) => ({
+            assignment: item,
+            sourceRule: item.positionRuleId ? this.state.positionRules.find((rule) => rule.id === item.positionRuleId) : undefined,
+            person: this.state.staff.find((person) => person.id === item.staffId)
+          }))
+          .filter((item): item is typeof item & { person: Staff } => Boolean(item.sourceRule?.category === "常规" && item.person?.status === "正常" && item.person.staffType === "常规"))
+          .sort((left, right) => (displayIndex.get(right.assignment.positionRuleId ?? "") ?? -1) - (displayIndex.get(left.assignment.positionRuleId ?? "") ?? -1));
+        const selected = candidates[0]?.person;
         guide.staffId = selected?.id ?? null;
         guide.staffName = selected?.name ?? "";
         guide.status = selected ? "assigned" : "unfilled";
+        if (selected) usedStaffIds.add(selected.id);
       }
     }
   }
 
-  private showSupportPositions(flightId: string): void {
-    const flight = this.state.flights.find((item) => item.id === flightId);
-    if (!flight) return;
-    const rules = this.state.positionRules.filter((rule) => rule.flightNo === flight.flightNo && rule.category === "支援");
-    const regularShortage = this.state.assignments.some((assignment) => assignment.flightId === flight.id && assignment.status === "unfilled");
-    const allowGenericSupport = flight.startTime < "12:00" && regularShortage;
-    const body = rules.length
-      ? `<div class="list-group">${rules.map((rule) => `<button class="list-group-item list-group-item-action d-flex align-items-center justify-content-between" type="button" data-action="select-support-position" data-id="${rule.id}" data-flight-id="${flight.id}"><span><strong>${escapeHtml(rule.name)}</strong>${rule.remark ? `<small class="text-secondary ms-2">${escapeHtml(rule.remark)}</small>` : ""}</span><i class="bi bi-plus-lg"></i></button>`).join("")}</div>`
-      : `<div class="empty-state">该航班尚未配置支援岗位</div>`;
-    this.modal(`${flight.flightNo} 添加支援岗位`, body, `${allowGenericSupport ? `<button class="btn btn-outline-secondary" type="button" data-action="add-generic-support" data-id="${flight.id}">添加临时支援</button>` : ""}<button class="btn btn-secondary" type="button" data-bs-dismiss="modal">关闭</button>`);
-  }
-
-  private addSupportPosition(flightId: string, ruleId: string): void {
-    const flight = this.state.flights.find((item) => item.id === flightId);
-    const rule = this.state.positionRules.find((item) => item.id === ruleId && item.category === "支援");
-    if (!flight || !rule || rule.flightNo !== flight.flightNo) return;
-    this.state.assignments.push({
-      id: createId("assignment"), flightId: flight.id, flightNo: flight.flightNo, positionRuleId: rule.id,
-      position: rule.name, staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
-      workHours: durationHours(flight.startTime, flight.endTime),
-      fatiguePoints: rule.fatiguePoints, remark: rule.remark, manualRemark: "", status: "manual"
-    });
-    this.closeModal();
-    this.commit(`已增加支援岗位：${rule.name}`);
-  }
-
-  private addGenericSupport(flightId: string): void {
-    const flight = this.state.flights.find((item) => item.id === flightId);
-    const regularShortage = this.state.assignments.some((assignment) => assignment.flightId === flightId && assignment.status === "unfilled");
-    if (!flight || flight.startTime >= "12:00" || !regularShortage) return;
-    this.state.assignments.push({
-      id: createId("assignment"), flightId: flight.id, flightNo: flight.flightNo, positionRuleId: null,
-      position: "临时支援", staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
-      workHours: durationHours(flight.startTime, flight.endTime), fatiguePoints: 1,
-      remark: "", manualRemark: "", status: "manual"
-    });
-    this.closeModal();
-    this.commit("已增加临时支援岗位");
-  }
-
   private deleteAssignment(id: string): void {
     const assignment = this.state.assignments.find((item) => item.id === id);
-    const rule = assignment?.positionRuleId ? this.state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-    if (!assignment || (assignment.positionRuleId && rule?.category !== "支援")) return;
+    if (!assignment || assignment.positionRuleId) return;
     this.state.assignments = this.state.assignments.filter((item) => item.id !== id);
-    this.commit("本次支援岗位已移除");
+    this.commit("临时岗位已移除");
   }
 
   private clearSchedule(): void {
@@ -582,24 +715,45 @@ export class AutoScheduleApp {
   }
 
   private currentScheduleHistory(): HistoryRecord[] {
-    return this.state.assignments.filter((item) => item.status === "assigned" && item.staffName).map((item) => ({
+    const records = this.state.assignments.filter((item) => item.status === "assigned" && item.staffName).map((item) => ({
       id: createId("history"), date: this.scheduleDate, flightNo: item.flightNo, position: item.position,
       staffId: item.staffId ?? "", staffName: item.staffName, startTime: item.startTime, endTime: item.endTime,
       workHours: item.workHours, fatiguePoints: item.fatiguePoints, remark: combinedAssignmentRemark(item.remark, item.manualRemark)
     }));
+    const roster = getDutyRosterForDate(this.state, this.scheduleDate);
+    const dutyPerson = roster.dutyStaffId ? this.state.staff.find((person) => person.id === roster.dutyStaffId) : undefined;
+    if (dutyPerson && this.state.settings.dutyFatiguePoints > 0) {
+      records.push({
+        id: createId("history"), date: this.scheduleDate, flightNo: "轮值", position: "值班人员",
+        staffId: dutyPerson.id, staffName: dutyPerson.name, startTime: "", endTime: "",
+        workHours: 0, fatiguePoints: this.state.settings.dutyFatiguePoints, remark: "月度轮值"
+      });
+    }
+    return records;
+  }
+
+  private resetDutyRoster(date: string): void {
+    clearDutyRosterOverride(this.state, date);
+    this.commit(`${date} 已恢复顺序轮值`);
+  }
+
+  private updateDutyRoster(date: string, slot: DutyRosterSlot, staffId: string): void {
+    if (!staffId) { this.render(); this.toast("轮值人员不能为空", "danger"); return; }
+    const error = updateDutyRosterSlot(this.state, date, slot, staffId);
+    if (error) { this.render(); this.toast(error, "danger"); return; }
+    this.commit(`${date} 轮值已调整`);
   }
 
   private replaceHistoryForDate(date: string, records: HistoryRecord[]): void {
     this.state.history = [...this.state.history.filter((item) => item.date !== date), ...records];
   }
 
-  private archiveAndScheduleNextDay(): void {
+  private archiveAndScheduleNextDutyDay(): void {
     const records = this.currentScheduleHistory();
     if (!records.length) { this.toast("没有可归档的已排岗位", "warning"); return; }
     const currentDate = this.scheduleDate;
-    const [year, month, day] = currentDate.split("-").map(Number);
-    const nextDate = new Date(Date.UTC(year!, month! - 1, day! + 1)).toISOString().slice(0, 10);
-    if (!confirm(`归档 ${currentDate}，并根据今天的负荷生成 ${nextDate} 排班？`)) return;
+    const nextDate = addIsoDays(currentDate, 2);
+    if (!confirm(`归档 ${currentDate}，并根据今天的负荷生成后天 ${nextDate} 排班？`)) return;
     this.replaceHistoryForDate(currentDate, records);
     this.scheduleDate = nextDate;
     localStorage.setItem("autoschedule.scheduleDate", nextDate);
@@ -608,8 +762,8 @@ export class AutoScheduleApp {
     this.state.activeScheduleDate = nextDate;
     this.activeSection = "schedule";
     this.commit(result.unfilledCount
-      ? `今天已归档，明天排班已生成，${result.unfilledCount} 个常规岗位待补位`
-      : "今天已归档，已按今天负荷生成明天排班");
+      ? `今天已归档，后天排班已生成，${result.unfilledCount} 个常规岗位待补位`
+      : "今天已归档，已按今天负荷生成后天排班");
   }
 
   private clearHistory(): void {
@@ -695,10 +849,28 @@ export class AutoScheduleApp {
       if (field === "category") {
         if (value === "分流" && !rule.earlyReleaseMinutes) rule.earlyReleaseMinutes = 60;
         if (value !== "分流") rule.earlyReleaseMinutes = 0;
+        if (value === "引导") {
+          rule.manual = false;
+          rule.qualifiedStaffIds = [];
+        }
       }
       if (field === "name" || field === "flightNo") this.state.positionRules = orderPositionRules(this.state.positionRules);
       this.state.assignments = [];
       this.state.activeScheduleDate = null;
+    } else if (entity === "transition-policy") {
+      const policy = this.state.settings.positionTransitionPolicies.find((item) => item.id === id);
+      if (!policy) return;
+      if (field === "sourcePositions") policy.sourcePositions = splitList(value);
+      else if (field === "minimumGapMinutes") policy.minimumGapMinutes = Math.min(1440, Math.max(0, Math.round(Number(value)) || 0));
+      else if (field === "sourceFlightNo" || field === "targetFlightNo") (policy as unknown as Record<string, unknown>)[field] = normalizeText(value).toUpperCase();
+      else if (field === "mode") policy.mode = value === "forbid" ? "forbid" : "prefer";
+      else if (field === "enabled") policy.enabled = Boolean(value);
+      else if (field === "name" || field === "targetPosition") (policy as unknown as Record<string, unknown>)[field] = normalizeText(value);
+      this.state = saveState(this.state);
+      return;
+    } else if (entity === "duty-roster") {
+      this.updateDutyRoster(id, input.dataset.dutySlot as DutyRosterSlot, String(value));
+      return;
     } else if (entity === "template") {
       const template = this.state.templates.find((item) => item.id === id);
       if (!template) return;
@@ -716,7 +888,12 @@ export class AutoScheduleApp {
           return;
         }
         const person = this.state.staff.find((item) => item.name === staffName);
-        if (!person || isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId) {
+        if (!person && rule?.category === "引导") {
+          this.render();
+          this.toast("引导岗位只能复用同一航班中已排常规岗位的常规人员", "danger");
+          return;
+        }
+        if (!person || (person.staffType !== "行政支援" && (isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId))) {
           assignment.staffId = null;
           assignment.staffName = staffName;
           assignment.status = "assigned";
@@ -730,13 +907,30 @@ export class AutoScheduleApp {
     } else if (entity === "staff") {
       const person = this.state.staff.find((item) => item.id === id);
       if (!person) return;
+      if (field === "name") {
+        const nextName = normalizeText(value) || person.name;
+        person.name = nextName;
+        this.state.assignments.forEach((item) => { if (item.staffId === id) item.staffName = nextName; });
+        this.state.history.forEach((item) => { if (item.staffId === id) item.staffName = nextName; });
+        this.commit();
+        return;
+      }
       if (field === "id" && typeof value === "string" && value !== id) {
         if (this.state.staff.some((item) => item.id === value)) { this.render(); this.toast("人员编号不能重复", "danger"); return; }
         this.state.positionRules.forEach((rule) => { rule.qualifiedStaffIds = rule.qualifiedStaffIds.map((staffId) => staffId === id ? value : staffId); });
         this.state.assignments.forEach((item) => { if (item.staffId === id) item.staffId = value; });
         this.state.history.forEach((item) => { if (item.staffId === id) item.staffId = value; });
+        this.state.dutyRosterOverrides.forEach((item) => {
+          if (item.cxPreflightStaffId === id) item.cxPreflightStaffId = value;
+          if (item.dutyStaffId === id) item.dutyStaffId = value;
+          item.standbyStaffIds = item.standbyStaffIds.map((staffId) => staffId === id ? value : staffId) as [string | null, string | null];
+        });
       }
       (person as unknown as Record<string, unknown>)[field] = value;
+      if (field === "staffType" && value === "行政支援") {
+        person.cxPreflightQualified = false;
+        person.dutyQualified = false;
+      }
       this.state.assignments = [];
       this.state.activeScheduleDate = null;
     }

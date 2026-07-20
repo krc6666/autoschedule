@@ -1,0 +1,70 @@
+import { describe, expect, it } from "vitest";
+
+import { createDefaultState } from "../defaults";
+import { generateSchedule } from "./scheduler";
+import { getDutyRosterForDate, getMonthlyDutyRoster, getMonthlyDutyRosterStats, updateDutyRosterSlot } from "./duty-roster";
+
+describe("monthly duty roster", () => {
+  it("rotates four distinct people and limits CX preflight to its qualified pool", () => {
+    const state = createDefaultState();
+    state.staff.slice(0, 3).forEach((person) => { person.cxPreflightQualified = true; });
+    state.staff[3]!.status = "休假";
+    state.staff[4]!.staffType = "行政支援";
+    const rows = getMonthlyDutyRoster(state, "2026-07-20");
+    expect(rows[0]?.date).toBe("2026-07-02");
+    expect(rows.every((row) => row.cxPreflightStaffId && state.staff.find((person) => person.id === row.cxPreflightStaffId)?.cxPreflightQualified)).toBe(true);
+    expect(rows.every((row) => new Set([row.cxPreflightStaffId, row.dutyStaffId, ...row.standbyStaffIds].filter(Boolean)).size === 4)).toBe(true);
+    expect(rows.flatMap((row) => [row.dutyStaffId, ...row.standbyStaffIds]).filter(Boolean)).not.toContain(state.staff[3]!.id);
+    expect(rows.flatMap((row) => [row.dutyStaffId, ...row.standbyStaffIds]).filter(Boolean)).not.toContain(state.staff[4]!.id);
+  });
+
+  it("limits duty to qualified staff and keeps monthly duty counts balanced", () => {
+    const state = createDefaultState();
+    state.staff.slice(0, 3).forEach((person) => { person.cxPreflightQualified = true; });
+    state.staff.forEach((person, index) => { person.dutyQualified = index < 5; });
+    const rows = getMonthlyDutyRoster(state, "2026-07-20");
+    const qualifiedIds = new Set(state.staff.filter((person) => person.dutyQualified).map((person) => person.id));
+    expect(rows.every((row) => !row.dutyStaffId || qualifiedIds.has(row.dutyStaffId))).toBe(true);
+    const counts = getMonthlyDutyRosterStats(state, "2026-07-20").filter((item) => item.staff.dutyQualified).map((item) => item.dutyDates.length);
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+    const unqualified = state.staff.find((person) => !person.dutyQualified && person.status === "正常")!;
+    expect(updateDutyRosterSlot(state, "2026-07-20", "duty", unqualified.id)).toContain("值班资质");
+  });
+
+  it("swaps duty and standby people directly in the monthly table", () => {
+    const state = createDefaultState();
+    state.staff.slice(0, 3).forEach((person) => { person.cxPreflightQualified = true; });
+    const before = getDutyRosterForDate(state, "2026-07-20");
+    const duty = before.dutyStaffId!;
+    const standby = before.standbyStaffIds[0]!;
+    expect(updateDutyRosterSlot(state, "2026-07-20", "duty", standby)).toBeNull();
+    const after = getDutyRosterForDate(state, "2026-07-20");
+    expect(after.dutyStaffId).toBe(standby);
+    expect(after.standbyStaffIds[0]).toBe(duty);
+    expect(after.adjusted).toBe(true);
+  });
+
+  it("uses the high duty fatigue when choosing flight-position staff", () => {
+    const state = createDefaultState();
+    const workers = state.staff.slice(0, 4);
+    state.staff = workers;
+    workers[3]!.cxPreflightQualified = true;
+    state.flights = [
+      { id: "early", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "late", flightNo: "F2", startTime: "20:00", endTime: "22:00", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    const roster = getDutyRosterForDate(state, "2026-07-02");
+    const dutyStaffId = roster.dutyStaffId!;
+    const alternative = workers.find((person) => person.id !== dutyStaffId && person.id !== roster.cxPreflightStaffId)!;
+    const lateWorker = workers.find((person) => ![dutyStaffId, alternative.id].includes(person.id))!;
+    state.positionRules = [
+      { ...base, id: "early-position", flightNo: "F1", name: "P1", fatiguePoints: 0, remark: "", qualifiedStaffIds: [dutyStaffId, alternative.id] },
+      { ...base, id: "late-position", flightNo: "F2", name: "P2", fatiguePoints: 0, remark: "", qualifiedStaffIds: [lateWorker.id] }
+    ];
+    expect(generateSchedule(state, "2026-07-02").assignments.find((item) => item.positionRuleId === "early-position")?.staffId).toBe(alternative.id);
+    state.settings.dutyFatiguePoints = 0;
+    const expectedById = [dutyStaffId, alternative.id].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))[0];
+    expect(generateSchedule(state, "2026-07-02").assignments.find((item) => item.positionRuleId === "early-position")?.staffId).toBe(expectedById);
+  });
+});

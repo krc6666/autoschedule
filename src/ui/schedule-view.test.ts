@@ -16,5 +16,75 @@ describe("schedule view", () => {
     expect(html).toContain("引导岗位");
     expect(html).not.toContain("支援与行政");
     expect(html).not.toContain("flight-column-cells");
+    expect(html).toContain("是否启用行政支援模式");
+    expect(html).not.toContain("行政支援人员");
+    expect(html).toContain("data-action=\"load-sort-field\"");
+    expect(html).toContain("data-action=\"load-sort-direction\"");
+    expect(html).toContain("data-action=\"zoom-schedule-out\"");
+    expect(html).toContain("data-action=\"zoom-schedule-reset\"");
+    expect(html).toContain("data-action=\"zoom-schedule-in\"");
+    expect(html).toContain("归档并排后天");
+    expect(html).toContain("排班反馈");
+    expect(html).toContain('class="schedule-feedback-list"');
+    expect(html).toContain("人员覆盖");
+    expect(html).toContain("航班衔接");
+    expect(html).toContain("上一工作日晚班");
+    expect(html).toContain("--schedule-column-width:64px");
+    expect(html).toContain('<th scope="col" colspan="2">');
+    expect(html).toContain('class="schedule-subhead-position">岗位</th>');
+    expect(html).toContain('class="schedule-subhead-person">人员</th>');
+    expect(html.match(/class="schedule-position-column"/g)).toHaveLength(state.flights.length);
+    expect(html.match(/class="schedule-person-column"/g)).toHaveLength(state.flights.length);
+  });
+
+  it("renders the selected schedule zoom level", () => {
+    const state = createDefaultState();
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+    const html = renderSchedule(state, "2026-07-18", { field: "totalFatigue", direction: "desc", zoom: 1.5 });
+    expect(html).toContain("150%");
+    expect(html).toContain("--schedule-column-width:96px");
+    expect(html).toContain("--schedule-position-size:16.5px");
+  });
+
+  it("shows the four-person duty summary and an editable monthly rotation table", () => {
+    const state = createDefaultState();
+    state.staff.slice(0, 3).forEach((person) => { person.cxPreflightQualified = true; });
+    state.assignments = generateSchedule(state, "2026-07-20").assignments;
+    const html = renderSchedule(state, "2026-07-20");
+    expect(html).toContain("CX航前");
+    expect(html).toContain("值班人员");
+    expect(html).toContain("备勤人员");
+    expect(html).toContain("CX航前轮换");
+    expect(html).toContain("值班与备勤轮换");
+    expect(html).toContain("本月值班");
+    expect(html).toContain("本月备勤");
+    expect(html).toContain("轮值日期");
+    expect(html).toContain("duty-roster-table");
+    expect(html).toContain('data-entity="duty-roster"');
+    expect(html).toContain('data-duty-slot="standby-1"');
+  });
+
+  it("renders position details and personnel details in separate table cells", () => {
+    const state = createDefaultState();
+    state.flights = [state.flights[0]!];
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+    const assignment = state.assignments.find((item) => item.remark === "申报")!;
+    assignment.manualRemark = "临时调整";
+    const html = renderSchedule(state, "2026-07-18");
+    expect(html).toMatch(/<td class="schedule-grid-slot schedule-position-slot">[\s\S]*?<span class="position-remark"[^>]*>申报<\/span>[\s\S]*?<\/td><td class="schedule-grid-slot schedule-person-slot">/);
+    expect(html).toMatch(/<td class="schedule-grid-slot schedule-person-slot">[\s\S]*?class="schedule-name-input"[\s\S]*?class="schedule-manual-remark" value="临时调整"[\s\S]*?<\/td>/);
+  });
+
+  it("shows a separate administrative roster only when support mode is enabled", () => {
+    const state = createDefaultState();
+    state.settings.adminSupportEnabled = true;
+    state.staff.push({ id: "A1", name: "行政一号", staffType: "行政支援", cxPreflightQualified: false, dutyQualified: false, nightShift: true, status: "正常", remark: "" });
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+    const html = renderSchedule(state, "2026-07-18");
+    expect(html).toContain("行政支援人员");
+    expect(html).toContain("行政一号");
+    expect(html).toContain("staff-palette-item is-admin-support");
+    const loadSection = html.slice(html.indexOf('class="workspace-section load-details"'));
+    expect(loadSection).not.toContain("行政一号");
   });
 });

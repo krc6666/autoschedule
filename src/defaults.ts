@@ -25,6 +25,9 @@ export const defaultStaff: Staff[] = [
 ].map(([id, name, nightShift, status, remark]) => ({
   id: String(id),
   name: String(name),
+  staffType: "常规",
+  cxPreflightQualified: false,
+  dutyQualified: true,
   nightShift: Boolean(nightShift),
   status: status as Staff["status"],
   remark: String(remark)
@@ -103,10 +106,10 @@ function positionRule(
 
 export const defaultPositionRules: PositionRule[] = [
   ...cxRules.map(([name, remark, ids, points]) => positionRule("CX937", name, remark, ids, points)),
-  positionRule("CX937", "柜台引导1", "", allRegular, 2.5),
-  positionRule("CX937", "柜台引导2", "", [], 2.5, { category: "支援", manual: true }),
-  positionRule("CX937", "超规柜台", "", [], 2.5, { category: "支援", manual: true }),
-  positionRule("CX937", "超规行李引导", "", [], 2.5, { category: "支援", manual: true }),
+  positionRule("CX937", "柜台引导1", "", [], 2.5, { category: "引导" }),
+  positionRule("CX937", "柜台引导2", "", [], 2.5, { category: "引导" }),
+  positionRule("CX937", "超规柜台", "", [], 2.5, { manual: true }),
+  positionRule("CX937", "超规行李引导", "", [], 2.5, { category: "引导" }),
   positionRule("FD573", "G07", "一号", allRegular, 4),
   positionRule("FD573", "G08", "申报", allRegular, 3),
   positionRule("FD573", "G09", "排查", allRegular, 2.5),
@@ -136,6 +139,7 @@ export function createDefaultState(): AppState {
     })),
     positionRules: orderPositionRules(structuredClone(defaultPositionRules)),
     history: [],
+    dutyRosterOverrides: [],
     assignments: [],
     activeScheduleDate: null,
     settings: {
@@ -143,8 +147,37 @@ export function createDefaultState(): AppState {
       historyWindowDays: 7,
       nightStart: "22:00",
       nightEnd: "06:00",
-      nightMultiplier: 2,
-      consecutiveDayPenalty: 5
+      consecutiveDayPenalty: 5,
+      adminSupportEnabled: false,
+      highLoadProtectionEnabled: true,
+      highLoadFatigueThreshold: 4,
+      highLoadRecoveryMinutes: 360,
+      remarkedPositionHighLoad: true,
+      highLoadTransitionMode: "prefer",
+      rollingLoadProtectionEnabled: true,
+      rollingLoadWindowMinutes: 360,
+      rollingLoadMaxFatigue: 8,
+      rollingLoadMode: "prefer",
+      positionRotationEnabled: true,
+      positionRotationLookbackDays: 3,
+      positionRotationMode: "prefer",
+      lateShiftRecoveryEnabled: true,
+      lateShiftStartTime: "20:00",
+      lateShiftLatestWindowMinutes: 180,
+      nextDayLateMaxFatigue: 2,
+      lateShiftRecoveryMode: "prefer",
+      dutyFatiguePoints: 12,
+      positionTransitionPolicies: [{
+        id: "transition-cx931-tr121-h02",
+        name: "TR121 H02 准备保护",
+        enabled: true,
+        sourceFlightNo: "CX931",
+        sourcePositions: ["督导", "G20", "G19"],
+        targetFlightNo: "TR121",
+        targetPosition: "H02",
+        minimumGapMinutes: 180,
+        mode: "prefer"
+      }]
     },
     updatedAt: new Date().toISOString()
   };
