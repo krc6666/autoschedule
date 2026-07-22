@@ -23,6 +23,7 @@ export function removeUnavailableStaffAssignments(state: AppState): void {
     assignment.staffId = null;
     assignment.staffName = "";
     assignment.status = !assignment.positionRuleId || rule?.manual || rule?.category === "行政支援" || rule?.category === "督导补位" ? "manual" : "unfilled";
+    delete assignment.supervisorCoverSourceAssignmentId;
     delete assignment.systemNotes;
   });
 }

@@ -107,9 +107,16 @@ function coverageFeedback(state: AppState, date: string): ScheduleFeedbackItem {
     const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
     return rule?.category !== "引导" && rule?.category !== "督导补位" && rule?.category !== "行政支援";
   }).length;
+  const supervisorCovers = state.assignments
+    .filter((assignment) => assignment.status === "assigned" && assignment.supervisorCoverSourceAssignmentId)
+    .map((assignment) => `${assignment.staffName}兼任${assignment.flightNo}/${assignment.position}`);
   const density = flightDensityEvidence(state);
-  if (unworked.length || unfilled) {
-    const details = [unworked.length ? `${conciseNames(unworked)}为 0 工时` : "", unfilled ? `${unfilled} 个常规岗位待补位` : ""].filter(Boolean).join("；");
+  if (unworked.length || unfilled || supervisorCovers.length) {
+    const details = [
+      unworked.length ? `${conciseNames(unworked)}为 0 工时` : "",
+      unfilled ? `${unfilled} 个常规岗位待补位` : "",
+      supervisorCovers.length ? `督导机动补位：${supervisorCovers.join("、")}` : ""
+    ].filter(Boolean).join("；");
     return feedbackItem("flight-staff", "coverage", "人员覆盖", "attention", `${density}；${details}，需要人工复核。`);
   }
   return feedbackItem("flight-staff", "coverage", "人员覆盖", "ok", `${density}；${workers.length} 名正常常规人员均有实际工时，常规岗位无待补位。`);

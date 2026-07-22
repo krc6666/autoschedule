@@ -91,6 +91,79 @@ export function moveSupervisorWithinFlight(
   return null;
 }
 
+export function applySupervisorFillToRegularPosition(
+  state: AppState,
+  sourceAssignmentId: string,
+  targetAssignmentId: string
+): string | null {
+  const source = state.assignments.find((assignment) => assignment.id === sourceAssignmentId);
+  const target = state.assignments.find((assignment) => assignment.id === targetAssignmentId);
+  if (!source || !target || !source.staffId || !source.staffName) return "源岗位或目标岗位不存在";
+  const sourceRule = assignmentRule(state, source);
+  const targetRule = assignmentRule(state, target);
+  const supervisor = state.assignments.find((assignment) => {
+    const rule = assignmentRule(state, assignment);
+    return assignment.id !== source.id
+      && assignment.flightId === source.flightId
+      && assignment.staffId === source.staffId
+      && assignment.status === "assigned"
+      && rule?.category === "常规"
+      && rule.name.includes("督导");
+  });
+  if (sourceRule?.category !== "督导补位" || targetRule?.category !== "常规" || !supervisor) return "督导机动补位条件不成立";
+
+  source.staffId = null;
+  source.staffName = "";
+  source.status = "manual";
+  source.workHours = 0;
+  source.fatiguePoints = 0;
+  source.supervisorFillDetached = true;
+  delete source.systemNotes;
+
+  target.staffId = supervisor.staffId;
+  target.staffName = supervisor.staffName;
+  target.status = "assigned";
+  target.workHours = 0;
+  target.fatiguePoints = targetRule.fatiguePoints;
+  target.supervisorCoverSourceAssignmentId = supervisor.id;
+  delete target.systemNotes;
+  return null;
+}
+
+export function resetSupervisorCoverAssignment(state: AppState, assignment: Assignment): void {
+  if (!assignment.supervisorCoverSourceAssignmentId) return;
+  delete assignment.supervisorCoverSourceAssignmentId;
+  const flight = state.flights.find((item) => item.id === assignment.flightId);
+  const rule = assignmentRule(state, assignment);
+  if (flight) assignment.workHours = durationHours(flight.startTime, flight.endTime);
+  assignment.fatiguePoints = rule?.fatiguePoints ?? assignment.workHours;
+}
+
+export function normalizeSupervisorCoverAssignments(state: AppState): void {
+  state.assignments.forEach((assignment) => {
+    if (!assignment.supervisorCoverSourceAssignmentId) return;
+    const source = state.assignments.find((item) => item.id === assignment.supervisorCoverSourceAssignmentId);
+    const rule = assignmentRule(state, assignment);
+    const sourceRule = source ? assignmentRule(state, source) : undefined;
+    const valid = Boolean(
+      assignment.staffId
+      && assignment.status === "assigned"
+      && rule?.category === "常规"
+      && source?.flightId === assignment.flightId
+      && source.staffId === assignment.staffId
+      && source.status === "assigned"
+      && sourceRule?.category === "常规"
+      && sourceRule.name.includes("督导")
+    );
+    if (!valid) {
+      resetSupervisorCoverAssignment(state, assignment);
+      return;
+    }
+    assignment.workHours = 0;
+    assignment.fatiguePoints = rule?.fatiguePoints ?? 0;
+  });
+}
+
 export function normalizeSupervisorFillAssignments(state: AppState): void {
   state.assignments.forEach((assignment) => {
     const rule = assignmentRule(state, assignment);

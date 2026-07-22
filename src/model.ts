@@ -70,6 +70,7 @@ export interface Assignment {
   status: "assigned" | "unfilled" | "manual";
   systemNotes?: string[];
   supervisorFillDetached?: boolean;
+  supervisorCoverSourceAssignmentId?: string;
   layoutGroup?: "primary" | "bottom";
   layoutIndex?: number;
 }

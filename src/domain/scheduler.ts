@@ -829,6 +829,52 @@ export function canAssignStaff(state: AppState, assignmentId: string, staffId: s
   return null;
 }
 
+export function canUseSupervisorFillOnRegularPosition(
+  state: AppState,
+  sourceAssignmentId: string,
+  targetAssignmentId: string
+): string | null {
+  const source = state.assignments.find((item) => item.id === sourceAssignmentId);
+  const target = state.assignments.find((item) => item.id === targetAssignmentId);
+  if (!source || !target || !source.staffId) return "源岗位或目标岗位不存在";
+  const sourceRule = assignmentRule(state, source);
+  const targetRule = assignmentRule(state, target);
+  if (sourceRule?.category !== "督导补位" || targetRule?.category !== "常规" || isSupervisorPosition(targetRule.name)) {
+    return "督导机动补位只能拖入普通常规岗位";
+  }
+  if (source.flightId !== target.flightId) return "督导机动补位只能用于同一航班";
+  if (target.staffId || target.staffName) return `目标岗位已有人员，请先清空 ${target.position}`;
+  const person = state.staff.find((item) => item.id === source.staffId);
+  if (!person) return "督导人员不存在";
+  if (person.status !== "正常") return `${person.name} 当前状态为${person.status}`;
+  if (person.staffType !== "常规") return "督导机动补位只能使用常规人员";
+  if (!targetRule.qualifiedStaffIds.includes(person.id)) return `${person.name} 不具备 ${target.position} 岗位资质`;
+  if (isNightInterval(target.startTime, target.endTime, state.settings.nightStart, state.settings.nightEnd) && !person.nightShift) {
+    return `${person.name} 不可上夜班`;
+  }
+  const supervisor = state.assignments.find((item) => item.id !== source.id
+    && item.flightId === source.flightId
+    && item.staffId === person.id
+    && item.status === "assigned"
+    && assignmentRule(state, item)?.category === "常规"
+    && isSupervisorPosition(item.position));
+  if (!supervisor) return `${person.name} 当前不是该航班的常规督导`;
+
+  const others = state.assignments.filter((item) => item.id !== target.id && item.id !== source.id && item.staffId === person.id);
+  const conflicts = others.filter((item) => item.id !== supervisor.id)
+    .filter((item) => item.flightId !== target.flightId || !isReusableAssignment(state, item));
+  if (conflicts.some((item) => intervalsOverlap(item.startTime, item.endTime, target.startTime, target.endTime) && !canReleaseForFlight(item, target, state))) {
+    return `${person.name} 在该时段已有其他排班`;
+  }
+  if (projectedAssignedHours(others, person.id, target, state) > state.settings.maxDailyHours) {
+    return `${person.name} 将超过每日 ${state.settings.maxDailyHours} 小时上限`;
+  }
+  if (positionTransitionCost(conflicts, person.id, target.flightNo, target.position, target.startTime, state, "forbid") > 0) {
+    return `${person.name} 不满足该岗位的最小衔接间隔`;
+  }
+  return null;
+}
+
 export function applyEarlyReleaseForStaff(state: AppState, assignmentId: string, staffId: string): void {
   const assignment = state.assignments.find((item) => item.id === assignmentId);
   if (!assignment) return;

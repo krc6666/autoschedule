@@ -2,10 +2,10 @@ import Modal from "bootstrap/js/dist/modal";
 import Toast from "bootstrap/js/dist/toast";
 
 import { createDefaultState } from "./defaults";
-import { activeFlightRules, applyEarlyReleaseForStaff, generateSchedule, canAssignStaff, isAuxiliaryCategory, isDiversionTransfer, isGuideAssignment } from "./domain/scheduler";
+import { generateSchedule, isAuxiliaryCategory } from "./domain/scheduler";
 import { addIsoDays } from "./domain/time";
 import { applyStaffStatusChange, assignmentUsesUnavailableStaff } from "./domain/schedule-state";
-import { isSupervisorMoveSlot, moveSupervisorWithinFlight, normalizeSupervisorFillAssignments } from "./domain/schedule-adjustment";
+import { assignStaff as editScheduleAssignment, updateAssignmentField as editScheduleAssignmentField } from "./app/schedule-actions";
 import { clearDutyRosterOverride, clearMonthlyDutyRosterOverrides, getDutyRosterForDate, updateDutyRosterSlot, type DutyRosterSlot } from "./domain/duty-roster";
 import { clearState, loadState, saveState } from "./infrastructure/storage";
 import type { AppSection, AppState, Flight, FlightTemplate, HistoryRecord, PositionTransitionPolicy, Staff } from "./model";
@@ -637,91 +637,9 @@ export class AutoScheduleApp {
   }
 
   private assignStaff(assignmentId: string, staffId: string, sourceAssignmentId?: string): void {
-    const assignment = this.state.assignments.find((item) => item.id === assignmentId);
-    if (!assignment) return;
-    if (sourceAssignmentId === assignmentId) return;
-    if (!staffId) {
-      const rule = assignment.positionRuleId ? this.state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-      assignment.staffId = null; assignment.staffName = ""; assignment.status = rule?.manual || isAuxiliaryCategory(rule?.category) || rule?.category === "督导补位" || !assignment.positionRuleId ? "manual" : "unfilled";
-      if (rule?.category === "督导补位") assignment.supervisorFillDetached = true;
-      delete assignment.systemNotes;
-      this.refreshSameFlightReuseAssignments([assignment.flightId]);
-      this.commit("岗位已设为待补位");
-      return;
-    }
-    const source = sourceAssignmentId ? this.state.assignments.find((item) => item.id === sourceAssignmentId) : undefined;
-    if (source && isSupervisorMoveSlot(this.state, source) && isSupervisorMoveSlot(this.state, assignment)) {
-      const moveError = moveSupervisorWithinFlight(this.state, source.id, assignment.id);
-      if (moveError) { this.render(); this.toast(moveError, "danger"); return; }
-      this.refreshSameFlightReuseAssignments([assignment.flightId]);
-      this.commit(assignment.staffName && source.staffName ? "督导岗位人员已交换" : "督导人员已移动");
-      return;
-    }
-    const targetStaffId = assignment.staffId;
-    const targetStaffName = assignment.staffName;
-    const copySource = Boolean(sourceAssignmentId && (isGuideAssignment(this.state, assignment)
-      || (!targetStaffId && isDiversionTransfer(this.state, sourceAssignmentId, assignmentId))));
-    const error = canAssignStaff(this.state, assignmentId, staffId, copySource ? undefined : sourceAssignmentId);
-    if (error) { this.render(); this.toast(error, "danger"); return; }
-    const person = this.state.staff.find((item) => item.id === staffId);
-    if (!person) return;
-    if (source && !copySource && targetStaffId) {
-      const reverseError = canAssignStaff(this.state, source.id, targetStaffId, assignment.id);
-      if (reverseError) { this.render(); this.toast(`无法交换：${reverseError}`, "danger"); return; }
-    }
-    assignment.staffId = person.id; assignment.staffName = person.name; assignment.status = "assigned"; delete assignment.systemNotes;
-    if (source && !copySource) {
-      if (targetStaffId) {
-        source.staffId = targetStaffId;
-        source.staffName = targetStaffName;
-        source.status = "assigned";
-        delete source.systemNotes;
-      } else {
-        const sourceRule = source.positionRuleId ? this.state.positionRules.find((item) => item.id === source.positionRuleId) : undefined;
-        source.staffId = null; source.staffName = ""; source.status = sourceRule?.manual || isAuxiliaryCategory(sourceRule?.category) || sourceRule?.category === "督导补位" || !source.positionRuleId ? "manual" : "unfilled";
-        delete source.systemNotes;
-      }
-    }
-    applyEarlyReleaseForStaff(this.state, assignment.id, person.id);
-    if (source && targetStaffId && !copySource) applyEarlyReleaseForStaff(this.state, source.id, targetStaffId);
-    this.refreshSameFlightReuseAssignments([assignment.flightId, ...(source ? [source.flightId] : [])]);
-    const copyMessage = isGuideAssignment(this.state, assignment) ? "引导人员已复用" : "分流人员已转派";
-    this.commit(source && targetStaffId && !copySource ? "人员岗位已交换" : copySource ? copyMessage : "人员分配已更新");
-  }
-
-  private refreshSameFlightReuseAssignments(flightIds: string[]): void {
-    normalizeSupervisorFillAssignments(this.state);
-    for (const flightId of new Set(flightIds)) {
-      const reuseAssignments = this.state.assignments.filter((item) => item.flightId === flightId && isGuideAssignment(this.state, item));
-      const flight = this.state.flights.find((item) => item.id === flightId);
-      const displayIndex = new Map((flight ? activeFlightRules(this.state, flight) : []).map((rule, index) => [rule.id, index]));
-      const usedStaffIdsByCategory = new Map<string, Set<string>>();
-      for (const reuseAssignment of reuseAssignments) {
-        const reuseRule = reuseAssignment.positionRuleId ? this.state.positionRules.find((rule) => rule.id === reuseAssignment.positionRuleId) : undefined;
-        if (!reuseRule) continue;
-        const usedStaffIds = usedStaffIdsByCategory.get(reuseRule.category) ?? new Set<string>();
-        usedStaffIdsByCategory.set(reuseRule.category, usedStaffIds);
-        const candidates = this.state.assignments
-          .filter((item) => item.flightId === flightId && item.id !== reuseAssignment.id && item.status === "assigned")
-          .filter((item) => item.staffId && !usedStaffIds.has(item.staffId))
-          .map((item) => ({
-            assignment: item,
-            sourceRule: item.positionRuleId ? this.state.positionRules.find((rule) => rule.id === item.positionRuleId) : undefined,
-            person: this.state.staff.find((person) => person.id === item.staffId)
-          }))
-          .filter((item): item is typeof item & { person: Staff } => Boolean(
-            item.sourceRule?.category === "常规"
-            && item.person?.status === "正常"
-            && item.person.staffType === "常规"
-          ))
-          .sort((left, right) => (displayIndex.get(right.assignment.positionRuleId ?? "") ?? -1) - (displayIndex.get(left.assignment.positionRuleId ?? "") ?? -1));
-        const selected = candidates[0]?.person;
-        reuseAssignment.staffId = selected?.id ?? null;
-        reuseAssignment.staffName = selected?.name ?? "";
-        reuseAssignment.status = selected ? "assigned" : "unfilled";
-        if (selected) usedStaffIds.add(selected.id);
-      }
-    }
+    const result = editScheduleAssignment(this.state, assignmentId, staffId, sourceAssignmentId);
+    if (result.error) { this.render(); this.toast(result.error, "danger"); return; }
+    if (result.changed) this.commit(result.message);
   }
 
   private deleteAssignment(id: string): void {
@@ -917,35 +835,9 @@ export class AutoScheduleApp {
       if (field === "positions") template.positions = splitList(value);
       else (template as unknown as Record<string, unknown>)[field] = typeof value === "string" && field === "flightNo" ? value.toUpperCase() : value;
     } else if (entity === "assignment") {
-      const assignment = this.state.assignments.find((item) => item.id === id);
-      if (!assignment) return;
-      if (field === "manualRemark") assignment.manualRemark = normalizeText(value);
-      else if (field === "staffName") {
-        const staffName = normalizeText(value);
-        const rule = assignment.positionRuleId ? this.state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-        if (!staffName) {
-          this.assignStaff(id, "");
-          return;
-        }
-        const person = this.state.staff.find((item) => item.name === staffName);
-        if (!person && (rule?.category === "引导" || rule?.category === "督导补位")) {
-          this.render();
-          this.toast(rule.category === "督导补位" ? "督导补位只能复用同一航班已排督导人员" : "引导岗位只能复用同一航班中已排常规岗位的常规人员", "danger");
-          return;
-        }
-        if (!person || (person.staffType !== "行政支援" && (isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId))) {
-          if (rule?.category === "督导补位") assignment.supervisorFillDetached = true;
-          assignment.staffId = null;
-          assignment.staffName = staffName;
-          assignment.status = "assigned";
-          delete assignment.systemNotes;
-        } else {
-          this.assignStaff(id, person.id);
-          return;
-        }
-      } else if (field === "position" && !assignment.positionRuleId) {
-        assignment.position = normalizeText(value) || "临时岗位";
-      }
+      const result = editScheduleAssignmentField(this.state, id, field, value);
+      if (result.error) { this.render(); this.toast(result.error, "danger"); return; }
+      if (!result.changed) return;
     } else if (entity === "staff") {
       const person = this.state.staff.find((item) => item.id === id);
       if (!person) return;

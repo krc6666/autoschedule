@@ -1,6 +1,6 @@
 import { createDefaultState } from "../defaults";
 import { removeUnavailableStaffAssignments } from "../domain/schedule-state";
-import { normalizeSupervisorFillAssignments } from "../domain/schedule-adjustment";
+import { normalizeSupervisorCoverAssignments, normalizeSupervisorFillAssignments } from "../domain/schedule-adjustment";
 import type { AppState } from "../model";
 import { orderPositionRules } from "../utils";
 
@@ -108,6 +108,7 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
       });
     removeUnavailableStaffAssignments(next);
     normalizeSupervisorFillAssignments(next);
+    normalizeSupervisorCoverAssignments(next);
     return next;
   } catch {
     return fallback;

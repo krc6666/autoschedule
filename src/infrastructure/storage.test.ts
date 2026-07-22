@@ -177,6 +177,33 @@ describe("state persistence", () => {
     });
   });
 
+  it("keeps a valid supervisor mobile cover without duplicating work hours", () => {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    const supervisorRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.name === "督导")!;
+    const targetRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.category === "常规" && rule.name !== "督导")!;
+    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id) && targetRule.qualifiedStaffIds.includes(item.id))!;
+    state.assignments = [
+      {
+        id: "supervisor", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: supervisorRule.id,
+        position: supervisorRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
+        workHours: 2, fatiguePoints: supervisorRule.fatiguePoints, remark: "", manualRemark: "", status: "assigned"
+      },
+      {
+        id: "cover", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: targetRule.id,
+        position: targetRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
+        workHours: 2, fatiguePoints: 0, remark: "", manualRemark: "", status: "assigned", supervisorCoverSourceAssignmentId: "supervisor"
+      }
+    ];
+
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+
+    expect(loaded.assignments.find((assignment) => assignment.id === "cover")).toMatchObject({
+      staffId: person.id, workHours: 0, fatiguePoints: targetRule.fatiguePoints,
+      supervisorCoverSourceAssignmentId: "supervisor"
+    });
+  });
+
   it("keeps generated scheduling notes used by feedback", () => {
     const state = createDefaultState();
     const rule = state.positionRules[0]!;
