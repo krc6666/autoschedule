@@ -154,8 +154,10 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
     if (!currentFlight || !name) continue;
     const rawQualified = normalizeText(row[qualifiedIndex]);
     const categoryText = normalizeText(row[categoryIndex]);
-    if (categoryText.includes("支援") && !categoryText.includes("行政支援")) continue;
-    const category: PositionRule["category"] = categoryText.includes("行政支援")
+    if (categoryText.includes("支援") && !categoryText.includes("行政支援") && !categoryText.includes("督导补位")) continue;
+    const category: PositionRule["category"] = categoryText.includes("督导补位")
+      ? "督导补位"
+      : categoryText.includes("行政支援")
       ? "行政支援"
       : categoryText.includes("引导")
         ? "引导"

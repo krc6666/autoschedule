@@ -294,11 +294,19 @@ button, input, select { letter-spacing: 0; }
 .load-sort-controls .form-select { width: auto; min-width: 112px; }
 .schedule-feedback { margin-top: 8px; }
 .schedule-feedback .section-heading { margin-bottom: 6px; }
+.schedule-feedback-group + .schedule-feedback-group { margin-top: 10px; }
+.schedule-feedback-group-heading { display: flex; align-items: baseline; gap: 8px; padding: 6px 2px 3px; border-bottom: 1px solid #dfe5e9; }
+.schedule-feedback-group-heading strong { color: #27313a; font-size: 12px; }
+.schedule-feedback-group-heading span { color: #7a858e; font-size: 11px; }
 .schedule-feedback-list { display: grid; }
 .schedule-feedback-item { display: grid; grid-template-columns: 16px 92px minmax(0, 1fr); align-items: start; gap: 8px; padding: 7px 2px; border-top: 1px solid #edf0f2; font-size: 12px; line-height: 1.45; }
 .schedule-feedback-item:first-child { border-top: 0; }
 .schedule-feedback-item > i { margin-top: 1px; color: #66717c; }
 .schedule-feedback-item > strong { color: #3e4751; font-size: 12px; }
+.feedback-status { display: inline-block; margin-left: 5px; padding: 1px 4px; border-radius: 3px; font-size: 10px; font-style: normal; font-weight: 500; color: #59636e; background: #eef1f3; }
+.feedback-status.is-ok { color: #146c43; background: #d1e7dd; }
+.feedback-status.is-attention { color: #8a5a00; background: #fff3cd; }
+.feedback-status.is-info { color: #46657d; background: #e2edf5; }
 .schedule-feedback-item > span { color: #59636e; }
 .schedule-feedback-item.is-ok > i { color: #198754; }
 .schedule-feedback-item.is-attention > i { color: #c27803; }

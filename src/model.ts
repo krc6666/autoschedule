@@ -30,7 +30,7 @@ export interface PositionRule {
   id: string;
   flightNo: string;
   name: string;
-  category: "常规" | "引导" | "分流" | "行政支援";
+  category: "常规" | "引导" | "督导补位" | "分流" | "行政支援";
   remark: string;
   qualifiedStaffIds: string[];
   manual: boolean;
@@ -68,6 +68,8 @@ export interface Assignment {
   remark: string;
   manualRemark: string;
   status: "assigned" | "unfilled" | "manual";
+  systemNotes?: string[];
+  supervisorFillDetached?: boolean;
   layoutGroup?: "primary" | "bottom";
   layoutIndex?: number;
 }

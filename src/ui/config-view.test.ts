@@ -14,7 +14,15 @@ describe("config view", () => {
     expect(html).toContain('data-field="cxPreflightQualified"');
     expect(html).toContain("值班资质");
     expect(html).toContain('data-field="dutyQualified"');
+    expect(html).toContain(">督导补位</option>");
     expect(html).toMatch(/\d+ 人值班资质/);
+  });
+
+  it("explains that supervisor-fill positions accept same-flight supervisor movement", () => {
+    const state = createDefaultState();
+    state.positionRules[0]!.category = "督导补位";
+    const html = renderConfig(state);
+    expect(html).toContain("默认同步同航班督导，拖拽后独立");
   });
 
   it("renders scheduling policies in an independent collapsible module", () => {
@@ -36,7 +44,10 @@ describe("config view", () => {
     expect(html).toContain('data-entity="transition-policy"');
     expect(html).toContain("当前排班规则清单");
     expect(html).toContain("岗位资质硬约束");
-    expect(html).toContain("稀缺岗位优先");
+    expect(html).toContain("状态变化后立即重新计算当前排班");
+    expect(html).toContain("12点前单岗位稀缺优先");
+    expect(html).toContain("12点前岗位完整性");
+    expect(html).toContain("可突破严格限制并反馈留痕");
     expect(html).toContain('id="policy-rolling-load-enabled"');
     expect(html).toContain('id="policy-rolling-window-minutes"');
     expect(html).toContain('id="policy-rolling-max-fatigue"');

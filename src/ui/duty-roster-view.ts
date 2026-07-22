@@ -75,39 +75,47 @@ export function renderDutyRosterDetails(state: AppState, date: string): string {
   const cxStats = stats.filter((item) => cxIds.has(item.staff.id));
   const cxRange = countRange(cxStats.map((item) => item.cxPreflightDates.length));
   const standbyRange = countRange(stats.map((item) => item.standbyDates.length));
+  const dutyRange = countRange(stats.filter((item) => item.staff.dutyQualified).map((item) => item.dutyDates.length));
   const firstRoundCovered = stats.filter((item) => item.staff.dutyQualified && item.dutyDates.length > 0).length;
   const missingDuty = stats.filter((item) => item.staff.dutyQualified && item.dutyDates.length === 0);
-  const repeatedDuty = stats.filter((item) => item.staff.dutyQualified && item.dutyDates.length > 1);
+  const dutySeatShortage = monthly.filter((row) => row.dutyStaffId).length < dutyStaff.length;
+  const standbyMissing = stats.filter((item) => item.standbyDates.length < 2);
+  const standbyCapacity = monthly.reduce((sum, row) => sum + Math.min(2, Math.max(0, regularStaff.length - (row.dutyStaffId ? 1 : 0))), 0);
+  const standbySeatShortage = standbyCapacity < regularStaff.length * 2;
   const unfilledCxRows = monthly.filter((row) => !row.cxPreflightStaffId);
   const hasMonthlyAdjustments = monthly.some((row) => row.adjusted);
-  const imbalanceDetails = missingDuty.length && repeatedDuty.length
-    ? `<div class="duty-balance-alert is-attention"><i class="bi bi-exclamation-triangle-fill"></i><div><strong>值班首轮未完成</strong><span>${escapeHtml(missingDuty.map((item) => `${item.staff.name} 0 次`).join("、"))}；${escapeHtml(repeatedDuty.map((item) => `${item.staff.name} ${item.dutyDates.length} 次`).join("、"))}。</span>${hasMonthlyAdjustments ? `<span>本月存在人工调整，自动均衡不会覆盖手工结果。</span>` : `<span>请恢复本月自动均衡，系统会优先补齐 0 次人员。</span>`}</div>${hasMonthlyAdjustments ? `<button class="btn btn-sm btn-outline-danger" type="button" data-action="rebalance-duty-roster-month" data-id="${escapeHtml(date)}"><i class="bi bi-arrow-repeat me-1"></i>重新均衡本月</button>` : ""}</div>`
-    : missingDuty.length
+  const imbalanceDetails = (missingDuty.length && !dutySeatShortage) || dutyRange.difference > 1
+    ? `<div class="duty-balance-alert is-attention"><i class="bi bi-exclamation-triangle-fill"></i><div><strong>值班均衡未完成</strong><span>${escapeHtml(stats.filter((item) => item.staff.dutyQualified).map((item) => `${item.staff.name} ${item.dutyDates.length} 次`).join("、"))}。</span>${hasMonthlyAdjustments ? `<span>本月存在人工调整，自动均衡不会覆盖手工结果。</span>` : `<span>请恢复本月自动均衡，系统会先补齐 0 次人员并将次数差控制在 1 以内。</span>`}</div>${hasMonthlyAdjustments ? `<button class="btn btn-sm btn-outline-danger" type="button" data-action="rebalance-duty-roster-month" data-id="${escapeHtml(date)}"><i class="bi bi-arrow-repeat me-1"></i>重新均衡本月</button>` : ""}</div>`
+    : missingDuty.length && dutySeatShortage
       ? `<div class="duty-balance-alert is-info"><i class="bi bi-info-circle-fill"></i><div><strong>本月值班席位不足</strong><span>${escapeHtml(missingDuty.map((item) => item.staff.name).join("、"))}本月暂缺 1 次值班，缺额会在后续月份轮换。</span></div></div>`
       : "";
+  const standbyDetails = standbyMissing.length
+    ? `<div class="duty-balance-alert ${standbySeatShortage ? "is-info" : "is-attention"}"><i class="bi bi-${standbySeatShortage ? "info-circle-fill" : "exclamation-triangle-fill"}"></i><div><strong>${standbySeatShortage ? "本月备勤席位不足" : "备勤保底未完成"}</strong><span>${escapeHtml(standbyMissing.map((item) => `${item.staff.name} ${item.standbyDates.length} 次`).join("、"))}。${standbySeatShortage ? "值班刚性要求优先，备勤缺额只作说明，不计入违约。" : "每名正常常规人员应至少安排 2 次备勤。"}</span></div></div>`
+    : "";
   return `<section class="workspace-section duty-roster-details-section">
-    <div class="section-heading"><div><h3>月度轮值明细</h3><span>${escapeHtml(date)} · 四个人选互不重复</span></div></div>
+    <div class="section-heading"><div><h3>月度轮值明细</h3><span>${escapeHtml(date)} · 值班与其他轮值互斥，CX航前可兼任备勤</span></div></div>
     <div class="duty-roster-groups">
       <details class="duty-roster-details" data-duty-roster-section="cx"><summary><span><i class="bi bi-airplane-engines me-2"></i>CX航前轮换</span><i class="bi bi-chevron-down"></i></summary><div class="duty-roster-detail-body">
         <div class="duty-balance-summary"><span>资质人员 <strong>${cxStaff.length}</strong></span><span>次数范围 <strong>${cxRange.min}-${cxRange.max}</strong></span><span>航前差值 <strong>${cxRange.difference}</strong></span></div>
         <div class="table-responsive"><table class="table table-sm align-middle duty-roster-fairness-table"><thead><tr><th>资格人员</th><th>本月次数</th><th>轮值日期</th></tr></thead><tbody>${statsRows(cxStats, "cx")}</tbody></table></div>
         <div class="table-responsive duty-roster-table-wrap"><table class="table table-sm align-middle duty-roster-table"><thead><tr><th>工作日</th><th>CX航前</th><th class="action-col"></th></tr></thead><tbody>
           ${monthly.map((row) => {
-            const cxOptions = cxStaff.filter((person) => person.id === row.cxPreflightStaffId || ![row.dutyStaffId, ...row.standbyStaffIds].includes(person.id));
+            const cxOptions = cxStaff.filter((person) => person.id === row.cxPreflightStaffId || person.id !== row.dutyStaffId);
             return `<tr class="${row.date === date ? "is-current" : ""}"><td><strong>${escapeHtml(row.date.slice(5))}</strong>${row.adjusted ? `<span class="duty-adjusted-mark">已调整</span>` : ""}</td><td>${rosterSelect(cxOptions, row, "cx-preflight", row.cxPreflightStaffId, "CX航前")}</td><td>${resetButton(row)}</td></tr>`;
           }).join("")}
         </tbody></table></div>
         ${!cxStaff.length ? `<div class="duty-roster-warning"><i class="bi bi-exclamation-triangle"></i><span>尚未配置CX航前资质人员</span></div>` : unfilledCxRows.length ? `<div class="duty-roster-warning"><i class="bi bi-exclamation-triangle"></i><span>值班优先后，本月 ${unfilledCxRows.length} 个工作日没有剩余CX航前资质人员，请增加CX资质人员或人工调整。</span></div>` : ""}
       </div></details>
       <details class="duty-roster-details" data-duty-roster-section="general"><summary><span><i class="bi bi-people me-2"></i>值班与备勤轮换</span><i class="bi bi-chevron-down"></i></summary><div class="duty-roster-detail-body">
-        <div class="duty-balance-summary"><span>值班席位 <strong>${monthly.length}</strong></span><span>资质人员 <strong>${dutyStaff.length}</strong></span><span>首轮覆盖 <strong>${firstRoundCovered}/${dutyStaff.length}</strong></span><span>备勤差值 <strong>${standbyRange.difference}</strong></span><span>每次值班 <strong>${state.settings.dutyFatiguePoints} 点</strong></span></div>
+        <div class="duty-balance-summary"><span>值班席位 <strong>${monthly.length}</strong></span><span>资质人员 <strong>${dutyStaff.length}</strong></span><span>首轮覆盖 <strong>${firstRoundCovered}/${dutyStaff.length}</strong></span><span>值班差值 <strong>${dutyRange.difference}</strong></span><span>备勤差值 <strong>${standbyRange.difference}</strong></span><span>备勤保底 <strong>2 次</strong></span><span>每次值班 <strong>${state.settings.dutyFatiguePoints} 点</strong></span></div>
         ${imbalanceDetails}
+        ${standbyDetails}
         <div class="table-responsive"><table class="table table-sm align-middle duty-roster-fairness-table"><thead><tr><th>人员</th><th>值班保障</th><th>本月值班</th><th>计划疲劳</th><th>本月备勤</th><th>轮值日期</th></tr></thead><tbody>${statsRows(stats, "general", state.settings.dutyFatiguePoints)}</tbody></table></div>
         <div class="table-responsive duty-roster-table-wrap"><table class="table table-sm align-middle duty-roster-table"><thead><tr><th>工作日</th><th>值班人员</th><th>备勤一</th><th>备勤二</th><th class="action-col"></th></tr></thead><tbody>
           ${monthly.map((row) => {
-            const generalOptions = regularStaff.filter((person) => person.id !== row.cxPreflightStaffId);
+            const standbyOptions = regularStaff.filter((person) => person.id !== row.dutyStaffId);
             const dutyOptions = dutyStaff.filter((person) => person.id !== row.cxPreflightStaffId);
-            return `<tr class="${row.date === date ? "is-current" : ""}"><td><strong>${escapeHtml(row.date.slice(5))}</strong>${row.adjusted ? `<span class="duty-adjusted-mark">已调整</span>` : ""}</td><td>${rosterSelect(dutyOptions, row, "duty", row.dutyStaffId, "值班人员")}</td><td>${rosterSelect(generalOptions, row, "standby-0", row.standbyStaffIds[0], "备勤一")}</td><td>${rosterSelect(generalOptions, row, "standby-1", row.standbyStaffIds[1], "备勤二")}</td><td>${resetButton(row)}</td></tr>`;
+            return `<tr class="${row.date === date ? "is-current" : ""}"><td><strong>${escapeHtml(row.date.slice(5))}</strong>${row.adjusted ? `<span class="duty-adjusted-mark">已调整</span>` : ""}</td><td>${rosterSelect(dutyOptions, row, "duty", row.dutyStaffId, "值班人员")}</td><td>${rosterSelect(standbyOptions, row, "standby-0", row.standbyStaffIds[0], "备勤一")}</td><td>${rosterSelect(standbyOptions, row, "standby-1", row.standbyStaffIds[1], "备勤二")}</td><td>${resetButton(row)}</td></tr>`;
           }).join("")}
         </tbody></table></div>
         ${dutyStaff.length ? "" : `<div class="duty-roster-warning"><i class="bi bi-exclamation-triangle"></i><span>尚未配置值班资质人员</span></div>`}

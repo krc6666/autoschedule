@@ -33,6 +33,8 @@ describe("schedule view", () => {
     expect(html).toContain("人员覆盖");
     expect(html).toContain("航班衔接");
     expect(html).toContain("上一工作日晚班");
+    expect(html).toContain("本月备勤席位不足");
+    expect(html).toContain("不计入违约");
     expect(html).toContain("--schedule-column-width:64px");
     expect(html).toContain('<th scope="col" colspan="2">');
     expect(html).toContain('class="schedule-subhead-position">岗位</th>');
@@ -100,7 +102,7 @@ describe("schedule view", () => {
     expect(updateDutyRosterSlot(state, target.date, "duty", repeated.id)).toBeNull();
     state.assignments = generateSchedule(state, "2026-08-01").assignments;
     const html = renderSchedule(state, "2026-08-01");
-    expect(html).toContain("值班首轮未完成");
+    expect(html).toContain("值班均衡未完成");
     expect(html).toContain(`${repeated.name} 2 次`);
     expect(html).toContain("月度值班需纠偏");
     expect(html).toContain('data-action="rebalance-duty-roster-month"');
@@ -115,6 +117,25 @@ describe("schedule view", () => {
     const html = renderSchedule(state, "2026-07-18");
     expect(html).toMatch(/<td class="schedule-grid-slot schedule-position-slot">[\s\S]*?<span class="position-remark"[^>]*>申报<\/span>[\s\S]*?<\/td><td class="schedule-grid-slot schedule-person-slot">/);
     expect(html).toMatch(/<td class="schedule-grid-slot schedule-person-slot">[\s\S]*?class="schedule-name-input"[\s\S]*?class="schedule-manual-remark" value="临时调整"[\s\S]*?<\/td>/);
+  });
+
+  it("keeps supervisor-fill positions in configured counter order without extra markers", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 2);
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "supervisor", flightNo: "F1", name: "督导", category: "常规", qualifiedStaffIds: [state.staff[0]!.id] },
+      { ...base, id: "supervisor-fill", flightNo: "F1", name: "超规柜台督导", category: "督导补位", qualifiedStaffIds: [] }
+    ];
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+    expect(state.assignments.find((item) => item.positionRuleId === "supervisor-fill")).toMatchObject({ staffId: state.staff[0]!.id, status: "assigned", workHours: 0, fatiguePoints: 0 });
+    const html = renderSchedule(state, "2026-07-18");
+    expect(html).toContain("引导岗位");
+    expect(html).not.toContain("引导岗位 / 督导补位");
+    expect(html).not.toContain("supervisor-fill-tag");
+    expect(html.indexOf("超规柜台督导")).toBeLessThan(html.indexOf("引导岗位"));
   });
 
   it("shows a separate administrative roster only when support mode is enabled", () => {

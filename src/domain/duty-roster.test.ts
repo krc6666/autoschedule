@@ -5,7 +5,7 @@ import { generateSchedule } from "./scheduler";
 import { clearMonthlyDutyRosterOverrides, getDutyRosterForDate, getMonthlyDutyRoster, getMonthlyDutyRosterStats, updateDutyRosterSlot } from "./duty-roster";
 
 describe("monthly duty roster", () => {
-  it("rotates four distinct people and limits CX preflight to its qualified pool", () => {
+  it("keeps duty exclusive while allowing CX preflight to overlap standby", () => {
     const state = createDefaultState();
     state.staff.slice(0, 3).forEach((person) => { person.cxPreflightQualified = true; });
     state.staff[3]!.status = "休假";
@@ -13,9 +13,28 @@ describe("monthly duty roster", () => {
     const rows = getMonthlyDutyRoster(state, "2026-07-20");
     expect(rows[0]?.date).toBe("2026-07-02");
     expect(rows.every((row) => row.cxPreflightStaffId && state.staff.find((person) => person.id === row.cxPreflightStaffId)?.cxPreflightQualified)).toBe(true);
-    expect(rows.every((row) => new Set([row.cxPreflightStaffId, row.dutyStaffId, ...row.standbyStaffIds].filter(Boolean)).size === 4)).toBe(true);
+    expect(rows.every((row) => row.dutyStaffId !== row.cxPreflightStaffId && !row.standbyStaffIds.includes(row.dutyStaffId))).toBe(true);
+    expect(rows.every((row) => new Set(row.standbyStaffIds.filter(Boolean)).size === row.standbyStaffIds.filter(Boolean).length)).toBe(true);
     expect(rows.flatMap((row) => [row.dutyStaffId, ...row.standbyStaffIds]).filter(Boolean)).not.toContain(state.staff[3]!.id);
     expect(rows.flatMap((row) => [row.dutyStaffId, ...row.standbyStaffIds]).filter(Boolean)).not.toContain(state.staff[4]!.id);
+  });
+
+  it("allows the same person to hold CX preflight and standby on one day", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 3);
+    state.staff.forEach((person, index) => {
+      person.dutyQualified = true;
+      person.cxPreflightQualified = index === 0;
+    });
+    const automatic = getMonthlyDutyRoster(state, "2026-08-01");
+    expect(automatic.some((row) => row.cxPreflightStaffId && row.standbyStaffIds.includes(row.cxPreflightStaffId))).toBe(true);
+    const row = automatic.find((item) => item.cxPreflightStaffId && item.dutyStaffId !== state.staff[0]!.id)!;
+    expect(updateDutyRosterSlot(state, row.date, "standby-0", state.staff[0]!.id)).toBeNull();
+    const adjusted = getDutyRosterForDate(state, row.date);
+    expect(adjusted.adjusted).toBe(true);
+    expect(adjusted.cxPreflightStaffId).toBe(state.staff[0]!.id);
+    expect(adjusted.standbyStaffIds).toContain(state.staff[0]!.id);
+    expect(updateDutyRosterSlot(state, row.date, "duty", state.staff[0]!.id)).toContain("值班不能与CX航前");
   });
 
   it("limits duty to qualified staff and keeps monthly duty counts balanced", () => {

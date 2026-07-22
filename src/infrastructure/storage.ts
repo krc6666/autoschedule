@@ -1,4 +1,6 @@
 import { createDefaultState } from "../defaults";
+import { removeUnavailableStaffAssignments } from "../domain/schedule-state";
+import { normalizeSupervisorFillAssignments } from "../domain/schedule-adjustment";
 import type { AppState } from "../model";
 import { orderPositionRules } from "../utils";
 
@@ -81,7 +83,7 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
         standbyStaffIds: [item.standbyStaffIds?.[0] ? String(item.standbyStaffIds[0]) : null, item.standbyStaffIds?.[1] ? String(item.standbyStaffIds[1]) : null]
       }));
     next.positionRules = orderPositionRules(next.positionRules
-      .filter((rule) => ["常规", "引导", "分流", "行政支援"].includes(rule.category))
+      .filter((rule) => ["常规", "引导", "督导补位", "分流", "行政支援"].includes(rule.category))
       .map((rule) => ({
         ...rule,
         minPassengers: Number(rule.minPassengers) || 0,
@@ -91,7 +93,11 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
       .filter((rule) => rule.category === "行政支援")
       .map((rule) => `${rule.flightNo}\u0000${rule.name.trim()}`));
     next.assignments = next.assignments
-      .map((assignment) => ({ ...assignment, manualRemark: assignment.manualRemark ?? "" }))
+      .map((assignment) => ({
+        ...assignment,
+        manualRemark: assignment.manualRemark ?? "",
+        systemNotes: Array.isArray(assignment.systemNotes) ? assignment.systemNotes.map(String).filter(Boolean) : undefined
+      }))
       .filter((assignment) => {
         if (assignment.layoutGroup) return true;
         if (!assignment.positionRuleId) return false;
@@ -100,6 +106,8 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
         if (!next.settings.adminSupportEnabled) return rule.category !== "行政支援";
         return rule.category === "行政支援" || !administrativePositions.has(`${rule.flightNo}\u0000${rule.name.trim()}`);
       });
+    removeUnavailableStaffAssignments(next);
+    normalizeSupervisorFillAssignments(next);
     return next;
   } catch {
     return fallback;

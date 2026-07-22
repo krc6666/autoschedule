@@ -94,7 +94,6 @@ function assignSingleSlotRounds(
 
 function assignStandbyRounds(
   dates: string[],
-  cxByDate: Array<string | null>,
   dutyByDate: Array<string | null>,
   regular: Staff[],
   rotationStart: number
@@ -110,8 +109,7 @@ function assignStandbyRounds(
     const tryAssign = (staffId: string, visitedSlots: Set<number>): boolean => {
       for (const slotIndex of remainingSlots) {
         const dateIndex = Math.floor(slotIndex / 2);
-        if (cxByDate[dateIndex] === staffId
-          || dutyByDate[dateIndex] === staffId
+        if (dutyByDate[dateIndex] === staffId
           || assignedDates.get(staffId)?.has(dateIndex)
           || visitedSlots.has(slotIndex)) continue;
         visitedSlots.add(slotIndex);
@@ -148,7 +146,7 @@ function defaultMonthlyDutyRoster(state: AppState, date: string): DutyRosterAssi
   const standbyRotationStart = regular.length ? (rotationSeed * 2) % regular.length : 0;
   const dutyByDate = assignSingleSlotRounds(dates, dutyPool, dutyRotationStart, dates.map(() => null));
   const cxByDate = assignSingleSlotRounds(dates, cxPool, cxRotationStart, dutyByDate);
-  const standbyByDate = assignStandbyRounds(dates, cxByDate, dutyByDate, regular, standbyRotationStart);
+  const standbyByDate = assignStandbyRounds(dates, dutyByDate, regular, standbyRotationStart);
   return dates.map((item, ordinal) => {
     const cxPreflightStaffId = cxByDate[ordinal] ?? null;
     const dutyStaffId = dutyByDate[ordinal] ?? null;
@@ -161,10 +159,11 @@ function validOverride(state: AppState, override: DutyRosterOverride): boolean {
   const regularIds = new Set(rosterEligibleStaff(state).map((person) => person.id));
   const cxIds = new Set(cxPreflightEligibleStaff(state).map((person) => person.id));
   const dutyIds = new Set(dutyQualifiedStaff(state).map((person) => person.id));
-  const ids = [override.cxPreflightStaffId, override.dutyStaffId, ...override.standbyStaffIds].filter((id): id is string => Boolean(id));
-  if (new Set(ids).size !== ids.length) return false;
   if (override.cxPreflightStaffId && !cxIds.has(override.cxPreflightStaffId)) return false;
   if (override.dutyStaffId && !dutyIds.has(override.dutyStaffId)) return false;
+  if (override.dutyStaffId && [override.cxPreflightStaffId, ...override.standbyStaffIds].includes(override.dutyStaffId)) return false;
+  const standbyIds = override.standbyStaffIds.filter((id): id is string => Boolean(id));
+  if (new Set(standbyIds).size !== standbyIds.length) return false;
   return [override.dutyStaffId, ...override.standbyStaffIds].every((id) => !id || regularIds.has(id));
 }
 
@@ -196,12 +195,12 @@ export function updateDutyRosterSlot(state: AppState, date: string, slot: DutyRo
   const dutyIds = new Set(dutyQualifiedStaff(state).map((person) => person.id));
   if (slot === "cx-preflight") {
     if (!cxIds.has(staffId)) return "该人员不具备CX航前资质或当前不可用";
-    if ([current.dutyStaffId, ...current.standbyStaffIds].includes(staffId)) return "CX航前不能与值班或备勤由同一人承担";
+    if (current.dutyStaffId === staffId) return "CX航前不能与值班由同一人承担";
     current.cxPreflightStaffId = staffId;
   } else {
     if (!regularIds.has(staffId)) return "值班和备勤只能选择状态正常的常规人员";
     if (slot === "duty" && !dutyIds.has(staffId)) return "该人员不具备值班资质或当前不可用";
-    if (staffId === current.cxPreflightStaffId) return "值班或备勤不能与CX航前由同一人承担";
+    if (slot === "duty" && staffId === current.cxPreflightStaffId) return "值班不能与CX航前由同一人承担";
     const values: [string | null, string | null, string | null] = [current.dutyStaffId, current.standbyStaffIds[0], current.standbyStaffIds[1]];
     const targetIndex = slot === "duty" ? 0 : slot === "standby-0" ? 1 : 2;
     const sourceIndex = values.indexOf(staffId);

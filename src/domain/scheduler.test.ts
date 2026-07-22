@@ -72,7 +72,7 @@ describe("scheduler domain", () => {
     expect(generateSchedule(state, "2026-07-18").assignments.find((item) => item.positionRuleId === "next-high")?.staffId).toBe(first!.id);
   });
 
-  it("leaves a high-load position empty when strict transition protection excludes every candidate", () => {
+  it("fills a high-load position when every candidate is still in the protection window", () => {
     const state = createDefaultState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
@@ -94,9 +94,9 @@ describe("scheduler domain", () => {
     state.settings.highLoadTransitionMode = "forbid";
     const result = generateSchedule(state, "2026-07-18");
     const target = result.assignments.find((item) => item.positionRuleId === "next-high")!;
-    expect(target).toMatchObject({ staffId: null, status: "unfilled" });
+    expect(target).toMatchObject({ staffId: expect.any(String), status: "assigned" });
     state.assignments = result.assignments;
-    expect(canAssignStaff(state, target.id, first!.id)).toContain("高负荷岗位恢复期");
+    expect(canAssignStaff(state, target.id, first!.id)).toBeNull();
   });
 
   it("applies an editable position-to-position preparation interval", () => {
@@ -179,6 +179,47 @@ describe("scheduler domain", () => {
     expect(generateSchedule(state, "2026-07-18").assignments[0]!.staffId).toBe(first!.id);
   });
 
+  it("fills the position when every qualified candidate recently worked the same position", () => {
+    const state = createDefaultState();
+    const workers = state.staff.slice(0, 2);
+    state.staff = workers;
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{ ...base, id: "position", flightNo: "F1", name: "G12", qualifiedStaffIds: workers.map((person) => person.id) }];
+    state.history = workers.map((person, index) => ({
+      id: `history-${index}`, date: "2026-07-17", flightNo: "F1", position: "G12", staffId: person.id, staffName: person.name,
+      startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: ""
+    }));
+    state.settings.positionRotationEnabled = true;
+    state.settings.positionRotationMode = "forbid";
+    expect(generateSchedule(state, "2026-07-18").assignments[0]).toMatchObject({ status: "assigned", staffId: expect.any(String) });
+  });
+
+  it("fills a rolling-load protected position when no unprotected candidate exists", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.staff = [person];
+    person.dutyQualified = false;
+    state.flights = [
+      { id: "first", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "next", flightNo: "F2", startTime: "11:00", endTime: "13:00", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "first", flightNo: "F1", name: "G12", fatiguePoints: 5, remark: "", qualifiedStaffIds: [person.id] },
+      { ...base, id: "next", flightNo: "F2", name: "G13", fatiguePoints: 5, remark: "", qualifiedStaffIds: [person.id] }
+    ];
+    state.settings.highLoadProtectionEnabled = false;
+    state.settings.rollingLoadProtectionEnabled = true;
+    state.settings.rollingLoadMaxFatigue = 8;
+    state.settings.rollingLoadMode = "forbid";
+    expect(generateSchedule(state, "2026-07-18").assignments).toMatchObject([
+      { status: "assigned", staffId: person.id },
+      { status: "assigned", staffId: person.id }
+    ]);
+  });
+
   it("reduces the next late-shift load after a high-load final flight on the previous day", () => {
     const state = createDefaultState();
     const [protectedWorker, restedWorker] = state.staff;
@@ -226,7 +267,7 @@ describe("scheduler domain", () => {
     expect(result.assignments.find((item) => item.positionRuleId === "lower-light")?.staffId).toBe(protectedWorker!.id);
   });
 
-  it("blocks an excessive next-day late position when late-shift recovery is strict", () => {
+  it("fills a next-day late position when the protected worker is the only candidate", () => {
     const state = createDefaultState();
     const person = state.staff[0]!;
     state.staff = [person];
@@ -241,10 +282,24 @@ describe("scheduler domain", () => {
     state.settings.nextDayLateMaxFatigue = 2;
     const result = generateSchedule(state, "2026-07-18");
     const target = result.assignments[0]!;
-    expect(target).toMatchObject({ staffId: null, status: "unfilled" });
+    expect(target).toMatchObject({ staffId: person.id, status: "assigned" });
     state.assignments = result.assignments;
     state.activeScheduleDate = "2026-07-18";
-    expect(canAssignStaff(state, target.id, person.id)).toContain("下个工作日晚班负荷上限");
+    expect(canAssignStaff(state, target.id, person.id)).toBeNull();
+  });
+
+  it("never leaves an early position empty because the worker handled the previous late shift", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.staff = [person];
+    person.dutyQualified = false;
+    state.flights = [{ id: "early", flightNo: "KE166", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{ ...base, id: "early-position", flightNo: "KE166", name: "H03", qualifiedStaffIds: [person.id] }];
+    state.history = [{ id: "previous-late", date: "2026-07-17", flightNo: "TR121", position: "H02", staffId: person.id, staffName: person.name, startTime: "21:55", endTime: "23:55", workHours: 2, fatiguePoints: 5, remark: "一号" }];
+    state.settings.lateShiftRecoveryEnabled = true;
+    state.settings.lateShiftRecoveryMode = "forbid";
+    expect(generateSchedule(state, "2026-07-18").assignments[0]).toMatchObject({ status: "assigned", staffId: person.id });
   });
 
   it("rejects manual changes that violate time constraints", () => {
@@ -279,7 +334,7 @@ describe("scheduler domain", () => {
     expect(canAssignStaff(state, target.id, person.id, source.id)).toBeNull();
   });
 
-  it("keeps positions visible below passenger thresholds and leaves them empty", () => {
+  it("keeps pre-noon regular positions visible and fills them below passenger thresholds", () => {
     const state = createDefaultState();
     state.flights = [state.flights[0]!];
     state.flights[0]!.positions = ["G12", "G13"];
@@ -288,7 +343,7 @@ describe("scheduler domain", () => {
     state.positionRules.find((rule) => rule.flightNo === "CX937" && rule.name === "G13")!.minPassengers = 30;
     const belowThreshold = generateSchedule(state, "2026-07-18").assignments;
     expect(belowThreshold.map((item) => item.position)).toEqual(["G12", "G13"]);
-    expect(belowThreshold.find((item) => item.position === "G13")).toMatchObject({ staffId: null, status: "manual" });
+    expect(belowThreshold.find((item) => item.position === "G13")).toMatchObject({ status: "assigned", staffId: expect.any(String) });
     state.flights[0]!.bookedPassengers = 30;
     expect(generateSchedule(state, "2026-07-18").assignments.find((item) => item.position === "G13")?.staffId).not.toBeNull();
   });
@@ -377,7 +432,7 @@ describe("scheduler domain", () => {
     expect(generateSchedule(state, "2026-07-18").assignments.map((item) => item.position)).toEqual(["G14"]);
   });
 
-  it("lets administrative personnel bypass position qualifications only in support mode", () => {
+  it("requires administrative personnel to have position qualifications in support mode", () => {
     const state = createDefaultState();
     state.settings.adminSupportEnabled = true;
     const person = state.staff[0]!;
@@ -390,9 +445,31 @@ describe("scheduler domain", () => {
       position: rule.name, staffId: null, staffName: "", startTime: state.flights[0]!.startTime, endTime: state.flights[0]!.endTime,
       workHours: 2, fatiguePoints: rule.fatiguePoints, remark: "", manualRemark: "", status: "unfilled"
     }];
+    expect(canAssignStaff(state, "target", person.id)).toContain("岗位资质");
+    rule.qualifiedStaffIds = [person.id];
     expect(canAssignStaff(state, "target", person.id)).toBeNull();
     state.settings.adminSupportEnabled = false;
     expect(canAssignStaff(state, "target", person.id)).toContain("尚未启用");
+  });
+
+  it("allows administrative support only after no qualified regular worker remains available", () => {
+    const state = createDefaultState();
+    state.settings.adminSupportEnabled = true;
+    const regular = state.staff[0]!;
+    const administrative = state.staff[1]!;
+    administrative.staffType = "行政支援";
+    state.staff = [regular, administrative];
+    state.flights = [state.flights[0]!];
+    const rule = state.positionRules.find((item) => item.flightNo === state.flights[0]!.flightNo && item.name === "G12")!;
+    rule.qualifiedStaffIds = [regular.id, administrative.id];
+    state.assignments = [{
+      id: "target", flightId: state.flights[0]!.id, flightNo: state.flights[0]!.flightNo, positionRuleId: rule.id,
+      position: rule.name, staffId: null, staffName: "", startTime: state.flights[0]!.startTime, endTime: state.flights[0]!.endTime,
+      workHours: 2, fatiguePoints: rule.fatiguePoints, remark: "", manualRemark: "", status: "unfilled"
+    }];
+    expect(canAssignStaff(state, "target", administrative.id)).toContain("优先安排常规人员");
+    regular.status = "休假";
+    expect(canAssignStaff(state, "target", administrative.id)).toBeNull();
   });
 
   it("generates one assignment for every configured rule id without inventing positions", () => {
@@ -443,6 +520,40 @@ describe("scheduler domain", () => {
     expect(result.unfilledCount).toBe(0);
   });
 
+  it("globally schedules each pre-noon position by scarcity before softer transition preferences", () => {
+    const state = createDefaultState();
+    const [rareWorker, flexibleWorker] = state.staff;
+    state.staff = [rareWorker!, flexibleWorker!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [
+      { id: "base-flight", flightNo: "BASE", startTime: "06:00", endTime: "07:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "flex-flight", flightNo: "FLEX", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "rare-flight", flightNo: "RARE", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "base", flightNo: "BASE", name: "P0", qualifiedStaffIds: [flexibleWorker!.id] },
+      { ...base, id: "flex", flightNo: "FLEX", name: "普通柜台", qualifiedStaffIds: [rareWorker!.id, flexibleWorker!.id] },
+      { ...base, id: "rare", flightNo: "RARE", name: "限制柜台", qualifiedStaffIds: [rareWorker!.id] }
+    ];
+    state.settings.positionTransitionPolicies = [{
+      id: "prefer-flexible-worker-away",
+      name: "普通柜台优先避开",
+      enabled: true,
+      sourceFlightNo: "BASE",
+      sourcePositions: ["P0"],
+      targetFlightNo: "FLEX",
+      targetPosition: "普通柜台",
+      minimumGapMinutes: 180,
+      mode: "prefer"
+    }];
+
+    const result = generateSchedule(state, "2026-07-18");
+    expect(result.assignments.find((item) => item.positionRuleId === "rare")?.staffId).toBe(rareWorker!.id);
+    expect(result.assignments.find((item) => item.positionRuleId === "flex")?.staffId).toBe(flexibleWorker!.id);
+    expect(result.unfilledCount).toBe(0);
+  });
+
   it("fills guide rules from the bottom-most distinct regular positions", () => {
     const state = createDefaultState();
     const [topWorker, bottomWorker, diversionWorker] = state.staff;
@@ -460,6 +571,33 @@ describe("scheduler domain", () => {
     expect(result.assignments.find((item) => item.positionRuleId === "guide-one")?.staffId).toBe(bottomWorker!.id);
     expect(result.assignments.find((item) => item.positionRuleId === "guide-two")?.staffId).toBe(topWorker!.id);
     expect(result.assignments.filter((item) => item.positionRuleId?.startsWith("guide-")).every((item) => item.workHours === 0)).toBe(true);
+  });
+
+  it("links supervisor-fill positions to the same-flight supervisor until manually moved", () => {
+    const state = createDefaultState();
+    const [supervisor, counterWorker] = state.staff;
+    state.staff = [supervisor!, counterWorker!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "supervisor", flightNo: "F1", name: "督导", category: "常规", qualifiedStaffIds: [supervisor!.id] },
+      { ...base, id: "counter", flightNo: "F1", name: "G12", category: "常规", qualifiedStaffIds: [counterWorker!.id] },
+      { ...base, id: "supervisor-fill", flightNo: "F1", name: "超规柜台督导", category: "督导补位", qualifiedStaffIds: [] }
+    ];
+
+    const result = generateSchedule(state, "2026-07-18");
+    const supervisorAssignment = result.assignments.find((item) => item.positionRuleId === "supervisor")!;
+    const counterAssignment = result.assignments.find((item) => item.positionRuleId === "counter")!;
+    const fillAssignment = result.assignments.find((item) => item.positionRuleId === "supervisor-fill")!;
+    expect(activeFlightPositions(state, state.flights[0]!)).toEqual(["督导", "G12", "超规柜台督导"]);
+    expect(fillAssignment).toMatchObject({ staffId: supervisorAssignment.staffId, workHours: 0, fatiguePoints: 0, status: "assigned", supervisorFillDetached: false });
+    state.assignments = result.assignments;
+    fillAssignment.staffId = null;
+    fillAssignment.staffName = "";
+    fillAssignment.status = "manual";
+    expect(canAssignStaff(state, fillAssignment.id, supervisorAssignment.staffId!, supervisorAssignment.id)).toBeNull();
+    expect(canAssignStaff(state, fillAssignment.id, counterAssignment.staffId!, counterAssignment.id)).toContain("同一航班的督导岗位");
   });
 
   it("does not copy one flight's configured guide positions into every other flight", () => {
@@ -637,7 +775,7 @@ describe("scheduler domain", () => {
     expect(dutyAssignments.some((item) => item.flightNo === "MIDDLE")).toBe(false);
   });
 
-  it("keeps both work-hour and daily-fatigue differences within configured targets when feasible", () => {
+  it("keeps every feasible position filled even when fatigue balance cannot meet both targets", () => {
     const state = createDefaultState();
     state.staff = state.staff.slice(0, 2);
     state.staff.forEach((person) => { person.dutyQualified = false; });
@@ -662,8 +800,9 @@ describe("scheduler domain", () => {
       hours: assignments.filter((item) => item.staffId === person.id).reduce((sum, item) => sum + item.workHours, 0),
       fatigue: assignments.filter((item) => item.staffId === person.id).reduce((sum, item) => sum + item.fatiguePoints, 0)
     }));
+    expect(assignments.every((item) => item.status === "assigned")).toBe(true);
     expect(Math.max(...loads.map((item) => item.hours)) - Math.min(...loads.map((item) => item.hours))).toBeLessThanOrEqual(2);
-    expect(Math.max(...loads.map((item) => item.fatigue)) - Math.min(...loads.map((item) => item.fatigue))).toBeLessThanOrEqual(4);
+    expect(Math.max(...loads.map((item) => item.fatigue)) - Math.min(...loads.map((item) => item.fatigue))).toBe(5);
   });
 
   it("uses an archived day to rotate the lower-load worker into the next duty day", () => {
@@ -714,8 +853,129 @@ describe("scheduler domain", () => {
       { ...base, id: "p2", flightNo: "F2", name: "P2", category: "常规", qualifiedStaffIds: ["2"], earlyReleaseMinutes: 0 }
     ];
     const result = generateSchedule(state, "2026-07-18");
-    expect(result.assignments.filter((item) => item.positionRuleId).map((item) => item.staffId)).toEqual(["2", null]);
+    expect(result.assignments.filter((item) => item.positionRuleId).map((item) => item.staffId)).toEqual([null, "2"]);
     expect(result.assignments.find((item) => item.position === "临时支援")).toBeUndefined();
     expect(result.assignments[0]!.endTime).toBe("10:00");
+  });
+
+  it("auto-fills every regular position before noon even below its passenger threshold or marked manual", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.flights = [{ id: "morning", flightNo: "MORNING", startTime: "11:59", endTime: "13:00", bookedPassengers: 0, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{
+      ...base,
+      id: "morning-manual-threshold",
+      flightNo: "MORNING",
+      name: "G01",
+      category: "常规",
+      manual: true,
+      minPassengers: 300,
+      qualifiedStaffIds: [person.id]
+    }];
+
+    expect(generateSchedule(state, "2026-07-18").assignments[0]).toMatchObject({
+      positionRuleId: "morning-manual-threshold",
+      status: "assigned",
+      staffId: person.id
+    });
+  });
+
+  it("keeps the passenger threshold and manual behavior for flights starting at noon", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.flights = [{ id: "noon", flightNo: "NOON", startTime: "12:00", endTime: "14:00", bookedPassengers: 0, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{
+      ...base,
+      id: "noon-manual-threshold",
+      flightNo: "NOON",
+      name: "G01",
+      category: "常规",
+      manual: true,
+      minPassengers: 300,
+      qualifiedStaffIds: [person.id]
+    }];
+
+    expect(generateSchedule(state, "2026-07-18").assignments[0]).toMatchObject({
+      positionRuleId: "noon-manual-threshold",
+      status: "manual",
+      staffId: null
+    });
+  });
+
+  it("breaks a strict transition rule before noon and records the override", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.flights = [
+      { id: "source", flightNo: "SOURCE", startTime: "06:00", endTime: "07:30", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "target", flightNo: "TARGET", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "source-position", flightNo: "SOURCE", name: "G01", category: "常规", qualifiedStaffIds: [person.id] },
+      { ...base, id: "target-position", flightNo: "TARGET", name: "H01", category: "常规", qualifiedStaffIds: [person.id] }
+    ];
+    state.settings.positionTransitionPolicies = [{
+      id: "strict-morning-transition",
+      name: "早间严格衔接",
+      enabled: true,
+      sourceFlightNo: "SOURCE",
+      sourcePositions: ["G01"],
+      targetFlightNo: "TARGET",
+      targetPosition: "H01",
+      minimumGapMinutes: 180,
+      mode: "forbid"
+    }];
+
+    const target = generateSchedule(state, "2026-07-18").assignments.find((item) => item.positionRuleId === "target-position")!;
+    expect(target).toMatchObject({ status: "assigned", staffId: person.id });
+    expect(target.systemNotes).toContain("已突破严格限制仍安排：早间严格衔接");
+  });
+
+  it("reallocates an overlapping worker between pre-noon flights and marks the source vacancy", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.flights = [
+      { id: "source", flightNo: "SOURCE", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "target", flightNo: "TARGET", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "source-position", flightNo: "SOURCE", name: "G01", category: "常规", qualifiedStaffIds: [person.id] },
+      { ...base, id: "target-position", flightNo: "TARGET", name: "H01", category: "常规", qualifiedStaffIds: [person.id] }
+    ];
+
+    const result = generateSchedule(state, "2026-07-18");
+    const source = result.assignments.find((item) => item.positionRuleId === "source-position")!;
+    const target = result.assignments.find((item) => item.positionRuleId === "target-position")!;
+    expect(target).toMatchObject({ status: "assigned", staffId: person.id });
+    expect(source).toMatchObject({ status: "unfilled", staffId: null });
+    expect(source.systemNotes).toContain("因抽调至 TARGET/H01 而空缺");
+  });
+
+  it("records a concrete staffing-shortage reason for an unfilled regular position before noon", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.flights = [{ id: "morning", flightNo: "MORNING", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "first", flightNo: "MORNING", name: "G01", category: "常规", qualifiedStaffIds: [person.id] },
+      { ...base, id: "second", flightNo: "MORNING", name: "G02", category: "常规", qualifiedStaffIds: [person.id] }
+    ];
+
+    const unfilled = generateSchedule(state, "2026-07-18").assignments.find((item) => item.status === "unfilled")!;
+    expect(unfilled.systemNotes?.join("；")).toContain("因合格人数不足而无法填满");
+    expect(unfilled.systemNotes?.join("；")).toContain("时段冲突");
   });
 });

@@ -44,7 +44,9 @@ function activeRules(state: AppState, flight: Flight): PositionRule[] {
   const configured = state.settings.adminSupportEnabled
     ? flightRules.filter((rule) => rule.category === "行政支援" || !administrativeNames.has(rule.name.trim()))
     : flightRules.filter((rule) => rule.category !== "行政支援");
-  return configured.filter((rule) => rule.category !== "引导" && !rule.manual);
+  const preNoon = timeToMinutes(flight.startTime) < 12 * 60;
+  return configured.filter((rule) => !["引导", "督导补位"].includes(rule.category)
+    && (!rule.manual || (preNoon && rule.category === "常规")));
 }
 
 function eligibleStaff(state: AppState, flight: Flight, rule: PositionRule): Staff[] {
@@ -56,7 +58,8 @@ function eligibleStaff(state: AppState, flight: Flight, rule: PositionRule): Sta
 
 export function buildWorkloadTasks(state: AppState): WorkloadTask[] {
   return state.flights.flatMap((flight) => activeRules(state, flight)
-    .filter((rule) => (rule.minPassengers ?? 0) <= flight.bookedPassengers)
+    .filter((rule) => (timeToMinutes(flight.startTime) < 12 * 60 && rule.category === "常规")
+      || (rule.minPassengers ?? 0) <= flight.bookedPassengers)
     .map((rule) => ({
       flight,
       rule,
@@ -153,6 +156,7 @@ export function workloadBalanceCost(
   assignments: Assignment[],
   state: AppState,
   targetHours: number,
+  targetFatigue: number,
   dutyStaffId: string | null,
   date: string,
   pressure = analyzeWorkloadPressure(state)
@@ -161,17 +165,36 @@ export function workloadBalanceCost(
   const loads = snapshots(state, assignments, date, dutyStaffId);
   const current = loads.find((load) => load.id === person.id);
   if (!current || !loads.length) return 0;
-  const nextToday = current.todayHours + targetHours;
-  const nextRolling = current.rollingHours + current.todayHours + targetHours;
-  const minimumToday = Math.min(...loads.map((load) => load.todayHours));
-  const minimumRolling = Math.min(...loads.map((load) => load.rollingHours + load.todayHours));
-  const todayExcess = Math.max(0, nextToday - minimumToday);
-  const rollingExcess = Math.max(0, nextRolling - minimumRolling);
+  if (pressure.pressure === "宽松" || state.flights.length < 4) {
+    const nextToday = current.todayHours + targetHours;
+    const nextRolling = current.rollingHours + current.todayHours + targetHours;
+    const minimumToday = Math.min(...loads.map((load) => load.todayHours));
+    const minimumRolling = Math.min(...loads.map((load) => load.rollingHours + load.todayHours));
+    const todayExcess = Math.max(0, nextToday - minimumToday);
+    const rollingExcess = Math.max(0, nextRolling - minimumRolling);
+    const configuredHoursTarget = Math.max(0.5, state.settings.maxWorkHoursDifference);
+    const rollingTarget = configuredHoursTarget + Math.max(0, state.settings.historyWindowDays / 2);
+    return (Math.max(0, todayExcess - configuredHoursTarget) / configuredHoursTarget
+      + Math.max(0, rollingExcess - rollingTarget) / rollingTarget) * 10000;
+  }
   const intensity = pressure.pressure === "密集" ? 4 : pressure.pressure === "紧张" ? 1.5 : 0.35;
   const configuredHoursTarget = Math.max(0.5, state.settings.maxWorkHoursDifference);
   const rollingTarget = configuredHoursTarget + Math.max(0, state.settings.historyWindowDays / 2);
-  const hardExcess = Math.max(0, todayExcess - configuredHoursTarget) / configuredHoursTarget
-    + Math.max(0, rollingExcess - rollingTarget) / rollingTarget;
+  const configuredFatigueTarget = Math.max(0.5, state.settings.maxTodayFatigueDifference);
+  const projected = loads.map((load) => ({
+    today: load.todayHours + (load.id === person.id ? targetHours : 0),
+    rolling: load.rollingHours + load.todayHours + (load.id === person.id ? targetHours : 0),
+    fatigue: load.todayFatigue + (load.id === person.id ? targetFatigue : 0)
+  }));
+  const spread = (values: number[]): number => Math.max(...values) - Math.min(...values);
+  const todaySpread = spread(projected.map((load) => load.today));
+  const rollingSpread = spread(projected.map((load) => load.rolling));
+  const fatigueSpread = spread(projected.map((load) => load.fatigue));
+  const hardExcess = Math.max(0, todaySpread - configuredHoursTarget) / configuredHoursTarget
+    + Math.max(0, rollingSpread - rollingTarget) / rollingTarget
+    + Math.max(0, fatigueSpread - configuredFatigueTarget) / configuredFatigueTarget;
   return hardExcess * 10000 * intensity
-    + (todayExcess / configuredHoursTarget + rollingExcess / rollingTarget) * intensity;
+    + (todaySpread / configuredHoursTarget
+      + rollingSpread / rollingTarget
+      + fatigueSpread / configuredFatigueTarget * (pressure.pressure === "密集" ? 1.5 : 1)) * intensity;
 }

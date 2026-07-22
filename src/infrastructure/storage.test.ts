@@ -98,6 +98,116 @@ describe("state persistence", () => {
     expect(loaded.positionRules.some((rule) => rule.id === removedRuleId)).toBe(false);
   });
 
+  it("keeps supervisor-fill position rules", () => {
+    const state = createDefaultState();
+    state.positionRules[0]!.category = "督导补位";
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+    expect(loaded.positionRules[0]?.category).toBe("督导补位");
+  });
+
+  it("keeps legacy copied supervisor-fill assignments linked to the regular supervisor", () => {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    const supervisorRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.name === "督导")!;
+    const fillRule = { ...supervisorRule, id: "supervisor-fill", name: "G16", category: "督导补位" as const, qualifiedStaffIds: [] };
+    state.positionRules.push(fillRule);
+    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id) && item.status === "正常")!;
+    state.assignments = [supervisorRule, fillRule].map((rule) => ({
+      id: `assignment-${rule.id}`, flightId: flight.id, flightNo: flight.flightNo, positionRuleId: rule.id,
+      position: rule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
+      workHours: rule.category === "督导补位" ? 0 : 2, fatiguePoints: rule.fatiguePoints, remark: "", manualRemark: "", status: "assigned" as const
+    }));
+
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+    const fill = loaded.assignments.find((assignment) => assignment.positionRuleId === fillRule.id);
+    expect(fill).toMatchObject({ staffId: person.id, staffName: person.name, status: "assigned", workHours: 0, fatiguePoints: 0, supervisorFillDetached: false });
+  });
+
+  it("restores an old blank supervisor-fill assignment from its regular supervisor", () => {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    const supervisorRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.name === "督导")!;
+    const fillRule = { ...supervisorRule, id: "supervisor-fill", name: "H06", category: "督导补位" as const, qualifiedStaffIds: [] };
+    state.positionRules.push(fillRule);
+    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id) && item.status === "正常")!;
+    state.assignments = [
+      {
+        id: "regular-supervisor", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: supervisorRule.id,
+        position: supervisorRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
+        workHours: 2, fatiguePoints: supervisorRule.fatiguePoints, remark: "", manualRemark: "", status: "assigned"
+      },
+      {
+        id: "blank-fill", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: fillRule.id,
+        position: fillRule.name, staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
+        workHours: 2, fatiguePoints: fillRule.fatiguePoints, remark: "", manualRemark: "", status: "manual"
+      }
+    ];
+
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+
+    expect(loaded.assignments.find((assignment) => assignment.id === "blank-fill")).toMatchObject({
+      staffId: person.id, staffName: person.name, status: "assigned", workHours: 0, fatiguePoints: 0, supervisorFillDetached: false
+    });
+  });
+
+  it("keeps a manually detached supervisor-fill slot empty after loading", () => {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    const supervisorRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.name === "督导")!;
+    const fillRule = { ...supervisorRule, id: "supervisor-fill", name: "H06", category: "督导补位" as const, qualifiedStaffIds: [] };
+    state.positionRules.push(fillRule);
+    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id) && item.status === "正常")!;
+    state.assignments = [
+      {
+        id: "regular-supervisor", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: supervisorRule.id,
+        position: supervisorRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
+        workHours: 2, fatiguePoints: supervisorRule.fatiguePoints, remark: "", manualRemark: "", status: "assigned"
+      },
+      {
+        id: "detached-fill", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: fillRule.id,
+        position: fillRule.name, staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
+        workHours: 2, fatiguePoints: fillRule.fatiguePoints, remark: "", manualRemark: "", status: "manual", supervisorFillDetached: true
+      }
+    ];
+
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+
+    expect(loaded.assignments.find((assignment) => assignment.id === "detached-fill")).toMatchObject({
+      staffId: null, staffName: "", status: "manual", supervisorFillDetached: true
+    });
+  });
+
+  it("keeps generated scheduling notes used by feedback", () => {
+    const state = createDefaultState();
+    const rule = state.positionRules[0]!;
+    const flight = state.flights.find((item) => item.flightNo === rule.flightNo)!;
+    state.assignments = [{
+      id: "noted-assignment", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: rule.id,
+      position: rule.name, staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
+      workHours: 2, fatiguePoints: 1, remark: "", manualRemark: "", status: "unfilled",
+      systemNotes: ["因合格人数不足而无法填满（缺少 1 人：时段冲突 1 人）"]
+    }];
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+    expect(loaded.assignments[0]?.systemNotes).toEqual(state.assignments[0]?.systemNotes);
+  });
+
+  it("does not restore an unavailable worker from a stale persisted assignment", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    const rule = state.positionRules[0]!;
+    const flight = state.flights.find((item) => item.flightNo === rule.flightNo)!;
+    person.status = "休假";
+    state.assignments = [{
+      id: "stale-assignment", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: rule.id,
+      position: rule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
+      workHours: 2, fatiguePoints: 1, remark: "", manualRemark: "", status: "assigned"
+    }];
+
+    const loaded = loadState({ getItem: () => JSON.stringify(state) });
+
+    expect(loaded.assignments[0]).toMatchObject({ staffId: null, staffName: "", status: "unfilled" });
+  });
+
   it("removes obsolete generated cells that have no position rule", () => {
     const state = createDefaultState();
     const afternoon = state.flights.find((flight) => flight.flightNo === "FD573")!;

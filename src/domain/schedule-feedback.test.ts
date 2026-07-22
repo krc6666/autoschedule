@@ -10,8 +10,8 @@ describe("schedule feedback", () => {
     const state = createDefaultState();
     state.assignments = generateSchedule(state, "2026-07-20").assignments;
     const feedback = buildScheduleFeedback(state, "2026-07-20");
-    expect(feedback).toHaveLength(6);
-    expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "负荷均衡", "航班衔接", "连续高负荷", "上一工作日晚班", "值班与轮值"]);
+    expect(feedback).toHaveLength(7);
+    expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "负荷均衡", "航班衔接", "12点前岗位完整性", "连续高负荷", "上一工作日晚班", "值班与轮值"]);
     expect(feedback.slice(0, 3).every((item) => item.group === "flight-staff")).toBe(true);
     expect(feedback.slice(3).every((item) => item.group === "rule-execution")).toBe(true);
     expect(feedback.every((item) => ["已执行", "需复核", "无基准"].includes(item.status))).toBe(true);
@@ -44,7 +44,9 @@ describe("schedule feedback", () => {
     expect(feedback.find((item) => item.key === "coverage")?.text).toContain(uncovered!.name);
     expect(feedback.find((item) => item.key === "connections")?.text).toContain("15 分钟");
     expect(feedback.find((item) => item.key === "high-load")?.text).toContain(worker!.name);
+    expect(feedback.find((item) => item.key === "high-load")?.text).toContain("已超保护仍安排");
     expect(feedback.find((item) => item.key === "previous-late")?.text).toContain("超过 2 点");
+    expect(feedback.find((item) => item.key === "previous-late")?.text).toContain("已超保护仍安排");
   });
 
   it("reports an enabled position-transition rule when its minimum gap is not met", () => {
@@ -62,6 +64,26 @@ describe("schedule feedback", () => {
     const connections = buildScheduleFeedback(state, "2026-07-20").find((item) => item.key === "connections")!;
     expect(connections.level).toBe("attention");
     expect(connections.text).toContain("未达到已配置的岗位衔接要求");
+  });
+
+  it("marks a previous late-shift worker used on an early flight as a protection override", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.staff = [person];
+    state.flights = [{ id: "early", flightNo: "KE166", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    state.assignments = [{
+      id: "early-position", flightId: "early", flightNo: "KE166", positionRuleId: null, position: "H03",
+      staffId: person.id, staffName: person.name, startTime: "08:30", endTime: "10:30", workHours: 2,
+      fatiguePoints: 2, remark: "", manualRemark: "", status: "assigned"
+    }];
+    state.history = [{
+      id: "previous-late", date: "2026-07-17", flightNo: "TR121", position: "H02", staffId: person.id, staffName: person.name,
+      startTime: "21:55", endTime: "23:55", workHours: 2, fatiguePoints: 5, remark: "一号"
+    }];
+    const feedback = buildScheduleFeedback(state, "2026-07-18").find((item) => item.key === "previous-late")!;
+    expect(feedback.text).toContain("KE166/H03");
+    expect(feedback.text).toContain("早班岗位完整性优先");
+    expect(feedback.text).toContain("已超保护仍安排");
   });
 
   it("explains whether the duty person received a preferred latest-flight position", () => {
@@ -117,5 +139,44 @@ describe("schedule feedback", () => {
     expect(feedback.text).toContain("倒数第二晚航班 SECOND/G17");
     expect(feedback.text).toContain("值班晚撤规则第二档位");
     expect(feedback.text).toContain("符合值班晚撤规则");
+  });
+
+  it("reports strict pre-noon overrides, reallocation vacancies, and objective staffing shortages", () => {
+    const state = createDefaultState();
+    state.flights = [
+      { id: "source", flightNo: "SOURCE", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "target", flightNo: "TARGET", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "source-position", flightNo: "SOURCE", name: "G01", category: "常规" },
+      { ...base, id: "target-position", flightNo: "TARGET", name: "H01", category: "常规" },
+      { ...base, id: "short-position", flightNo: "TARGET", name: "H02", category: "常规" }
+    ];
+    const person = state.staff[0]!;
+    state.staff = [person];
+    state.assignments = [
+      {
+        id: "source-assignment", flightId: "source", flightNo: "SOURCE", positionRuleId: "source-position", position: "G01",
+        staffId: null, staffName: "", startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1,
+        remark: "", manualRemark: "", status: "unfilled", systemNotes: ["因抽调至 TARGET/H01 而空缺"]
+      },
+      {
+        id: "target-assignment", flightId: "target", flightNo: "TARGET", positionRuleId: "target-position", position: "H01",
+        staffId: person.id, staffName: person.name, startTime: "09:00", endTime: "11:00", workHours: 2, fatiguePoints: 1,
+        remark: "", manualRemark: "", status: "assigned", systemNotes: ["已突破严格限制仍安排：早间严格衔接"]
+      },
+      {
+        id: "short-assignment", flightId: "target", flightNo: "TARGET", positionRuleId: "short-position", position: "H02",
+        staffId: null, staffName: "", startTime: "09:00", endTime: "11:00", workHours: 2, fatiguePoints: 1,
+        remark: "", manualRemark: "", status: "unfilled", systemNotes: ["因合格人数不足而无法填满（缺少 1 人：时段冲突 1 人）"]
+      }
+    ];
+
+    const feedback = buildScheduleFeedback(state, "2026-07-18");
+    const morning = feedback.find((item) => item.key === "morning-priority")!;
+    expect(morning.text).toContain("因抽调至 TARGET/H01 而空缺");
+    expect(morning.text).toContain("因合格人数不足而无法填满");
+    expect(morning.text).toContain("已突破严格限制仍安排");
   });
 });

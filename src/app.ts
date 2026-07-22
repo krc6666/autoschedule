@@ -4,6 +4,8 @@ import Toast from "bootstrap/js/dist/toast";
 import { createDefaultState } from "./defaults";
 import { activeFlightRules, applyEarlyReleaseForStaff, generateSchedule, canAssignStaff, isAuxiliaryCategory, isDiversionTransfer, isGuideAssignment } from "./domain/scheduler";
 import { addIsoDays } from "./domain/time";
+import { applyStaffStatusChange, assignmentUsesUnavailableStaff } from "./domain/schedule-state";
+import { isSupervisorMoveSlot, moveSupervisorWithinFlight, normalizeSupervisorFillAssignments } from "./domain/schedule-adjustment";
 import { clearDutyRosterOverride, clearMonthlyDutyRosterOverrides, getDutyRosterForDate, updateDutyRosterSlot, type DutyRosterSlot } from "./domain/duty-roster";
 import { clearState, loadState, saveState } from "./infrastructure/storage";
 import type { AppSection, AppState, Flight, FlightTemplate, HistoryRecord, PositionTransitionPolicy, Staff } from "./model";
@@ -610,7 +612,7 @@ export class AutoScheduleApp {
   private showQualified(id: string): void {
     const rule = this.state.positionRules.find((item) => item.id === id);
     if (!rule) return;
-    const body = `<div class="d-flex align-items-center justify-content-between gap-2 border-bottom pb-3 mb-3"><div class="form-check form-switch m-0"><input class="form-check-input" id="qualified-manual" type="checkbox" ${rule.manual ? "checked" : ""}><label class="form-check-label" for="qualified-manual">手动补位岗位</label></div><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" type="button" data-action="select-all-qualified"><i class="bi bi-check2-square me-1"></i>全选</button><button class="btn btn-outline-secondary" type="button" data-action="clear-all-qualified"><i class="bi bi-square me-1"></i>全不选</button></div></div><div class="qualified-grid">${this.state.staff.filter((person) => person.staffType !== "行政支援").map((person) => `<label class="form-check qualified-check"><input class="form-check-input" type="checkbox" name="qualified-staff" value="${escapeHtml(person.id)}" ${rule.qualifiedStaffIds.includes(person.id) ? "checked" : ""}><span class="form-check-label">${escapeHtml(person.name)} <small>#${escapeHtml(person.id)}</small></span></label>`).join("")}</div>`;
+    const body = `<div class="d-flex align-items-center justify-content-between gap-2 border-bottom pb-3 mb-3"><div class="form-check form-switch m-0"><input class="form-check-input" id="qualified-manual" type="checkbox" ${rule.manual ? "checked" : ""}><label class="form-check-label" for="qualified-manual">手动补位岗位</label></div><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" type="button" data-action="select-all-qualified"><i class="bi bi-check2-square me-1"></i>全选</button><button class="btn btn-outline-secondary" type="button" data-action="clear-all-qualified"><i class="bi bi-square me-1"></i>全不选</button></div></div><div class="qualified-grid">${this.state.staff.map((person) => `<label class="form-check qualified-check"><input class="form-check-input" type="checkbox" name="qualified-staff" value="${escapeHtml(person.id)}" ${rule.qualifiedStaffIds.includes(person.id) ? "checked" : ""}><span class="form-check-label">${escapeHtml(person.name)} <small>#${escapeHtml(person.id)} · ${escapeHtml(person.staffType)}</small></span></label>`).join("")}</div>`;
     this.modal(`${rule.flightNo} / ${rule.name} 资质`, body, `<button class="btn btn-secondary" type="button" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" type="button" data-action="save-qualified" data-id="${id}">保存</button>`);
   }
 
@@ -640,12 +642,21 @@ export class AutoScheduleApp {
     if (sourceAssignmentId === assignmentId) return;
     if (!staffId) {
       const rule = assignment.positionRuleId ? this.state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-      assignment.staffId = null; assignment.staffName = ""; assignment.status = rule?.manual || isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId ? "manual" : "unfilled";
-      this.refreshSameFlightGuides([assignment.flightId]);
+      assignment.staffId = null; assignment.staffName = ""; assignment.status = rule?.manual || isAuxiliaryCategory(rule?.category) || rule?.category === "督导补位" || !assignment.positionRuleId ? "manual" : "unfilled";
+      if (rule?.category === "督导补位") assignment.supervisorFillDetached = true;
+      delete assignment.systemNotes;
+      this.refreshSameFlightReuseAssignments([assignment.flightId]);
       this.commit("岗位已设为待补位");
       return;
     }
     const source = sourceAssignmentId ? this.state.assignments.find((item) => item.id === sourceAssignmentId) : undefined;
+    if (source && isSupervisorMoveSlot(this.state, source) && isSupervisorMoveSlot(this.state, assignment)) {
+      const moveError = moveSupervisorWithinFlight(this.state, source.id, assignment.id);
+      if (moveError) { this.render(); this.toast(moveError, "danger"); return; }
+      this.refreshSameFlightReuseAssignments([assignment.flightId]);
+      this.commit(assignment.staffName && source.staffName ? "督导岗位人员已交换" : "督导人员已移动");
+      return;
+    }
     const targetStaffId = assignment.staffId;
     const targetStaffName = assignment.staffName;
     const copySource = Boolean(sourceAssignmentId && (isGuideAssignment(this.state, assignment)
@@ -658,44 +669,56 @@ export class AutoScheduleApp {
       const reverseError = canAssignStaff(this.state, source.id, targetStaffId, assignment.id);
       if (reverseError) { this.render(); this.toast(`无法交换：${reverseError}`, "danger"); return; }
     }
-    assignment.staffId = person.id; assignment.staffName = person.name; assignment.status = "assigned";
+    assignment.staffId = person.id; assignment.staffName = person.name; assignment.status = "assigned"; delete assignment.systemNotes;
     if (source && !copySource) {
       if (targetStaffId) {
         source.staffId = targetStaffId;
         source.staffName = targetStaffName;
         source.status = "assigned";
+        delete source.systemNotes;
       } else {
         const sourceRule = source.positionRuleId ? this.state.positionRules.find((item) => item.id === source.positionRuleId) : undefined;
-        source.staffId = null; source.staffName = ""; source.status = sourceRule?.manual || isAuxiliaryCategory(sourceRule?.category) || !source.positionRuleId ? "manual" : "unfilled";
+        source.staffId = null; source.staffName = ""; source.status = sourceRule?.manual || isAuxiliaryCategory(sourceRule?.category) || sourceRule?.category === "督导补位" || !source.positionRuleId ? "manual" : "unfilled";
+        delete source.systemNotes;
       }
     }
     applyEarlyReleaseForStaff(this.state, assignment.id, person.id);
     if (source && targetStaffId && !copySource) applyEarlyReleaseForStaff(this.state, source.id, targetStaffId);
-    this.refreshSameFlightGuides([assignment.flightId, ...(source ? [source.flightId] : [])]);
-    this.commit(source && targetStaffId && !copySource ? "人员岗位已交换" : copySource ? "分流人员已转派" : "人员分配已更新");
+    this.refreshSameFlightReuseAssignments([assignment.flightId, ...(source ? [source.flightId] : [])]);
+    const copyMessage = isGuideAssignment(this.state, assignment) ? "引导人员已复用" : "分流人员已转派";
+    this.commit(source && targetStaffId && !copySource ? "人员岗位已交换" : copySource ? copyMessage : "人员分配已更新");
   }
 
-  private refreshSameFlightGuides(flightIds: string[]): void {
+  private refreshSameFlightReuseAssignments(flightIds: string[]): void {
+    normalizeSupervisorFillAssignments(this.state);
     for (const flightId of new Set(flightIds)) {
-      const guideAssignments = this.state.assignments.filter((item) => item.flightId === flightId && isGuideAssignment(this.state, item));
+      const reuseAssignments = this.state.assignments.filter((item) => item.flightId === flightId && isGuideAssignment(this.state, item));
       const flight = this.state.flights.find((item) => item.id === flightId);
       const displayIndex = new Map((flight ? activeFlightRules(this.state, flight) : []).map((rule, index) => [rule.id, index]));
-      const usedStaffIds = new Set<string>();
-      for (const guide of guideAssignments) {
+      const usedStaffIdsByCategory = new Map<string, Set<string>>();
+      for (const reuseAssignment of reuseAssignments) {
+        const reuseRule = reuseAssignment.positionRuleId ? this.state.positionRules.find((rule) => rule.id === reuseAssignment.positionRuleId) : undefined;
+        if (!reuseRule) continue;
+        const usedStaffIds = usedStaffIdsByCategory.get(reuseRule.category) ?? new Set<string>();
+        usedStaffIdsByCategory.set(reuseRule.category, usedStaffIds);
         const candidates = this.state.assignments
-          .filter((item) => item.flightId === flightId && item.id !== guide.id && item.status === "assigned")
+          .filter((item) => item.flightId === flightId && item.id !== reuseAssignment.id && item.status === "assigned")
           .filter((item) => item.staffId && !usedStaffIds.has(item.staffId))
           .map((item) => ({
             assignment: item,
             sourceRule: item.positionRuleId ? this.state.positionRules.find((rule) => rule.id === item.positionRuleId) : undefined,
             person: this.state.staff.find((person) => person.id === item.staffId)
           }))
-          .filter((item): item is typeof item & { person: Staff } => Boolean(item.sourceRule?.category === "常规" && item.person?.status === "正常" && item.person.staffType === "常规"))
+          .filter((item): item is typeof item & { person: Staff } => Boolean(
+            item.sourceRule?.category === "常规"
+            && item.person?.status === "正常"
+            && item.person.staffType === "常规"
+          ))
           .sort((left, right) => (displayIndex.get(right.assignment.positionRuleId ?? "") ?? -1) - (displayIndex.get(left.assignment.positionRuleId ?? "") ?? -1));
         const selected = candidates[0]?.person;
-        guide.staffId = selected?.id ?? null;
-        guide.staffName = selected?.name ?? "";
-        guide.status = selected ? "assigned" : "unfilled";
+        reuseAssignment.staffId = selected?.id ?? null;
+        reuseAssignment.staffName = selected?.name ?? "";
+        reuseAssignment.status = selected ? "assigned" : "unfilled";
         if (selected) usedStaffIds.add(selected.id);
       }
     }
@@ -724,11 +747,13 @@ export class AutoScheduleApp {
   }
 
   private currentScheduleHistory(): HistoryRecord[] {
-    const records = this.state.assignments.filter((item) => item.status === "assigned" && item.staffName).map((item) => ({
-      id: createId("history"), date: this.scheduleDate, flightNo: item.flightNo, position: item.position,
-      staffId: item.staffId ?? "", staffName: item.staffName, startTime: item.startTime, endTime: item.endTime,
-      workHours: item.workHours, fatiguePoints: item.fatiguePoints, remark: combinedAssignmentRemark(item.remark, item.manualRemark)
-    }));
+    const records = this.state.assignments
+      .filter((item) => item.status === "assigned" && item.staffName && !assignmentUsesUnavailableStaff(this.state, item))
+      .map((item) => ({
+        id: createId("history"), date: this.scheduleDate, flightNo: item.flightNo, position: item.position,
+        staffId: item.staffId ?? "", staffName: item.staffName, startTime: item.startTime, endTime: item.endTime,
+        workHours: item.workHours, fatiguePoints: item.fatiguePoints, remark: combinedAssignmentRemark(item.remark, item.manualRemark)
+      }));
     const roster = getDutyRosterForDate(this.state, this.scheduleDate);
     const dutyPerson = roster.dutyStaffId ? this.state.staff.find((person) => person.id === roster.dutyStaffId) : undefined;
     if (dutyPerson && this.state.settings.dutyFatiguePoints > 0) {
@@ -864,8 +889,8 @@ export class AutoScheduleApp {
       if (field === "category") {
         if (value === "分流" && !rule.earlyReleaseMinutes) rule.earlyReleaseMinutes = 60;
         if (value !== "分流") rule.earlyReleaseMinutes = 0;
-        if (value === "引导") {
-          rule.manual = false;
+        if (value === "引导" || value === "督导补位") {
+          rule.manual = value === "督导补位";
           rule.qualifiedStaffIds = [];
         }
       }
@@ -903,15 +928,17 @@ export class AutoScheduleApp {
           return;
         }
         const person = this.state.staff.find((item) => item.name === staffName);
-        if (!person && rule?.category === "引导") {
+        if (!person && (rule?.category === "引导" || rule?.category === "督导补位")) {
           this.render();
-          this.toast("引导岗位只能复用同一航班中已排常规岗位的常规人员", "danger");
+          this.toast(rule.category === "督导补位" ? "督导补位只能复用同一航班已排督导人员" : "引导岗位只能复用同一航班中已排常规岗位的常规人员", "danger");
           return;
         }
         if (!person || (person.staffType !== "行政支援" && (isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId))) {
+          if (rule?.category === "督导补位") assignment.supervisorFillDetached = true;
           assignment.staffId = null;
           assignment.staffName = staffName;
           assignment.status = "assigned";
+          delete assignment.systemNotes;
         } else {
           this.assignStaff(id, person.id);
           return;
@@ -922,6 +949,16 @@ export class AutoScheduleApp {
     } else if (entity === "staff") {
       const person = this.state.staff.find((item) => item.id === id);
       if (!person) return;
+      if (field === "status") {
+        const status = value === "病假" ? "病假" : value === "休假" ? "休假" : "正常";
+        const result = applyStaffStatusChange(this.state, id, status);
+        this.commit(result
+          ? result.unfilledCount
+            ? `人员状态已更新，当前排班已重新计算，${result.unfilledCount} 个岗位待补位`
+            : "人员状态已更新，当前排班已重新计算"
+          : "人员状态已更新");
+        return;
+      }
       if (field === "name") {
         const nextName = normalizeText(value) || person.name;
         person.name = nextName;

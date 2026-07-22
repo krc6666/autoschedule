@@ -57,6 +57,13 @@ describe("workbook boundary", () => {
     expect(imported.positionRules?.[0]?.category).toBe("行政支援");
   });
 
+  it("round-trips supervisor-fill position categories", () => {
+    const state = createDefaultState();
+    state.positionRules[0]!.category = "督导补位";
+    const imported = parseWorkbook(buildConfigWorkbook(state), state.staff);
+    expect(imported.positionRules?.[0]?.category).toBe("督导补位");
+  });
+
   it("keeps regular and administrative rules with the same position name", () => {
     const state = createDefaultState();
     const base = state.positionRules[0]!;
