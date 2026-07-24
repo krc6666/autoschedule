@@ -2,19 +2,11 @@ import {
   activeFlightRules,
   applyEarlyReleaseForStaff,
   canAssignStaff,
-  canUseSupervisorFillOnRegularPosition,
   isAuxiliaryCategory,
   isDiversionTransfer,
   isGuideAssignment
 } from "../domain/scheduler";
-import {
-  applySupervisorFillToRegularPosition,
-  isSupervisorMoveSlot,
-  moveSupervisorWithinFlight,
-  normalizeSupervisorCoverAssignments,
-  normalizeSupervisorFillAssignments,
-  resetSupervisorCoverAssignment
-} from "../domain/schedule-adjustment";
+import { clearSupervisorLink, moveSupervisorWithinFlight, normalizeSupervisorAssignments } from "../domain/schedule-adjustment";
 import type { AppState, Staff } from "../model";
 import { createId, normalizeText } from "../utils";
 
@@ -22,10 +14,6 @@ export interface ScheduleEditResult {
   changed: boolean;
   message?: string;
   error?: string;
-}
-
-export interface SupervisorCoverEditResult extends ScheduleEditResult {
-  handled: boolean;
 }
 
 export function createTemporaryAssignment(
@@ -48,8 +36,7 @@ export function createTemporaryAssignment(
 }
 
 function refreshSameFlightGuides(state: AppState, flightIds: string[]): void {
-  normalizeSupervisorFillAssignments(state);
-  normalizeSupervisorCoverAssignments(state);
+  normalizeSupervisorAssignments(state);
   for (const flightId of new Set(flightIds)) {
     const guideAssignments = state.assignments.filter((item) => item.flightId === flightId && isGuideAssignment(state, item));
     const flight = state.flights.find((item) => item.id === flightId);
@@ -75,27 +62,6 @@ function refreshSameFlightGuides(state: AppState, flightIds: string[]): void {
   }
 }
 
-export function assignSupervisorFillToRegularPosition(
-  state: AppState,
-  sourceAssignmentId: string,
-  targetAssignmentId: string
-): SupervisorCoverEditResult {
-  const source = state.assignments.find((item) => item.id === sourceAssignmentId);
-  const target = state.assignments.find((item) => item.id === targetAssignmentId);
-  const sourceRule = source?.positionRuleId ? state.positionRules.find((item) => item.id === source.positionRuleId) : undefined;
-  const targetRule = target?.positionRuleId ? state.positionRules.find((item) => item.id === target.positionRuleId) : undefined;
-  if (sourceRule?.category !== "督导补位" || targetRule?.category !== "常规" || targetRule.name.includes("督导")) {
-    return { handled: false, changed: false };
-  }
-  const error = canUseSupervisorFillOnRegularPosition(state, sourceAssignmentId, targetAssignmentId);
-  if (error) return { handled: true, changed: false, error };
-  const staffName = source?.staffName ?? "督导";
-  const mutationError = applySupervisorFillToRegularPosition(state, sourceAssignmentId, targetAssignmentId);
-  if (mutationError) return { handled: true, changed: false, error: mutationError };
-  refreshSameFlightGuides(state, [target!.flightId]);
-  return { handled: true, changed: true, message: `${staffName}已由督导机动补位至 ${target!.position}` };
-}
-
 export function assignStaff(
   state: AppState,
   assignmentId: string,
@@ -106,25 +72,23 @@ export function assignStaff(
   if (!assignment || sourceAssignmentId === assignmentId) return { changed: false };
   if (!staffId) {
     const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-    resetSupervisorCoverAssignment(state, assignment);
+    clearSupervisorLink(state, assignment);
     assignment.staffId = null;
     assignment.staffName = "";
-    assignment.status = rule?.manual || isAuxiliaryCategory(rule?.category) || rule?.category === "督导补位" || !assignment.positionRuleId ? "manual" : "unfilled";
-    if (rule?.category === "督导补位") assignment.supervisorFillDetached = true;
+    assignment.status = rule?.manual || isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId ? "manual" : "unfilled";
     delete assignment.systemNotes;
     refreshSameFlightGuides(state, [assignment.flightId]);
     return { changed: true, message: "岗位已设为待补位" };
   }
   const source = sourceAssignmentId ? state.assignments.find((item) => item.id === sourceAssignmentId) : undefined;
   if (source) {
-    const supervisorCover = assignSupervisorFillToRegularPosition(state, source.id, assignment.id);
-    if (supervisorCover.handled) return supervisorCover;
-  }
-  if (source && isSupervisorMoveSlot(state, source) && isSupervisorMoveSlot(state, assignment)) {
     const error = moveSupervisorWithinFlight(state, source.id, assignment.id);
-    if (error) return { changed: false, error };
-    refreshSameFlightGuides(state, [assignment.flightId]);
-    return { changed: true, message: assignment.staffName && source.staffName ? "督导岗位人员已交换" : "督导人员已移动" };
+    if (!error) {
+      refreshSameFlightGuides(state, [assignment.flightId]);
+      return { changed: true, message: "督导已机动补位至目标岗位" };
+    }
+    const sourceRule = source.positionRuleId ? state.positionRules.find((item) => item.id === source.positionRuleId) : undefined;
+    if (sourceRule?.category === "机动督导" || source.supervisorSourceAssignmentId) return { changed: false, error };
   }
   const targetStaffId = assignment.staffId;
   const targetStaffName = assignment.staffName;
@@ -138,13 +102,13 @@ export function assignStaff(
     const reverseError = canAssignStaff(state, source.id, targetStaffId, assignment.id);
     if (reverseError) return { changed: false, error: `无法交换：${reverseError}` };
   }
-  resetSupervisorCoverAssignment(state, assignment);
+  clearSupervisorLink(state, assignment);
   assignment.staffId = person.id;
   assignment.staffName = person.name;
   assignment.status = "assigned";
   delete assignment.systemNotes;
   if (source && !copySource) {
-    resetSupervisorCoverAssignment(state, source);
+    clearSupervisorLink(state, source);
     if (targetStaffId) {
       source.staffId = targetStaffId;
       source.staffName = targetStaffName;
@@ -155,7 +119,6 @@ export function assignStaff(
       source.staffId = null;
       source.staffName = "";
       source.status = sourceRule?.manual || isAuxiliaryCategory(sourceRule?.category) || !source.positionRuleId ? "manual" : "unfilled";
-      if (sourceRule?.category === "督导补位") source.supervisorFillDetached = true;
       delete source.systemNotes;
     }
   }
@@ -194,16 +157,14 @@ export function updateAssignmentField(
   const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
   if (!staffName) return assignStaff(state, id, "");
   const person = state.staff.find((item) => item.name === staffName);
-  if (!person && (rule?.category === "引导" || rule?.category === "督导补位")) {
+  if (!person && rule?.category === "引导") {
     return {
       changed: false,
-      error: rule.category === "督导补位"
-        ? "督导补位只能复用同一航班已排督导人员"
-        : "引导岗位只能复用同一航班中已排常规岗位的常规人员"
+      error: "引导岗位只能复用同一航班中已排常规岗位的常规人员"
     };
   }
   if (!person || (person.staffType !== "行政支援" && (isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId))) {
-    resetSupervisorCoverAssignment(state, assignment);
+    clearSupervisorLink(state, assignment);
     assignment.staffId = null;
     assignment.staffName = staffName;
     assignment.status = "assigned";

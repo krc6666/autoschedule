@@ -17,7 +17,7 @@ describe("workbook boundary", () => {
       ["AB123", "8:30:00", "10:30", "P1，P2", "R"]
     ]), "航班计划");
     const imported = parseWorkbook(workbook, []);
-    expect(imported.staff).toEqual([{ id: "9", name: "Test", staffType: "常规", cxPreflightQualified: false, dutyQualified: true, nightShift: false, status: "正常", remark: "R" }]);
+    expect(imported.staff).toEqual([{ id: "9", name: "Test", staffType: "常规", teamLeader: false, cxPreflightQualified: false, dutyQualified: true, nightShift: false, status: "正常", remark: "R" }]);
     expect(imported.flights?.[0]).toMatchObject({ flightNo: "AB123", startTime: "08:30", endTime: "10:30", positions: ["P1", "P2"] });
   });
 
@@ -57,11 +57,11 @@ describe("workbook boundary", () => {
     expect(imported.positionRules?.[0]?.category).toBe("行政支援");
   });
 
-  it("round-trips supervisor-fill position categories", () => {
+  it("round-trips supervisor position categories", () => {
     const state = createDefaultState();
-    state.positionRules[0]!.category = "督导补位";
+    state.positionRules[0]!.category = "机动督导";
     const imported = parseWorkbook(buildConfigWorkbook(state), state.staff);
-    expect(imported.positionRules?.[0]?.category).toBe("督导补位");
+    expect(imported.positionRules?.[0]?.category).toBe("机动督导");
   });
 
   it("keeps regular and administrative rules with the same position name", () => {
@@ -89,6 +89,15 @@ describe("workbook boundary", () => {
     state.staff[0]!.staffType = "行政支援";
     const imported = parseWorkbook(buildConfigWorkbook(state), state.staff);
     expect(imported.staff?.[0]?.staffType).toBe("行政支援");
+  });
+
+  it("round-trips the team-leader personnel flag", () => {
+    const state = createDefaultState();
+    state.staff[0]!.teamLeader = true;
+
+    const imported = parseWorkbook(buildConfigWorkbook(state), state.staff);
+
+    expect(imported.staff?.[0]?.teamLeader).toBe(true);
   });
 
   it("round-trips CX preflight personnel qualifications", () => {

@@ -131,8 +131,8 @@ describe("monthly duty roster", () => {
     const alternative = workers.find((person) => person.id !== dutyStaffId && person.id !== roster.cxPreflightStaffId)!;
     const lateWorker = workers.find((person) => ![dutyStaffId, alternative.id].includes(person.id))!;
     state.positionRules = [
-      { ...base, id: "early-position", flightNo: "F1", name: "P1", fatiguePoints: 0, remark: "", qualifiedStaffIds: [dutyStaffId, alternative.id] },
-      { ...base, id: "late-position", flightNo: "F2", name: "P2", fatiguePoints: 0, remark: "", qualifiedStaffIds: [lateWorker.id] }
+      { ...base, id: "early-position", flightNo: "F1", name: "P1", category: "常规", fatiguePoints: 0, remark: "", qualifiedStaffIds: [dutyStaffId, alternative.id] },
+      { ...base, id: "late-position", flightNo: "F2", name: "P2", category: "常规", fatiguePoints: 0, remark: "", qualifiedStaffIds: [lateWorker.id] }
     ];
     expect(generateSchedule(state, "2026-07-02").assignments.find((item) => item.positionRuleId === "early-position")?.staffId).toBe(alternative.id);
     state.settings.dutyFatiguePoints = 0;

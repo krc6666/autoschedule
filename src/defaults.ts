@@ -26,6 +26,7 @@ export const defaultStaff: Staff[] = [
   id: String(id),
   name: String(name),
   staffType: "常规",
+  teamLeader: String(name) === "刘红",
   cxPreflightQualified: false,
   dutyQualified: true,
   nightShift: Boolean(nightShift),
@@ -130,7 +131,7 @@ export const defaultPositionRules: PositionRule[] = [
 
 export function createDefaultState(): AppState {
   return {
-    version: 1,
+    version: 2,
     staff: structuredClone(defaultStaff),
     flights: structuredClone(defaultFlights),
     templates: defaultFlights.map(({ id, bookedPassengers: _bookedPassengers, ...flight }) => ({
@@ -167,6 +168,18 @@ export function createDefaultState(): AppState {
       nextDayLateMaxFatigue: 2,
       lateShiftRecoveryMode: "prefer",
       dutyFatiguePoints: 12,
+      dutyPositionPriorities: [
+        { id: "duty-priority-tr121-one", flightNo: "TR121", positionKeyword: "一号", enabled: true },
+        { id: "duty-priority-tw616-one", flightNo: "TW616", positionKeyword: "一号", enabled: true }
+      ],
+      mobileSupervisorCoverageRules: [
+        { id: "supervisor-forbid-one", enabled: true, flightNo: "", matchField: "remark", keyword: "一号", mode: "forbid" },
+        { id: "supervisor-forbid-declare", enabled: true, flightNo: "", matchField: "remark", keyword: "申报", mode: "forbid" },
+        { id: "supervisor-forbid-check", enabled: true, flightNo: "", matchField: "remark", keyword: "排查", mode: "forbid" }
+      ],
+      earlyDepartureCutoffTime: "12:00",
+      afternoonRestStartTime: "12:00",
+      afternoonRestEndTime: "18:00",
       workloadBalanceEnabled: true,
       maxWorkHoursDifference: 2,
       maxTodayFatigueDifference: 4,

@@ -45,7 +45,7 @@ function activeRules(state: AppState, flight: Flight): PositionRule[] {
     ? flightRules.filter((rule) => rule.category === "行政支援" || !administrativeNames.has(rule.name.trim()))
     : flightRules.filter((rule) => rule.category !== "行政支援");
   const preNoon = timeToMinutes(flight.startTime) < 12 * 60;
-  return configured.filter((rule) => !["引导", "督导补位"].includes(rule.category)
+  return configured.filter((rule) => rule.category !== "引导"
     && (!rule.manual || (preNoon && rule.category === "常规")));
 }
 

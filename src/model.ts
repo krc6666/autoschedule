@@ -5,6 +5,7 @@ export interface Staff {
   id: string;
   name: string;
   staffType: StaffType;
+  teamLeader: boolean;
   cxPreflightQualified: boolean;
   dutyQualified: boolean;
   nightShift: boolean;
@@ -30,7 +31,7 @@ export interface PositionRule {
   id: string;
   flightNo: string;
   name: string;
-  category: "常规" | "引导" | "督导补位" | "分流" | "行政支援";
+  category: "常规" | "引导" | "机动督导" | "分流" | "行政支援";
   remark: string;
   qualifiedStaffIds: string[];
   manual: boolean;
@@ -69,8 +70,7 @@ export interface Assignment {
   manualRemark: string;
   status: "assigned" | "unfilled" | "manual";
   systemNotes?: string[];
-  supervisorFillDetached?: boolean;
-  supervisorCoverSourceAssignmentId?: string;
+  supervisorSourceAssignmentId?: string;
   layoutGroup?: "primary" | "bottom";
   layoutIndex?: number;
 }
@@ -85,6 +85,22 @@ export interface PositionTransitionPolicy {
   targetPosition: string;
   minimumGapMinutes: number;
   mode: "prefer" | "forbid";
+}
+
+export interface DutyPositionPriority {
+  id: string;
+  flightNo: string;
+  positionKeyword: string;
+  enabled: boolean;
+}
+
+export interface MobileSupervisorCoverageRule {
+  id: string;
+  enabled: boolean;
+  flightNo: string;
+  matchField: "position" | "remark";
+  keyword: string;
+  mode: "allow" | "forbid";
 }
 
 export interface DutyRosterOverride {
@@ -120,13 +136,18 @@ export interface ScheduleSettings {
   nextDayLateMaxFatigue: number;
   lateShiftRecoveryMode: "prefer" | "forbid";
   dutyFatiguePoints: number;
+  dutyPositionPriorities: DutyPositionPriority[];
+  mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
+  earlyDepartureCutoffTime: string;
+  afternoonRestStartTime: string;
+  afternoonRestEndTime: string;
   workloadBalanceEnabled: boolean;
   maxWorkHoursDifference: number;
   maxTodayFatigueDifference: number;
 }
 
 export interface AppState {
-  version: 1;
+  version: 2;
   staff: Staff[];
   flights: Flight[];
   templates: FlightTemplate[];

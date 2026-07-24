@@ -10,8 +10,8 @@ describe("schedule feedback", () => {
     const state = createDefaultState();
     state.assignments = generateSchedule(state, "2026-07-20").assignments;
     const feedback = buildScheduleFeedback(state, "2026-07-20");
-    expect(feedback).toHaveLength(7);
-    expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "负荷均衡", "航班衔接", "12点前岗位完整性", "连续高负荷", "上一工作日晚班", "值班与轮值"]);
+    expect(feedback).toHaveLength(8);
+    expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "负荷均衡", "航班衔接", "12点前岗位完整性", "连续高负荷", "上一工作日晚班", "分队长督导补缺", "值班与轮值"]);
     expect(feedback.slice(0, 3).every((item) => item.group === "flight-staff")).toBe(true);
     expect(feedback.slice(3).every((item) => item.group === "rule-execution")).toBe(true);
     expect(feedback.every((item) => ["已执行", "需复核", "无基准"].includes(item.status))).toBe(true);
@@ -115,6 +115,44 @@ describe("schedule feedback", () => {
     const abnormal = buildScheduleFeedback(state, "2026-07-20").find((item) => item.key === "duty-roster")!;
     expect(abnormal.level).toBe("attention");
     expect(abnormal.text).toContain("未满足值班晚撤规则");
+  });
+
+  it("reports when a team leader is used as the mobile supervisor fallback", () => {
+    const state = createDefaultState();
+    const teamLeader = state.staff[0]!;
+    state.staff = [teamLeader];
+    teamLeader.teamLeader = true;
+    teamLeader.dutyQualified = false;
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "13:00", endTime: "15:00", bookedPassengers: 100, positions: [], remark: "" }];
+    state.positionRules = [{ ...state.positionRules[0]!, id: "supervisor", flightNo: "F1", name: "督导", category: "常规", qualifiedStaffIds: [teamLeader.id] }];
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+
+    const feedback = buildScheduleFeedback(state, "2026-07-18").find((item) => item.key === "team-leader-supervisor")!;
+
+    expect(feedback.status).toBe("已执行");
+    expect(feedback.text).toContain(`已启用分队长补缺：${teamLeader.name}承担F1/督导`);
+  });
+
+  it("reports the configured duty position priority that actually received the duty worker", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 6);
+    state.staff.forEach((person) => { person.dutyQualified = true; });
+    state.staff[5]!.cxPreflightQualified = true;
+    state.flights = [
+      { id: "early", flightNo: "EARLY", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "tr", flightNo: "TR121", startTime: "21:00", endTime: "23:00", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    const qualifiedStaffIds = state.staff.map((person) => person.id);
+    state.positionRules = [
+      ...Array.from({ length: 5 }, (_, index) => ({ ...base, id: `early-${index}`, flightNo: "EARLY", name: `G0${index + 1}`, remark: "", qualifiedStaffIds })),
+      { ...base, id: "tr-first", flightNo: "TR121", name: "H02", remark: "一号", qualifiedStaffIds }
+    ];
+    state.assignments = generateSchedule(state, "2026-07-20").assignments;
+
+    const feedback = buildScheduleFeedback(state, "2026-07-20").find((item) => item.key === "duty-roster")!;
+    expect(feedback.text).toContain("配置优先级第 1 项 TR121/H02");
+    expect(feedback.text).toContain("符合值班岗位优先顺序");
   });
 
   it("explains the second-latest fallback when the latest flight has no executable duty target", () => {

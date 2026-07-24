@@ -1,7 +1,7 @@
 import type { AppState, Assignment, HistoryRecord } from "../model";
 import { buildStaffLoads, recentHistory } from "./fatigue";
 import { dutyFatigueByStaff, getDutyRosterForDate, getMonthlyDutyRoster, getMonthlyDutyRosterStats } from "./duty-roster";
-import { dutyLatePositionPriority, isDutyMorningFlight, isHighLoadPosition, isInFinalLateBatch, isPreNoonFlight } from "./scheduler";
+import { configuredDutyPositionPriority, dutyLatePositionPriority, isDutyMorningFlight, isHighLoadPosition, isInFinalLateBatch, isPreNoonFlight, isSupervisorPosition } from "./scheduler";
 import { timeToMinutes } from "./time";
 import { evaluateWorkloadBalance } from "./workload-balance";
 
@@ -10,7 +10,7 @@ export type ScheduleFeedbackGroup = "flight-staff" | "rule-execution";
 export type ScheduleFeedbackStatus = "已执行" | "需复核" | "无基准";
 
 export interface ScheduleFeedbackItem {
-  key: "coverage" | "fatigue" | "connections" | "morning-priority" | "high-load" | "previous-late" | "duty-roster";
+  key: "coverage" | "fatigue" | "connections" | "morning-priority" | "high-load" | "previous-late" | "team-leader-supervisor" | "duty-roster";
   group: ScheduleFeedbackGroup;
   label: string;
   level: ScheduleFeedbackLevel;
@@ -105,17 +105,17 @@ function coverageFeedback(state: AppState, date: string): ScheduleFeedbackItem {
   const unfilled = state.assignments.filter((assignment) => {
     if (assignment.status !== "unfilled") return false;
     const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-    return rule?.category !== "引导" && rule?.category !== "督导补位" && rule?.category !== "行政支援";
+    return rule?.category !== "引导" && rule?.category !== "行政支援";
   }).length;
-  const supervisorCovers = state.assignments
-    .filter((assignment) => assignment.status === "assigned" && assignment.supervisorCoverSourceAssignmentId)
+  const supervisorAssignments = state.assignments
+    .filter((assignment) => assignment.status === "assigned" && assignment.supervisorSourceAssignmentId)
     .map((assignment) => `${assignment.staffName}兼任${assignment.flightNo}/${assignment.position}`);
   const density = flightDensityEvidence(state);
-  if (unworked.length || unfilled || supervisorCovers.length) {
+  if (unworked.length || unfilled || supervisorAssignments.length) {
     const details = [
       unworked.length ? `${conciseNames(unworked)}为 0 工时` : "",
       unfilled ? `${unfilled} 个常规岗位待补位` : "",
-      supervisorCovers.length ? `督导机动补位：${supervisorCovers.join("、")}` : ""
+      supervisorAssignments.length ? `督导机动补位：${supervisorAssignments.join("、")}` : ""
     ].filter(Boolean).join("；");
     return feedbackItem("flight-staff", "coverage", "人员覆盖", "attention", `${density}；${details}，需要人工复核。`);
   }
@@ -222,6 +222,27 @@ function previousLateFeedback(state: AppState, date: string): ScheduleFeedbackIt
   return feedbackItem("rule-execution", "previous-late", "上一工作日晚班", "ok", `${previousDate} 的${conciseNames(names)}本次均未承担超过 ${state.settings.nextDayLateMaxFatigue} 点的末班岗位，减负规则已落实。`);
 }
 
+function teamLeaderSupervisorFeedback(state: AppState): ScheduleFeedbackItem {
+  const supervisorRuleIds = new Set(state.positionRules
+    .filter((rule) => isSupervisorPosition(rule.name))
+    .map((rule) => rule.id));
+  const supervisorAssignments = state.assignments
+    .filter((assignment) => assignment.positionRuleId && supervisorRuleIds.has(assignment.positionRuleId));
+  if (!supervisorAssignments.length) {
+    return feedbackItem("rule-execution", "team-leader-supervisor", "分队长督导补缺", "info", "当天没有生成督导岗位，无法形成分队长补缺执行基准。");
+  }
+  const unfilled = supervisorAssignments.filter((assignment) => assignment.status !== "assigned" || !assignment.staffId);
+  if (unfilled.length) {
+    return feedbackItem("rule-execution", "team-leader-supervisor", "分队长督导补缺", "attention", `${unfilled.map((assignment) => `${assignment.flightNo}/${assignment.position}`).join("、")}仍未填充；分队长也不满足当前硬约束，需要人工复核。`);
+  }
+  const teamLeaderIds = new Set(state.staff.filter((person) => person.teamLeader).map((person) => person.id));
+  const fallbacks = supervisorAssignments.filter((assignment) => assignment.staffId && teamLeaderIds.has(assignment.staffId));
+  if (fallbacks.length) {
+    return feedbackItem("rule-execution", "team-leader-supervisor", "分队长督导补缺", "ok", `已启用分队长补缺：${fallbacks.map((assignment) => `${assignment.staffName}承担${assignment.flightNo}/${assignment.position}`).join("、")}；其他可用非分队长候选不足时才使用分队长。`);
+  }
+  return feedbackItem("rule-execution", "team-leader-supervisor", "分队长督导补缺", "ok", `${supervisorAssignments.length} 个督导岗位均由非分队长承担，未启用分队长补缺。`);
+}
+
 function operationalStart(startTime: string, state: AppState): number {
   const start = timeToMinutes(startTime);
   const nightEnd = timeToMinutes(state.settings.nightEnd);
@@ -296,6 +317,16 @@ function dutyRosterFeedback(state: AppState, date: string): ScheduleFeedbackItem
   const latestStarts = [...new Set(state.flights.map((flight) => operationalStart(flight.startTime, state)))]
     .sort((left, right) => right - left)
     .slice(0, 2);
+  const configuredPreferred = [...dutyAssignments]
+    .map((assignment) => ({ assignment, priority: configuredDutyPositionPriority(state, assignment) }))
+    .filter((item) => item.priority >= 0)
+    .sort((left, right) => left.priority - right.priority)[0];
+  if (configuredPreferred) {
+    const standbyNote = standbyMissingWork.length ? `；${conciseNames(standbyMissingWork)}作为备勤但未安排实际岗位，需要复核` : "";
+    const level = standbyMissingWork.length || Boolean(monthlyDutyNote) || Boolean(monthlyBalanceNote) || !morningDutyAssignment ? "attention" : "ok";
+    const { assignment, priority } = configuredPreferred;
+    return feedbackItem("rule-execution", "duty-roster", "值班与轮值", level, `CX航前${cxName}；${dutyDescription}安排在配置优先级第 ${priority + 1} 项 ${assignment.flightNo}/${assignment.position}，符合值班岗位优先顺序；${morningDutyEvidence}；备勤${standbyDetails}${standbyNote}。${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`);
+  }
   const preferred = [...dutyAssignments]
     .filter((assignment) => latestStarts.includes(operationalStart(assignment.startTime, state)))
     .filter((assignment) => dutyLatePositionPriority(assignment.position, assignment.remark) < 4)
@@ -309,7 +340,7 @@ function dutyRosterFeedback(state: AppState, date: string): ScheduleFeedbackItem
       ? `最晚航班 ${preferred.flightNo}/${preferred.position}`
       : `倒数第二晚航班 ${preferred.flightNo}/${preferred.position}（值班晚撤规则第二档位）`;
     const level = standbyMissingWork.length || Boolean(monthlyDutyNote) || Boolean(monthlyBalanceNote) || !morningDutyAssignment ? "attention" : "ok";
-    return feedbackItem("rule-execution", "duty-roster", "值班与轮值", level, `CX航前${cxName}；${dutyDescription}安排在${placement}，符合值班晚撤规则；${morningDutyEvidence}；备勤${standbyDetails}${standbyNote}。${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`);
+    return feedbackItem("rule-execution", "duty-roster", "值班与轮值", level, `CX航前${cxName}；${dutyDescription}安排在${placement}，未命中已配置优先项，按回退逻辑落位并符合值班晚撤规则；${morningDutyEvidence}；备勤${standbyDetails}${standbyNote}。${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`);
   }
   const lastDuty = [...dutyAssignments].sort((left, right) => operationalStart(right.startTime, state) - operationalStart(left.startTime, state))[0]!;
   return feedbackItem("rule-execution", "duty-roster", "值班与轮值", "attention", `CX航前${cxName}；${dutyDescription}未满足值班晚撤规则：实际最晚只排到 ${lastDuty.flightNo}/${lastDuty.position}，应落在最晚或倒数第二晚航班的一号、督导、申报或送资料岗位，请复核资质、夜班能力或严格限制；${morningDutyEvidence}；备勤${standbyDetails}。${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`);
@@ -323,6 +354,7 @@ export function buildScheduleFeedback(state: AppState, date: string): ScheduleFe
     morningPriorityFeedback(state),
     highLoadFeedback(state),
     previousLateFeedback(state, date),
+    teamLeaderSupervisorFeedback(state),
     dutyRosterFeedback(state, date)
   ];
 }

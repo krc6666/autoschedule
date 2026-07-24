@@ -1,5 +1,6 @@
 import type { AppState, Assignment, PositionRule } from "../model";
 import { durationHours } from "./time";
+import { evaluateMobileSupervisorCoverage } from "./mobile-supervisor-coverage";
 
 function assignmentRule(state: AppState, assignment: Assignment): PositionRule | undefined {
   return assignment.positionRuleId
@@ -7,50 +8,33 @@ function assignmentRule(state: AppState, assignment: Assignment): PositionRule |
     : undefined;
 }
 
-export function isSupervisorMoveSlot(state: AppState, assignment: Assignment): boolean {
-  const rule = assignmentRule(state, assignment);
-  return Boolean(rule && (rule.category === "督导补位" || (rule.category === "常规" && rule.name.includes("督导"))));
-}
-
 function emptyStatus(state: AppState, assignment: Assignment): Assignment["status"] {
   const rule = assignmentRule(state, assignment);
-  return !assignment.positionRuleId || rule?.manual || rule?.category === "督导补位" ? "manual" : "unfilled";
+  return !assignment.positionRuleId || rule?.manual || rule?.category === "行政支援" ? "manual" : "unfilled";
 }
 
-function isSupervisorFill(state: AppState, assignment: Assignment): boolean {
-  return assignmentRule(state, assignment)?.category === "督导补位";
+export function isSupervisorAssignment(state: AppState, assignment: Assignment): boolean {
+  return assignmentRule(state, assignment)?.category === "机动督导";
 }
 
-function regularSupervisorForFlight(state: AppState, flightId: string): Assignment | undefined {
-  return state.assignments.find((assignment) => {
-    const rule = assignmentRule(state, assignment);
-    return assignment.flightId === flightId
-      && assignment.status === "assigned"
-      && Boolean(assignment.staffName)
-      && rule?.category === "常规"
-      && rule.name.includes("督导");
-  });
+function supervisorSource(state: AppState, assignment: Assignment): Assignment | undefined {
+  if (isSupervisorAssignment(state, assignment)) return assignment;
+  return assignment.supervisorSourceAssignmentId
+    ? state.assignments.find((item) => item.id === assignment.supervisorSourceAssignmentId)
+    : undefined;
 }
 
-function normalizeDetachedFillWorkload(state: AppState, assignment: Assignment): void {
-  if (!isSupervisorFill(state, assignment)) return;
-  const regularSupervisor = regularSupervisorForFlight(state, assignment.flightId);
-  const duplicatesRegularSupervisor = Boolean(
-    assignment.staffName
-    && regularSupervisor?.staffName
-    && (assignment.staffId
-      ? assignment.staffId === regularSupervisor.staffId
-      : assignment.staffName === regularSupervisor.staffName)
-  );
-  if (duplicatesRegularSupervisor) {
-    assignment.workHours = 0;
-    assignment.fatiguePoints = 0;
-    return;
-  }
+function resetSupervisorLinkedAssignment(state: AppState, assignment: Assignment): void {
+  if (!assignment.supervisorSourceAssignmentId) return;
+  delete assignment.supervisorSourceAssignmentId;
   const flight = state.flights.find((item) => item.id === assignment.flightId);
   const rule = assignmentRule(state, assignment);
-  if (flight) assignment.workHours = durationHours(flight.startTime, flight.endTime);
+  assignment.staffId = null;
+  assignment.staffName = "";
+  assignment.status = emptyStatus(state, assignment);
+  assignment.workHours = flight ? durationHours(flight.startTime, flight.endTime) : assignment.workHours;
   assignment.fatiguePoints = rule?.fatiguePoints ?? assignment.workHours;
+  delete assignment.systemNotes;
 }
 
 export function moveSupervisorWithinFlight(
@@ -61,125 +45,65 @@ export function moveSupervisorWithinFlight(
   const source = state.assignments.find((assignment) => assignment.id === sourceAssignmentId);
   const target = state.assignments.find((assignment) => assignment.id === targetAssignmentId);
   if (!source || !target) return "源岗位或目标岗位不存在";
-  if (source.flightId !== target.flightId) return "督导岗位只能在同一航班内移动";
-  if (!isSupervisorMoveSlot(state, source) || !isSupervisorMoveSlot(state, target)) return "仅支持同一航班的督导岗位之间移动";
-  if (!source.staffName) return "源督导岗位没有可移动人员";
-  const sourcePerson = source.staffId ? state.staff.find((person) => person.id === source.staffId) : undefined;
-  const targetPerson = target.staffId ? state.staff.find((person) => person.id === target.staffId) : undefined;
-  if (sourcePerson && sourcePerson.status !== "正常") return `${sourcePerson.name} 当前状态为${sourcePerson.status}`;
-  if (targetPerson && targetPerson.status !== "正常") return `${targetPerson.name} 当前状态为${targetPerson.status}`;
-
-  const samePerson = Boolean(source.staffName && target.staffName && (source.staffId
-    ? source.staffId === target.staffId
-    : source.staffName === target.staffName));
-  const targetStaff = samePerson
-    ? { staffId: null, staffName: "", status: emptyStatus(state, source) }
-    : { staffId: target.staffId, staffName: target.staffName, status: target.status };
-  target.staffId = source.staffId;
-  target.staffName = source.staffName;
-  target.status = "assigned";
-  delete target.systemNotes;
-
-  source.staffId = targetStaff.staffId;
-  source.staffName = targetStaff.staffName;
-  source.status = targetStaff.staffName ? "assigned" : emptyStatus(state, source);
-  delete source.systemNotes;
-  if (isSupervisorFill(state, source)) source.supervisorFillDetached = true;
-  if (isSupervisorFill(state, target)) target.supervisorFillDetached = true;
-  normalizeDetachedFillWorkload(state, source);
-  normalizeDetachedFillWorkload(state, target);
-  return null;
-}
-
-export function applySupervisorFillToRegularPosition(
-  state: AppState,
-  sourceAssignmentId: string,
-  targetAssignmentId: string
-): string | null {
-  const source = state.assignments.find((assignment) => assignment.id === sourceAssignmentId);
-  const target = state.assignments.find((assignment) => assignment.id === targetAssignmentId);
-  if (!source || !target || !source.staffId || !source.staffName) return "源岗位或目标岗位不存在";
-  const sourceRule = assignmentRule(state, source);
-  const targetRule = assignmentRule(state, target);
-  const supervisor = state.assignments.find((assignment) => {
-    const rule = assignmentRule(state, assignment);
-    return assignment.id !== source.id
-      && assignment.flightId === source.flightId
-      && assignment.staffId === source.staffId
-      && assignment.status === "assigned"
-      && rule?.category === "常规"
-      && rule.name.includes("督导");
+  const supervisor = supervisorSource(state, source);
+  if (!supervisor || !isSupervisorAssignment(state, supervisor)) return "仅督导可在同一航班内机动补位";
+  if (supervisor.flightId !== target.flightId) return "督导只能在同一航班内机动补位";
+  if (isSupervisorAssignment(state, target)) return "航班顶部督导岗位固定，不能作为补位目标";
+  if (!supervisor.staffId || !supervisor.staffName || supervisor.status !== "assigned") return "顶部督导尚未安排人员";
+  if (target.staffId || target.staffName) return `目标岗位已有人员，请先清空 ${target.position}`;
+  const coverage = evaluateMobileSupervisorCoverage(state, {
+    flightNo: target.flightNo,
+    position: target.position,
+    remark: target.remark
   });
-  if (sourceRule?.category !== "督导补位" || targetRule?.category !== "常规" || !supervisor) return "督导机动补位条件不成立";
+  if (!coverage.allowed) return `机动督导不能兼任 ${target.flightNo}/${target.position}：${coverage.reason}`;
+  const person = state.staff.find((item) => item.id === supervisor.staffId);
+  if (!person) return "督导人员不存在";
+  if (person.status !== "正常") return `${person.name} 当前状态为${person.status}`;
 
-  source.staffId = null;
-  source.staffName = "";
-  source.status = "manual";
-  source.workHours = 0;
-  source.fatiguePoints = 0;
-  source.supervisorFillDetached = true;
-  delete source.systemNotes;
-
+  if (source.id !== supervisor.id) resetSupervisorLinkedAssignment(state, source);
+  const targetRule = assignmentRule(state, target);
   target.staffId = supervisor.staffId;
   target.staffName = supervisor.staffName;
   target.status = "assigned";
   target.workHours = 0;
-  target.fatiguePoints = targetRule.fatiguePoints;
-  target.supervisorCoverSourceAssignmentId = supervisor.id;
+  target.fatiguePoints = targetRule?.fatiguePoints ?? 0;
+  target.supervisorSourceAssignmentId = supervisor.id;
   delete target.systemNotes;
   return null;
 }
 
-export function resetSupervisorCoverAssignment(state: AppState, assignment: Assignment): void {
-  if (!assignment.supervisorCoverSourceAssignmentId) return;
-  delete assignment.supervisorCoverSourceAssignmentId;
-  const flight = state.flights.find((item) => item.id === assignment.flightId);
-  const rule = assignmentRule(state, assignment);
-  if (flight) assignment.workHours = durationHours(flight.startTime, flight.endTime);
-  assignment.fatiguePoints = rule?.fatiguePoints ?? assignment.workHours;
+export function clearSupervisorLink(state: AppState, assignment: Assignment): void {
+  resetSupervisorLinkedAssignment(state, assignment);
 }
 
-export function normalizeSupervisorCoverAssignments(state: AppState): void {
+export function normalizeSupervisorAssignments(state: AppState): void {
   state.assignments.forEach((assignment) => {
-    if (!assignment.supervisorCoverSourceAssignmentId) return;
-    const source = state.assignments.find((item) => item.id === assignment.supervisorCoverSourceAssignmentId);
-    const rule = assignmentRule(state, assignment);
-    const sourceRule = source ? assignmentRule(state, source) : undefined;
+    if (!assignment.supervisorSourceAssignmentId) return;
+    const source = state.assignments.find((item) => item.id === assignment.supervisorSourceAssignmentId);
     const valid = Boolean(
-      assignment.staffId
-      && assignment.status === "assigned"
-      && rule?.category === "常规"
-      && source?.flightId === assignment.flightId
-      && source.staffId === assignment.staffId
+      source
+      && isSupervisorAssignment(state, source)
+      && source.flightId === assignment.flightId
+      && source.staffId
+      && source.staffName
       && source.status === "assigned"
-      && sourceRule?.category === "常规"
-      && sourceRule.name.includes("督导")
+      && evaluateMobileSupervisorCoverage(state, {
+        flightNo: assignment.flightNo,
+        position: assignment.position,
+        remark: assignment.remark
+      }).allowed
     );
-    if (!valid) {
-      resetSupervisorCoverAssignment(state, assignment);
+    if (!valid || !source) {
+      resetSupervisorLinkedAssignment(state, assignment);
       return;
     }
+    const rule = assignmentRule(state, assignment);
+    assignment.staffId = source.staffId;
+    assignment.staffName = source.staffName;
+    assignment.status = "assigned";
     assignment.workHours = 0;
     assignment.fatiguePoints = rule?.fatiguePoints ?? 0;
-  });
-}
-
-export function normalizeSupervisorFillAssignments(state: AppState): void {
-  state.assignments.forEach((assignment) => {
-    const rule = assignmentRule(state, assignment);
-    if (rule?.category !== "督导补位") return;
-    if (assignment.supervisorFillDetached === true) {
-      if (!assignment.staffName) assignment.status = "manual";
-      normalizeDetachedFillWorkload(state, assignment);
-      return;
-    }
-    const supervisor = regularSupervisorForFlight(state, assignment.flightId);
-    assignment.staffId = supervisor?.staffId ?? null;
-    assignment.staffName = supervisor?.staffName ?? "";
-    assignment.status = supervisor ? "assigned" : "manual";
-    assignment.workHours = 0;
-    assignment.fatiguePoints = 0;
-    assignment.supervisorFillDetached = false;
     delete assignment.systemNotes;
   });
 }

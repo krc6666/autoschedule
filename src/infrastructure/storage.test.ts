@@ -6,8 +6,30 @@ import { loadState, saveState, STORAGE_KEY } from "./storage";
 describe("state persistence", () => {
   it("falls back to valid defaults for corrupt persisted data", () => {
     const state = loadState({ getItem: () => "not-json" });
-    expect(state.version).toBe(1);
+    expect(state.version).toBe(2);
     expect(state.staff.length).toBeGreaterThan(0);
+    expect(state.positionRules.some((rule) => rule.category === "机动督导")).toBe(false);
+  });
+
+  it("converts every previously selected mobile supervisor category to regular once", () => {
+    const legacy = JSON.parse(JSON.stringify(createDefaultState()));
+    legacy.version = 1;
+    legacy.positionRules[0].category = "机动督导";
+    legacy.positionRules[1].category = "机动督导";
+
+    const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
+
+    expect(loaded.version).toBe(2);
+    expect(loaded.positionRules.some((rule) => rule.category === "机动督导")).toBe(false);
+  });
+
+  it("preserves a mobile supervisor category selected after the one-time migration", () => {
+    const current = createDefaultState();
+    current.positionRules[0]!.category = "机动督导";
+
+    const loaded = loadState({ getItem: () => JSON.stringify(current) });
+
+    expect(loaded.positionRules[0]!.category).toBe("机动督导");
   });
 
   it("round-trips the domain state", () => {
@@ -18,12 +40,14 @@ describe("state persistence", () => {
     };
     const state = createDefaultState();
     state.staff[0]!.remark = "changed";
+    state.staff[0]!.teamLeader = true;
     state.staff[0]!.cxPreflightQualified = true;
     state.staff[0]!.dutyQualified = false;
     state.dutyRosterOverrides = [{ date: "2026-07-20", cxPreflightStaffId: "1", dutyStaffId: "2", standbyStaffIds: ["3", "4"] }];
     saveState(state, storage);
     expect(values.has(STORAGE_KEY)).toBe(true);
     expect(loadState(storage).staff[0]!.remark).toBe("changed");
+    expect(loadState(storage).staff[0]!.teamLeader).toBe(true);
     expect(loadState(storage).staff[0]!.cxPreflightQualified).toBe(true);
     expect(loadState(storage).staff[0]!.dutyQualified).toBe(false);
     expect(loadState(storage).dutyRosterOverrides[0]).toEqual(state.dutyRosterOverrides[0]);
@@ -33,6 +57,7 @@ describe("state persistence", () => {
     const state = createDefaultState();
     const legacy = JSON.parse(JSON.stringify(state));
     delete legacy.staff[0].staffType;
+    delete legacy.staff[0].teamLeader;
     delete legacy.staff[0].cxPreflightQualified;
     delete legacy.staff[0].dutyQualified;
     delete legacy.dutyRosterOverrides;
@@ -51,6 +76,11 @@ describe("state persistence", () => {
     delete legacy.settings.positionRotationLookbackDays;
     delete legacy.settings.positionRotationMode;
     delete legacy.settings.dutyFatiguePoints;
+    delete legacy.settings.dutyPositionPriorities;
+    delete legacy.settings.mobileSupervisorCoverageRules;
+    delete legacy.settings.earlyDepartureCutoffTime;
+    delete legacy.settings.afternoonRestStartTime;
+    delete legacy.settings.afternoonRestEndTime;
     delete legacy.settings.workloadBalanceEnabled;
     delete legacy.settings.maxWorkHoursDifference;
     delete legacy.settings.maxTodayFatigueDifference;
@@ -61,6 +91,7 @@ describe("state persistence", () => {
     delete legacy.settings.lateShiftRecoveryMode;
     const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
     expect(loaded.staff[0]?.staffType).toBe("常规");
+    expect(loaded.staff[0]?.teamLeader).toBe(false);
     expect(loaded.staff[0]?.cxPreflightQualified).toBe(false);
     expect(loaded.staff[0]?.dutyQualified).toBe(true);
     expect(loaded.dutyRosterOverrides).toEqual([]);
@@ -79,6 +110,18 @@ describe("state persistence", () => {
     expect(loaded.settings.positionRotationLookbackDays).toBe(3);
     expect(loaded.settings.positionRotationMode).toBe("prefer");
     expect(loaded.settings.dutyFatiguePoints).toBe(12);
+    expect(loaded.settings.dutyPositionPriorities).toMatchObject([
+      { flightNo: "TR121", positionKeyword: "一号", enabled: true },
+      { flightNo: "TW616", positionKeyword: "一号", enabled: true }
+    ]);
+    expect(loaded.settings.mobileSupervisorCoverageRules).toMatchObject([
+      { flightNo: "", matchField: "remark", keyword: "一号", mode: "forbid", enabled: true },
+      { flightNo: "", matchField: "remark", keyword: "申报", mode: "forbid", enabled: true },
+      { flightNo: "", matchField: "remark", keyword: "排查", mode: "forbid", enabled: true }
+    ]);
+    expect(loaded.settings.earlyDepartureCutoffTime).toBe("12:00");
+    expect(loaded.settings.afternoonRestStartTime).toBe("12:00");
+    expect(loaded.settings.afternoonRestEndTime).toBe("18:00");
     expect(loaded.settings.workloadBalanceEnabled).toBe(true);
     expect(loaded.settings.maxWorkHoursDifference).toBe(2);
     expect(loaded.settings.maxTodayFatigueDifference).toBe(4);
@@ -98,110 +141,50 @@ describe("state persistence", () => {
     expect(loaded.positionRules.some((rule) => rule.id === removedRuleId)).toBe(false);
   });
 
-  it("keeps supervisor-fill position rules", () => {
+  it("migrates retired supervisor-fill rules to regular positions", () => {
     const state = createDefaultState();
-    state.positionRules[0]!.category = "督导补位";
-    const loaded = loadState({ getItem: () => JSON.stringify(state) });
-    expect(loaded.positionRules[0]?.category).toBe("督导补位");
+    const legacy = JSON.parse(JSON.stringify(state));
+    legacy.positionRules[0].category = "督导补位";
+
+    const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
+
+    expect(loaded.positionRules[0]).toMatchObject({ category: "常规", manual: false });
   });
 
-  it("keeps legacy copied supervisor-fill assignments linked to the regular supervisor", () => {
+  it("keeps an existing regular supervisor in the regular category", () => {
+    const state = createDefaultState();
+    const legacy = JSON.parse(JSON.stringify(state));
+    legacy.positionRules.find((rule: { name: string }) => rule.name === "督导")!.category = "常规";
+
+    const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
+
+    expect(loaded.positionRules.find((rule) => rule.name === "督导")?.category).toBe("常规");
+  });
+
+  it("normalizes the retired supervisor category to regular", () => {
+    const state = createDefaultState();
+    const legacy = JSON.parse(JSON.stringify(state));
+    legacy.positionRules.find((rule: { name: string }) => rule.name === "督导")!.category = "督导";
+
+    const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
+
+    expect(loaded.positionRules.find((rule) => rule.name === "督导")?.category).toBe("常规");
+  });
+
+  it("keeps a supervisor-linked target synchronized without duplicate work hours", () => {
     const state = createDefaultState();
     const flight = state.flights[0]!;
     const supervisorRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.name === "督导")!;
-    const fillRule = { ...supervisorRule, id: "supervisor-fill", name: "G16", category: "督导补位" as const, qualifiedStaffIds: [] };
-    state.positionRules.push(fillRule);
-    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id) && item.status === "正常")!;
-    state.assignments = [supervisorRule, fillRule].map((rule) => ({
-      id: `assignment-${rule.id}`, flightId: flight.id, flightNo: flight.flightNo, positionRuleId: rule.id,
-      position: rule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
-      workHours: rule.category === "督导补位" ? 0 : 2, fatiguePoints: rule.fatiguePoints, remark: "", manualRemark: "", status: "assigned" as const
-    }));
-
-    const loaded = loadState({ getItem: () => JSON.stringify(state) });
-    const fill = loaded.assignments.find((assignment) => assignment.positionRuleId === fillRule.id);
-    expect(fill).toMatchObject({ staffId: person.id, staffName: person.name, status: "assigned", workHours: 0, fatiguePoints: 0, supervisorFillDetached: false });
-  });
-
-  it("restores an old blank supervisor-fill assignment from its regular supervisor", () => {
-    const state = createDefaultState();
-    const flight = state.flights[0]!;
-    const supervisorRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.name === "督导")!;
-    const fillRule = { ...supervisorRule, id: "supervisor-fill", name: "H06", category: "督导补位" as const, qualifiedStaffIds: [] };
-    state.positionRules.push(fillRule);
-    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id) && item.status === "正常")!;
+    supervisorRule.category = "机动督导";
+    const targetRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.category === "常规")!;
+    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id))!;
     state.assignments = [
-      {
-        id: "regular-supervisor", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: supervisorRule.id,
-        position: supervisorRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
-        workHours: 2, fatiguePoints: supervisorRule.fatiguePoints, remark: "", manualRemark: "", status: "assigned"
-      },
-      {
-        id: "blank-fill", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: fillRule.id,
-        position: fillRule.name, staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
-        workHours: 2, fatiguePoints: fillRule.fatiguePoints, remark: "", manualRemark: "", status: "manual"
-      }
+      { id: "supervisor", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: supervisorRule.id, position: supervisorRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime, workHours: 2, fatiguePoints: supervisorRule.fatiguePoints, remark: "", manualRemark: "", status: "assigned" },
+      { id: "cover", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: targetRule.id, position: targetRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime, workHours: 2, fatiguePoints: 0, remark: "", manualRemark: "", status: "assigned", supervisorSourceAssignmentId: "supervisor" }
     ];
 
     const loaded = loadState({ getItem: () => JSON.stringify(state) });
-
-    expect(loaded.assignments.find((assignment) => assignment.id === "blank-fill")).toMatchObject({
-      staffId: person.id, staffName: person.name, status: "assigned", workHours: 0, fatiguePoints: 0, supervisorFillDetached: false
-    });
-  });
-
-  it("keeps a manually detached supervisor-fill slot empty after loading", () => {
-    const state = createDefaultState();
-    const flight = state.flights[0]!;
-    const supervisorRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.name === "督导")!;
-    const fillRule = { ...supervisorRule, id: "supervisor-fill", name: "H06", category: "督导补位" as const, qualifiedStaffIds: [] };
-    state.positionRules.push(fillRule);
-    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id) && item.status === "正常")!;
-    state.assignments = [
-      {
-        id: "regular-supervisor", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: supervisorRule.id,
-        position: supervisorRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
-        workHours: 2, fatiguePoints: supervisorRule.fatiguePoints, remark: "", manualRemark: "", status: "assigned"
-      },
-      {
-        id: "detached-fill", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: fillRule.id,
-        position: fillRule.name, staffId: null, staffName: "", startTime: flight.startTime, endTime: flight.endTime,
-        workHours: 2, fatiguePoints: fillRule.fatiguePoints, remark: "", manualRemark: "", status: "manual", supervisorFillDetached: true
-      }
-    ];
-
-    const loaded = loadState({ getItem: () => JSON.stringify(state) });
-
-    expect(loaded.assignments.find((assignment) => assignment.id === "detached-fill")).toMatchObject({
-      staffId: null, staffName: "", status: "manual", supervisorFillDetached: true
-    });
-  });
-
-  it("keeps a valid supervisor mobile cover without duplicating work hours", () => {
-    const state = createDefaultState();
-    const flight = state.flights[0]!;
-    const supervisorRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.name === "督导")!;
-    const targetRule = state.positionRules.find((rule) => rule.flightNo === flight.flightNo && rule.category === "常规" && rule.name !== "督导")!;
-    const person = state.staff.find((item) => supervisorRule.qualifiedStaffIds.includes(item.id) && targetRule.qualifiedStaffIds.includes(item.id))!;
-    state.assignments = [
-      {
-        id: "supervisor", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: supervisorRule.id,
-        position: supervisorRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
-        workHours: 2, fatiguePoints: supervisorRule.fatiguePoints, remark: "", manualRemark: "", status: "assigned"
-      },
-      {
-        id: "cover", flightId: flight.id, flightNo: flight.flightNo, positionRuleId: targetRule.id,
-        position: targetRule.name, staffId: person.id, staffName: person.name, startTime: flight.startTime, endTime: flight.endTime,
-        workHours: 2, fatiguePoints: 0, remark: "", manualRemark: "", status: "assigned", supervisorCoverSourceAssignmentId: "supervisor"
-      }
-    ];
-
-    const loaded = loadState({ getItem: () => JSON.stringify(state) });
-
-    expect(loaded.assignments.find((assignment) => assignment.id === "cover")).toMatchObject({
-      staffId: person.id, workHours: 0, fatiguePoints: targetRule.fatiguePoints,
-      supervisorCoverSourceAssignmentId: "supervisor"
-    });
+    expect(loaded.assignments.find((assignment) => assignment.id === "cover")).toMatchObject({ workHours: 0, fatiguePoints: targetRule.fatiguePoints, supervisorSourceAssignmentId: "supervisor" });
   });
 
   it("keeps generated scheduling notes used by feedback", () => {

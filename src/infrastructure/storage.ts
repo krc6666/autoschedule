@@ -1,15 +1,17 @@
 import { createDefaultState } from "../defaults";
 import { removeUnavailableStaffAssignments } from "../domain/schedule-state";
-import { normalizeSupervisorCoverAssignments, normalizeSupervisorFillAssignments } from "../domain/schedule-adjustment";
-import type { AppState } from "../model";
+import { normalizeSupervisorAssignments } from "../domain/schedule-adjustment";
+import type { AppState, PositionRule } from "../model";
 import { orderPositionRules } from "../utils";
 
 export const STORAGE_KEY = "autoschedule.state.v1";
 
-function isState(value: unknown): value is AppState {
+type PersistedAppState = Omit<AppState, "version"> & { version: 1 | 2 };
+
+function isState(value: unknown): value is PersistedAppState {
   if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<AppState>;
-  return candidate.version === 1
+  const candidate = value as Partial<PersistedAppState>;
+  return (candidate.version === 1 || candidate.version === 2)
     && Array.isArray(candidate.staff)
     && Array.isArray(candidate.flights)
     && Array.isArray(candidate.templates)
@@ -26,9 +28,11 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     if (!raw) return fallback;
     const parsed: unknown = JSON.parse(raw);
     if (!isState(parsed)) return fallback;
+    const resetPreviouslySelectedMobileSupervisors = parsed.version === 1;
     const next: AppState = {
       ...fallback,
       ...parsed,
+      version: 2,
       settings: { ...fallback.settings, ...parsed.settings }
     };
     const persistedPolicies = Array.isArray(next.settings.positionTransitionPolicies)
@@ -63,6 +67,34 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     next.settings.lateShiftRecoveryMode = next.settings.lateShiftRecoveryMode === "forbid" ? "forbid" : "prefer";
     const dutyFatiguePoints = Number(next.settings.dutyFatiguePoints);
     next.settings.dutyFatiguePoints = Math.min(50, Math.max(0, Number.isFinite(dutyFatiguePoints) ? dutyFatiguePoints : fallback.settings.dutyFatiguePoints));
+    const persistedDutyPriorities = Array.isArray(next.settings.dutyPositionPriorities)
+      ? next.settings.dutyPositionPriorities
+      : fallback.settings.dutyPositionPriorities;
+    next.settings.dutyPositionPriorities = persistedDutyPriorities
+      .filter((item) => item && typeof item === "object")
+      .map((item, index) => ({
+        id: String(item.id ?? "").trim() || `duty-priority-${index + 1}`,
+        flightNo: String(item.flightNo ?? "").trim().toUpperCase(),
+        positionKeyword: String(item.positionKeyword ?? "").trim(),
+        enabled: item.enabled !== false
+      }));
+    const persistedSupervisorRules = Array.isArray(next.settings.mobileSupervisorCoverageRules)
+      ? next.settings.mobileSupervisorCoverageRules
+      : fallback.settings.mobileSupervisorCoverageRules;
+    next.settings.mobileSupervisorCoverageRules = persistedSupervisorRules
+      .filter((item) => item && typeof item === "object")
+      .map((item, index) => ({
+        id: String(item.id ?? "").trim() || `supervisor-coverage-${index + 1}`,
+        enabled: item.enabled !== false,
+        flightNo: String(item.flightNo ?? "").trim().toUpperCase(),
+        matchField: item.matchField === "position" ? "position" : "remark",
+        keyword: String(item.keyword ?? "").trim(),
+        mode: item.mode === "allow" ? "allow" : "forbid"
+      }));
+    const validTime = (value: unknown, fallbackValue: string): string => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value)) ? String(value) : fallbackValue;
+    next.settings.earlyDepartureCutoffTime = validTime(next.settings.earlyDepartureCutoffTime, fallback.settings.earlyDepartureCutoffTime);
+    next.settings.afternoonRestStartTime = validTime(next.settings.afternoonRestStartTime, fallback.settings.afternoonRestStartTime);
+    next.settings.afternoonRestEndTime = validTime(next.settings.afternoonRestEndTime, fallback.settings.afternoonRestEndTime);
     next.settings.workloadBalanceEnabled = next.settings.workloadBalanceEnabled !== false;
     const maxWorkHoursDifference = Number(next.settings.maxWorkHoursDifference);
     next.settings.maxWorkHoursDifference = Math.min(24, Math.max(0, Number.isFinite(maxWorkHoursDifference) ? maxWorkHoursDifference : fallback.settings.maxWorkHoursDifference));
@@ -71,6 +103,7 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     next.staff = next.staff.map((person) => ({
       ...person,
       staffType: person.staffType === "行政支援" ? "行政支援" : "常规",
+      teamLeader: person.staffType === "行政支援" ? false : Boolean(person.teamLeader),
       cxPreflightQualified: person.staffType === "行政支援" ? false : Boolean(person.cxPreflightQualified),
       dutyQualified: person.staffType === "行政支援" ? false : person.dutyQualified !== false
     }));
@@ -82,10 +115,16 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
         dutyStaffId: item.dutyStaffId ? String(item.dutyStaffId) : null,
         standbyStaffIds: [item.standbyStaffIds?.[0] ? String(item.standbyStaffIds[0]) : null, item.standbyStaffIds?.[1] ? String(item.standbyStaffIds[1]) : null]
       }));
-    next.positionRules = orderPositionRules(next.positionRules
-      .filter((rule) => ["常规", "引导", "督导补位", "分流", "行政支援"].includes(rule.category))
+    type PersistedPositionRule = Omit<PositionRule, "category"> & { category: PositionRule["category"] | "督导" | "督导补位" };
+    const persistedPositionRules = next.positionRules as PersistedPositionRule[];
+    next.positionRules = orderPositionRules(persistedPositionRules
+      .filter((rule) => ["常规", "引导", "机动督导", "督导补位", "督导", "分流", "行政支援"].includes(rule.category))
       .map((rule) => ({
         ...rule,
+        category: rule.category === "督导补位" || rule.category === "督导" || (resetPreviouslySelectedMobileSupervisors && rule.category === "机动督导")
+          ? "常规"
+          : rule.category,
+        manual: rule.category === "督导补位" ? false : rule.manual,
         minPassengers: Number(rule.minPassengers) || 0,
         earlyReleaseMinutes: Number(rule.earlyReleaseMinutes) || 0
       })));
@@ -93,11 +132,16 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
       .filter((rule) => rule.category === "行政支援")
       .map((rule) => `${rule.flightNo}\u0000${rule.name.trim()}`));
     next.assignments = next.assignments
-      .map((assignment) => ({
+      .map((assignment) => {
+        const legacy = assignment as typeof assignment & { supervisorCoverSourceAssignmentId?: string };
+        const supervisorSourceAssignmentId = assignment.supervisorSourceAssignmentId ?? legacy.supervisorCoverSourceAssignmentId;
+        return {
         ...assignment,
+        supervisorSourceAssignmentId,
         manualRemark: assignment.manualRemark ?? "",
         systemNotes: Array.isArray(assignment.systemNotes) ? assignment.systemNotes.map(String).filter(Boolean) : undefined
-      }))
+      };
+      })
       .filter((assignment) => {
         if (assignment.layoutGroup) return true;
         if (!assignment.positionRuleId) return false;
@@ -107,8 +151,7 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
         return rule.category === "行政支援" || !administrativePositions.has(`${rule.flightNo}\u0000${rule.name.trim()}`);
       });
     removeUnavailableStaffAssignments(next);
-    normalizeSupervisorFillAssignments(next);
-    normalizeSupervisorCoverAssignments(next);
+    normalizeSupervisorAssignments(next);
     return next;
   } catch {
     return fallback;

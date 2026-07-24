@@ -67,10 +67,44 @@ export function deleteTransitionPolicy(state: AppState, id: string): boolean {
   return state.settings.positionTransitionPolicies.length !== before;
 }
 
+export function addMobileSupervisorCoverageRule(state: AppState): void {
+  state.settings.mobileSupervisorCoverageRules.push({
+    id: createId("supervisor-coverage"),
+    enabled: true,
+    flightNo: "",
+    matchField: "remark",
+    keyword: "",
+    mode: "forbid"
+  });
+}
+
+export function deleteMobileSupervisorCoverageRule(state: AppState, id: string): boolean {
+  const before = state.settings.mobileSupervisorCoverageRules.length;
+  state.settings.mobileSupervisorCoverageRules = state.settings.mobileSupervisorCoverageRules.filter((item) => item.id !== id);
+  return state.settings.mobileSupervisorCoverageRules.length !== before;
+}
+
+export function updateMobileSupervisorCoverageRule(
+  state: AppState,
+  id: string,
+  field: string,
+  value: ConfigurationValue
+): boolean {
+  const rule = state.settings.mobileSupervisorCoverageRules.find((item) => item.id === id);
+  if (!rule) return false;
+  if (field === "enabled") rule.enabled = Boolean(value);
+  else if (field === "flightNo") rule.flightNo = normalizeText(value).toUpperCase();
+  else if (field === "matchField") rule.matchField = value === "position" ? "position" : "remark";
+  else if (field === "keyword") rule.keyword = normalizeText(value);
+  else if (field === "mode") rule.mode = value === "allow" ? "allow" : "forbid";
+  else return false;
+  return true;
+}
+
 export function addStaff(state: AppState): void {
   const numericIds = state.staff.map((item) => Number(item.id)).filter(Number.isFinite);
   const id = String(Math.max(0, ...numericIds) + 1);
-  state.staff.push({ id, name: "新人员", staffType: "常规", cxPreflightQualified: false, dutyQualified: true, nightShift: true, status: "正常", remark: "" });
+  state.staff.push({ id, name: "新人员", staffType: "常规", teamLeader: false, cxPreflightQualified: false, dutyQualified: true, nightShift: true, status: "正常", remark: "" });
 }
 
 export function addAdministrativeStaff(state: AppState): void {
@@ -80,6 +114,7 @@ export function addAdministrativeStaff(state: AppState): void {
     id: `A${sequence}`,
     name: `行政支援${sequence}`,
     staffType: "行政支援",
+    teamLeader: false,
     cxPreflightQualified: false,
     dutyQualified: false,
     nightShift: true,
@@ -225,6 +260,9 @@ export function updateConfigurationField(
     else if (field === "name" || field === "targetPosition") (policy as unknown as Record<string, unknown>)[field] = normalizeText(value);
     return "saved";
   }
+  if (entity === "supervisor-coverage") {
+    return updateMobileSupervisorCoverageRule(state, id, field, value) ? "saved" : "missing";
+  }
   if (entity === "template") {
     const template = state.templates.find((item) => item.id === id);
     if (!template) return "missing";
@@ -255,9 +293,11 @@ export function updateConfigurationField(
     }
     (person as unknown as Record<string, unknown>)[field] = value;
     if (field === "staffType" && value === "行政支援") {
+      person.teamLeader = false;
       person.cxPreflightQualified = false;
       person.dutyQualified = false;
     }
+    if (field === "teamLeader" && person.staffType === "行政支援") person.teamLeader = false;
     clearSchedule(state);
     return "updated";
   }

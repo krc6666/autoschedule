@@ -2,6 +2,7 @@ import type { AppState, Assignment, Staff } from "../model";
 import { buildStaffLoads } from "../domain/fatigue";
 import { buildScheduleFeedback } from "../domain/schedule-feedback";
 import { dutyFatigueByStaff } from "../domain/duty-roster";
+import { buildMonthlyRelaxedShiftStatistics } from "../domain/relaxed-shift-statistics";
 import { isFixedBottomPosition } from "../domain/scheduler";
 import { escapeHtml, visiblePositionRemark } from "../utils";
 import { renderDutyRosterDetails, renderDutyRosterSummary } from "./duty-roster-view";
@@ -63,6 +64,27 @@ function staffPaletteItem(person: Staff, administrative: boolean): string {
 function isBottomAssignment(state: AppState, assignment: Assignment): boolean {
   const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
   return rule?.category === "引导" || isFixedBottomPosition(assignment.position);
+}
+
+function renderRelaxedShiftStatistics(state: AppState, date: string): string {
+  const statistics = buildMonthlyRelaxedShiftStatistics(state, date);
+  const rows = [...statistics.rows].sort((left, right) => right.earlyDepartures.length - left.earlyDepartures.length
+    || right.afternoonRestDates.length - left.afternoonRestDates.length
+    || left.staff.name.localeCompare(right.staff.name, "zh-CN"));
+  const todayEarly = statistics.currentEarlyDepartures.length
+    ? statistics.currentEarlyDepartures.map((item) => `<span><strong>${escapeHtml(item.staffName)}</strong> ${escapeHtml(item.flightNo)} / ${escapeHtml(item.cutoffTime)} <em>本月 ${item.monthlyCount} 次</em></span>`).join("")
+    : `<span class="is-empty">今日没有符合节点的提前下班人员</span>`;
+  const todayAfternoon = statistics.currentAfternoonRest.length
+    ? statistics.currentAfternoonRest.map((item) => `<span><strong>${escapeHtml(item.staffName)}</strong> <em>本月 ${item.monthlyCount} 次</em></span>`).join("")
+    : `<span class="is-empty">今日没有下午无航班人员</span>`;
+  return `<section class="workspace-section relaxed-shift-statistics">
+    <div class="section-heading"><div><h3>月度轻松班次统计</h3><span>${escapeHtml(statistics.month)} · 仅统计实际参加排班的常规人员</span></div></div>
+    <div class="relaxed-shift-today">
+      <div><strong>今日提前下班</strong><small>最后航班截载严格早于 ${escapeHtml(state.settings.earlyDepartureCutoffTime)}，排除当日值班</small><div>${todayEarly}</div></div>
+      <div><strong>今日下午无航班</strong><small>${escapeHtml(state.settings.afternoonRestStartTime)}-${escapeHtml(state.settings.afternoonRestEndTime)} 无航班重叠，值班和备勤照常计入</small><div>${todayAfternoon}</div></div>
+    </div>
+    <div class="table-responsive"><table class="table table-sm align-middle data-table relaxed-shift-table"><thead><tr><th>常规人员</th><th>提前下班次数</th><th>提前下班日期 / 最后航班 / 截载</th><th>下午无航班次数</th><th>下午无航班日期</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${escapeHtml(row.staff.name)}</strong></td><td>${row.earlyDepartures.length}</td><td>${escapeHtml(row.earlyDepartures.map((event) => `${event.date.slice(5)} ${event.flightNo} ${event.cutoffTime}`).join("、") || "-")}</td><td>${row.afternoonRestDates.length}</td><td>${escapeHtml(row.afternoonRestDates.map((eventDate) => eventDate.slice(5)).join("、") || "-")}</td></tr>`).join("")}</tbody></table></div>
+  </section>`;
 }
 
 export function renderSchedule(
@@ -138,6 +160,7 @@ export function renderSchedule(
       ${renderDutyRosterSummary(state, date)}
     </section>
     ${renderDutyRosterDetails(state, date)}
+    ${renderRelaxedShiftStatistics(state, date)}
     <section class="workspace-section schedule-feedback"><div class="section-heading"><div><h3>排班反馈</h3><span>${escapeHtml(date)} · 自动核对当前结果、负荷和规则执行</span></div></div>
       ${renderFeedbackGroup("flight-staff", "一、航班安排反馈（航班与人员安排）", "航班密度、人员覆盖、工时与航班衔接")}
       ${renderFeedbackGroup("rule-execution", "二、规则执行反馈（规则执行情况）", "逐条标明已执行、需复核或暂无历史基准")}

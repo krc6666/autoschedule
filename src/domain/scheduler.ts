@@ -3,8 +3,8 @@ import { createId } from "../utils";
 import { getDutyRosterForDate } from "./duty-roster";
 import { historyFatigue, recentHistory } from "./fatigue";
 import { durationHours, intervalsOverlap, isNightInterval, timeToMinutes } from "./time";
+import { canMobileSupervisorCoverPosition } from "./mobile-supervisor-coverage";
 import { analyzeWorkloadPressure, workloadBalanceCost } from "./workload-balance";
-import { isSupervisorMoveSlot } from "./schedule-adjustment";
 
 export function isAuxiliaryCategory(category: PositionRule["category"] | undefined): boolean {
   return category === "行政支援";
@@ -14,7 +14,7 @@ export function isFixedBottomPosition(position: string): boolean {
   return position.includes("引导") && !position.includes("督导");
 }
 
-function isSupervisorPosition(position: string): boolean {
+export function isSupervisorPosition(position: string): boolean {
   return position.includes("督导");
 }
 
@@ -28,13 +28,8 @@ export function isGuideAssignment(state: AppState, assignment: Assignment): bool
   return assignmentRule(state, assignment)?.category === "引导";
 }
 
-export function isSupervisorFillAssignment(state: AppState, assignment: Assignment): boolean {
-  return assignmentRule(state, assignment)?.category === "督导补位";
-}
-
 function isReusableAssignment(state: AppState, assignment: Assignment): boolean {
-  return isGuideAssignment(state, assignment)
-    || (isSupervisorFillAssignment(state, assignment) && assignment.supervisorFillDetached !== true);
+  return isGuideAssignment(state, assignment);
 }
 
 function canReleaseForFlight(assignment: Assignment, flight: Pick<Flight, "startTime" | "endTime">, state: AppState): boolean {
@@ -303,9 +298,19 @@ function mustAutoFillPreNoon(flight: Flight, rule: PositionRule): boolean {
   return isPreNoonFlight(flight) && rule.category === "常规";
 }
 
+function isKe166MobileSupervisor(flight: Flight, rule: PositionRule): boolean {
+  return flight.flightNo.trim().toUpperCase().replaceAll(/[^A-Z0-9]/g, "") === "KE166"
+    && rule.category === "机动督导";
+}
+
+function isNumberedRegularPosition(rule: PositionRule): boolean {
+  return rule.category === "常规" && /\d/.test(rule.name);
+}
+
 function shouldAutoAssign(flight: Flight, rule: PositionRule): boolean {
+  if (isKe166MobileSupervisor(flight, rule)) return true;
   if (mustAutoFillPreNoon(flight, rule)) return true;
-  return !["引导", "督导补位", "行政支援"].includes(rule.category)
+  return !["引导", "行政支援"].includes(rule.category)
     && !rule.manual
     && (rule.minPassengers ?? 0) <= flight.bookedPassengers;
 }
@@ -317,6 +322,24 @@ export function dutyLatePositionPriority(position: string, remark: string): numb
   if (value.includes("申报")) return 2;
   if (value.includes("送资料")) return 3;
   return 4;
+}
+
+function matchesDutyPositionPriority(
+  priority: AppState["settings"]["dutyPositionPriorities"][number],
+  target: Pick<Assignment, "flightNo" | "position" | "remark">
+): boolean {
+  const flightNo = target.flightNo.trim().toUpperCase().replaceAll(/[^A-Z0-9]/g, "");
+  const positionText = `${target.position} ${target.remark}`.trim().toLowerCase();
+  return priority.enabled
+    && priority.flightNo.trim().toUpperCase().replaceAll(/[^A-Z0-9]/g, "") === flightNo
+    && (!priority.positionKeyword.trim() || positionText.includes(priority.positionKeyword.trim().toLowerCase()));
+}
+
+export function configuredDutyPositionPriority(
+  state: AppState,
+  target: Pick<Assignment, "flightNo" | "position" | "remark">
+): number {
+  return state.settings.dutyPositionPriorities.findIndex((item) => matchesDutyPositionPriority(item, target));
 }
 
 export const DUTY_MORNING_CUTOFF = "08:30";
@@ -334,23 +357,34 @@ function operationalStartMinutes(startTime: string, state: AppState): number {
   return start < nightEnd ? start + 24 * 60 : start;
 }
 
-function preferredDutyLateTask(state: AppState, date: string, tasks: AssignmentTask[]): AssignmentTask | undefined {
+function preferredDutyLateTasks(state: AppState, date: string, tasks: AssignmentTask[]): AssignmentTask[] {
   const dutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;
-  if (!dutyStaffId || !tasks.length) return undefined;
+  if (!dutyStaffId || !tasks.length) return [];
+  const eligibleTasks = tasks
+    .filter((task) => durationHours(task.flight.startTime, task.flight.endTime) <= state.settings.maxDailyHours)
+    .filter((task) => eligibleStaffForRule(state, task.flight, task.rule).some((person) => person.id === dutyStaffId));
+  const ordered: AssignmentTask[] = [];
+  for (const priority of state.settings.dutyPositionPriorities.filter((item) => item.enabled)) {
+    const target = eligibleTasks.find((task) => matchesDutyPositionPriority(priority, {
+      flightNo: task.flight.flightNo,
+      position: task.rule.name,
+      remark: task.rule.remark
+    }));
+    if (target && !ordered.includes(target)) ordered.push(target);
+  }
   const latestStarts = [...new Set(state.flights.map((flight) => operationalStartMinutes(flight.startTime, state)))]
     .sort((left, right) => right - left)
     .slice(0, 2);
   for (const start of latestStarts) {
-    const target = tasks
+    const targets = tasks
       .filter((task) => operationalStartMinutes(task.flight.startTime, state) === start)
       .filter((task) => dutyLatePositionPriority(task.rule.name, task.rule.remark) < 4)
-      .filter((task) => durationHours(task.flight.startTime, task.flight.endTime) <= state.settings.maxDailyHours)
-      .filter((task) => eligibleStaffForRule(state, task.flight, task.rule).some((person) => person.id === dutyStaffId))
+      .filter((task) => eligibleTasks.includes(task))
       .sort((left, right) => dutyLatePositionPriority(left.rule.name, left.rule.remark)
-        - dutyLatePositionPriority(right.rule.name, right.rule.remark))[0];
-    if (target) return target;
+        - dutyLatePositionPriority(right.rule.name, right.rule.remark));
+    targets.forEach((target) => { if (!ordered.includes(target)) ordered.push(target); });
   }
-  return undefined;
+  return ordered;
 }
 
 function preferredDutyMorningTask(state: AppState, date: string, tasks: AssignmentTask[]): AssignmentTask | undefined {
@@ -374,6 +408,65 @@ function eligibleStaffForRule(state: AppState, flight: Flight, rule: PositionRul
     .filter((person) => person.status === "正常" && person.staffType !== "行政支援")
     .filter((person) => rule.qualifiedStaffIds.includes(person.id))
     .filter((person) => !isNightInterval(flight.startTime, flight.endTime, state.settings.nightStart, state.settings.nightEnd) || person.nightShift);
+}
+
+function preferNonTeamLeaderCandidates(candidates: Staff[]): Staff[] {
+  const regularCandidates = candidates.filter((person) => !person.teamLeader);
+  return regularCandidates.length ? regularCandidates : candidates;
+}
+
+function reuseKe166RegularWorkerAsSupervisor(
+  state: AppState,
+  assignments: Assignment[],
+  flight: Flight,
+  rule: PositionRule,
+  date: string
+): Assignment | undefined {
+  if (!isKe166MobileSupervisor(flight, rule)) return undefined;
+  const eligibleIds = new Set(eligibleStaffForRule(state, flight, rule).map((person) => person.id));
+  const regularAssignment = assignments
+    .filter((assignment) => {
+      const sourceRule = assignmentRule(state, assignment);
+      return assignment.flightId === flight.id
+        && assignment.status === "assigned"
+        && assignment.staffId
+        && eligibleIds.has(assignment.staffId)
+        && Boolean(sourceRule
+          && isNumberedRegularPosition(sourceRule)
+          && canMobileSupervisorCoverPosition(state, {
+            flightNo: flight.flightNo,
+            position: sourceRule.name,
+            remark: sourceRule.remark
+          }));
+    })
+    .sort((left, right) => {
+      const leftPerson = state.staff.find((person) => person.id === left.staffId)!;
+      const rightPerson = state.staff.find((person) => person.id === right.staffId)!;
+      return Number(leftPerson.teamLeader) - Number(rightPerson.teamLeader)
+        || candidateScore(leftPerson, assignments, state, date) - candidateScore(rightPerson, assignments, state, date)
+        || leftPerson.id.localeCompare(rightPerson.id, undefined, { numeric: true });
+    })[0];
+  if (!regularAssignment?.staffId) return undefined;
+
+  const supervisorAssignment: Assignment = {
+    id: createId("assignment"),
+    flightId: flight.id,
+    flightNo: flight.flightNo,
+    positionRuleId: rule.id,
+    position: rule.name,
+    staffId: regularAssignment.staffId,
+    staffName: regularAssignment.staffName,
+    startTime: flight.startTime,
+    endTime: flight.endTime,
+    workHours: durationHours(flight.startTime, flight.endTime),
+    fatiguePoints: rule.fatiguePoints,
+    remark: rule.remark,
+    manualRemark: "",
+    status: "assigned"
+  };
+  regularAssignment.workHours = 0;
+  regularAssignment.supervisorSourceAssignmentId = supervisorAssignment.id;
+  return supervisorAssignment;
 }
 
 function reservationCost(
@@ -407,7 +500,7 @@ function makeUnfilled(flight: Flight, position: string, rule: PositionRule | und
     fatiguePoints: rule?.fatiguePoints ?? durationHours(flight.startTime, flight.endTime),
     remark: rule?.remark ?? "未找到岗位规则",
     manualRemark: "",
-    status: rule?.manual || isAuxiliaryCategory(rule?.category) || rule?.category === "督导补位" ? "manual" : "unfilled"
+    status: rule?.manual || isAuxiliaryCategory(rule?.category) ? "manual" : "unfilled"
   };
 }
 
@@ -423,8 +516,8 @@ export function activeFlightRules(state: AppState, flight: Flight): PositionRule
   const fixedBottom = configured.filter((rule) => rule.category === "引导" || isFixedBottomPosition(rule.name));
   const orderedPrimary = primary
     .map((rule, index) => ({ rule, index }))
-    .sort((left, right) => Number(isSupervisorPosition(right.rule.name) && right.rule.category !== "督导补位")
-      - Number(isSupervisorPosition(left.rule.name) && left.rule.category !== "督导补位") || left.index - right.index)
+    .sort((left, right) => Number(right.rule.category === "机动督导" || isSupervisorPosition(right.rule.name))
+      - Number(left.rule.category === "机动督导" || isSupervisorPosition(left.rule.name)) || left.index - right.index)
     .map(({ rule }) => rule);
   return [...orderedPrimary, ...fixedBottom];
 }
@@ -499,6 +592,243 @@ function preNoonShortageNote(state: AppState, assignments: Assignment[], task: A
   return `因合格人数不足而无法填满（缺少 1 人：${reasons.join("，") || "无满足全部硬约束的常规人员"}）`;
 }
 
+interface RegularPlacement {
+  person: Staff;
+  sourceAssignment: Assignment;
+  sourceRule: PositionRule;
+  originalIndex: number;
+  manualRemark: string;
+  supervisorSourceAssignmentId: string | undefined;
+}
+
+interface RegularSlot {
+  assignment: Assignment;
+  rule: PositionRule;
+}
+
+function canMoveRegularPlacement(
+  state: AppState,
+  assignments: Assignment[],
+  flight: Flight,
+  placement: RegularPlacement,
+  targetRule: PositionRule
+): boolean {
+  if (!eligibleStaffForRule(state, flight, targetRule).some((person) => person.id === placement.person.id)) return false;
+  if (placement.supervisorSourceAssignmentId && !canMobileSupervisorCoverPosition(state, {
+    flightNo: flight.flightNo,
+    position: targetRule.name,
+    remark: targetRule.remark
+  })) return false;
+  const otherFlights = assignments.filter((assignment) => assignment.flightId !== flight.id);
+  const sourceCost = positionTransitionInsertionCost(
+    otherFlights,
+    placement.person.id,
+    { key: `${flight.id}:${placement.sourceRule.id}`, flight, rule: placement.sourceRule },
+    state,
+    "forbid"
+  );
+  const targetCost = positionTransitionInsertionCost(
+    otherFlights,
+    placement.person.id,
+    { key: `${flight.id}:${targetRule.id}`, flight, rule: targetRule },
+    state,
+    "forbid"
+  );
+  return targetCost <= sourceCost;
+}
+
+function canMatchEveryPlacement(
+  placements: RegularPlacement[],
+  slots: RegularSlot[],
+  canPlace: (placement: RegularPlacement, slot: RegularSlot) => boolean
+): boolean {
+  return matchEveryPlacement(placements, slots, canPlace) !== null;
+}
+
+function matchEveryPlacement(
+  placements: RegularPlacement[],
+  slots: RegularSlot[],
+  canPlace: (placement: RegularPlacement, slot: RegularSlot) => boolean
+): Map<string, RegularPlacement> | null {
+  if (placements.length > slots.length) return null;
+  const placementById = new Map(placements.map((placement) => [placement.sourceAssignment.id, placement]));
+  const matchedPlacementBySlot = new Map<string, string>();
+
+  const tryMatch = (placement: RegularPlacement, visitedSlots: Set<string>): boolean => {
+    for (const slot of slots) {
+      if (visitedSlots.has(slot.assignment.id) || !canPlace(placement, slot)) continue;
+      visitedSlots.add(slot.assignment.id);
+      const matchedId = matchedPlacementBySlot.get(slot.assignment.id);
+      const matched = matchedId ? placementById.get(matchedId) : undefined;
+      if (!matched || tryMatch(matched, visitedSlots)) {
+        matchedPlacementBySlot.set(slot.assignment.id, placement.sourceAssignment.id);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const matched = [...placements]
+    .sort((left, right) => left.originalIndex - right.originalIndex)
+    .every((placement) => tryMatch(placement, new Set()));
+  if (!matched) return null;
+  return new Map([...matchedPlacementBySlot].map(([slotId, placementId]) => [slotId, placementById.get(placementId)!]));
+}
+
+function canCoverRegularSlots(
+  placements: RegularPlacement[],
+  allSlots: RegularSlot[],
+  requiredSlots: RegularSlot[],
+  canPlace: (placement: RegularPlacement, slot: RegularSlot) => boolean
+): boolean {
+  if (requiredSlots.length > placements.length) return false;
+  const requiredIds = new Set(requiredSlots.map((slot) => slot.assignment.id));
+  const optionalSlots = allSlots.filter((slot) => !requiredIds.has(slot.assignment.id));
+  const memo = new Map<string, boolean>();
+
+  const search = (requiredIndex: number, usedPlacementIds: Set<string>): boolean => {
+    const key = `${requiredIndex}:${[...usedPlacementIds].sort().join(",")}`;
+    const known = memo.get(key);
+    if (known !== undefined) return known;
+    if (requiredIndex >= requiredSlots.length) {
+      const remaining = placements.filter((placement) => !usedPlacementIds.has(placement.sourceAssignment.id));
+      const result = canMatchEveryPlacement(remaining, optionalSlots, canPlace);
+      memo.set(key, result);
+      return result;
+    }
+    const requiredSlot = requiredSlots[requiredIndex]!;
+    const result = placements.some((placement) => {
+      if (usedPlacementIds.has(placement.sourceAssignment.id) || !canPlace(placement, requiredSlot)) return false;
+      const nextUsed = new Set(usedPlacementIds);
+      nextUsed.add(placement.sourceAssignment.id);
+      return search(requiredIndex + 1, nextUsed);
+    });
+    memo.set(key, result);
+    return result;
+  };
+
+  return search(0, new Set());
+}
+
+function compactRegularAssignments(state: AppState, assignments: Assignment[]): Set<string> {
+  const changedFlightIds = new Set<string>();
+
+  for (const flight of state.flights) {
+    const orderedRules = activeFlightRules(state, flight).filter((rule) => rule.category === "常规");
+    const slots = orderedRules
+      .map((rule) => ({
+        rule,
+        assignment: assignments.find((assignment) => assignment.flightId === flight.id && assignment.positionRuleId === rule.id)
+      }))
+      .filter((slot): slot is RegularSlot => Boolean(slot.assignment && slot.assignment.status !== "manual"));
+    const firstVacancy = slots.findIndex((slot, index) => slot.assignment.status !== "assigned"
+      && slots.slice(index + 1).some((later) => later.assignment.status === "assigned"));
+    if (firstVacancy < 0) continue;
+
+    const tailSlots = slots;
+    const placements = tailSlots
+      .map((slot, index) => {
+        if (slot.assignment.status !== "assigned" || !slot.assignment.staffId) return null;
+        const person = state.staff.find((item) => item.id === slot.assignment.staffId);
+        return person ? {
+          person,
+          sourceAssignment: slot.assignment,
+          sourceRule: slot.rule,
+          originalIndex: index,
+          manualRemark: slot.assignment.manualRemark,
+          supervisorSourceAssignmentId: slot.assignment.supervisorSourceAssignmentId
+        } : null;
+      })
+      .filter((placement): placement is RegularPlacement => Boolean(placement));
+    const canPlace = (placement: RegularPlacement, slot: RegularSlot) => canMoveRegularPlacement(
+      state,
+      assignments,
+      flight,
+      placement,
+      slot.rule
+    );
+    const occupiedSlots: RegularSlot[] = [];
+    for (const slot of tailSlots) {
+      if (canCoverRegularSlots(placements, tailSlots, [...occupiedSlots, slot], canPlace)) occupiedSlots.push(slot);
+      if (occupiedSlots.length === placements.length) break;
+    }
+    const placementBySlot = matchEveryPlacement(placements, occupiedSlots, canPlace);
+    if (!placementBySlot) continue;
+    const changed = tailSlots.some((slot) => placementBySlot.get(slot.assignment.id)?.sourceAssignment.id !== slot.assignment.id
+      && (placementBySlot.has(slot.assignment.id) || slot.assignment.status === "assigned"));
+    if (!changed) continue;
+
+    for (const slot of tailSlots) {
+      const placement = placementBySlot.get(slot.assignment.id);
+      delete slot.assignment.systemNotes;
+      delete slot.assignment.supervisorSourceAssignmentId;
+      if (!placement) {
+        slot.assignment.staffId = null;
+        slot.assignment.staffName = "";
+        slot.assignment.workHours = durationHours(flight.startTime, flight.endTime);
+        slot.assignment.manualRemark = "";
+        slot.assignment.status = "unfilled";
+        continue;
+      }
+      slot.assignment.staffId = placement.person.id;
+      slot.assignment.staffName = placement.person.name;
+      slot.assignment.workHours = placement.supervisorSourceAssignmentId
+        ? 0
+        : durationHours(flight.startTime, flight.endTime);
+      slot.assignment.manualRemark = placement.manualRemark;
+      slot.assignment.status = "assigned";
+      if (placement.supervisorSourceAssignmentId) {
+        slot.assignment.supervisorSourceAssignmentId = placement.supervisorSourceAssignmentId;
+      }
+    }
+    changedFlightIds.add(flight.id);
+  }
+
+  for (const flightId of changedFlightIds) {
+    const flight = state.flights.find((item) => item.id === flightId)!;
+    const displayRules = activeFlightRules(state, flight);
+    const displayIndex = new Map(displayRules.map((rule, index) => [rule.id, index]));
+    const regularAssignments = assignments
+      .filter((assignment) => assignment.flightId === flightId
+        && assignment.status === "assigned"
+        && assignment.staffId
+        && assignmentRule(state, assignment)?.category === "常规")
+      .sort((left, right) => (displayIndex.get(right.positionRuleId ?? "") ?? -1)
+        - (displayIndex.get(left.positionRuleId ?? "") ?? -1));
+    const usedStaffIds = new Set<string>();
+    assignments
+      .filter((assignment) => assignment.flightId === flightId && assignmentRule(state, assignment)?.category === "引导")
+      .sort((left, right) => (displayIndex.get(left.positionRuleId ?? "") ?? 0)
+        - (displayIndex.get(right.positionRuleId ?? "") ?? 0))
+      .forEach((guide) => {
+        const source = regularAssignments.find((assignment) => assignment.staffId && !usedStaffIds.has(assignment.staffId));
+        guide.staffId = source?.staffId ?? null;
+        guide.staffName = source?.staffName ?? "";
+        guide.workHours = 0;
+        guide.status = source ? "assigned" : "unfilled";
+        delete guide.systemNotes;
+        if (source?.staffId) usedStaffIds.add(source.staffId);
+      });
+  }
+
+  assignments
+    .filter((assignment) => changedFlightIds.has(assignment.flightId)
+      && assignment.status === "unfilled"
+      && isPreNoonFlight(assignment)
+      && assignmentRule(state, assignment)?.category === "常规")
+    .forEach((assignment) => {
+      const flight = state.flights.find((item) => item.id === assignment.flightId)!;
+      const rule = assignmentRule(state, assignment)!;
+      assignment.systemNotes = [preNoonShortageNote(
+        state,
+        assignments,
+        { key: `${flight.id}:${rule.id}`, flight, rule }
+      )];
+    });
+
+  return changedFlightIds;
+}
+
 export function generateSchedule(state: AppState, date: string): ScheduleResult {
   const assignments: Assignment[] = [];
   const warnings: string[] = [];
@@ -513,8 +843,26 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
   const prioritizeWorkloadBalance = workloadPressure.pressure === "密集" || flights.length >= 4;
   const dutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;
   const preferredDutyMorningTaskKey = preferredDutyMorningTask(state, date, tasks)?.key ?? null;
-  const preferredDutyLateTaskKey = preferredDutyLateTask(state, date, tasks)?.key ?? null;
-  const dutyTargetTaskKeys = new Set([preferredDutyMorningTaskKey, preferredDutyLateTaskKey].filter((key): key is string => Boolean(key)));
+  const preferredDutyLateTaskCandidates = preferredDutyLateTasks(state, date, tasks);
+  const dutyTargetTaskKeys = new Set([preferredDutyMorningTaskKey, ...preferredDutyLateTaskCandidates.map((task) => task.key)].filter((key): key is string => Boolean(key)));
+  let assignedDutyLateTaskKey: string | null = null;
+  const ke166SupervisorTask = tasks.find((task) => isKe166MobileSupervisor(task.flight, task.rule));
+  const ke166SupervisorStaffIds = new Set(ke166SupervisorTask ? eligibleStaffIds.get(ke166SupervisorTask.key) ?? [] : []);
+  const ke166NonTeamLeaderSupervisorStaffIds = new Set([...ke166SupervisorStaffIds]
+    .filter((staffId) => !state.staff.find((person) => person.id === staffId)?.teamLeader));
+  const ke166RegularTargets = tasks
+    .filter((task) => task.flight.id === ke166SupervisorTask?.flight.id && isNumberedRegularPosition(task.rule))
+    .filter((task) => canMobileSupervisorCoverPosition(state, {
+      flightNo: task.flight.flightNo,
+      position: task.rule.name,
+      remark: task.rule.remark
+    }))
+    .filter((task) => [...(eligibleStaffIds.get(task.key) ?? [])].some((staffId) => ke166SupervisorStaffIds.has(staffId)))
+    .sort((left, right) => Number([...(eligibleStaffIds.get(right.key) ?? [])].some((staffId) => ke166NonTeamLeaderSupervisorStaffIds.has(staffId)))
+      - Number([...(eligibleStaffIds.get(left.key) ?? [])].some((staffId) => ke166NonTeamLeaderSupervisorStaffIds.has(staffId)))
+      || (eligibleCounts.get(right.key) ?? 0) - (eligibleCounts.get(left.key) ?? 0));
+  const ke166RegularTargetTaskKey = (ke166RegularTargets.find((task) => task.key !== preferredDutyMorningTaskKey)
+    ?? ke166RegularTargets[0])?.key ?? null;
   const processedTasks = new Set<string>();
 
   const scheduleTask = (task: AssignmentTask, allowMorningReallocation: boolean): void => {
@@ -522,15 +870,40 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
     const hours = durationHours(flight.startTime, flight.endTime);
     const preNoonRequired = mustAutoFillPreNoon(flight, rule);
     processedTasks.add(taskKey);
+    const reusedSupervisor = reuseKe166RegularWorkerAsSupervisor(state, assignments, flight, rule, date);
+    if (reusedSupervisor) {
+      assignments.push(reusedSupervisor);
+      return;
+    }
     let candidates = eligibleStaffForRule(state, flight, rule)
       .filter((person) => staffConflicts(assignments, person.id, flight).every((assignment) => canReleaseForFlight(assignment, flight, state)))
       .filter((person) => projectedAssignedHours(assignments, person.id, flight, state) + hours <= state.settings.maxDailyHours);
     const reserveDutyForTarget = Boolean(dutyStaffId
-      && !dutyTargetTaskKeys.has(taskKey)
-      && [...dutyTargetTaskKeys].some((targetKey) => !processedTasks.has(targetKey)));
+      && taskKey !== preferredDutyMorningTaskKey
+      && taskKey !== assignedDutyLateTaskKey
+      && (Boolean(assignedDutyLateTaskKey)
+        || (!dutyTargetTaskKeys.has(taskKey) && [...dutyTargetTaskKeys].some((targetKey) => !processedTasks.has(targetKey)))));
     if (reserveDutyForTarget) {
       const withoutDuty = candidates.filter((person) => person.id !== dutyStaffId);
       if (!preNoonRequired || withoutDuty.length) candidates = withoutDuty;
+    }
+    const reserveKe166Supervisor = Boolean(
+      (ke166RegularTargetTaskKey
+        && taskKey !== ke166RegularTargetTaskKey
+        && !processedTasks.has(ke166RegularTargetTaskKey))
+      || (!ke166RegularTargetTaskKey
+        && ke166SupervisorTask
+        && taskKey !== ke166SupervisorTask.key
+        && task.flight.id === ke166SupervisorTask.flight.id
+        && !processedTasks.has(ke166SupervisorTask.key))
+    );
+    if (reserveKe166Supervisor) {
+      const withoutKe166Supervisor = candidates.filter((person) => !ke166SupervisorStaffIds.has(person.id));
+      if (withoutKe166Supervisor.length) candidates = withoutKe166Supervisor;
+    }
+    if (taskKey === ke166RegularTargetTaskKey) {
+      const mobileSupervisorCandidates = candidates.filter((person) => ke166SupervisorStaffIds.has(person.id));
+      if (mobileSupervisorCandidates.length) candidates = mobileSupervisorCandidates;
     }
     if (state.settings.highLoadTransitionMode === "forbid") {
       const protectedCandidates = candidates.filter((person) => !hasHighLoadTransition(assignments, person.id, flight.startTime, flight.endTime, rule.fatiguePoints, rule.remark, state));
@@ -550,8 +923,22 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
       const protectedCandidates = candidates.filter((person) => lateShiftRecoveryRisk(state, person.id, flight, rule.fatiguePoints, date).excess === 0);
       if (protectedCandidates.length) candidates = protectedCandidates;
     }
+    if (isSupervisorPosition(rule.name) || taskKey === ke166RegularTargetTaskKey) {
+      const teamLeaderNeededForCoverage = candidates.some((person) => person.teamLeader
+        && !assignments.some((assignment) => assignment.staffId === person.id && assignment.workHours > 0)
+        && !tasks.some((futureTask) => futureTask.key !== taskKey
+          && !processedTasks.has(futureTask.key)
+          && !isSupervisorPosition(futureTask.rule.name)
+          && eligibleStaffIds.get(futureTask.key)?.has(person.id)
+          && staffConflicts(assignments, person.id, futureTask.flight).every((assignment) => canReleaseForFlight(assignment, futureTask.flight, state))
+          && projectedAssignedHours(assignments, person.id, futureTask.flight, state) + durationHours(futureTask.flight.startTime, futureTask.flight.endTime) <= state.settings.maxDailyHours));
+      if (!teamLeaderNeededForCoverage) candidates = preferNonTeamLeaderCandidates(candidates);
+    }
     candidates.sort((left, right) => dutyAssignmentCost(left.id, taskKey, dutyStaffId, dutyTargetTaskKeys)
       - dutyAssignmentCost(right.id, taskKey, dutyStaffId, dutyTargetTaskKeys)
+      || (taskKey === ke166RegularTargetTaskKey
+        ? Number(!ke166SupervisorStaffIds.has(left.id)) - Number(!ke166SupervisorStaffIds.has(right.id))
+        : 0)
       || positionTransitionInsertionCost(assignments, left.id, task, state, "prefer")
       - positionTransitionInsertionCost(assignments, right.id, task, state, "prefer")
       || (prioritizeWorkloadBalance
@@ -654,12 +1041,23 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
 
   const preNoonTasks = tasks
     .filter((task) => mustAutoFillPreNoon(task.flight, task.rule))
-    .sort((left, right) => (eligibleCounts.get(left.key) ?? 0) - (eligibleCounts.get(right.key) ?? 0)
+    .sort((left, right) => Number(right.key === ke166RegularTargetTaskKey) - Number(left.key === ke166RegularTargetTaskKey)
+      || (eligibleCounts.get(left.key) ?? 0) - (eligibleCounts.get(right.key) ?? 0)
       || timeToMinutes(left.flight.startTime) - timeToMinutes(right.flight.startTime)
       || (displayRulesByFlight.get(left.flight.id)?.findIndex((rule) => rule.id === left.rule.id) ?? 0)
         - (displayRulesByFlight.get(right.flight.id)?.findIndex((rule) => rule.id === right.rule.id) ?? 0)
       || left.key.localeCompare(right.key));
   preNoonTasks.forEach((task) => { scheduleTask(task, true); });
+
+  for (const task of preferredDutyLateTaskCandidates) {
+    if (!processedTasks.has(task.key)) scheduleTask(task, false);
+    if (assignments.some((assignment) => assignment.flightId === task.flight.id
+      && assignment.positionRuleId === task.rule.id
+      && assignment.staffId === dutyStaffId)) {
+      assignedDutyLateTaskKey = task.key;
+      break;
+    }
+  }
 
   for (const flight of flights) {
     const displayRules = displayRulesByFlight.get(flight.id) ?? [];
@@ -683,28 +1081,13 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
 
     for (const rule of processingRules) {
       const taskKey = `${flight.id}:${rule.id}`;
+      if (processedTasks.has(taskKey)) continue;
+      const ke166MobileSupervisor = isKe166MobileSupervisor(flight, rule);
       if (rule.category === "行政支援") {
         assignments.push({ ...makeUnfilled(flight, rule.name, rule), status: "manual" });
         continue;
       }
-      if (rule.category === "督导补位") {
-        const supervisor = assignments.find((item) => item.flightId === flight.id
-          && item.status === "assigned"
-          && item.staffName
-          && assignmentRule(state, item)?.category === "常规"
-          && item.position.includes("督导"));
-        assignments.push({
-          ...makeUnfilled(flight, rule.name, rule),
-          staffId: supervisor?.staffId ?? null,
-          staffName: supervisor?.staffName ?? "",
-          workHours: 0,
-          fatiguePoints: 0,
-          status: supervisor ? "assigned" : "manual",
-          supervisorFillDetached: false
-        });
-        continue;
-      }
-      if ((rule.minPassengers ?? 0) > flight.bookedPassengers) {
+      if (!ke166MobileSupervisor && (rule.minPassengers ?? 0) > flight.bookedPassengers) {
         assignments.push({ ...makeUnfilled(flight, rule.name, rule), status: "manual" });
         continue;
       }
@@ -736,13 +1119,15 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
         }
         continue;
       }
-      if (rule.manual) {
+      if (rule.manual && !ke166MobileSupervisor) {
         assignments.push(makeUnfilled(flight, rule.name, rule));
         continue;
       }
       scheduleTask({ key: taskKey, flight, rule }, false);
     }
   }
+
+  compactRegularAssignments(state, assignments);
 
   assignments.filter((assignment) => assignment.status === "assigned" && assignment.staffId && isPreNoonFlight(assignment)).forEach((assignment) => {
     const rule = assignmentRule(state, assignment);
@@ -759,6 +1144,17 @@ export function generateSchedule(state: AppState, date: string): ScheduleResult 
     );
     assignment.systemNotes = [...preserved, ...strictNotes];
     if (!assignment.systemNotes.length) delete assignment.systemNotes;
+  });
+
+  warnings.length = 0;
+  assignments.forEach((assignment) => {
+    if (assignment.systemNotes?.length) {
+      warnings.push(...assignment.systemNotes.map((note) => `${assignment.flightNo} / ${assignment.position} ${note}`));
+      return;
+    }
+    if (assignment.status !== "unfilled") return;
+    const category = assignmentRule(state, assignment)?.category;
+    warnings.push(`${assignment.flightNo} / ${assignment.position} ${category === "引导" ? "没有可复用的常规岗位人员" : "无可用人员"}`);
   });
 
   const flightOrder = new Map(flights.map((flight, index) => [flight.id, index]));
@@ -784,7 +1180,7 @@ export function canAssignStaff(state: AppState, assignmentId: string, staffId: s
   const administrativeStaff = person.staffType === "行政支援";
   if (administrativeStaff && !state.settings.adminSupportEnabled) return "行政支援模式尚未启用";
   if (administrativeStaff && (!rule || !rule.qualifiedStaffIds.includes(person.id))) return `${person.name} 不具备该岗位资质`;
-  if (rule && !["引导", "督导补位"].includes(rule.category) && !rule.manual && !rule.qualifiedStaffIds.includes(person.id)) return `${person.name} 不具备该岗位资质`;
+  if (rule && rule.category !== "引导" && !rule.manual && !rule.qualifiedStaffIds.includes(person.id)) return `${person.name} 不具备该岗位资质`;
   if (administrativeStaff && rule) {
     const flight = state.flights.find((item) => item.id === assignment.flightId);
     const otherAssignments = state.assignments.filter((item) => item.id !== assignmentId);
@@ -799,12 +1195,6 @@ export function canAssignStaff(state: AppState, assignmentId: string, staffId: s
   }
   if (isNightInterval(assignment.startTime, assignment.endTime, state.settings.nightStart, state.settings.nightEnd) && !person.nightShift) {
     return `${person.name} 不可上夜班`;
-  }
-  if (rule?.category === "督导补位") {
-    const source = ignoreAssignmentId ? state.assignments.find((item) => item.id === ignoreAssignmentId) : undefined;
-    if (!source || source.flightId !== assignment.flightId || !isSupervisorMoveSlot(state, source)) {
-      return "督导补位只能从同一航班的督导岗位拖入人员";
-    }
   }
   const reuse = rule?.category === "引导";
   const others = state.assignments.filter((item) => item.id !== assignmentId && (reuse || item.id !== ignoreAssignmentId) && item.staffId === staffId);
@@ -824,52 +1214,6 @@ export function canAssignStaff(state: AppState, assignmentId: string, staffId: s
     return `${person.name} 将超过每日 ${state.settings.maxDailyHours} 小时上限`;
   }
   if (positionTransitionCost(others, staffId, assignment.flightNo, assignment.position, assignment.startTime, state, "forbid") > 0) {
-    return `${person.name} 不满足该岗位的最小衔接间隔`;
-  }
-  return null;
-}
-
-export function canUseSupervisorFillOnRegularPosition(
-  state: AppState,
-  sourceAssignmentId: string,
-  targetAssignmentId: string
-): string | null {
-  const source = state.assignments.find((item) => item.id === sourceAssignmentId);
-  const target = state.assignments.find((item) => item.id === targetAssignmentId);
-  if (!source || !target || !source.staffId) return "源岗位或目标岗位不存在";
-  const sourceRule = assignmentRule(state, source);
-  const targetRule = assignmentRule(state, target);
-  if (sourceRule?.category !== "督导补位" || targetRule?.category !== "常规" || isSupervisorPosition(targetRule.name)) {
-    return "督导机动补位只能拖入普通常规岗位";
-  }
-  if (source.flightId !== target.flightId) return "督导机动补位只能用于同一航班";
-  if (target.staffId || target.staffName) return `目标岗位已有人员，请先清空 ${target.position}`;
-  const person = state.staff.find((item) => item.id === source.staffId);
-  if (!person) return "督导人员不存在";
-  if (person.status !== "正常") return `${person.name} 当前状态为${person.status}`;
-  if (person.staffType !== "常规") return "督导机动补位只能使用常规人员";
-  if (!targetRule.qualifiedStaffIds.includes(person.id)) return `${person.name} 不具备 ${target.position} 岗位资质`;
-  if (isNightInterval(target.startTime, target.endTime, state.settings.nightStart, state.settings.nightEnd) && !person.nightShift) {
-    return `${person.name} 不可上夜班`;
-  }
-  const supervisor = state.assignments.find((item) => item.id !== source.id
-    && item.flightId === source.flightId
-    && item.staffId === person.id
-    && item.status === "assigned"
-    && assignmentRule(state, item)?.category === "常规"
-    && isSupervisorPosition(item.position));
-  if (!supervisor) return `${person.name} 当前不是该航班的常规督导`;
-
-  const others = state.assignments.filter((item) => item.id !== target.id && item.id !== source.id && item.staffId === person.id);
-  const conflicts = others.filter((item) => item.id !== supervisor.id)
-    .filter((item) => item.flightId !== target.flightId || !isReusableAssignment(state, item));
-  if (conflicts.some((item) => intervalsOverlap(item.startTime, item.endTime, target.startTime, target.endTime) && !canReleaseForFlight(item, target, state))) {
-    return `${person.name} 在该时段已有其他排班`;
-  }
-  if (projectedAssignedHours(others, person.id, target, state) > state.settings.maxDailyHours) {
-    return `${person.name} 将超过每日 ${state.settings.maxDailyHours} 小时上限`;
-  }
-  if (positionTransitionCost(conflicts, person.id, target.flightNo, target.position, target.startTime, state, "forbid") > 0) {
     return `${person.name} 不满足该岗位的最小衔接间隔`;
   }
   return null;

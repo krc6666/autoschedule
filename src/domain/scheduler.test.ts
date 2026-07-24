@@ -53,7 +53,7 @@ describe("scheduler domain", () => {
       { id: "second-base-flight", flightNo: "F0", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
       { id: "next-flight", flightNo: "F2", startTime: "11:00", endTime: "13:00", bookedPassengers: 100, positions: [], remark: "" }
     ];
-    const base = state.positionRules[0]!;
+    const base = { ...state.positionRules[0]!, category: "常规" as const };
     state.positionRules = [
       { ...base, id: "first-high", flightNo: "F1", name: "一号柜台", remark: "一号", fatiguePoints: 5, qualifiedStaffIds: [first!.id] },
       { ...base, id: "second-base", flightNo: "F0", name: "普通柜台", remark: "", fatiguePoints: 1, qualifiedStaffIds: [second!.id] },
@@ -111,9 +111,9 @@ describe("scheduler domain", () => {
     ];
     const base = state.positionRules[0]!;
     state.positionRules = [
-      { ...base, id: "source-g19", flightNo: "CX931", name: "G19", fatiguePoints: 2, remark: "", qualifiedStaffIds: [first!.id] },
-      { ...base, id: "second-base", flightNo: "BASE", name: "普通柜台", fatiguePoints: 1, remark: "", qualifiedStaffIds: [second!.id] },
-      { ...base, id: "target-h02", flightNo: "TR121", name: "H02", fatiguePoints: 2, remark: "", qualifiedStaffIds: [first!.id, second!.id] }
+      { ...base, id: "source-g19", flightNo: "CX931", name: "G19", category: "常规", fatiguePoints: 2, remark: "", qualifiedStaffIds: [first!.id] },
+      { ...base, id: "second-base", flightNo: "BASE", name: "普通柜台", category: "常规", fatiguePoints: 1, remark: "", qualifiedStaffIds: [second!.id] },
+      { ...base, id: "target-h02", flightNo: "TR121", name: "H02", category: "常规", fatiguePoints: 2, remark: "", qualifiedStaffIds: [first!.id, second!.id] }
     ];
     state.history = [{ id: "history", date: "2026-07-17", flightNo: "OLD", position: "P", staffId: second!.id, staffName: second!.name, startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 20, remark: "" }];
     state.settings.positionTransitionPolicies = [{
@@ -143,9 +143,9 @@ describe("scheduler domain", () => {
     ];
     const base = state.positionRules[0]!;
     state.positionRules = [
-      { ...base, id: "first-load", flightNo: "F1", name: "P1", fatiguePoints: 5, remark: "", qualifiedStaffIds: [first!.id] },
-      { ...base, id: "second-base", flightNo: "F0", name: "P0", fatiguePoints: 1, remark: "", qualifiedStaffIds: [second!.id] },
-      { ...base, id: "next-load", flightNo: "F2", name: "P2", fatiguePoints: 5, remark: "", qualifiedStaffIds: [first!.id, second!.id] }
+      { ...base, id: "first-load", flightNo: "F1", name: "P1", category: "常规", fatiguePoints: 5, remark: "", qualifiedStaffIds: [first!.id] },
+      { ...base, id: "second-base", flightNo: "F0", name: "P0", category: "常规", fatiguePoints: 1, remark: "", qualifiedStaffIds: [second!.id] },
+      { ...base, id: "next-load", flightNo: "F2", name: "P2", category: "常规", fatiguePoints: 5, remark: "", qualifiedStaffIds: [first!.id, second!.id] }
     ];
     state.history = [{ id: "history", date: "2026-07-17", flightNo: "OLD", position: "P", staffId: second!.id, staffName: second!.name, startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 20, remark: "" }];
     state.settings.highLoadProtectionEnabled = false;
@@ -166,7 +166,7 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => { person.dutyQualified = false; });
     state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
     const base = state.positionRules[0]!;
-    state.positionRules = [{ ...base, id: "g20", flightNo: "F1", name: "G20", fatiguePoints: 4, remark: "", qualifiedStaffIds: [first!.id, second!.id] }];
+    state.positionRules = [{ ...base, id: "g20", flightNo: "F1", name: "G20", category: "常规", fatiguePoints: 4, remark: "", qualifiedStaffIds: [first!.id, second!.id] }];
     state.history = [
       { id: "repeat", date: "2026-07-17", flightNo: "F1", position: "G20", staffId: first!.id, staffName: first!.name, startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: "" },
       { id: "other-load", date: "2026-07-17", flightNo: "OLD", position: "OTHER", staffId: second!.id, staffName: second!.name, startTime: "11:00", endTime: "13:00", workHours: 2, fatiguePoints: 20, remark: "" }
@@ -228,7 +228,7 @@ describe("scheduler domain", () => {
     state.flights = [{ id: "late-flight", flightNo: "TR121", startTime: "21:55", endTime: "23:55", bookedPassengers: 100, positions: [], remark: "" }];
     const base = state.positionRules[0]!;
     state.positionRules = [
-      { ...base, id: "late-high", flightNo: "TR121", name: "H02", fatiguePoints: 4, remark: "一号", qualifiedStaffIds: [protectedWorker!.id, restedWorker!.id] }
+      { ...base, id: "late-high", flightNo: "TR121", name: "H02", category: "常规", fatiguePoints: 4, remark: "一号", qualifiedStaffIds: [protectedWorker!.id, restedWorker!.id] }
     ];
     state.history = [
       { id: "previous-late", date: "2026-07-18", flightNo: "TR121", position: "H02", staffId: protectedWorker!.id, staffName: protectedWorker!.name, startTime: "21:55", endTime: "23:55", workHours: 2, fatiguePoints: 5, remark: "一号" },
@@ -530,7 +530,7 @@ describe("scheduler domain", () => {
       { id: "flex-flight", flightNo: "FLEX", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
       { id: "rare-flight", flightNo: "RARE", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" }
     ];
-    const base = state.positionRules[0]!;
+    const base = { ...state.positionRules[0]!, category: "常规" as const };
     state.positionRules = [
       { ...base, id: "base", flightNo: "BASE", name: "P0", qualifiedStaffIds: [flexibleWorker!.id] },
       { ...base, id: "flex", flightNo: "FLEX", name: "普通柜台", qualifiedStaffIds: [rareWorker!.id, flexibleWorker!.id] },
@@ -573,7 +573,7 @@ describe("scheduler domain", () => {
     expect(result.assignments.filter((item) => item.positionRuleId?.startsWith("guide-")).every((item) => item.workHours === 0)).toBe(true);
   });
 
-  it("links supervisor-fill positions to the same-flight supervisor until manually moved", () => {
+  it("keeps the configured supervisor at the top without generating a fill position", () => {
     const state = createDefaultState();
     const [supervisor, counterWorker] = state.staff;
     state.staff = [supervisor!, counterWorker!];
@@ -581,23 +581,373 @@ describe("scheduler domain", () => {
     state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
     const base = state.positionRules[0]!;
     state.positionRules = [
-      { ...base, id: "supervisor", flightNo: "F1", name: "督导", category: "常规", qualifiedStaffIds: [supervisor!.id] },
-      { ...base, id: "counter", flightNo: "F1", name: "G12", category: "常规", qualifiedStaffIds: [counterWorker!.id] },
-      { ...base, id: "supervisor-fill", flightNo: "F1", name: "超规柜台督导", category: "督导补位", qualifiedStaffIds: [] }
+      { ...base, id: "supervisor", flightNo: "F1", name: "督导", category: "机动督导", qualifiedStaffIds: [supervisor!.id] },
+      { ...base, id: "counter", flightNo: "F1", name: "G12", category: "常规", qualifiedStaffIds: [counterWorker!.id] }
     ];
 
     const result = generateSchedule(state, "2026-07-18");
     const supervisorAssignment = result.assignments.find((item) => item.positionRuleId === "supervisor")!;
     const counterAssignment = result.assignments.find((item) => item.positionRuleId === "counter")!;
-    const fillAssignment = result.assignments.find((item) => item.positionRuleId === "supervisor-fill")!;
-    expect(activeFlightPositions(state, state.flights[0]!)).toEqual(["督导", "G12", "超规柜台督导"]);
-    expect(fillAssignment).toMatchObject({ staffId: supervisorAssignment.staffId, workHours: 0, fatiguePoints: 0, status: "assigned", supervisorFillDetached: false });
+    expect(activeFlightPositions(state, state.flights[0]!)).toEqual(["督导", "G12"]);
+    expect(supervisorAssignment).toMatchObject({ staffId: supervisor!.id, status: "assigned" });
     state.assignments = result.assignments;
-    fillAssignment.staffId = null;
-    fillAssignment.staffName = "";
-    fillAssignment.status = "manual";
-    expect(canAssignStaff(state, fillAssignment.id, supervisorAssignment.staffId!, supervisorAssignment.id)).toBeNull();
-    expect(canAssignStaff(state, fillAssignment.id, counterAssignment.staffId!, counterAssignment.id)).toContain("同一航班的督导岗位");
+    expect(counterAssignment).toMatchObject({ staffId: counterWorker!.id, status: "assigned" });
+  });
+
+  it("uses a non-team-leader for a regular supervisor position when one is available", () => {
+    const state = createDefaultState();
+    const [teamLeader, regular] = state.staff;
+    state.staff = [teamLeader!, regular!];
+    teamLeader!.teamLeader = true;
+    regular!.teamLeader = false;
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "13:00", endTime: "15:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{
+      ...base,
+      id: "supervisor",
+      flightNo: "F1",
+      name: "督导",
+      category: "常规",
+      qualifiedStaffIds: [teamLeader!.id, regular!.id]
+    }, {
+      ...base,
+      id: "counter",
+      flightNo: "F1",
+      name: "G01",
+      category: "常规",
+      qualifiedStaffIds: [teamLeader!.id]
+    }];
+
+    const result = generateSchedule(state, "2026-07-18");
+
+    expect(result.assignments.find((item) => item.positionRuleId === "supervisor")).toMatchObject({ staffId: regular!.id, status: "assigned" });
+    expect(result.assignments.find((item) => item.positionRuleId === "counter")).toMatchObject({ staffId: teamLeader!.id, status: "assigned" });
+  });
+
+  it("uses the team leader as the regular supervisor fallback instead of leaving the position empty", () => {
+    const state = createDefaultState();
+    const teamLeader = state.staff[0]!;
+    state.staff = [teamLeader];
+    teamLeader.teamLeader = true;
+    teamLeader.dutyQualified = false;
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "13:00", endTime: "15:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{ ...base, id: "supervisor", flightNo: "F1", name: "督导", category: "常规", qualifiedStaffIds: [teamLeader.id] }];
+
+    const result = generateSchedule(state, "2026-07-18");
+
+    expect(result.assignments[0]).toMatchObject({ staffId: teamLeader.id, status: "assigned" });
+  });
+
+  it("does not deprioritize a team leader for an ordinary counter", () => {
+    const state = createDefaultState();
+    const [teamLeader, regular] = state.staff;
+    state.staff = [teamLeader!, regular!];
+    teamLeader!.teamLeader = true;
+    regular!.teamLeader = false;
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "13:00", endTime: "15:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{ ...base, id: "counter", flightNo: "F1", name: "G01", category: "常规", qualifiedStaffIds: [teamLeader!.id, regular!.id] }];
+
+    const result = generateSchedule(state, "2026-07-18");
+
+    expect(result.assignments[0]).toMatchObject({ staffId: teamLeader!.id, status: "assigned" });
+  });
+
+  it("automatically shows a KE166 regular worker in the supervisor cell without duplicating work hours", () => {
+    const state = createDefaultState();
+    const supervisor = state.staff[0]!;
+    state.staff = [supervisor];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "ke166", flightNo: "KE166", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "ke166-supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds: [supervisor.id], fatiguePoints: 5 },
+      { ...base, id: "ke166-counter", flightNo: "KE166", name: "H04", category: "常规", qualifiedStaffIds: [supervisor.id], fatiguePoints: 7 }
+    ];
+
+    const result = generateSchedule(state, "2026-07-18");
+    const supervisorAssignment = result.assignments.find((item) => item.positionRuleId === "ke166-supervisor")!;
+    const counterAssignment = result.assignments.find((item) => item.positionRuleId === "ke166-counter")!;
+
+    expect(supervisorAssignment).toMatchObject({ staffId: supervisor.id, status: "assigned", workHours: 2, fatiguePoints: 5 });
+    expect(counterAssignment).toMatchObject({
+      staffId: supervisor.id,
+      status: "assigned",
+      workHours: 0,
+      fatiguePoints: 7,
+      supervisorSourceAssignmentId: supervisorAssignment.id
+    });
+    expect(result.assignments.reduce((sum, item) => sum + item.workHours, 0)).toBe(2);
+    expect(result.assignments.reduce((sum, item) => sum + item.fatiguePoints, 0)).toBe(12);
+  });
+
+  it("prefers a non-team-leader for the KE166 mobile supervisor reuse path", () => {
+    const state = createDefaultState();
+    const [teamLeader, regular] = state.staff;
+    state.staff = [teamLeader!, regular!];
+    teamLeader!.teamLeader = true;
+    regular!.teamLeader = false;
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "ke166", flightNo: "KE166", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    const qualifiedStaffIds = [teamLeader!.id, regular!.id];
+    state.positionRules = [
+      { ...base, id: "supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds, fatiguePoints: 5 },
+      { ...base, id: "counter", flightNo: "KE166", name: "H06", category: "常规", remark: "", qualifiedStaffIds, fatiguePoints: 2 },
+      { ...base, id: "team-leader-counter", flightNo: "KE166", name: "H07", category: "常规", remark: "", qualifiedStaffIds: [teamLeader!.id], fatiguePoints: 2 }
+    ];
+
+    const assignments = generateSchedule(state, "2026-07-18").assignments;
+
+    expect(assignments.find((item) => item.positionRuleId === "supervisor")).toMatchObject({ staffId: regular!.id });
+    expect(assignments.find((item) => item.positionRuleId === "counter")).toMatchObject({ staffId: regular!.id, workHours: 0 });
+    expect(assignments.find((item) => item.positionRuleId === "team-leader-counter")).toMatchObject({ staffId: teamLeader!.id, workHours: 2 });
+  });
+
+  it("keeps the KE166 mobile supervisor away from forbidden remarked positions", () => {
+    const state = createDefaultState();
+    const [supervisor, worker] = state.staff;
+    state.staff = [supervisor!, worker!];
+    state.flights = [{ id: "ke166", flightNo: "KE166", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds: [supervisor!.id], fatiguePoints: 5 },
+      { ...base, id: "h02", flightNo: "KE166", name: "H02", category: "常规", remark: "一号", qualifiedStaffIds: [supervisor!.id, worker!.id], fatiguePoints: 7 },
+      { ...base, id: "h06", flightNo: "KE166", name: "H06", category: "常规", remark: "", qualifiedStaffIds: [supervisor!.id, worker!.id], fatiguePoints: 2 }
+    ];
+
+    const assignments = generateSchedule(state, "2026-07-18").assignments;
+    const top = assignments.find((item) => item.positionRuleId === "supervisor")!;
+    expect(assignments.find((item) => item.positionRuleId === "h02")?.staffId).not.toBe(supervisor!.id);
+    expect(assignments.find((item) => item.positionRuleId === "h06")).toMatchObject({
+      staffId: supervisor!.id,
+      workHours: 0,
+      supervisorSourceAssignmentId: top.id
+    });
+  });
+
+  it("keeps the KE166 supervisor in the top position when every regular target is forbidden", () => {
+    const state = createDefaultState();
+    const [supervisor, worker] = state.staff;
+    state.staff = [supervisor!, worker!];
+    state.flights = [{ id: "ke166", flightNo: "KE166", startTime: "09:00", endTime: "11:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds: [supervisor!.id], fatiguePoints: 5 },
+      { ...base, id: "h02", flightNo: "KE166", name: "H02", category: "常规", remark: "一号", qualifiedStaffIds: [supervisor!.id, worker!.id], fatiguePoints: 7 }
+    ];
+
+    const assignments = generateSchedule(state, "2026-07-18").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "supervisor")).toMatchObject({ staffId: supervisor!.id, workHours: 2 });
+    expect(assignments.find((item) => item.positionRuleId === "h02")).toMatchObject({ staffId: worker!.id, workHours: 2 });
+  });
+
+  it("moves unavoidable regular-position gaps toward the bottom of every flight", () => {
+    const state = createDefaultState();
+    const [first, second, third] = state.staff;
+    state.staff = [first!, second!, third!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = { ...state.positionRules[0]!, category: "常规" as const };
+    state.positionRules = [
+      { ...base, id: "h05", flightNo: "F1", name: "H05", qualifiedStaffIds: [first!.id, second!.id, third!.id], fatiguePoints: 5 },
+      { ...base, id: "h06", flightNo: "F1", name: "H06", qualifiedStaffIds: [first!.id, second!.id, third!.id], fatiguePoints: 4 },
+      { ...base, id: "h07", flightNo: "F1", name: "H07", qualifiedStaffIds: [first!.id], fatiguePoints: 3 },
+      { ...base, id: "h08", flightNo: "F1", name: "H08", qualifiedStaffIds: [second!.id], fatiguePoints: 2 },
+      { ...base, id: "h09", flightNo: "F1", name: "H09", qualifiedStaffIds: [third!.id], fatiguePoints: 1 },
+      { ...base, id: "guide", flightNo: "F1", name: "柜台引导", category: "引导", qualifiedStaffIds: [], fatiguePoints: 1 }
+    ];
+
+    const result = generateSchedule(state, "2026-07-18");
+    const regular = result.assignments.filter((item) => item.positionRuleId?.startsWith("h"));
+    const assignedPositions = regular.filter((item) => item.staffId).map((item) => item.position);
+    const guide = result.assignments.find((item) => item.positionRuleId === "guide")!;
+
+    expect(assignedPositions).toEqual(["H05", "H06", "H07"]);
+    expect(regular.filter((item) => item.staffId)).toHaveLength(3);
+    expect(regular.find((item) => item.position === "H07")).toMatchObject({ staffId: first!.id, fatiguePoints: 3 });
+    expect(regular.find((item) => item.position === "H08")?.staffId).toBeNull();
+    expect(regular.find((item) => item.position === "H09")?.staffId).toBeNull();
+    expect(guide.staffId).toBe(first!.id);
+    for (const assignment of regular.filter((item) => item.staffId)) {
+      const rule = state.positionRules.find((item) => item.id === assignment.positionRuleId)!;
+      expect(rule.qualifiedStaffIds).toContain(assignment.staffId);
+    }
+  });
+
+  it("does not move an unqualified worker upward merely to hide a gap", () => {
+    const state = createDefaultState();
+    const [first, second] = state.staff;
+    state.staff = [first!, second!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = { ...state.positionRules[0]!, category: "常规" as const };
+    state.positionRules = [
+      { ...base, id: "h05", flightNo: "F1", name: "H05", qualifiedStaffIds: [], fatiguePoints: 5 },
+      { ...base, id: "h06", flightNo: "F1", name: "H06", qualifiedStaffIds: [first!.id, second!.id], fatiguePoints: 4 },
+      { ...base, id: "h07", flightNo: "F1", name: "H07", qualifiedStaffIds: [first!.id], fatiguePoints: 3 },
+      { ...base, id: "h08", flightNo: "F1", name: "H08", qualifiedStaffIds: [second!.id], fatiguePoints: 2 }
+    ];
+
+    const result = generateSchedule(state, "2026-07-18");
+    const regular = result.assignments.filter((item) => item.positionRuleId?.startsWith("h"));
+
+    expect(regular.filter((item) => item.staffId).map((item) => item.position)).toEqual(["H06", "H07"]);
+    expect(regular.find((item) => item.position === "H05")?.staffId).toBeNull();
+    expect(regular.find((item) => item.position === "H08")?.staffId).toBeNull();
+    for (const assignment of regular.filter((item) => item.staffId)) {
+      const rule = state.positionRules.find((item) => item.id === assignment.positionRuleId)!;
+      expect(rule.qualifiedStaffIds).toContain(assignment.staffId);
+    }
+  });
+
+  it("keeps the KE166 supervisor link when a qualified worker is moved upward", () => {
+    const state = createDefaultState();
+    const [supervisor, worker] = state.staff;
+    state.staff = [supervisor!, worker!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "ke166", flightNo: "KE166", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds: [supervisor!.id], fatiguePoints: 5 },
+      { ...base, id: "h05", flightNo: "KE166", name: "H05", category: "常规", qualifiedStaffIds: [supervisor!.id, worker!.id], fatiguePoints: 7 },
+      { ...base, id: "h06", flightNo: "KE166", name: "H06", category: "常规", qualifiedStaffIds: [supervisor!.id], fatiguePoints: 6 },
+      { ...base, id: "h07", flightNo: "KE166", name: "H07", category: "常规", qualifiedStaffIds: [worker!.id], fatiguePoints: 2 }
+    ];
+
+    const result = generateSchedule(state, "2026-07-18");
+    const supervisorAssignment = result.assignments.find((item) => item.positionRuleId === "supervisor")!;
+    const h05 = result.assignments.find((item) => item.positionRuleId === "h05")!;
+    const h06 = result.assignments.find((item) => item.positionRuleId === "h06")!;
+    const h07 = result.assignments.find((item) => item.positionRuleId === "h07")!;
+
+    expect(supervisorAssignment).toMatchObject({ staffId: supervisor!.id, workHours: 2, fatiguePoints: 5 });
+    expect(h05).toMatchObject({ staffId: worker!.id, workHours: 2, fatiguePoints: 7 });
+    expect(h06).toMatchObject({
+      staffId: supervisor!.id,
+      workHours: 0,
+      fatiguePoints: 6,
+      supervisorSourceAssignmentId: supervisorAssignment.id
+    });
+    expect(h07.staffId).toBeNull();
+    expect(result.assignments.filter((item) => item.status === "assigned").reduce((sum, item) => sum + item.workHours, 0)).toBe(4);
+  });
+
+  it("does not let the duty-morning priority take KE166's only mobile supervisor away", () => {
+    const state = createDefaultState();
+    const [mobileSupervisor, dutyWorker, cxWorker] = state.staff;
+    state.staff = [mobileSupervisor!, dutyWorker!, cxWorker!];
+    const date = "2026-07-18";
+    state.dutyRosterOverrides = [{
+      date,
+      cxPreflightStaffId: null,
+      dutyStaffId: dutyWorker!.id,
+      standbyStaffIds: [null, null]
+    }];
+    state.flights = [
+      { id: "cx", flightNo: "CX937", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "ke", flightNo: "KE166", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "cx-counter", flightNo: "CX937", name: "G12", category: "常规", qualifiedStaffIds: [mobileSupervisor!.id, cxWorker!.id], fatiguePoints: 2 },
+      { ...base, id: "ke-supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds: [mobileSupervisor!.id], fatiguePoints: 5 },
+      { ...base, id: "ke-counter", flightNo: "KE166", name: "H04", category: "常规", qualifiedStaffIds: [mobileSupervisor!.id, dutyWorker!.id], fatiguePoints: 7 }
+    ];
+
+    const result = generateSchedule(state, date);
+    const supervisor = result.assignments.find((item) => item.positionRuleId === "ke-supervisor")!;
+    const keCounter = result.assignments.find((item) => item.positionRuleId === "ke-counter")!;
+    const cxCounter = result.assignments.find((item) => item.positionRuleId === "cx-counter")!;
+
+    expect(supervisor).toMatchObject({ staffId: mobileSupervisor!.id, workHours: 2, fatiguePoints: 5 });
+    expect(keCounter).toMatchObject({
+      staffId: mobileSupervisor!.id,
+      workHours: 0,
+      fatiguePoints: 7,
+      supervisorSourceAssignmentId: supervisor.id
+    });
+    expect(cxCounter).toMatchObject({ staffId: cxWorker!.id, status: "assigned" });
+  });
+
+  it("keeps KE166 supervisor synced when administrative support mode only replaces other counters", () => {
+    const state = createDefaultState();
+    const supervisor = state.staff[0]!;
+    const backup = state.staff[1]!;
+    state.staff = [supervisor, backup];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.settings.adminSupportEnabled = true;
+    state.flights = [{ id: "ke166", flightNo: "KE166", startTime: "08:30", endTime: "10:30", bookedPassengers: 200, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "ke166-supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds: [supervisor.id], fatiguePoints: 4 },
+      { ...base, id: "ke166-h04", flightNo: "KE166", name: "H04", category: "常规", qualifiedStaffIds: [supervisor.id], fatiguePoints: 2 },
+      { ...base, id: "ke166-h08-regular", flightNo: "KE166", name: "H08", category: "常规", qualifiedStaffIds: [backup.id], fatiguePoints: 2, minPassengers: 170 },
+      { ...base, id: "ke166-h08-admin", flightNo: "KE166", name: "H08", category: "行政支援", qualifiedStaffIds: [], fatiguePoints: 2, minPassengers: 170 },
+      { ...base, id: "ke166-h09-regular", flightNo: "KE166", name: "H09", category: "常规", qualifiedStaffIds: [backup.id], fatiguePoints: 2, minPassengers: 200 },
+      { ...base, id: "ke166-h09-admin", flightNo: "KE166", name: "H09", category: "行政支援", qualifiedStaffIds: [], fatiguePoints: 2, minPassengers: 200 }
+    ];
+
+    const result = generateSchedule(state, "2026-07-18");
+    const supervisorAssignment = result.assignments.find((item) => item.positionRuleId === "ke166-supervisor")!;
+    const counterAssignment = result.assignments.find((item) => item.positionRuleId === "ke166-h04")!;
+
+    expect(activeFlightPositions(state, state.flights[0]!)).toEqual(["督导", "H04", "H08", "H09"]);
+    expect(supervisorAssignment).toMatchObject({ staffId: supervisor.id, status: "assigned", workHours: 2, fatiguePoints: 4 });
+    expect(counterAssignment).toMatchObject({
+      staffId: supervisor.id,
+      status: "assigned",
+      workHours: 0,
+      fatiguePoints: 2,
+      supervisorSourceAssignmentId: supervisorAssignment.id
+    });
+  });
+
+  it("reserves a KE166 regular position for a supervisor-qualified worker in administrative support mode", () => {
+    const state = createDefaultState();
+    const supervisor = state.staff[0]!;
+    const regular = state.staff[1]!;
+    state.staff = [supervisor, regular];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.settings.adminSupportEnabled = true;
+    state.flights = [
+      { id: "other", flightNo: "OTHER", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "ke166", flightNo: "KE166", startTime: "08:30", endTime: "10:30", bookedPassengers: 200, positions: [], remark: "" }
+    ];
+    state.history = [{
+      id: "regular-heavy-history",
+      date: "2026-07-17",
+      flightNo: "HISTORY",
+      position: "P1",
+      staffId: regular.id,
+      staffName: regular.name,
+      startTime: "08:00",
+      endTime: "20:00",
+      workHours: 12,
+      fatiguePoints: 8,
+      remark: ""
+    }];
+    const base = state.positionRules[0]!;
+    const bothStaffIds = [supervisor.id, regular.id];
+    state.positionRules = [
+      { ...base, id: "other-counter", flightNo: "OTHER", name: "G01", category: "常规", qualifiedStaffIds: bothStaffIds, fatiguePoints: 1 },
+      { ...base, id: "ke166-supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds: [supervisor.id], fatiguePoints: 4 },
+      { ...base, id: "ke166-h04", flightNo: "KE166", name: "H04", category: "常规", qualifiedStaffIds: bothStaffIds, fatiguePoints: 2 },
+      { ...base, id: "ke166-h08-regular", flightNo: "KE166", name: "H08", category: "常规", qualifiedStaffIds: bothStaffIds, fatiguePoints: 2, minPassengers: 170 },
+      { ...base, id: "ke166-h08-admin", flightNo: "KE166", name: "H08", category: "行政支援", qualifiedStaffIds: [], fatiguePoints: 2, minPassengers: 170 }
+    ];
+
+    const result = generateSchedule(state, "2026-07-18");
+    const supervisorAssignment = result.assignments.find((item) => item.positionRuleId === "ke166-supervisor")!;
+    const ke166Regular = result.assignments.find((item) => item.positionRuleId === "ke166-h04")!;
+    const otherRegular = result.assignments.find((item) => item.positionRuleId === "other-counter")!;
+
+    expect(supervisorAssignment).toMatchObject({ staffId: supervisor.id, status: "assigned", fatiguePoints: 4 });
+    expect(ke166Regular).toMatchObject({ staffId: supervisor.id, workHours: 0, supervisorSourceAssignmentId: supervisorAssignment.id });
+    expect(otherRegular).toMatchObject({ staffId: regular.id, status: "assigned", workHours: 2 });
   });
 
   it("does not copy one flight's configured guide positions into every other flight", () => {
@@ -662,7 +1012,7 @@ describe("scheduler domain", () => {
     ];
     const base = state.positionRules[0]!;
     state.positionRules = state.flights.map((flight, index) => ({
-      ...base, id: `p${index + 1}`, flightNo: flight.flightNo, name: `P${index + 1}`,
+      ...base, id: `p${index + 1}`, flightNo: flight.flightNo, name: `P${index + 1}`, category: "常规",
       fatiguePoints: 0, remark: "", qualifiedStaffIds: workers.map((person) => person.id)
     }));
     const assignments = generateSchedule(state, "2026-07-18").assignments;
@@ -676,7 +1026,7 @@ describe("scheduler domain", () => {
     const requiredIds = state.staff
       .filter((person) => person.staffType === "常规" && person.status === "正常")
       .map((person) => person.id);
-    expect(requiredIds.every((staffId) => workedIds.has(staffId))).toBe(true);
+    expect(requiredIds.filter((staffId) => !workedIds.has(staffId))).toEqual([]);
   });
 
   it("reserves the duty-qualified person for the first counter on the latest flight", () => {
@@ -791,7 +1141,7 @@ describe("scheduler domain", () => {
     const base = state.positionRules[0]!;
     const qualifiedStaffIds = state.staff.map((person) => person.id);
     state.positionRules = state.flights.map((flight, index) => ({
-      ...base, id: `balance-${index}`, flightNo: flight.flightNo, name: `P${index}`, remark: "",
+      ...base, id: `balance-${index}`, flightNo: flight.flightNo, name: `P${index}`, category: "常规", remark: "",
       fatiguePoints: index === 0 ? 0 : 1, qualifiedStaffIds
     }));
 
@@ -977,5 +1327,63 @@ describe("scheduler domain", () => {
     const unfilled = generateSchedule(state, "2026-07-18").assignments.find((item) => item.status === "unfilled")!;
     expect(unfilled.systemNotes?.join("；")).toContain("因合格人数不足而无法填满");
     expect(unfilled.systemNotes?.join("；")).toContain("时段冲突");
+  });
+
+  it("assigns the duty worker by the editable flight and position priority order", () => {
+    const state = createDefaultState();
+    const [duty, other] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [duty!, other!];
+    state.flights = [
+      { id: "tw", flightNo: "TW616", startTime: "19:00", endTime: "21:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "tr", flightNo: "TR121", startTime: "21:30", endTime: "23:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "tw-one", flightNo: "TW616", name: "G01", remark: "一号", category: "常规", qualifiedStaffIds: [duty!.id, other!.id] },
+      { ...base, id: "tr-one", flightNo: "TR121", name: "H02", remark: "一号", category: "常规", qualifiedStaffIds: [duty!.id, other!.id] }
+    ];
+    state.dutyRosterOverrides = [{ date: "2026-07-18", cxPreflightStaffId: null, dutyStaffId: duty!.id, standbyStaffIds: [null, null] }];
+
+    let assignments = generateSchedule(state, "2026-07-18").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "tr-one")?.staffId).toBe(duty!.id);
+
+    state.settings.dutyPositionPriorities.reverse();
+    assignments = generateSchedule(state, "2026-07-18").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "tw-one")?.staffId).toBe(duty!.id);
+  });
+
+  it("continues to the next duty priority when a strict transition blocks the first target", () => {
+    const state = createDefaultState();
+    const [duty, other, third] = state.staff.filter((person) => person.status === "正常").slice(0, 3);
+    state.staff = [duty!, other!, third!];
+    state.flights = [
+      { id: "morning", flightNo: "MORNING", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "tw", flightNo: "TW616", startTime: "19:00", endTime: "21:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "tr", flightNo: "TR121", startTime: "21:30", endTime: "23:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    const qualifiedStaffIds = state.staff.map((person) => person.id);
+    state.positionRules = [
+      { ...base, id: "morning-source", flightNo: "MORNING", name: "G01", remark: "", category: "常规", qualifiedStaffIds },
+      { ...base, id: "tw-one", flightNo: "TW616", name: "G01", remark: "一号", category: "常规", qualifiedStaffIds },
+      { ...base, id: "tr-one", flightNo: "TR121", name: "H02", remark: "一号", category: "常规", qualifiedStaffIds }
+    ];
+    state.dutyRosterOverrides = [{ date: "2026-07-18", cxPreflightStaffId: null, dutyStaffId: duty!.id, standbyStaffIds: [other!.id, third!.id] }];
+    state.settings.positionTransitionPolicies = [{
+      id: "block-tr",
+      name: "值班人员不能接TR",
+      enabled: true,
+      sourceFlightNo: "MORNING",
+      sourcePositions: ["G01"],
+      targetFlightNo: "TR121",
+      targetPosition: "H02",
+      minimumGapMinutes: 1440,
+      mode: "forbid"
+    }];
+
+    const assignments = generateSchedule(state, "2026-07-18").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "morning-source")?.staffId).toBe(duty!.id);
+    expect(assignments.find((item) => item.positionRuleId === "tr-one")?.staffId).not.toBe(duty!.id);
+    expect(assignments.find((item) => item.positionRuleId === "tw-one")?.staffId).toBe(duty!.id);
   });
 });

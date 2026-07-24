@@ -47,6 +47,7 @@ function parseStaff(workbook: XLSX.WorkBook): Staff[] | undefined {
   const staffTypeIndex = headerIndex(header, ["人员类型", "人员分类", "类型"], 5);
   const cxPreflightIndex = headerIndex(header, ["CX航前资质", "CX航前", "航前资质"], 6);
   const dutyIndex = header.findIndex((cell) => ["值班资质", "值班人员资质"].some((candidate) => normalizeText(cell).includes(candidate)));
+  const teamLeaderIndex = header.findIndex((cell) => ["是否为分队长", "分队长"].some((candidate) => normalizeText(cell).includes(candidate)));
   return data.slice(1).flatMap((row) => {
     const id = normalizeText(row[idIndex]);
     const name = normalizeText(row[nameIndex]);
@@ -58,6 +59,7 @@ function parseStaff(workbook: XLSX.WorkBook): Staff[] | undefined {
       id,
       name,
       staffType,
+      teamLeader: staffType === "常规" && teamLeaderIndex >= 0 && ["是", "有", "true", "1"].includes(normalizeText(row[teamLeaderIndex]).toLowerCase()),
       cxPreflightQualified: staffType === "常规" && ["是", "有", "true", "1"].includes(normalizeText(row[cxPreflightIndex]).toLowerCase()),
       dutyQualified: staffType === "常规" && (dutyIndex < 0 || !["否", "无", "false", "0"].includes(normalizeText(row[dutyIndex]).toLowerCase())),
       nightShift: !["否", "不可以", "false", "0"].includes(normalizeText(row[nightIndex]).toLowerCase()),
@@ -154,9 +156,11 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
     if (!currentFlight || !name) continue;
     const rawQualified = normalizeText(row[qualifiedIndex]);
     const categoryText = normalizeText(row[categoryIndex]);
-    if (categoryText.includes("支援") && !categoryText.includes("行政支援") && !categoryText.includes("督导补位")) continue;
+    if (categoryText.includes("支援") && !categoryText.includes("行政支援")) continue;
     const category: PositionRule["category"] = categoryText.includes("督导补位")
-      ? "督导补位"
+      ? "常规"
+      : categoryText.includes("机动督导")
+      ? "机动督导"
       : categoryText.includes("行政支援")
       ? "行政支援"
       : categoryText.includes("引导")
@@ -257,9 +261,9 @@ function append(workbook: XLSX.WorkBook, name: string, rowsData: unknown[][], wi
 export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
   const workbook = XLSX.utils.book_new();
   append(workbook, "人员信息", [
-    ["编号", "姓名", "是否可上夜班", "状态", "备注", "人员类型", "CX航前资质", "值班资质"],
-    ...state.staff.map((person) => [person.id, person.name, person.nightShift ? "是" : "否", person.status, person.remark, person.staffType, person.cxPreflightQualified ? "是" : "否", person.dutyQualified ? "是" : "否"])
-  ], [10, 14, 16, 10, 24, 14, 14, 14]);
+    ["编号", "姓名", "是否可上夜班", "状态", "备注", "人员类型", "CX航前资质", "值班资质", "是否为分队长"],
+    ...state.staff.map((person) => [person.id, person.name, person.nightShift ? "是" : "否", person.status, person.remark, person.staffType, person.cxPreflightQualified ? "是" : "否", person.dutyQualified ? "是" : "否", person.teamLeader ? "是" : "否"])
+  ], [10, 14, 16, 10, 24, 14, 14, 14, 16]);
   append(workbook, "航班计划", [
     ["航班号", "开始时间", "结束时间", "预定人数（当天填写）", "涉及岗位（用逗号分隔）", "备注"],
     ...state.flights.map((flight) => [flight.flightNo, flight.startTime, flight.endTime, flight.bookedPassengers, flight.positions.join(","), flight.remark])

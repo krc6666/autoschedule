@@ -14,15 +14,19 @@ describe("config view", () => {
     expect(html).toContain('data-field="cxPreflightQualified"');
     expect(html).toContain("值班资质");
     expect(html).toContain('data-field="dutyQualified"');
-    expect(html).toContain(">督导补位</option>");
+    expect(html).toContain("分队长");
+    expect(html).toContain('data-field="teamLeader"');
+    expect(html).toContain('aria-label="是否为分队长"');
+    expect(html).toContain(">机动督导</option>");
+    expect(html).not.toContain(">督导</option>");
     expect(html).toMatch(/\d+ 人值班资质/);
   });
 
-  it("explains that supervisor-fill positions accept same-flight supervisor movement", () => {
+  it("lists the independent supervisor category", () => {
     const state = createDefaultState();
-    state.positionRules[0]!.category = "督导补位";
+    state.positionRules[0]!.category = "机动督导";
     const html = renderConfig(state);
-    expect(html).toContain("默认同步同航班督导，拖拽后独立");
+    expect(html).toContain("机动督导");
   });
 
   it("renders scheduling policies in an independent collapsible module", () => {

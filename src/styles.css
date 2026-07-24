@@ -155,6 +155,28 @@ button, input, select { letter-spacing: 0; }
 .policy-ledger-table td:nth-child(2) { width: 100px; }
 .policy-ledger-table td:nth-child(3) { width: 150px; font-weight: 650; }
 .policy-ledger-table td:last-child { width: 180px; color: #59636e; }
+.policy-search { display: grid; grid-template-columns: 20px minmax(0, 1fr) 32px; align-items: center; gap: 6px; max-width: 620px; padding: 0 6px 0 10px; border: 1px solid var(--as-border); border-radius: 6px; background: #fff; color: var(--as-muted); }
+.policy-search .form-control { border: 0; box-shadow: none; }
+.duty-priority-list { display: grid; gap: 8px; }
+.duty-priority-row { display: grid; grid-template-columns: 30px minmax(120px, .7fr) minmax(180px, 1.4fr) 76px 108px; align-items: end; gap: 10px; padding: 9px; border: 1px solid var(--as-border); border-radius: 6px; background: #fbfcfc; }
+.duty-priority-row .form-label { display: grid; gap: 5px; margin: 0; color: #4e5863; font-size: 12px; }
+.duty-priority-order { align-self: center; color: var(--as-muted); font-weight: 700; text-align: center; }
+.duty-priority-switch { align-self: center; margin: 0; }
+.duty-priority-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.supervisor-coverage-list { display: grid; gap: 8px; }
+.supervisor-coverage-row { display: grid; grid-template-columns: 72px minmax(120px, .8fr) minmax(120px, .8fr) minmax(150px, 1.2fr) minmax(120px, .8fr) 34px; align-items: end; gap: 10px; padding: 9px; border: 1px solid var(--as-border); border-radius: 6px; background: #fbfcfc; }
+.supervisor-coverage-row .form-label { display: grid; gap: 5px; margin: 0; color: #4e5863; font-size: 12px; }
+.supervisor-coverage-switch { align-self: center; margin: 0; }
+.relaxed-shift-statistics { display: grid; gap: 14px; }
+.relaxed-shift-today { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.relaxed-shift-today > div { display: grid; gap: 5px; padding: 10px 12px; border-left: 3px solid #39756e; background: #f7faf9; }
+.relaxed-shift-today > div > strong { color: var(--as-ink); font-size: 13px; }
+.relaxed-shift-today small { color: var(--as-muted); font-size: 11px; }
+.relaxed-shift-today > div > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.relaxed-shift-today span { padding: 4px 7px; border: 1px solid #d9e5e2; border-radius: 4px; background: #fff; color: #46514f; font-size: 12px; }
+.relaxed-shift-today span em { color: var(--as-muted); font-style: normal; }
+.relaxed-shift-today span.is-empty { border-style: dashed; color: var(--as-muted); }
+.relaxed-shift-table { min-width: 760px; }
 
 .schedule-workspace { display: grid; grid-template-areas: "staff board roster"; grid-template-columns: 126px minmax(0, max-content) minmax(220px, 1fr); gap: 6px; align-items: start; margin-bottom: 8px; }
 .duty-roster-summary { grid-area: roster; position: sticky; top: 68px; display: grid; gap: 8px; min-width: 0; padding: 2px 0; }
@@ -342,6 +364,8 @@ button, input, select { letter-spacing: 0; }
   .split-section { grid-template-columns: 1fr; gap: 24px; }
   .schedule-policy-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .transition-policy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .duty-priority-row { grid-template-columns: 30px minmax(110px, .7fr) minmax(160px, 1.3fr) 70px 108px; }
+  .supervisor-coverage-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .schedule-workspace { grid-template-areas: "staff board" "staff roster"; grid-template-columns: 126px minmax(0, 1fr); }
 }
 
@@ -372,6 +396,11 @@ button, input, select { letter-spacing: 0; }
   .schedule-feedback-item { grid-template-columns: 16px minmax(0, 1fr); }
   .schedule-feedback-item > span { grid-column: 2; }
   .transition-policy-grid { grid-template-columns: 1fr; }
+  .duty-priority-row { grid-template-columns: 28px 1fr; }
+  .duty-priority-row .duty-priority-switch, .duty-priority-row .duty-priority-actions { grid-column: 2; }
+  .duty-priority-actions { justify-content: flex-start; }
+  .supervisor-coverage-row { grid-template-columns: 1fr; }
+  .relaxed-shift-today { grid-template-columns: 1fr; }
   .flight-heading > div { align-items: flex-start; flex-direction: column; gap: 2px; }
   .schedule-workspace { grid-template-areas: "roster" "staff" "board"; grid-template-columns: 1fr; }
   .duty-roster-groups { grid-template-columns: 1fr; }

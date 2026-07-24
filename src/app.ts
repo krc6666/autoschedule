@@ -6,9 +6,10 @@ import { generateSchedule, isAuxiliaryCategory } from "./domain/scheduler";
 import { addIsoDays } from "./domain/time";
 import { applyStaffStatusChange, assignmentUsesUnavailableStaff } from "./domain/schedule-state";
 import { assignStaff as editScheduleAssignment, updateAssignmentField as editScheduleAssignmentField } from "./app/schedule-actions";
+import { addMobileSupervisorCoverageRule, deleteMobileSupervisorCoverageRule, updateMobileSupervisorCoverageRule } from "./app/configuration-actions";
 import { clearDutyRosterOverride, clearMonthlyDutyRosterOverrides, getDutyRosterForDate, updateDutyRosterSlot, type DutyRosterSlot } from "./domain/duty-roster";
 import { clearState, loadState, saveState } from "./infrastructure/storage";
-import type { AppSection, AppState, Flight, FlightTemplate, HistoryRecord, PositionTransitionPolicy, Staff } from "./model";
+import type { AppSection, AppState, DutyPositionPriority, Flight, FlightTemplate, HistoryRecord, PositionTransitionPolicy, Staff } from "./model";
 import { renderConfig } from "./ui/config-view";
 import { renderFlights } from "./ui/flights-view";
 import { renderHistory } from "./ui/history-view";
@@ -30,6 +31,7 @@ export class AutoScheduleApp {
   private importMode: "all" | "config" | "history" = "all";
   private openPositionFlights = new Set<string>();
   private openPolicyCards = new Set<string>();
+  private policySearchOpenCards: Set<string> | null = null;
   private openConfigSections = new Set<string>();
   private pointerDrag: { assignmentId: string; pointerId: number; startX: number; startY: number; active: boolean } | null = null;
   private readonly root: HTMLElement;
@@ -38,6 +40,7 @@ export class AutoScheduleApp {
     this.root = root;
     this.root.addEventListener("click", (event) => this.handleClick(event));
     this.root.addEventListener("change", (event) => void this.handleChange(event));
+    this.root.addEventListener("input", (event) => this.handleInput(event));
     this.root.addEventListener("dragstart", (event) => this.handleDragStart(event));
     this.root.addEventListener("dragover", (event) => this.handleDragOver(event));
     this.root.addEventListener("drop", (event) => this.handleDrop(event));
@@ -68,8 +71,11 @@ export class AutoScheduleApp {
       .map((element) => element.dataset.dutyRosterSection ?? "").filter(Boolean));
     this.openPositionFlights = new Set([...this.root.querySelectorAll<HTMLDetailsElement>(".position-rule-group[open]")]
       .map((element) => element.dataset.positionFlight ?? "").filter(Boolean));
-    this.openPolicyCards = new Set([...this.root.querySelectorAll<HTMLDetailsElement>(".policy-rule-card[open]")]
-      .map((element) => element.dataset.policyCard ?? "").filter(Boolean));
+    this.openPolicyCards = this.policySearchOpenCards
+      ? new Set(this.policySearchOpenCards)
+      : new Set([...this.root.querySelectorAll<HTMLDetailsElement>(".policy-rule-card[open]")]
+        .map((element) => element.dataset.policyCard ?? "").filter(Boolean));
+    this.policySearchOpenCards = null;
     this.openConfigSections = new Set([...this.root.querySelectorAll<HTMLDetailsElement>(".config-collapsible[open]")]
       .map((element) => element.dataset.configSection ?? "").filter(Boolean));
     this.root.innerHTML = renderShell(this.state, this.activeSection, this.scheduleDate, this.view());
@@ -248,6 +254,13 @@ export class AutoScheduleApp {
       "clear-all-qualified": () => this.setQualifiedSelection(false),
       "save-qualified": () => this.saveQualified(id),
       "save-schedule-policy": () => this.saveSchedulePolicy(),
+      "clear-policy-search": () => this.clearPolicySearch(),
+      "add-duty-priority": () => this.addDutyPriority(),
+      "move-duty-priority-up": () => this.moveDutyPriority(id, -1),
+      "move-duty-priority-down": () => this.moveDutyPriority(id, 1),
+      "delete-duty-priority": () => this.deleteDutyPriority(id),
+      "add-supervisor-coverage": () => this.addSupervisorCoverageRule(),
+      "delete-supervisor-coverage": () => this.deleteSupervisorCoverageRule(id),
       "add-transition-policy": () => this.addTransitionPolicy(),
       "delete-transition-policy": () => this.deleteTransitionPolicy(id),
       "add-template": () => this.addTemplate(),
@@ -267,6 +280,52 @@ export class AutoScheduleApp {
       "reset-all": () => this.resetAll()
     };
     actions[action]?.();
+  }
+
+  private handleInput(event: Event): void {
+    const target = event.target as HTMLInputElement;
+    if (target.id === "policy-rule-search") this.filterPolicyRules(target.value);
+  }
+
+  private filterPolicyRules(value: string): void {
+    const query = normalizeText(value).toLocaleLowerCase("zh-CN");
+    const cards = [...this.root.querySelectorAll<HTMLDetailsElement>(".schedule-policy-section > .policy-rule-card")];
+    const allCards = [...this.root.querySelectorAll<HTMLDetailsElement>(".schedule-policy-section .policy-rule-card")];
+    if (query && !this.policySearchOpenCards) {
+      this.policySearchOpenCards = new Set(allCards.filter((card) => card.open).map((card) => card.dataset.policyCard ?? ""));
+    }
+    const searchableText = (element: HTMLElement): string => [
+      element.textContent ?? "",
+      ...[...element.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")].map((input) => input.value)
+    ].join(" ").toLocaleLowerCase("zh-CN");
+    cards.forEach((card) => {
+      const summaryMatches = Boolean(query) && searchableText(card.querySelector<HTMLElement>(":scope > summary") ?? card).includes(query);
+      card.hidden = Boolean(query) && !searchableText(card).includes(query);
+      if (query && !card.hidden) card.open = true;
+      card.querySelectorAll<HTMLDetailsElement>(".policy-transition-card").forEach((nested) => {
+        nested.hidden = Boolean(query) && !summaryMatches && !searchableText(nested).includes(query);
+        if (query && !nested.hidden) nested.open = true;
+      });
+      card.querySelectorAll<HTMLTableRowElement>(".policy-ledger-table tbody tr").forEach((row) => {
+        row.hidden = Boolean(query) && !summaryMatches && !(row.textContent ?? "").toLocaleLowerCase("zh-CN").includes(query);
+      });
+    });
+    if (!query && this.policySearchOpenCards) {
+      cards.forEach((card) => {
+        card.hidden = false;
+        card.querySelectorAll<HTMLElement>(".policy-transition-card, .policy-ledger-table tbody tr").forEach((element) => { element.hidden = false; });
+      });
+      allCards.forEach((card) => { card.open = this.policySearchOpenCards?.has(card.dataset.policyCard ?? "") ?? false; });
+      this.policySearchOpenCards = null;
+    }
+  }
+
+  private clearPolicySearch(): void {
+    const input = this.root.querySelector<HTMLInputElement>("#policy-rule-search");
+    if (!input) return;
+    input.value = "";
+    this.filterPolicyRules("");
+    input.focus();
   }
 
   private async handleChange(event: Event): Promise<void> {
@@ -401,6 +460,9 @@ export class AutoScheduleApp {
     const maxWorkHoursDifference = Number(assertElement<HTMLInputElement>("#policy-max-work-hours-difference").value);
     const maxTodayFatigueDifference = Number(assertElement<HTMLInputElement>("#policy-max-today-fatigue-difference").value);
     const dutyFatiguePoints = Number(assertElement<HTMLInputElement>("#policy-duty-fatigue-points").value);
+    const earlyDepartureCutoffTime = assertElement<HTMLInputElement>("#policy-early-departure-cutoff").value;
+    const afternoonRestStartTime = assertElement<HTMLInputElement>("#policy-afternoon-rest-start").value;
+    const afternoonRestEndTime = assertElement<HTMLInputElement>("#policy-afternoon-rest-end").value;
     this.state.settings.highLoadProtectionEnabled = enabled;
     this.state.settings.highLoadFatigueThreshold = Math.min(50, Math.max(0.5, Number.isFinite(threshold) ? threshold : 4));
     this.state.settings.highLoadRecoveryMinutes = Math.min(1440, Math.max(0, Number.isFinite(recoveryMinutes) ? Math.round(recoveryMinutes) : 360));
@@ -422,6 +484,19 @@ export class AutoScheduleApp {
     this.state.settings.maxWorkHoursDifference = Math.min(24, Math.max(0, Number.isFinite(maxWorkHoursDifference) ? maxWorkHoursDifference : 2));
     this.state.settings.maxTodayFatigueDifference = Math.min(100, Math.max(0, Number.isFinite(maxTodayFatigueDifference) ? maxTodayFatigueDifference : 4));
     this.state.settings.dutyFatiguePoints = Math.min(50, Math.max(0, Number.isFinite(dutyFatiguePoints) ? dutyFatiguePoints : 12));
+    this.state.settings.dutyPositionPriorities = this.state.settings.dutyPositionPriorities.map((item) => ({
+      ...item,
+      flightNo: normalizeText(item.flightNo).toUpperCase(),
+      positionKeyword: normalizeText(item.positionKeyword)
+    }));
+    this.state.settings.mobileSupervisorCoverageRules = this.state.settings.mobileSupervisorCoverageRules.map((item) => ({
+      ...item,
+      flightNo: normalizeText(item.flightNo).toUpperCase(),
+      keyword: normalizeText(item.keyword)
+    }));
+    this.state.settings.earlyDepartureCutoffTime = earlyDepartureCutoffTime || "12:00";
+    this.state.settings.afternoonRestStartTime = afternoonRestStartTime || "12:00";
+    this.state.settings.afternoonRestEndTime = afternoonRestEndTime || "18:00";
     this.state.settings.positionTransitionPolicies = this.state.settings.positionTransitionPolicies.map((policy) => ({
       ...policy,
       name: normalizeText(policy.name) || "未命名衔接规则",
@@ -439,6 +514,52 @@ export class AutoScheduleApp {
       this.state.activeScheduleDate = this.scheduleDate;
     }
     this.commit(regenerate ? "排班规则已保存，当前排班已重新生成" : "排班规则已保存，将用于下次排班");
+  }
+
+  private addDutyPriority(): void {
+    const priority: DutyPositionPriority = {
+      id: createId("duty-priority"),
+      flightNo: "",
+      positionKeyword: "一号",
+      enabled: true
+    };
+    this.state.settings.dutyPositionPriorities.push(priority);
+    this.openPolicyCards.add("duty-rules");
+    this.commit("已新增值班岗位优先项");
+  }
+
+  private moveDutyPriority(id: string, direction: -1 | 1): void {
+    const index = this.state.settings.dutyPositionPriorities.findIndex((item) => item.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= this.state.settings.dutyPositionPriorities.length) return;
+    [this.state.settings.dutyPositionPriorities[index], this.state.settings.dutyPositionPriorities[target]] = [
+      this.state.settings.dutyPositionPriorities[target]!,
+      this.state.settings.dutyPositionPriorities[index]!
+    ];
+    this.openPolicyCards.add("duty-rules");
+    this.commit("值班岗位优先顺序已调整");
+  }
+
+  private deleteDutyPriority(id: string): void {
+    const priority = this.state.settings.dutyPositionPriorities.find((item) => item.id === id);
+    if (!priority || !confirm(`确认删除 ${priority.flightNo || "未填写航班"} / ${priority.positionKeyword || "任意岗位"}？`)) return;
+    this.state.settings.dutyPositionPriorities = this.state.settings.dutyPositionPriorities.filter((item) => item.id !== id);
+    this.openPolicyCards.add("duty-rules");
+    this.commit("值班岗位优先项已删除");
+  }
+
+  private addSupervisorCoverageRule(): void {
+    addMobileSupervisorCoverageRule(this.state);
+    this.openPolicyCards.add("supervisor-coverage");
+    this.commit("已新增机动督导兼任规则");
+  }
+
+  private deleteSupervisorCoverageRule(id: string): void {
+    const rule = this.state.settings.mobileSupervisorCoverageRules.find((item) => item.id === id);
+    if (!rule || !confirm(`确认删除机动督导兼任规则“${rule.keyword || "未填写关键词"}”？`)) return;
+    if (!deleteMobileSupervisorCoverageRule(this.state, id)) return;
+    this.openPolicyCards.add("supervisor-coverage");
+    this.commit("机动督导兼任规则已删除");
   }
 
   private addTransitionPolicy(): void {
@@ -500,7 +621,7 @@ export class AutoScheduleApp {
   private addStaff(): void {
     const numericIds = this.state.staff.map((item) => Number(item.id)).filter(Number.isFinite);
     const id = String(Math.max(0, ...numericIds) + 1);
-    this.state.staff.push({ id, name: "新人员", staffType: "常规", cxPreflightQualified: false, dutyQualified: true, nightShift: true, status: "正常", remark: "" });
+    this.state.staff.push({ id, name: "新人员", staffType: "常规", teamLeader: false, cxPreflightQualified: false, dutyQualified: true, nightShift: true, status: "正常", remark: "" });
     this.commit("已新增人员");
   }
 
@@ -511,6 +632,7 @@ export class AutoScheduleApp {
       id: `A${sequence}`,
       name: `行政支援${sequence}`,
       staffType: "行政支援",
+      teamLeader: false,
       cxPreflightQualified: false,
       dutyQualified: false,
       nightShift: true,
@@ -807,8 +929,10 @@ export class AutoScheduleApp {
       if (field === "category") {
         if (value === "分流" && !rule.earlyReleaseMinutes) rule.earlyReleaseMinutes = 60;
         if (value !== "分流") rule.earlyReleaseMinutes = 0;
-        if (value === "引导" || value === "督导补位") {
-          rule.manual = value === "督导补位";
+        if (value === "引导" || value === "机动督导") {
+          rule.manual = false;
+        }
+        if (value === "引导") {
           rule.qualifiedStaffIds = [];
         }
       }
@@ -824,6 +948,18 @@ export class AutoScheduleApp {
       else if (field === "mode") policy.mode = value === "forbid" ? "forbid" : "prefer";
       else if (field === "enabled") policy.enabled = Boolean(value);
       else if (field === "name" || field === "targetPosition") (policy as unknown as Record<string, unknown>)[field] = normalizeText(value);
+      this.state = saveState(this.state);
+      return;
+    } else if (entity === "duty-priority") {
+      const priority = this.state.settings.dutyPositionPriorities.find((item) => item.id === id);
+      if (!priority) return;
+      if (field === "flightNo") priority.flightNo = normalizeText(value).toUpperCase();
+      else if (field === "positionKeyword") priority.positionKeyword = normalizeText(value);
+      else if (field === "enabled") priority.enabled = Boolean(value);
+      this.state = saveState(this.state);
+      return;
+    } else if (entity === "supervisor-coverage") {
+      if (!updateMobileSupervisorCoverageRule(this.state, id, field, value)) return;
       this.state = saveState(this.state);
       return;
     } else if (entity === "duty-roster") {
@@ -872,9 +1008,11 @@ export class AutoScheduleApp {
       }
       (person as unknown as Record<string, unknown>)[field] = value;
       if (field === "staffType" && value === "行政支援") {
+        person.teamLeader = false;
         person.cxPreflightQualified = false;
         person.dutyQualified = false;
       }
+      if (field === "teamLeader" && person.staffType === "行政支援") person.teamLeader = false;
       this.state.assignments = [];
       this.state.activeScheduleDate = null;
     }
