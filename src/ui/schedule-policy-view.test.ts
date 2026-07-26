@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../defaults";
+import { SCHEDULING_RULES } from "../domain/scheduling-policy";
 import { renderSchedulePolicy } from "./schedule-policy-view";
 
 describe("schedule policy view", () => {
@@ -27,7 +28,19 @@ describe("schedule policy view", () => {
     expect(html).toContain('data-action="add-supervisor-coverage"');
     expect(html).toContain('data-entity="supervisor-coverage"');
     expect(html).toContain("岗位备注包含“一号、申报、排查”");
-    expect(html).toContain("分队长督导补缺");
-    expect(html).toContain("仅作为督导岗位兜底");
+    expect(html).not.toContain("分队长督导补缺");
+    expect(html).not.toContain("仅作为督导岗位兜底");
+    SCHEDULING_RULES.forEach((rule) => {
+      expect(html).toContain(rule.id);
+      expect(html).toContain(rule.label);
+    });
+    expect(html).toContain("至少 4 个航班");
+    expect(html).toContain("90%");
+    expect(html).toContain("75%");
+    expect(html).not.toContain('id="policy-transition-mode"');
+    expect(html).not.toContain('id="policy-rolling-load-mode"');
+    expect(html).not.toContain('id="policy-late-shift-recovery-mode"');
+    expect(html).not.toContain("强保护");
+    expect(html).toContain("优先避开，无安全替代时保证岗位完整");
   });
 });

@@ -1,6 +1,7 @@
 import { getDutyRosterForDate } from "./duty-roster";
 import { timeToMinutes } from "./time";
 import type { AppState, Assignment, HistoryRecord, Staff } from "../model";
+import { isCountedWorkloadAssignment } from "./workload-accounting";
 
 interface ActualTask {
   date: string;
@@ -99,6 +100,7 @@ export function buildMonthlyRelaxedShiftStatistics(state: AppState, date: string
     .filter((task): task is ActualTask => Boolean(task));
   const activeTasks = activeDate
     ? state.assignments
+      .filter((assignment) => isCountedWorkloadAssignment(state, assignment))
       .map((assignment) => fromAssignment(activeDate, assignment))
       .filter((task): task is ActualTask => Boolean(task))
       .filter((task) => state.staff.some((person) => person.id === task.staffId && person.staffType === "常规" && person.status === "正常"))

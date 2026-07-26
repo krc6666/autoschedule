@@ -154,17 +154,19 @@ export function createDefaultState(): AppState {
       highLoadFatigueThreshold: 4,
       highLoadRecoveryMinutes: 360,
       remarkedPositionHighLoad: true,
-      highLoadTransitionMode: "prefer",
       rollingLoadProtectionEnabled: true,
       rollingLoadWindowMinutes: 360,
       rollingLoadMaxFatigue: 8,
-      rollingLoadMode: "prefer",
       positionRotationEnabled: true,
       lateShiftRecoveryEnabled: true,
       lateShiftStartTime: "20:00",
       lateShiftLatestWindowMinutes: 180,
       nextDayLateMaxFatigue: 2,
-      lateShiftRecoveryMode: "prefer",
+      nextWorkdayRecoveryTargets: [
+        { id: "recovery-target-cx937-one", flightNo: "CX937", positionKeyword: "一号", enabled: true },
+        { id: "recovery-target-cx937-control", flightNo: "CX937", positionKeyword: "控制", enabled: true },
+        { id: "recovery-target-ke166-one", flightNo: "KE166", positionKeyword: "一号", enabled: true }
+      ],
       dutyFatiguePoints: 12,
       dutyPositionPriorities: [
         { id: "duty-priority-tr121-h02", flightNo: "TR121", positionKeyword: "H02", enabled: true },

@@ -1,11 +1,11 @@
 import type { AppState, Assignment, Staff } from "../model";
 import { buildStaffLoads } from "../domain/fatigue";
+import { countedWorkloadAssignments } from "../domain/workload-accounting";
 import { buildScheduleFeedback } from "../domain/schedule-feedback";
 import { dutyFatigueByStaff } from "../domain/duty-roster";
-import { buildMonthlyRelaxedShiftStatistics } from "../domain/relaxed-shift-statistics";
-import { isFixedBottomPosition } from "../domain/scheduler";
+import { assignmentRule, isFixedBottomPosition } from "../domain/schedule-position-rules";
 import { escapeHtml, visiblePositionRemark } from "../utils";
-import { renderDutyRosterDetails, renderDutyRosterSummary } from "./duty-roster-view";
+import { renderDutyRosterSummary } from "./duty-roster-view";
 
 export type LoadSortField = "workHours" | "todayFatigue" | "historyFatigue" | "totalFatigue";
 export type LoadSortDirection = "asc" | "desc";
@@ -19,7 +19,7 @@ export interface ScheduleViewOptions extends LoadSortOptions {
   zoom?: number;
 }
 
-function assignmentCells(state: AppState, assignment: Assignment): string {
+function assignmentCells(state: AppState, assignment: Assignment, guideListId: string): string {
   const assigned = Boolean(assignment.staffId);
   const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
   const temporary = !rule && Boolean(assignment.layoutGroup);
@@ -32,11 +32,12 @@ function assignmentCells(state: AppState, assignment: Assignment): string {
     ? `<input class="schedule-position-input" value="${escapeHtml(assignment.position)}" data-entity="assignment" data-id="${assignment.id}" data-field="position" aria-label="临时岗位名称">`
     : `<strong class="schedule-position" title="${escapeHtml(assignment.position)}">${guide ? `<span class="guide-tag">引</span>` : adminSupport ? `<span class="admin-support-tag">行</span>` : diversion ? `<span class="diversion-tag">流</span>` : ""}${escapeHtml(assignment.position)}</strong>`;
   const stateClasses = `${assignment.staffName ? "is-assigned" : "is-unfilled"} ${guide ? "is-guide" : ""} ${adminSupport ? "is-admin-support" : ""} ${diversion ? "is-diversion" : ""}`;
+  const nameList = guide ? `list="${guideListId}"` : auxiliary ? "" : `list="schedule-staff-names"`;
   return `<td class="schedule-grid-slot schedule-position-slot"><article class="schedule-cell schedule-position-cell ${stateClasses}">
     <div class="schedule-position-content">${positionControl}${positionRemark ? `<span class="position-remark" title="${escapeHtml(positionRemark)}">${escapeHtml(positionRemark)}</span>` : ""}</div>
     ${temporary ? `<div class="schedule-cell-actions"><button class="btn btn-sm btn-light icon-btn" type="button" data-action="delete-assignment" data-id="${assignment.id}" title="删除本次临时岗位"><i class="bi bi-x-lg"></i></button></div>` : ""}
   </article></td><td class="schedule-grid-slot schedule-person-slot"><article class="schedule-cell schedule-person-cell ${stateClasses}" data-drop-assignment="${assignment.id}">
-    <div class="schedule-person-edit" ${assigned ? `data-drag-assignment="${assignment.id}" title="按住姓名可拖动调整岗位"` : ""}>${assigned ? `<i class="bi bi-grip-vertical assignment-drag-handle" aria-hidden="true"></i>` : ""}<input class="schedule-name-input" ${auxiliary ? "" : `list="schedule-staff-names"`} value="${escapeHtml(assignment.staffName)}" data-entity="assignment" data-id="${assignment.id}" data-field="staffName" aria-label="${escapeHtml(assignment.position)}人员"></div>
+    <div class="schedule-person-edit" ${assigned ? `data-drag-assignment="${assignment.id}" title="按住姓名可拖动调整岗位"` : ""}>${assigned ? `<i class="bi bi-grip-vertical assignment-drag-handle" aria-hidden="true"></i>` : ""}<input class="schedule-name-input" ${nameList} value="${escapeHtml(assignment.staffName)}" data-entity="assignment" data-id="${assignment.id}" data-field="staffName" aria-label="${escapeHtml(assignment.position)}人员"></div>
     <div class="schedule-cell-actions"><button class="btn btn-sm btn-light icon-btn" type="button" data-action="clear-assignment" data-id="${assignment.id}" title="清空人员"><i class="bi bi-eraser"></i></button></div>
     <input class="schedule-manual-remark" value="${escapeHtml(assignment.manualRemark)}" placeholder=" " title="输入临时备注" data-entity="assignment" data-id="${assignment.id}" data-field="manualRemark" aria-label="${escapeHtml(assignment.position)}临时备注">
   </article></td>`;
@@ -66,27 +67,6 @@ function isBottomAssignment(state: AppState, assignment: Assignment): boolean {
   return rule?.category === "引导" || isFixedBottomPosition(assignment.position);
 }
 
-function renderRelaxedShiftStatistics(state: AppState, date: string): string {
-  const statistics = buildMonthlyRelaxedShiftStatistics(state, date);
-  const rows = [...statistics.rows].sort((left, right) => right.earlyDepartures.length - left.earlyDepartures.length
-    || right.afternoonRestDates.length - left.afternoonRestDates.length
-    || left.staff.name.localeCompare(right.staff.name, "zh-CN"));
-  const todayEarly = statistics.currentEarlyDepartures.length
-    ? statistics.currentEarlyDepartures.map((item) => `<span><strong>${escapeHtml(item.staffName)}</strong> ${escapeHtml(item.flightNo)} / ${escapeHtml(item.cutoffTime)} <em>本月 ${item.monthlyCount} 次</em></span>`).join("")
-    : `<span class="is-empty">今日没有符合节点的提前下班人员</span>`;
-  const todayAfternoon = statistics.currentAfternoonRest.length
-    ? statistics.currentAfternoonRest.map((item) => `<span><strong>${escapeHtml(item.staffName)}</strong> <em>本月 ${item.monthlyCount} 次</em></span>`).join("")
-    : `<span class="is-empty">今日没有下午无航班人员</span>`;
-  return `<section class="workspace-section relaxed-shift-statistics">
-    <div class="section-heading"><div><h3>月度轻松班次统计</h3><span>${escapeHtml(statistics.month)} · 仅统计实际参加排班的常规人员</span></div></div>
-    <div class="relaxed-shift-today">
-      <div><strong>今日提前下班</strong><small>最后航班截载严格早于 ${escapeHtml(state.settings.earlyDepartureCutoffTime)}，排除当日值班</small><div>${todayEarly}</div></div>
-      <div><strong>今日下午无航班</strong><small>${escapeHtml(state.settings.afternoonRestStartTime)}-${escapeHtml(state.settings.afternoonRestEndTime)} 无航班重叠，值班和备勤照常计入</small><div>${todayAfternoon}</div></div>
-    </div>
-    <div class="table-responsive"><table class="table table-sm align-middle data-table relaxed-shift-table"><thead><tr><th>常规人员</th><th>提前下班次数</th><th>提前下班日期 / 最后航班 / 截载</th><th>下午无航班次数</th><th>下午无航班日期</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${escapeHtml(row.staff.name)}</strong></td><td>${row.earlyDepartures.length}</td><td>${escapeHtml(row.earlyDepartures.map((event) => `${event.date.slice(5)} ${event.flightNo} ${event.cutoffTime}`).join("、") || "-")}</td><td>${row.afternoonRestDates.length}</td><td>${escapeHtml(row.afternoonRestDates.map((eventDate) => eventDate.slice(5)).join("、") || "-")}</td></tr>`).join("")}</tbody></table></div>
-  </section>`;
-}
-
 export function renderSchedule(
   state: AppState,
   date: string,
@@ -95,7 +75,7 @@ export function renderSchedule(
   if (!state.assignments.length) {
     return `<section class="workspace-section empty-workspace"><i class="bi bi-calendar2-plus"></i><h3>尚未生成排班</h3><button class="btn btn-primary" type="button" data-action="generate-schedule"><i class="bi bi-stars me-2"></i>生成排班</button></section>`;
   }
-  const loads = buildStaffLoads(state.staff.filter((person) => person.staffType !== "行政支援"), state.assignments, state.history, date, state.settings, dutyFatigueByStaff(state, date))
+  const loads = buildStaffLoads(state.staff.filter((person) => person.staffType !== "行政支援"), countedWorkloadAssignments(state), state.history, date, state.settings, dutyFatigueByStaff(state, date))
     .sort((left, right) => {
       const result = left[options.field] - right[options.field];
       return (options.direction === "asc" ? result : -result) || left.staff.name.localeCompare(right.staff.name, "zh-CN");
@@ -105,13 +85,19 @@ export function renderSchedule(
   const regularStaff = state.staff.filter((person) => person.staffType !== "行政支援");
   const administrativeStaff = state.staff.filter((person) => person.staffType === "行政支援");
   const flights = [...state.flights].sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const groups = flights.map((flight) => {
+  const groups = flights.map((flight, groupIndex) => {
     const assignments = state.assignments.filter((item) => item.flightId === flight.id);
     const ordered = (items: Assignment[]) => items.map((item, index) => ({ item, index }))
       .sort((left, right) => (left.item.layoutIndex ?? left.index) - (right.item.layoutIndex ?? right.index) || left.index - right.index)
       .map(({ item }) => item);
     return {
       flight,
+      guideListId: `schedule-guide-staff-${groupIndex}`,
+      guideCandidates: assignments
+        .filter((assignment) => assignment.status === "assigned" && assignment.staffId && assignmentRule(state, assignment)?.category === "常规")
+        .map((assignment) => state.staff.find((person) => person.id === assignment.staffId))
+        .filter((person): person is Staff => Boolean(person?.status === "正常" && person.staffType === "常规"))
+        .filter((person, index, people) => people.findIndex((candidate) => candidate.id === person.id) === index),
       primary: ordered(assignments.filter((item) => item.layoutGroup === "primary" || (item.layoutGroup !== "bottom" && !isBottomAssignment(state, item)))),
       bottom: ordered(assignments.filter((item) => item.layoutGroup === "bottom" || (item.layoutGroup !== "primary" && isBottomAssignment(state, item))))
     };
@@ -121,8 +107,9 @@ export function renderSchedule(
   const columnGroups = groups.map(() => `<col class="schedule-position-column"><col class="schedule-person-column">`).join("");
   const flightHeaders = groups.map(({ flight }) => `<th scope="col" colspan="2"><div class="schedule-flight-head"><div><strong>${escapeHtml(flight.flightNo)}</strong><span>${escapeHtml(flight.startTime)}–${escapeHtml(flight.endTime)}</span>${flight.remark ? `<small>${escapeHtml(flight.remark)}</small>` : ""}</div></div></th>`).join("");
   const subHeaders = groups.map(() => `<th scope="col" class="schedule-subhead-position">岗位</th><th scope="col" class="schedule-subhead-person">人员</th>`).join("");
-  const primaryRows = Array.from({ length: primaryRowCount }, (_, rowIndex) => `<tr>${groups.map(({ flight, primary }) => primary[rowIndex] ? assignmentCells(state, primary[rowIndex]) : emptyScheduleCells(flight.id, "primary", rowIndex)).join("")}</tr>`).join("");
-  const bottomRows = Array.from({ length: bottomRowCount }, (_, rowIndex) => `<tr>${groups.map(({ flight, bottom }) => bottom[rowIndex] ? assignmentCells(state, bottom[rowIndex]) : emptyScheduleCells(flight.id, "bottom", rowIndex)).join("")}</tr>`).join("");
+  const primaryRows = Array.from({ length: primaryRowCount }, (_, rowIndex) => `<tr>${groups.map(({ flight, primary, guideListId }) => primary[rowIndex] ? assignmentCells(state, primary[rowIndex], guideListId) : emptyScheduleCells(flight.id, "primary", rowIndex)).join("")}</tr>`).join("");
+  const bottomRows = Array.from({ length: bottomRowCount }, (_, rowIndex) => `<tr>${groups.map(({ flight, bottom, guideListId }) => bottom[rowIndex] ? assignmentCells(state, bottom[rowIndex], guideListId) : emptyScheduleCells(flight.id, "bottom", rowIndex)).join("")}</tr>`).join("");
+  const guideCandidateLists = groups.map((group) => `<datalist id="${group.guideListId}">${group.guideCandidates.map((person) => `<option value="${escapeHtml(person.name)}"></option>`).join("")}</datalist>`).join("");
   const auxiliaryDivider = `<tr class="schedule-divider-row">${groups.map(() => `<td colspan="2"><div class="support-divider"><span>引导岗位</span></div></td>`).join("")}</tr>`;
   const scheduleStyle = [
     `--flight-count:${Math.max(1, flights.length)}`,
@@ -159,13 +146,12 @@ export function renderSchedule(
       </div>
       ${renderDutyRosterSummary(state, date)}
     </section>
-    ${renderDutyRosterDetails(state, date)}
-    ${renderRelaxedShiftStatistics(state, date)}
     <section class="workspace-section schedule-feedback"><div class="section-heading"><div><h3>排班反馈</h3><span>${escapeHtml(date)} · 自动核对当前结果、负荷和规则执行</span></div></div>
       ${renderFeedbackGroup("flight-staff", "一、航班安排反馈（航班与人员安排）", "航班密度、人员覆盖、工时与航班衔接")}
       ${renderFeedbackGroup("rule-execution", "二、规则执行反馈（规则执行情况）", "逐条标明已执行、需复核或暂无历史基准")}
     </section>
     <datalist id="schedule-staff-names">${state.staff.filter((person) => person.status === "正常" && (state.settings.adminSupportEnabled || person.staffType !== "行政支援")).map((person) => `<option value="${escapeHtml(person.name)}"></option>`).join("")}</datalist>
+    ${guideCandidateLists}
     <details class="workspace-section load-details"><summary>人员负荷与疲劳</summary><div class="load-sort-controls"><select class="form-select form-select-sm" data-action="load-sort-field" aria-label="负荷排序字段"><option value="workHours" ${options.field === "workHours" ? "selected" : ""}>当日工时</option><option value="todayFatigue" ${options.field === "todayFatigue" ? "selected" : ""}>岗位疲劳</option><option value="historyFatigue" ${options.field === "historyFatigue" ? "selected" : ""}>历史疲劳</option><option value="totalFatigue" ${options.field === "totalFatigue" ? "selected" : ""}>总疲劳</option></select><select class="form-select form-select-sm" data-action="load-sort-direction" aria-label="负荷排序方向"><option value="desc" ${options.direction === "desc" ? "selected" : ""}>从高到低</option><option value="asc" ${options.direction === "asc" ? "selected" : ""}>从低到高</option></select></div><div class="table-responsive mt-2"><table class="table table-sm align-middle data-table"><thead><tr><th>人员</th><th>状态</th><th>当日工时</th><th>岗位疲劳</th><th>历史疲劳</th><th>总疲劳</th></tr></thead><tbody>
       ${loads.map((load) => `<tr><td>${escapeHtml(load.staff.name)}</td><td>${escapeHtml(load.staff.status)}</td><td>${load.workHours.toFixed(1)}h</td><td>${load.todayFatigue.toFixed(1)}</td><td>${load.historyFatigue.toFixed(1)}</td><td><span class="badge ${load.totalFatigue >= 20 ? "text-bg-danger" : load.totalFatigue >= 10 ? "text-bg-warning" : "text-bg-success"}">${load.totalFatigue.toFixed(1)}</span></td></tr>`).join("")}
     </tbody></table></div></details>`;

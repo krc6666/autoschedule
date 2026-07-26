@@ -11,6 +11,7 @@ import {
   type DutyRosterSlot
 } from "../domain/duty-roster";
 import { escapeHtml } from "../utils";
+import { addIsoDays } from "../domain/time";
 
 function personName(state: AppState, staffId: string | null): string {
   return staffId ? state.staff.find((person) => person.id === staffId)?.name ?? `#${staffId}` : "未配置";
@@ -60,7 +61,7 @@ export function renderDutyRosterSummary(state: AppState, date: string): string {
     <div class="duty-roster-cards">
       <article class="duty-roster-card is-cx"><span><i class="bi bi-airplane-engines"></i>CX航前</span><strong>${escapeHtml(personName(state, current.cxPreflightStaffId))}</strong></article>
       <article class="duty-roster-card is-duty"><span><i class="bi bi-person-workspace"></i>值班人员</span><strong>${escapeHtml(personName(state, current.dutyStaffId))}</strong><small><i class="bi bi-activity"></i>本次值班 +${state.settings.dutyFatiguePoints} 疲劳点</small></article>
-      <article class="duty-roster-card is-standby"><span><i class="bi bi-people"></i>备勤人员</span><strong>${escapeHtml(current.standbyStaffIds.map((staffId) => personName(state, staffId)).join("、"))}</strong></article>
+      <article class="duty-roster-card is-standby"><span><i class="bi bi-people"></i>次日备勤人员</span><strong>${escapeHtml(current.standbyStaffIds.map((staffId) => personName(state, staffId)).join("、"))}</strong><small>${escapeHtml(addIsoDays(date, 1))}</small></article>
     </div>
   </aside>`;
 }
@@ -93,7 +94,7 @@ export function renderDutyRosterDetails(state: AppState, date: string): string {
     ? `<div class="duty-balance-alert ${standbySeatShortage ? "is-info" : "is-attention"}"><i class="bi bi-${standbySeatShortage ? "info-circle-fill" : "exclamation-triangle-fill"}"></i><div><strong>${standbySeatShortage ? "本月备勤席位不足" : "备勤保底未完成"}</strong><span>${escapeHtml(standbyMissing.map((item) => `${item.staff.name} ${item.standbyDates.length} 次`).join("、"))}。${standbySeatShortage ? "值班刚性要求优先，备勤缺额只作说明，不计入违约。" : "每名正常常规人员应至少安排 2 次备勤。"}</span></div></div>`
     : "";
   return `<section class="workspace-section duty-roster-details-section">
-    <div class="section-heading"><div><h3>月度轮值明细</h3><span>${escapeHtml(date)} · 值班与其他轮值互斥，CX航前可兼任备勤</span></div></div>
+    <div class="section-heading"><div><h3>月度轮值明细</h3><span>${escapeHtml(date)} · 值班对应工作班，备勤对应次日休息日</span></div><div class="d-flex flex-wrap gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" data-action="download-duty-roster-template" data-id="${escapeHtml(date)}"><i class="bi bi-download me-1"></i>下载值班备勤模板</button><button class="btn btn-sm btn-primary" type="button" data-action="import-duty-roster" data-id="${escapeHtml(date)}"><i class="bi bi-file-earmark-arrow-up me-1"></i>导入值班备勤表</button></div></div>
     <div class="duty-roster-groups">
       <details class="duty-roster-details" data-duty-roster-section="cx"><summary><span><i class="bi bi-airplane-engines me-2"></i>CX航前轮换</span><i class="bi bi-chevron-down"></i></summary><div class="duty-roster-detail-body">
         <div class="duty-balance-summary"><span>资质人员 <strong>${cxStaff.length}</strong></span><span>次数范围 <strong>${cxRange.min}-${cxRange.max}</strong></span><span>航前差值 <strong>${cxRange.difference}</strong></span></div>
@@ -111,11 +112,11 @@ export function renderDutyRosterDetails(state: AppState, date: string): string {
         ${imbalanceDetails}
         ${standbyDetails}
         <div class="table-responsive"><table class="table table-sm align-middle duty-roster-fairness-table"><thead><tr><th>人员</th><th>值班保障</th><th>本月值班</th><th>计划疲劳</th><th>本月备勤</th><th>轮值日期</th></tr></thead><tbody>${statsRows(stats, "general", state.settings.dutyFatiguePoints)}</tbody></table></div>
-        <div class="table-responsive duty-roster-table-wrap"><table class="table table-sm align-middle duty-roster-table"><thead><tr><th>工作日</th><th>值班人员</th><th>备勤一</th><th>备勤二</th><th class="action-col"></th></tr></thead><tbody>
+        <div class="table-responsive duty-roster-table-wrap"><table class="table table-sm align-middle duty-roster-table"><thead><tr><th>工作班日期</th><th>值班人员</th><th>次日备勤一</th><th>次日备勤二</th><th class="action-col"></th></tr></thead><tbody>
           ${monthly.map((row) => {
             const standbyOptions = regularStaff.filter((person) => person.id !== row.dutyStaffId);
             const dutyOptions = dutyStaff.filter((person) => person.id !== row.cxPreflightStaffId);
-            return `<tr class="${row.date === date ? "is-current" : ""}"><td><strong>${escapeHtml(row.date.slice(5))}</strong>${row.adjusted ? `<span class="duty-adjusted-mark">已调整</span>` : ""}</td><td>${rosterSelect(dutyOptions, row, "duty", row.dutyStaffId, "值班人员")}</td><td>${rosterSelect(standbyOptions, row, "standby-0", row.standbyStaffIds[0], "备勤一")}</td><td>${rosterSelect(standbyOptions, row, "standby-1", row.standbyStaffIds[1], "备勤二")}</td><td>${resetButton(row)}</td></tr>`;
+            return `<tr class="${row.date === date ? "is-current" : ""}"><td><strong>${escapeHtml(row.date.slice(5))}</strong><small class="d-block text-secondary">次日 ${escapeHtml(addIsoDays(row.date, 1).slice(5))}</small>${row.adjusted ? `<span class="duty-adjusted-mark">已调整</span>` : ""}</td><td>${rosterSelect(dutyOptions, row, "duty", row.dutyStaffId, "值班人员")}</td><td>${rosterSelect(standbyOptions, row, "standby-0", row.standbyStaffIds[0], "次日备勤一")}</td><td>${rosterSelect(standbyOptions, row, "standby-1", row.standbyStaffIds[1], "次日备勤二")}</td><td>${resetButton(row)}</td></tr>`;
           }).join("")}
         </tbody></table></div>
         ${dutyStaff.length ? "" : `<div class="duty-roster-warning"><i class="bi bi-exclamation-triangle"></i><span>尚未配置值班资质人员</span></div>`}

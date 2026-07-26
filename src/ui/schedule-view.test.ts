@@ -25,17 +25,17 @@ describe("schedule view", () => {
     expect(html).toContain("data-action=\"zoom-schedule-out\"");
     expect(html).toContain("data-action=\"zoom-schedule-reset\"");
     expect(html).toContain("data-action=\"zoom-schedule-in\"");
+    expect(html).not.toContain('data-action="import-duty-roster"');
+    expect(html).not.toContain('data-action="download-duty-roster-template"');
+    expect(html).toContain("次日备勤人员");
     expect(html).toContain("归档并排后天");
     expect(html).toContain("排班反馈");
     expect(html).toContain('class="schedule-feedback-list"');
     expect(html).toContain("人员覆盖");
     expect(html).toContain("航班衔接");
     expect(html).toContain("上一工作日晚班");
-    expect(html).toContain("本月备勤席位不足");
-    expect(html).toContain("不计入违约");
-    expect(html).toContain("月度轻松班次统计");
-    expect(html).toContain("今日提前下班");
-    expect(html).toContain("今日下午无航班");
+    expect(html).not.toContain("月度轻松班次统计");
+    expect(html).not.toContain("月度轮值明细");
     expect(html).toContain("--schedule-column-width:64px");
     expect(html).toContain('<th scope="col" colspan="2">');
     expect(html).toContain('class="schedule-subhead-position">岗位</th>');
@@ -53,7 +53,7 @@ describe("schedule view", () => {
     expect(html).toContain("--schedule-position-size:16.5px");
   });
 
-  it("shows the four-person duty summary and an editable monthly rotation table", () => {
+  it("shows the four-person duty summary without the monthly rotation details", () => {
     const state = createDefaultState();
     state.staff.slice(0, 3).forEach((person) => { person.cxPreflightQualified = true; });
     state.assignments = generateSchedule(state, "2026-07-20").assignments;
@@ -61,22 +61,11 @@ describe("schedule view", () => {
     expect(html).toContain("CX航前");
     expect(html).toContain("值班人员");
     expect(html).toContain("备勤人员");
-    expect(html).toContain("CX航前轮换");
-    expect(html).toContain("值班与备勤轮换");
-    expect(html).toContain("本月值班");
-    expect(html).toContain("本月备勤");
-    expect(html).toContain("首轮覆盖");
-    expect(html).toContain("航前差值");
-    expect(html).toContain("备勤差值");
-    expect(html).toContain("值班保障");
-    expect(html).toContain("计划疲劳");
+    expect(html).not.toContain("CX航前轮换");
+    expect(html).not.toContain("值班与备勤轮换");
     expect(html).toContain(`本次值班 +${state.settings.dutyFatiguePoints} 疲劳点`);
-    expect(html).toContain("轮值日期");
-    expect(html).toContain("duty-roster-table");
-    expect(html).toContain('data-entity="duty-roster"');
-    expect(html).toContain('data-duty-slot="standby-1"');
+    expect(html).not.toContain("duty-roster-table");
     expect(html).toMatch(/<section class="schedule-workspace">[\s\S]*?class="[^"]*schedule-board[^"]*"[\s\S]*?class="duty-roster-summary"[\s\S]*?<\/section>/);
-    expect(html.indexOf('class="duty-roster-summary"')).toBeLessThan(html.indexOf("duty-roster-details-section"));
   });
 
   it("keeps a sole CX-qualified worker in the first duty round", () => {
@@ -89,11 +78,10 @@ describe("schedule view", () => {
     state.assignments = generateSchedule(state, "2026-08-01").assignments;
     const html = renderSchedule(state, "2026-08-01");
     expect(html).not.toContain("值班首轮未完成");
-    expect(html).toContain("值班优先后，本月 1 个工作日没有剩余CX航前资质人员");
-    expect(html).toContain("首轮覆盖 <strong>16/16</strong>");
+    expect(html).not.toContain("月度轮值明细");
   });
 
-  it("offers monthly rebalancing when a manual change creates zero and repeated duty counts", () => {
+  it("keeps monthly rebalancing controls outside the schedule page", () => {
     const state = createDefaultState();
     state.staff = state.staff.filter((person) => person.status === "正常");
     state.staff.forEach((person) => { person.dutyQualified = true; });
@@ -103,10 +91,9 @@ describe("schedule view", () => {
     expect(updateDutyRosterSlot(state, target.date, "duty", repeated.id)).toBeNull();
     state.assignments = generateSchedule(state, "2026-08-01").assignments;
     const html = renderSchedule(state, "2026-08-01");
-    expect(html).toContain("值班均衡未完成");
-    expect(html).toContain(`${repeated.name} 2 次`);
+    expect(html).not.toContain("值班均衡未完成");
     expect(html).toContain("月度值班需纠偏");
-    expect(html).toContain('data-action="rebalance-duty-roster-month"');
+    expect(html).not.toContain('data-action="rebalance-duty-roster-month"');
   });
 
   it("renders position details and personnel details in separate table cells", () => {
@@ -135,6 +122,28 @@ describe("schedule view", () => {
     expect(html).toContain("引导岗位");
     expect(html).not.toContain("督导补位");
     expect(html.indexOf("超规柜台")).toBeLessThan(html.indexOf("引导岗位"));
+  });
+
+  it("limits each guide input list to normal regular workers assigned on that flight", () => {
+    const state = createDefaultState();
+    const [upper, lower, outsider] = state.staff.filter((person) => person.status === "正常").slice(0, 3);
+    state.staff = [upper!, lower!, outsider!];
+    state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "upper", flightNo: "F1", name: "G02", category: "常规", qualifiedStaffIds: [upper!.id] },
+      { ...base, id: "lower", flightNo: "F1", name: "G01", category: "常规", qualifiedStaffIds: [lower!.id] },
+      { ...base, id: "guide", flightNo: "F1", name: "柜台引导", category: "引导", qualifiedStaffIds: [] }
+    ];
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+
+    const html = renderSchedule(state, "2026-07-18");
+    const guideInput = html.match(/<input class="schedule-name-input"[^>]*aria-label="柜台引导人员"[^>]*>/)?.[0] ?? "";
+    const guideList = html.match(/<datalist id="schedule-guide-staff-0">([\s\S]*?)<\/datalist>/)?.[1] ?? "";
+    expect(guideInput).toContain('list="schedule-guide-staff-0"');
+    expect(guideList).toContain(`value="${upper!.name}"`);
+    expect(guideList).toContain(`value="${lower!.name}"`);
+    expect(guideList).not.toContain(`value="${outsider!.name}"`);
   });
 
   it("shows a separate administrative roster only when support mode is enabled", () => {

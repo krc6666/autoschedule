@@ -1,9 +1,19 @@
 import type { AppState, Assignment, Flight, PositionRule, Staff } from "../model";
+import { eligibleStaffForRule } from "./assignment-eligibility";
 import { recentHistory } from "./fatigue";
 import { getDutyRosterForDate } from "./duty-roster";
-import { durationHours, isNightInterval, timeToMinutes } from "./time";
+import { activeFlightRules } from "./schedule-position-rules";
+import { shouldAutoAssign } from "./schedule-tasks";
+import { durationHours, timeToMinutes } from "./time";
+import { countedWorkloadAssignments } from "./workload-accounting";
 
 export type WorkloadPressure = "宽松" | "紧张" | "密集";
+
+export const WORKLOAD_BALANCE_MIN_FLIGHTS = 4;
+export const DENSE_PEAK_STAFFING_RATIO = 0.9;
+export const DENSE_CAPACITY_UTILIZATION = 0.75;
+export const TIGHT_PEAK_STAFFING_RATIO = 0.6;
+export const TIGHT_CAPACITY_UTILIZATION = 0.45;
 
 export interface WorkloadTask {
   flight: Flight;
@@ -56,34 +66,13 @@ function operationalRange(flight: Pick<Flight, "startTime" | "endTime">): [numbe
   return [start, end];
 }
 
-function activeRules(state: AppState, flight: Flight): PositionRule[] {
-  const flightRules = state.positionRules.filter((rule) => rule.flightNo === flight.flightNo);
-  const administrativeNames = new Set(flightRules
-    .filter((rule) => rule.category === "行政支援")
-    .map((rule) => rule.name.trim()));
-  const configured = state.settings.adminSupportEnabled
-    ? flightRules.filter((rule) => rule.category === "行政支援" || !administrativeNames.has(rule.name.trim()))
-    : flightRules.filter((rule) => rule.category !== "行政支援");
-  const preNoon = timeToMinutes(flight.startTime) < 12 * 60;
-  return configured.filter((rule) => rule.category !== "引导"
-    && (!rule.manual || (preNoon && rule.category === "常规")));
-}
-
-function eligibleStaff(state: AppState, flight: Flight, rule: PositionRule): Staff[] {
-  return state.staff
-    .filter((person) => person.status === "正常" && person.staffType === "常规")
-    .filter((person) => rule.qualifiedStaffIds.includes(person.id))
-    .filter((person) => !isNightInterval(flight.startTime, flight.endTime, state.settings.nightStart, state.settings.nightEnd) || person.nightShift);
-}
-
 export function buildWorkloadTasks(state: AppState): WorkloadTask[] {
-  return state.flights.flatMap((flight) => activeRules(state, flight)
-    .filter((rule) => (timeToMinutes(flight.startTime) < 12 * 60 && rule.category === "常规")
-      || (rule.minPassengers ?? 0) <= flight.bookedPassengers)
+  return state.flights.flatMap((flight) => activeFlightRules(state, flight)
+    .filter((rule) => rule.category !== "行政支援" && shouldAutoAssign(flight, rule))
     .map((rule) => ({
       flight,
       rule,
-      eligibleStaffIds: eligibleStaff(state, flight, rule).map((person) => person.id)
+      eligibleStaffIds: eligibleStaffForRule(state, flight, rule).map((person) => person.id)
     })));
 }
 
@@ -113,9 +102,11 @@ export function analyzeWorkloadPressure(state: AppState, tasks = buildWorkloadTa
   const utilization = capacityHours > 0 ? scheduledHours / capacityHours : (scheduledHours ? Number.POSITIVE_INFINITY : 0);
   const peak = peakPressure(tasks);
   const shortageTasks = tasks.filter((task) => task.eligibleStaffIds.length === 0).length;
-  const pressure: WorkloadPressure = shortageTasks > 0 || peak.ratio >= 0.9 || utilization >= 0.75
+  const pressure: WorkloadPressure = shortageTasks > 0
+    || peak.ratio >= DENSE_PEAK_STAFFING_RATIO
+    || utilization >= DENSE_CAPACITY_UTILIZATION
     ? "密集"
-    : peak.ratio >= 0.6 || utilization >= 0.45
+    : peak.ratio >= TIGHT_PEAK_STAFFING_RATIO || utilization >= TIGHT_CAPACITY_UTILIZATION
       ? "紧张"
       : "宽松";
   return {
@@ -139,13 +130,14 @@ interface LoadSnapshot {
 
 function snapshots(state: AppState, assignments: Assignment[], date: string, dutyStaffId: string | null): LoadSnapshot[] {
   const history = recentHistory(state.history, date, state.settings.historyWindowDays);
+  const countedAssignments = countedWorkloadAssignments(state, assignments);
   return state.staff
     .filter((person) => person.status === "正常" && person.staffType === "常规")
     .map((person) => ({
       id: person.id,
-      todayHours: assignments.filter((assignment) => assignment.staffId === person.id && assignment.status === "assigned").reduce((sum, assignment) => sum + assignment.workHours, 0),
+      todayHours: countedAssignments.filter((assignment) => assignment.staffId === person.id && assignment.status === "assigned").reduce((sum, assignment) => sum + assignment.workHours, 0),
       rollingHours: history.filter((record) => record.staffId === person.id).reduce((sum, record) => sum + record.workHours, 0),
-      todayFatigue: assignments.filter((assignment) => assignment.staffId === person.id && assignment.status === "assigned").reduce((sum, assignment) => sum + assignment.fatiguePoints, 0)
+      todayFatigue: countedAssignments.filter((assignment) => assignment.staffId === person.id && assignment.status === "assigned").reduce((sum, assignment) => sum + assignment.fatiguePoints, 0)
         + (person.id === dutyStaffId ? state.settings.dutyFatiguePoints : 0)
     }));
 }
@@ -199,7 +191,7 @@ export function workloadBalancePriority(
   const todayHoursExcess = Math.max(0, todaySpread - configuredHoursTarget);
   const rollingHoursExcess = Math.max(0, rollingSpread - rollingTarget);
   const pressure = analyzeWorkloadPressure(state);
-  const compareWithinTargets = state.flights.length >= 4 && pressure.pressure !== "宽松";
+  const compareWithinTargets = state.flights.length >= WORKLOAD_BALANCE_MIN_FLIGHTS && pressure.pressure !== "宽松";
   const todayFatigueExcess = compareWithinTargets ? Math.max(0, fatigueSpread - configuredFatigueTarget) : 0;
   return {
     violatesConfiguredTarget: todayHoursExcess > 0 || rollingHoursExcess > 0 || todayFatigueExcess > 0,

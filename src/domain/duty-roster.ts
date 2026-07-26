@@ -24,7 +24,7 @@ function parseDate(value: string): { year: number; month: number; day: number } 
   return { year, month, day };
 }
 
-function monthlyDutyDates(date: string): string[] {
+export function monthlyDutyDates(date: string): string[] {
   const parsed = parseDate(date);
   if (!parsed) return [];
   const dayCount = new Date(Date.UTC(parsed.year, parsed.month, 0)).getUTCDate();
@@ -184,7 +184,12 @@ export function getMonthlyDutyRosterStats(state: AppState, date: string): DutyRo
     staff,
     cxPreflightDates: rows.filter((row) => row.cxPreflightStaffId === staff.id).map((row) => row.date),
     dutyDates: rows.filter((row) => row.dutyStaffId === staff.id).map((row) => row.date),
-    standbyDates: rows.filter((row) => row.standbyStaffIds.includes(staff.id)).map((row) => row.date)
+    standbyDates: rows.filter((row) => row.standbyStaffIds.includes(staff.id)).map((row) => {
+      const parsed = parseDate(row.date);
+      if (!parsed) return row.date;
+      const nextDate = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day + 1));
+      return `${nextDate.getUTCFullYear()}-${String(nextDate.getUTCMonth() + 1).padStart(2, "0")}-${String(nextDate.getUTCDate()).padStart(2, "0")}`;
+    })
   }));
 }
 

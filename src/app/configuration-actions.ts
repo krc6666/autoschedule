@@ -1,4 +1,5 @@
-import { isAuxiliaryCategory } from "../domain/scheduler";
+import { isAuxiliaryCategory } from "../domain/schedule-position-rules";
+import type { FlightPlanReconciliation } from "../domain/flight-plan-reconciliation";
 import type { AppState, Flight, FlightTemplate } from "../model";
 import { createId, normalizeText, orderPositionRules, sortFlightCountersDescending, splitList } from "../utils";
 
@@ -99,6 +100,62 @@ export function updateMobileSupervisorCoverageRule(
   else if (field === "mode") rule.mode = value === "allow" ? "allow" : "forbid";
   else return false;
   return true;
+}
+
+export function addFlightsFromTemplates(state: AppState, templateIds: string[]): { added: number; skipped: number } {
+  const existingFlightNumbers = new Set(state.flights.map((flight) => flight.flightNo.trim().toUpperCase()));
+  const requestedTemplateIds = new Set<string>();
+  let added = 0;
+  let skipped = 0;
+  for (const templateId of templateIds) {
+    if (requestedTemplateIds.has(templateId)) {
+      skipped += 1;
+      continue;
+    }
+    requestedTemplateIds.add(templateId);
+    const template = state.templates.find((item) => item.id === templateId);
+    const flightNo = template?.flightNo.trim().toUpperCase() ?? "";
+    if (!template || !flightNo || existingFlightNumbers.has(flightNo)) {
+      skipped += 1;
+      continue;
+    }
+    state.flights.push({ ...structuredClone(template), flightNo, id: createId("flight"), bookedPassengers: 0 });
+    existingFlightNumbers.add(flightNo);
+    added += 1;
+  }
+  if (added) clearSchedule(state);
+  return { added, skipped };
+}
+
+export function applyFlightPlanReconciliation(
+  state: AppState,
+  reconciliation: FlightPlanReconciliation,
+  templateIds: string[],
+  flightIds: string[]
+): { added: number; removed: number; skipped: number } {
+  const allowedTemplateIds = new Set(reconciliation.additions.map((item) => item.template.id));
+  const allowedFlightIds = reconciliation.removalAllowed
+    ? new Set(reconciliation.removals.map((flight) => flight.id))
+    : new Set<string>();
+  const selectedTemplateIds = [...new Set(templateIds)];
+  const selectedFlightIds = [...new Set(flightIds)];
+  const validTemplateIds = selectedTemplateIds.filter((id) => allowedTemplateIds.has(id));
+  const validFlightIds = new Set(selectedFlightIds.filter((id) => allowedFlightIds.has(id)));
+  const skippedSelections = selectedTemplateIds.length - validTemplateIds.length
+    + selectedFlightIds.length - validFlightIds.size;
+
+  const beforeRemovalCount = state.flights.length;
+  if (validFlightIds.size) {
+    state.flights = state.flights.filter((flight) => !validFlightIds.has(flight.id));
+  }
+  const removed = beforeRemovalCount - state.flights.length;
+  const additionResult = addFlightsFromTemplates(state, validTemplateIds);
+  if (removed && !additionResult.added) clearSchedule(state);
+  return {
+    added: additionResult.added,
+    removed,
+    skipped: skippedSelections + additionResult.skipped
+  };
 }
 
 export function addStaff(state: AppState): void {

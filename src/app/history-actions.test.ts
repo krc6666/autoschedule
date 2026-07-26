@@ -29,6 +29,48 @@ describe("history actions", () => {
     expect(records[1]?.fatiguePoints).toBe(state.settings.dutyFatiguePoints);
   });
 
+  it("does not archive administrative support staff or administrative positions as workload", () => {
+    const state = createDefaultState();
+    state.settings.dutyFatiguePoints = 0;
+    const regular = state.staff[0]!;
+    const administrative = state.staff[1]!;
+    administrative.staffType = "行政支援";
+    const administrativeRule = {
+      ...state.positionRules[0]!,
+      id: "administrative-position",
+      category: "行政支援" as const
+    };
+    state.positionRules = [administrativeRule];
+    state.assignments = [
+      { ...assignment("regular-on-administrative-position", regular.id, regular.name), positionRuleId: administrativeRule.id },
+      { ...assignment("administrative-worker", administrative.id, administrative.name), positionRuleId: administrativeRule.id }
+    ];
+
+    expect(currentScheduleHistory(state, "2026-07-25")).toEqual([]);
+  });
+
+  it("does not archive guide reuse as additional workload", () => {
+    const state = createDefaultState();
+    state.settings.dutyFatiguePoints = 0;
+    const person = state.staff[0]!;
+    const guideRule = {
+      ...state.positionRules[0]!,
+      id: "guide-position",
+      category: "引导" as const,
+      fatiguePoints: 8
+    };
+    state.positionRules = [guideRule];
+    state.assignments = [{
+      ...assignment("guide", person.id, person.name),
+      positionRuleId: guideRule.id,
+      position: guideRule.name,
+      workHours: 0,
+      fatiguePoints: 8
+    }];
+
+    expect(currentScheduleHistory(state, "2026-07-25")).toEqual([]);
+  });
+
   it("replaces only the selected date", () => {
     const state = createDefaultState();
     const prior = { id: "prior", date: "2026-07-23" } as HistoryRecord;

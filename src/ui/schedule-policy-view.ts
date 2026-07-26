@@ -1,10 +1,14 @@
-import type { AppState } from "../model";
+import type { AppState, SchedulingRuleId } from "../model";
 import { escapeHtml } from "../utils";
-import { SCHEDULING_STAGE_LABELS, SCHEDULING_STAGE_ORDER } from "../domain/scheduling-policy";
+import { SCHEDULING_RULES, SCHEDULING_STAGE_LABELS, SCHEDULING_STAGE_ORDER } from "../domain/scheduling-policy";
+import {
+  DENSE_CAPACITY_UTILIZATION,
+  DENSE_PEAK_STAFFING_RATIO,
+  WORKLOAD_BALANCE_MIN_FLIGHTS
+} from "../domain/workload-balance";
 
-function policyState(enabled: boolean, mode: "prefer" | "forbid"): string {
-  if (!enabled) return "已停用";
-  return mode === "forbid" ? "强保护（无替代时回填）" : "优先避开";
+function policyState(enabled: boolean): string {
+  return enabled ? "已启用 · 优先避开" : "已停用";
 }
 
 function transitionPolicyCards(state: AppState): string {
@@ -38,6 +42,16 @@ function dutyPriorityRows(state: AppState): string {
     </div>`).join("");
 }
 
+function nextWorkdayRecoveryTargetRows(state: AppState): string {
+  return state.settings.nextWorkdayRecoveryTargets.map((target) => `
+    <div class="duty-priority-row">
+      <label class="form-check form-switch duty-priority-switch"><input class="form-check-input" type="checkbox" ${target.enabled ? "checked" : ""} data-entity="recovery-target" data-id="${escapeHtml(target.id)}" data-field="enabled"><span class="form-check-label">启用</span></label>
+      <label class="form-label">目标航班<input class="form-control form-control-sm code-input" value="${escapeHtml(target.flightNo)}" placeholder="例如：CX937" data-entity="recovery-target" data-id="${escapeHtml(target.id)}" data-field="flightNo"></label>
+      <label class="form-label">岗位或备注关键词<input class="form-control form-control-sm" value="${escapeHtml(target.positionKeyword)}" placeholder="例如：一号" data-entity="recovery-target" data-id="${escapeHtml(target.id)}" data-field="positionKeyword"></label>
+      <div class="duty-priority-actions"><button class="btn btn-sm icon-btn text-danger" type="button" data-action="delete-recovery-target" data-id="${escapeHtml(target.id)}" title="删除避让目标"><i class="bi bi-trash3"></i></button></div>
+    </div>`).join("");
+}
+
 function supervisorCoverageRows(state: AppState): string {
   return state.settings.mobileSupervisorCoverageRules.map((rule) => `
     <div class="supervisor-coverage-row">
@@ -52,34 +66,57 @@ function supervisorCoverageRows(state: AppState): string {
 
 function ruleLedgerRows(state: AppState): string {
   const stageOrder = SCHEDULING_STAGE_ORDER.map((stage) => SCHEDULING_STAGE_LABELS[stage]).join(" → ");
+  const descriptions: Readonly<Record<SchedulingRuleId, string>> = {
+    "staff-eligibility": `岗位资质硬约束；状态变化后立即重新计算当前排班；依次检查正常状态、岗位资质、${state.settings.nightStart}-${state.settings.nightEnd} 夜班能力、时段冲突和每日 ${state.settings.maxDailyHours} 小时上限`,
+    "duty-position": `先锁定值班早班及 ${state.settings.dutyPositionPriorities.filter((item) => item.enabled).length} 个已启用晚撤优先项，值班疲劳 ${state.settings.dutyFatiguePoints} 点`,
+    "ke166-supervisor": "KE166明确配置机动督导时，锁定机动督导及其允许兼任的绑定柜台",
+    "scarce-qualification": "12点前岗位完整性执行12点前单岗位稀缺优先：先处理可胜任人数较少的岗位，并只为确实不可替代的后续任务预留人员",
+    "staff-coverage": "岗位与资质允许时，优先覆盖当天仍为 0 实际工时的正常常规人员",
+    "position-compaction": "常规岗位空缺下沉：保持已填岗位数不下降，把无法避免的空缺尽量沉到岗位列表底部",
+    "position-transition": `${state.settings.positionTransitionPolicies.filter((item) => item.enabled).length} 条启用；优先避开只比较候选，严格限制在12点后阻止违规落位，12点前无人替代时可突破严格限制并反馈留痕`,
+    "late-shift-recovery": state.settings.lateShiftRecoveryEnabled ? `保护上一班末班最高负荷人员，避开 ${state.settings.nextWorkdayRecoveryTargets.filter((item) => item.enabled).length} 个早班目标` : "已停用",
+    "rolling-load": state.settings.rollingLoadProtectionEnabled ? `${state.settings.rollingLoadWindowMinutes} 分钟内累计疲劳超过 ${state.settings.rollingLoadMaxFatigue} 点时优先换人` : "已停用",
+    "high-load-recovery": state.settings.highLoadProtectionEnabled ? `疲劳点不少于 ${state.settings.highLoadFatigueThreshold} 或带备注时，保护 ${state.settings.highLoadRecoveryMinutes} 分钟恢复时间` : "已停用",
+    "position-frequency": state.settings.positionRotationEnabled ? "重点岗位先比较本月同航班同岗位累计，再比较最近6个归档工作日" : "已停用",
+    "position-frequency-review": state.settings.positionRotationEnabled ? "完整排班后按直接接替、两人交换、最多三人安全重排再次降低重点岗位高频" : "已停用",
+    "workload-balance": state.settings.workloadBalanceEnabled ? `至少 ${WORKLOAD_BALANCE_MIN_FLIGHTS} 个航班且压力不宽松时，比较投放后的工时与疲劳差；行政支援岗位和人员完全不计负荷` : "已停用",
+    "historical-fatigue": `比较最近 ${state.settings.historyWindowDays} 天历史疲劳、当日岗位疲劳和值班疲劳`,
+    "staff-id": "前序规则全部相同时，按人员配置顺序稳定选择",
+    "position-rotation": state.settings.positionRotationEnabled ? "分级连续轮岗：重点岗位上一班重复即复核；普通岗位只在即将连续第三班时复核" : "已停用"
+  };
+  const adjustments: Readonly<Record<SchedulingRuleId, string>> = {
+    "staff-eligibility": "人员信息 / 岗位规则 / 排班约束",
+    "duty-position": "规则 / 值班任务规则",
+    "ke166-supervisor": "岗位分类 / 机动督导兼任范围",
+    "scarce-qualification": "岗位资质",
+    "staff-coverage": "人员状态 / 岗位资质",
+    "position-compaction": "岗位顺序 / 岗位资质",
+    "position-transition": "规则 / 岗位衔接间隔",
+    "late-shift-recovery": "规则 / 跨工作日恢复保护",
+    "rolling-load": "规则 / 滚动负荷上限",
+    "high-load-recovery": "规则 / 高负荷岗位衔接保护",
+    "position-frequency": "规则 / 历史",
+    "position-frequency-review": "规则 / 历史",
+    "workload-balance": "规则 / 当日工时与疲劳均衡",
+    "historical-fatigue": "排班约束 / 历史",
+    "staff-id": "人员配置顺序",
+    "position-rotation": "规则 / 历史"
+  };
   const rows = [
-    ["R00", "总执行顺序", "分阶段顺序判定", stageOrder, "中央规则合同；前一阶段完成后才进入下一阶段"],
-    ["R01", "硬约束", "人员可用状态", "仅状态为正常的人员可参与排班；状态变化后立即重新计算当前排班", "人员信息"],
-    ["R02", "硬约束", "岗位资质硬约束", "常规与行政支援人员均须具备已配置岗位资质", "岗位规则 / 资质人员"],
-    ["R03", "硬约束", "夜班能力", `与 ${state.settings.nightStart}-${state.settings.nightEnd} 重叠时必须具备夜班能力`, "人员信息 / 排班约束"],
-    ["R04", "硬约束", "时段冲突", "同一人员不得承担时间重叠的两个常规任务", "航班时间"],
-    ["R05", "硬约束", "每日工时上限", `每天不超过 ${state.settings.maxDailyHours} 小时`, "排班约束"],
-    ["R06", "岗位生成", "行政支援替换", "行政模式下同航班同名行政岗位替换常规岗位；仅在无可用常规人员时允许合格行政人员手动补位", "岗位分类 / 行政模式"],
-    ["R07", "岗位生成", "运力阈值", "低于启用旅客人数时岗位保留；12点前常规岗位仍自动派人", "岗位规则 / 启用旅客人数"],
-    ["R08", "分配优先级", "12点前单岗位稀缺优先", "汇总所有12点前常规岗位，按每个岗位可胜任人数从少到多安排", "岗位资质"],
-    ["R09", "分配优先级", "在岗人员全覆盖", "岗位与资质允许时，优先安排当天尚未获得实际工时的常规人员", "人员状态 / 岗位资质"],
-    ["R10", "月度轮值", "值班绝对优先与三级均衡", `先排值班且与CX航前、备勤互斥；CX航前可兼任备勤；值班计 ${state.settings.dutyFatiguePoints} 点并依次尝试 ${state.settings.dutyPositionPriorities.filter((item) => item.enabled).length} 个岗位优先项`, "规则 / 排班页轮值表"],
-    ["R11", "分配优先级", "12点前岗位完整性", state.settings.workloadBalanceEnabled ? `12点前常规岗位优先于阈值、手动标记和疲劳保护，再尽量将工时差控制在 ${state.settings.maxWorkHoursDifference} 小时、疲劳差控制在 ${state.settings.maxTodayFatigueDifference} 点` : "负荷均衡已停用，12点前常规岗位完整性仍为最高优先级", "规则 / 负荷均衡"],
-    ["R12", "分配优先级", "特殊岗位衔接", `${state.settings.positionTransitionPolicies.filter((item) => item.enabled).length} 条启用；12点前无人替代时可突破严格限制并反馈留痕`, "规则 / 岗位衔接"],
-    ["R13", "分配优先级", "高负荷衔接保护", state.settings.highLoadProtectionEnabled ? `疲劳点 ≥ ${state.settings.highLoadFatigueThreshold} 或带备注，恢复 ${state.settings.highLoadRecoveryMinutes} 分钟` : "已停用", "规则"],
-    ["R14", "分配优先级", "滚动负荷上限", state.settings.rollingLoadProtectionEnabled ? `${state.settings.rollingLoadWindowMinutes} 分钟内投放新岗位后不超过 ${state.settings.rollingLoadMaxFatigue} 疲劳点` : "已停用", "规则"],
-    ["R15", "人员保护与公平", "同岗频率均衡与安全重排", state.settings.positionRotationEnabled ? "严格按航班号+岗位统计；先比较本月累计、再比较最近6个归档工作日；累计至少2次时依次尝试直接接替、两人交换和最多三人安全重排" : "已停用", "规则 / 历史"],
-    ["R16", "排班后轮岗复核", "连续轮岗", state.settings.positionRotationEnabled ? "检查最近两个已归档工作日；优先两人交换，必要时最多三人闭环交换" : "已停用", "规则 / 历史"],
-    ["R17", "分配优先级", "跨工作日晚班减负", state.settings.lateShiftRecoveryEnabled ? `最近工作日最后一批晚班高负荷人员，下个工作日晚班岗位负荷优先不超过 ${state.settings.nextDayLateMaxFatigue} 点` : "已停用", "规则 / 历史"],
-    ["R18", "分配优先级", "历史疲劳均衡", `历史 ${state.settings.historyWindowDays} 天 + 当日岗位疲劳 + 连续工作惩罚`, "排班约束 / 历史"],
-    ["R19", "岗位调整", "引导复用与机动督导", `引导复用同航班常规人员；KE166明确配置机动督导时，在常规及行政支援模式下均先保留一名机动督导资质人员到允许兼任的常规岗位，再同步顶部督导；自动兼任和人工拖拽统一执行 ${state.settings.mobileSupervisorCoverageRules.filter((item) => item.enabled).length} 条兼任范围规则`, "规则 / 机动督导兼任范围"],
-    ["R20", "岗位衔接", "分流提前撤岗", "下午及晚间按岗位提前撤岗分钟释放人员，早班不适用", "岗位规则 / 提前撤岗"],
-    ["R21", "稳定排序", "同分人员顺序", "规则风险、在岗覆盖、稀缺预留和疲劳相同时按人员编号稳定排序", "人员编号"],
-    ["R22", "岗位完整性", "常规岗位空缺下沉", "自动排班完成后重新匹配同航班合格人员，保持已填岗位数不下降，优先填满上方常规岗位并将无法避免的空缺尽量沉底", "岗位顺序 / 岗位资质"],
-    ["R23", "值班落位", "值班岗位有序优先", `按启用顺序依次尝试航班号与岗位关键词；均不可执行时回退到最晚两档的一号、督导、申报、送资料`, "规则 / 值班任务规则"],
-    ["R24", "月度统计", "轻松班次统计", `最后航班截载严格早于 ${state.settings.earlyDepartureCutoffTime} 计提前下班；${state.settings.afternoonRestStartTime}-${state.settings.afternoonRestEndTime} 无航班重叠计下午无航班`, "规则 / 排班结果"],
-    ["R25", "硬约束", "机动督导兼任范围", "禁止规则优先；配置允许规则后，只能兼任命中允许项且未命中禁止项的岗位", "规则 / 机动督导兼任范围"],
-    ["R26", "分配优先级", "分队长督导补缺", `人员信息中标记的 ${state.staff.filter((person) => person.staffType === "常规" && person.teamLeader).length} 名分队长仅作为督导岗位兜底；有其他满足硬约束的非分队长候选时优先使用其他人`, "人员信息 / 分队长"]
+    ["执行顺序", "总合同", "分阶段顺序判定", stageOrder, "中央规则合同；前一阶段完成后才进入下一阶段"],
+    ...SCHEDULING_RULES.map((rule) => [
+      rule.id,
+      SCHEDULING_STAGE_LABELS[rule.stage],
+      rule.label,
+      descriptions[rule.id],
+      adjustments[rule.id]
+    ]),
+    ["product-admin-support", "岗位生成", "行政支援替换", "行政模式下同航班同名行政岗位替换常规岗位并留空；行政支援岗位和人员不计工时、疲劳及负荷", "岗位分类 / 行政模式"],
+    ["product-passenger-threshold", "岗位生成", "运力阈值", "低于启用旅客人数时岗位保留；12点前常规岗位仍自动派人", "岗位规则 / 启用旅客人数"],
+    ["product-duty-roster", "月度轮值", "值班、CX航前与备勤", "按值班、CX航前、备勤的固定顺序生成并执行互斥与均衡", "排班页轮值表"],
+    ["product-role-reuse", "岗位调整", "引导复用与机动督导兼任", `引导复用同航班常规人员；自动兼任和人工拖拽统一执行 ${state.settings.mobileSupervisorCoverageRules.filter((item) => item.enabled).length} 条兼任范围规则`, "规则 / 机动督导兼任范围"],
+    ["product-diversion", "岗位衔接", "分流提前撤岗", "下午及晚间按岗位提前撤岗分钟释放人员，早班不适用", "岗位规则 / 提前撤岗"],
+    ["product-relaxed-shift", "月度统计", "轻松班次统计", `最后航班截载严格早于 ${state.settings.earlyDepartureCutoffTime} 计提前下班；${state.settings.afternoonRestStartTime}-${state.settings.afternoonRestEndTime} 无航班重叠计下午无航班`, "规则 / 排班结果"]
   ];
   return rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join("")}</tr>`).join("");
 }
@@ -87,7 +124,7 @@ function ruleLedgerRows(state: AppState): string {
 export function renderSchedulePolicy(state: AppState): string {
   return `
     <section class="workspace-section schedule-policy-section">
-      <div class="section-heading"><div><h3>排班规则</h3><span>${state.settings.positionTransitionPolicies.length + 9} 条可编辑规则 · 点击规则可展开编辑</span></div><button class="btn btn-primary" type="button" data-action="save-schedule-policy"><i class="bi bi-check2-circle me-2"></i>保存并应用</button></div>
+      <div class="section-heading"><div><h3>排班规则</h3><span>${state.settings.positionTransitionPolicies.length + 10} 条可编辑规则 · 点击规则可展开编辑</span></div><button class="btn btn-primary" type="button" data-action="save-schedule-policy"><i class="bi bi-check2-circle me-2"></i>保存并应用</button></div>
       <label class="policy-search"><i class="bi bi-search"></i><input class="form-control" id="policy-rule-search" type="search" placeholder="搜索编号、规则、航班、岗位或说明" aria-label="搜索排班规则"><button class="btn icon-btn" type="button" data-action="clear-policy-search" title="清空搜索"><i class="bi bi-x-lg"></i></button></label>
 
       <details class="policy-rule-card" data-policy-card="workload-balance">
@@ -99,6 +136,7 @@ export function renderSchedulePolicy(state: AppState): string {
             <label class="form-label">最大当日疲劳差<input class="form-control" id="policy-max-today-fatigue-difference" type="number" min="0" max="100" step="0.5" value="${state.settings.maxTodayFatigueDifference}"></label>
           </div>
           <div class="policy-expression"><span>目标</span><strong>工时差 ≤ ${state.settings.maxWorkHoursDifference} 小时</strong><i class="bi bi-plus-lg"></i><strong>当日疲劳差 ≤ ${state.settings.maxTodayFatigueDifference} 点</strong><i class="bi bi-arrow-right"></i><span>资质和时段允许时优先补低负荷人员</span></div>
+          <small class="text-secondary d-block mt-2">固定触发边界：至少 ${WORKLOAD_BALANCE_MIN_FLIGHTS} 个航班；并发岗位/合格常规人员达到 ${Math.round(DENSE_PEAK_STAFFING_RATIO * 100)}% 或计划工时利用率达到 ${Math.round(DENSE_CAPACITY_UTILIZATION * 100)}% 时判定为密集。行政支援岗位和行政支援人员不计入负荷。</small>
         </div>
       </details>
 
@@ -138,53 +176,54 @@ export function renderSchedulePolicy(state: AppState): string {
       </details>
 
       <details class="policy-rule-card" data-policy-card="high-load">
-        <summary><span><strong>高负荷岗位衔接保护</strong><small>${policyState(state.settings.highLoadProtectionEnabled, state.settings.highLoadTransitionMode)} · 同日恢复保护</small></span><i class="bi bi-chevron-down"></i></summary>
+        <summary><span><strong>高负荷岗位衔接保护</strong><small>${policyState(state.settings.highLoadProtectionEnabled)} · 同日恢复保护</small></span><i class="bi bi-chevron-down"></i></summary>
         <div class="policy-rule-content">
           <div class="schedule-policy-controls">
             <label class="policy-switch"><span><strong>启用规则</strong><small>保护高负荷任务后的恢复时间</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-enabled" type="checkbox" ${state.settings.highLoadProtectionEnabled ? "checked" : ""}></span></label>
             <label class="form-label">高负荷疲劳阈值<input class="form-control" id="policy-fatigue-threshold" type="number" min="0.5" max="50" step="0.5" value="${state.settings.highLoadFatigueThreshold}"></label>
             <label class="form-label">恢复时间（分钟）<input class="form-control" id="policy-recovery-minutes" type="number" min="0" max="1440" step="30" value="${state.settings.highLoadRecoveryMinutes}"></label>
-            <label class="form-label">执行强度<select class="form-select" id="policy-transition-mode"><option value="prefer" ${state.settings.highLoadTransitionMode === "prefer" ? "selected" : ""}>优先避开（人手不足可兜底）</option><option value="forbid" ${state.settings.highLoadTransitionMode === "forbid" ? "selected" : ""}>强保护（无替代时仍回填）</option></select></label>
             <label class="policy-switch"><span><strong>备注岗位视为高负荷</strong><small>一号、申报、控制等备注均参与判定</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-remarked-high-load" type="checkbox" ${state.settings.remarkedPositionHighLoad ? "checked" : ""}></span></label>
           </div>
-          <div class="policy-expression"><span>判定</span><strong>岗位有备注或疲劳点 ≥ ${state.settings.highLoadFatigueThreshold}</strong><i class="bi bi-arrow-right"></i><span>${state.settings.highLoadRecoveryMinutes} 分钟内</span><strong>优先安排其他人员；无替代时已超保护仍安排</strong></div>
+          <div class="policy-expression"><span>判定</span><strong>岗位有备注或疲劳点 ≥ ${state.settings.highLoadFatigueThreshold}</strong><i class="bi bi-arrow-right"></i><span>${state.settings.highLoadRecoveryMinutes} 分钟内</span><strong>优先避开，无安全替代时保证岗位完整</strong></div>
         </div>
       </details>
 
       <details class="policy-rule-card" data-policy-card="rolling-load">
-        <summary><span><strong>滚动负荷上限</strong><small>${policyState(state.settings.rollingLoadProtectionEnabled, state.settings.rollingLoadMode)} · 限制连续堆高疲劳</small></span><i class="bi bi-chevron-down"></i></summary>
+        <summary><span><strong>滚动负荷上限</strong><small>${policyState(state.settings.rollingLoadProtectionEnabled)} · 限制连续堆高疲劳</small></span><i class="bi bi-chevron-down"></i></summary>
         <div class="policy-rule-content">
           <div class="schedule-policy-controls">
             <label class="policy-switch"><span><strong>启用规则</strong><small>仅在投放高负荷岗位时触发</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-rolling-load-enabled" type="checkbox" ${state.settings.rollingLoadProtectionEnabled ? "checked" : ""}></span></label>
             <label class="form-label">滚动窗口（分钟）<input class="form-control" id="policy-rolling-window-minutes" type="number" min="0" max="1440" step="30" value="${state.settings.rollingLoadWindowMinutes}"></label>
             <label class="form-label">累计疲劳上限<input class="form-control" id="policy-rolling-max-fatigue" type="number" min="0.5" max="100" step="0.5" value="${state.settings.rollingLoadMaxFatigue}"></label>
-            <label class="form-label">执行强度<select class="form-select" id="policy-rolling-load-mode"><option value="prefer" ${state.settings.rollingLoadMode === "prefer" ? "selected" : ""}>优先避开（人手不足可兜底）</option><option value="forbid" ${state.settings.rollingLoadMode === "forbid" ? "selected" : ""}>强保护（无替代时仍回填）</option></select></label>
           </div>
-          <div class="policy-expression"><span>计算</span><strong>${state.settings.rollingLoadWindowMinutes} 分钟内已承担岗位疲劳 + 新岗位疲劳</strong><i class="bi bi-arrow-right"></i><strong>超过 ${state.settings.rollingLoadMaxFatigue} 点时优先换人，无替代时仍回填</strong></div>
+          <div class="policy-expression"><span>计算</span><strong>${state.settings.rollingLoadWindowMinutes} 分钟内已承担岗位疲劳 + 新岗位疲劳</strong><i class="bi bi-arrow-right"></i><strong>超过 ${state.settings.rollingLoadMaxFatigue} 点时优先避开，无安全替代时保证岗位完整</strong></div>
         </div>
       </details>
 
       <details class="policy-rule-card" data-policy-card="rotation">
-        <summary><span><strong>同岗频率均衡与连续轮岗复核</strong><small>${state.settings.positionRotationEnabled ? "已启用" : "已停用"} · 避免长期固定岗位</small></span><i class="bi bi-chevron-down"></i></summary>
+        <summary><span><strong>重点岗位频率均衡与分级轮岗</strong><small>${state.settings.positionRotationEnabled ? "已启用" : "已停用"} · 重点岗位优先，普通岗位防止连续第三班</small></span><i class="bi bi-chevron-down"></i></summary>
         <div class="policy-rule-content">
           <div class="schedule-policy-controls">
-            <label class="policy-switch"><span><strong>启用规则</strong><small>严格按航班号+岗位统计；先比较本月累计，再比较最近 6 个已归档工作日；累计至少 2 次时进入安全重排</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-rotation-enabled" type="checkbox" ${state.settings.positionRotationEnabled ? "checked" : ""}></span></label>
+            <label class="policy-switch"><span><strong>启用规则</strong><small>重点岗位：一号、申报、督导、控制、送资料；普通岗位不比较月度频率，只防止连续第三班</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-rotation-enabled" type="checkbox" ${state.settings.positionRotationEnabled ? "checked" : ""}></span></label>
           </div>
-          <div class="policy-expression"><span>生成阶段</span><strong>本月累计较少者优先，同数再比较最近 6 个归档工作日</strong><i class="bi bi-arrow-right"></i><strong>直接接替 → 同航班/重叠航班两人交换 → 最多三人安全重排</strong><i class="bi bi-arrow-right"></i><span>最后复核连续承担</span></div>
+          <div class="policy-expression"><span>生成阶段</span><strong>先确认不会造成后续岗位空缺，再选重点岗位低频人员</strong><i class="bi bi-arrow-right"></i><strong>重点岗位直接接替 → 两人交换 → 最多三人安全重排</strong><i class="bi bi-arrow-right"></i><span>最后低优先级复核普通岗位第三次连续承担</span></div>
         </div>
       </details>
 
       <details class="policy-rule-card" data-policy-card="late-shift-recovery">
-        <summary><span><strong>跨工作日晚班减负</strong><small>${policyState(state.settings.lateShiftRecoveryEnabled, state.settings.lateShiftRecoveryMode)} · 最近工作日晚班高负荷后的下个工作日晚班保护</small></span><i class="bi bi-chevron-down"></i></summary>
+        <summary><span><strong>跨工作日恢复保护</strong><small>${policyState(state.settings.lateShiftRecoveryEnabled)} · 上一班末班最高负荷后的早班与晚班保护</small></span><i class="bi bi-chevron-down"></i></summary>
         <div class="policy-rule-content">
           <div class="schedule-policy-controls">
-            <label class="policy-switch"><span><strong>启用规则</strong><small>规则依据最近工作日已归档排班执行</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-late-shift-recovery-enabled" type="checkbox" ${state.settings.lateShiftRecoveryEnabled ? "checked" : ""}></span></label>
+            <label class="policy-switch"><span><strong>启用规则</strong><small>只保护上一工作日最后一批中疲劳点最高的岗位人员；并列时全部保护</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-late-shift-recovery-enabled" type="checkbox" ${state.settings.lateShiftRecoveryEnabled ? "checked" : ""}></span></label>
             <label class="form-label">晚班起点<input class="form-control" id="policy-late-shift-start-time" type="time" value="${escapeHtml(state.settings.lateShiftStartTime)}"></label>
             <label class="form-label">最后一批航班范围（分钟）<input class="form-control" id="policy-late-shift-latest-window" type="number" min="0" max="720" step="30" value="${state.settings.lateShiftLatestWindowMinutes}"></label>
             <label class="form-label">下个工作日晚班疲劳上限<input class="form-control" id="policy-next-day-late-max-fatigue" type="number" min="0" max="50" step="0.5" value="${state.settings.nextDayLateMaxFatigue}"></label>
-            <label class="form-label">执行强度<select class="form-select" id="policy-late-shift-recovery-mode"><option value="prefer" ${state.settings.lateShiftRecoveryMode === "prefer" ? "selected" : ""}>优先减负（人手不足可兜底）</option><option value="forbid" ${state.settings.lateShiftRecoveryMode === "forbid" ? "selected" : ""}>强保护（无替代时仍回填）</option></select></label>
           </div>
-          <div class="policy-expression"><span>判定</span><strong>最近工作日 ${state.settings.lateShiftStartTime} 后最后 ${state.settings.lateShiftLatestWindowMinutes} 分钟航班承担高负荷岗位</strong><i class="bi bi-arrow-right"></i><strong>下个工作日最后一批晚班优先安排到不超过 ${state.settings.nextDayLateMaxFatigue} 点的靠后岗位</strong></div>
+          <div class="policy-expression"><span>判定</span><strong>最近工作日 ${state.settings.lateShiftStartTime} 后最后 ${state.settings.lateShiftLatestWindowMinutes} 分钟内疲劳点最高岗位（并列全保护）</strong><i class="bi bi-arrow-right"></i><strong>下个工作日先避开指定早班重点岗位，再控制末班疲劳不超过 ${state.settings.nextDayLateMaxFatigue} 点</strong></div>
+          <small class="text-secondary d-block mt-2">统一执行：优先避开，无安全替代时保证岗位完整。</small>
+          <div class="d-flex justify-content-between align-items-center mt-3"><strong>次班早班避让目标</strong><button class="btn btn-outline-secondary btn-sm" type="button" data-action="add-recovery-target"><i class="bi bi-plus-lg me-1"></i>新增目标</button></div>
+          <div class="duty-priority-list mt-2">${nextWorkdayRecoveryTargetRows(state) || `<div class="empty-state">尚未配置早班避让目标</div>`}</div>
+          <small class="text-secondary d-block mt-2">匹配方式：航班号完全一致，关键词可命中岗位名称或岗位备注。值班早班、KE166机动督导和唯一合格人员仍优先，突破时会在排班反馈中说明原因。</small>
         </div>
       </details>
 

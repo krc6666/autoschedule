@@ -122,6 +122,13 @@ export interface DutyPositionPriority {
   enabled: boolean;
 }
 
+export interface NextWorkdayRecoveryTarget {
+  id: string;
+  flightNo: string;
+  positionKeyword: string;
+  enabled: boolean;
+}
+
 export interface MobileSupervisorCoverageRule {
   id: string;
   enabled: boolean;
@@ -149,18 +156,16 @@ export interface ScheduleSettings {
   highLoadFatigueThreshold: number;
   highLoadRecoveryMinutes: number;
   remarkedPositionHighLoad: boolean;
-  highLoadTransitionMode: "prefer" | "forbid";
   positionTransitionPolicies: PositionTransitionPolicy[];
   rollingLoadProtectionEnabled: boolean;
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
-  rollingLoadMode: "prefer" | "forbid";
   positionRotationEnabled: boolean;
   lateShiftRecoveryEnabled: boolean;
   lateShiftStartTime: string;
   lateShiftLatestWindowMinutes: number;
   nextDayLateMaxFatigue: number;
-  lateShiftRecoveryMode: "prefer" | "forbid";
+  nextWorkdayRecoveryTargets: NextWorkdayRecoveryTarget[];
   dutyFatiguePoints: number;
   dutyPositionPriorities: DutyPositionPriority[];
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
@@ -192,4 +197,4 @@ export interface ScheduleResult {
   warnings: string[];
 }
 
-export type AppSection = "overview" | "config" | "flights" | "schedule" | "policy" | "history";
+export type AppSection = "overview" | "config" | "flights" | "schedule" | "policy" | "statistics" | "history";

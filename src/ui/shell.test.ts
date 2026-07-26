@@ -8,8 +8,10 @@ describe("application shell", () => {
     const html = renderShell(createDefaultState(), "policy", "2026-07-18", "");
     expect(html).toContain('data-nav="policy"');
     expect(html.indexOf('data-nav="schedule"')).toBeLessThan(html.indexOf('data-nav="policy"'));
-    expect(html.indexOf('data-nav="policy"')).toBeLessThan(html.indexOf('data-nav="history"'));
+    expect(html.indexOf('data-nav="policy"')).toBeLessThan(html.indexOf('data-nav="statistics"'));
+    expect(html.indexOf('data-nav="statistics"')).toBeLessThan(html.indexOf('data-nav="history"'));
     expect(html).toContain('data-nav="policy" title="规则"');
+    expect(html).toContain('data-nav="statistics" title="统计"');
     expect(html).not.toContain('title="策略"');
   });
 });

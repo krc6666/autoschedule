@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../defaults";
 import type { HistoryRecord } from "../model";
-import { applyWorkbookImport } from "./workbook-actions";
+import type { DutyRosterImportPreview } from "../infrastructure/duty-roster-excel";
+import { applyDutyRosterImport, applyWorkbookImport, validateDutyRosterImport } from "./workbook-actions";
 
 describe("workbook actions", () => {
   it("applies a mixed import, clears the active schedule, and reports recognized data", () => {
@@ -37,5 +38,59 @@ describe("workbook actions", () => {
     applyWorkbookImport(state, { staff: [], history: [history], warnings: [] }, "history");
     expect(state.staff).toEqual(originalStaff);
     expect(state.history).toEqual([history]);
+  });
+
+  it("replaces one month's duty and next-day standby while preserving CX preflight", () => {
+    const state = createDefaultState();
+    const current = state.staff[0]!;
+    current.cxPreflightQualified = true;
+    state.dutyRosterOverrides = [
+      { date: "2026-07-01", cxPreflightStaffId: current.id, dutyStaffId: state.staff[1]!.id, standbyStaffIds: [state.staff[2]!.id, state.staff[3]!.id] },
+      { date: "2026-08-01", cxPreflightStaffId: null, dutyStaffId: state.staff[1]!.id, standbyStaffIds: [state.staff[2]!.id, state.staff[3]!.id] }
+    ];
+    const preview: DutyRosterImportPreview = {
+      month: "2026-07", referenceDate: "2026-07-01", recognizedAssignments: 3, canApply: true, warnings: [], errors: [],
+      rows: [{ date: "2026-07-01", standbyDate: "2026-07-02", dutyStaffId: state.staff[4]!.id, standbyStaffIds: [state.staff[5]!.id, state.staff[6]!.id] }]
+    };
+
+    const result = applyDutyRosterImport(state, preview);
+
+    expect(result).toEqual({ importedDays: 1, importedAssignments: 3 });
+    expect(state.dutyRosterOverrides.find((row) => row.date === "2026-07-01")).toEqual({
+      date: "2026-07-01", cxPreflightStaffId: current.id, dutyStaffId: state.staff[4]!.id,
+      standbyStaffIds: [state.staff[5]!.id, state.staff[6]!.id]
+    });
+    expect(state.dutyRosterOverrides.some((row) => row.date === "2026-08-01")).toBe(true);
+  });
+
+  it("blocks an imported duty person who is already the preserved CX preflight person", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    person.cxPreflightQualified = true;
+    state.dutyRosterOverrides = [{ date: "2026-07-01", cxPreflightStaffId: person.id, dutyStaffId: state.staff[1]!.id, standbyStaffIds: [state.staff[2]!.id, state.staff[3]!.id] }];
+    const preview: DutyRosterImportPreview = {
+      month: "2026-07", referenceDate: "2026-07-01", recognizedAssignments: 3, canApply: true, warnings: [], errors: [],
+      rows: [{ date: "2026-07-01", standbyDate: "2026-07-02", dutyStaffId: person.id, standbyStaffIds: [state.staff[4]!.id, state.staff[5]!.id] }]
+    };
+
+    const validated = validateDutyRosterImport(state, preview);
+
+    expect(validated.canApply).toBe(false);
+    expect(validated.errors.join("；")).toContain("同时承担CX航前");
+    expect(applyDutyRosterImport(state, preview)).toEqual({ importedDays: 0, importedAssignments: 0 });
+  });
+
+  it("preserves duty when a new month's first-day standby only covers the previous workday", () => {
+    const state = createDefaultState();
+    const existing = { date: "2026-07-31", cxPreflightStaffId: null, dutyStaffId: state.staff[0]!.id, standbyStaffIds: [state.staff[1]!.id, state.staff[2]!.id] as [string, string] };
+    state.dutyRosterOverrides = [existing];
+    const preview: DutyRosterImportPreview = {
+      month: "2026-08", referenceDate: "2026-08-02", recognizedAssignments: 2, canApply: true, warnings: [], errors: [],
+      rows: [{ date: "2026-07-31", standbyDate: "2026-08-01", dutyStaffId: null, standbyStaffIds: [state.staff[3]!.id, state.staff[4]!.id], dutyIncluded: false, standbyIncluded: true }]
+    };
+
+    applyDutyRosterImport(state, preview);
+
+    expect(state.dutyRosterOverrides[0]).toMatchObject({ dutyStaffId: existing.dutyStaffId, standbyStaffIds: [state.staff[3]!.id, state.staff[4]!.id] });
   });
 });

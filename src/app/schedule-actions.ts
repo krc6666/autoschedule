@@ -1,11 +1,6 @@
-import {
-  activeFlightRules,
-  applyEarlyReleaseForStaff,
-  canAssignStaff,
-  isAuxiliaryCategory,
-  isDiversionTransfer,
-  isGuideAssignment
-} from "../domain/scheduler";
+import { applyEarlyReleaseForStaff, canAssignStaff, isDiversionTransfer } from "../domain/assignment-validation";
+import { clearAutomaticAssignmentEvidence } from "../domain/assignment-evidence";
+import { activeFlightRules, isAuxiliaryCategory, isGuideAssignment } from "../domain/schedule-position-rules";
 import { clearSupervisorLink, moveSupervisorWithinFlight, normalizeSupervisorAssignments } from "../domain/schedule-adjustment";
 import type { AppState, Staff } from "../model";
 import { createId, normalizeText } from "../utils";
@@ -53,10 +48,23 @@ function refreshSameFlightGuides(state: AppState, flightIds: string[]): void {
         }))
         .filter((item): item is typeof item & { person: Staff } => Boolean(item.sourceRule?.category === "常规" && item.person?.status === "正常" && item.person.staffType === "常规"))
         .sort((left, right) => (displayIndex.get(right.assignment.positionRuleId ?? "") ?? -1) - (displayIndex.get(left.assignment.positionRuleId ?? "") ?? -1));
+      const manualSelection = guide.status === "manual" && guide.staffId
+        ? candidates.find((candidate) => candidate.person.id === guide.staffId)
+        : undefined;
+      if (manualSelection) {
+        guide.staffName = manualSelection.person.name;
+        guide.workHours = 0;
+        guide.fatiguePoints = 0;
+        usedStaffIds.add(manualSelection.person.id);
+        continue;
+      }
       const selected = candidates[0]?.person;
       guide.staffId = selected?.id ?? null;
       guide.staffName = selected?.name ?? "";
       guide.status = selected ? "assigned" : "unfilled";
+      guide.workHours = 0;
+      guide.fatiguePoints = 0;
+      clearAutomaticAssignmentEvidence(guide);
       if (selected) usedStaffIds.add(selected.id);
     }
   }
@@ -76,7 +84,7 @@ export function assignStaff(
     assignment.staffId = null;
     assignment.staffName = "";
     assignment.status = rule?.manual || isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId ? "manual" : "unfilled";
-    delete assignment.systemNotes;
+    clearAutomaticAssignmentEvidence(assignment);
     refreshSameFlightGuides(state, [assignment.flightId]);
     return { changed: true, message: "岗位已设为待补位" };
   }
@@ -105,21 +113,26 @@ export function assignStaff(
   clearSupervisorLink(state, assignment);
   assignment.staffId = person.id;
   assignment.staffName = person.name;
-  assignment.status = "assigned";
-  delete assignment.systemNotes;
+  const guideAssignment = isGuideAssignment(state, assignment);
+  assignment.status = guideAssignment ? "manual" : "assigned";
+  if (guideAssignment) {
+    assignment.workHours = 0;
+    assignment.fatiguePoints = 0;
+  }
+  clearAutomaticAssignmentEvidence(assignment);
   if (source && !copySource) {
     clearSupervisorLink(state, source);
     if (targetStaffId) {
       source.staffId = targetStaffId;
       source.staffName = targetStaffName;
       source.status = "assigned";
-      delete source.systemNotes;
+      clearAutomaticAssignmentEvidence(source);
     } else {
       const sourceRule = source.positionRuleId ? state.positionRules.find((item) => item.id === source.positionRuleId) : undefined;
       source.staffId = null;
       source.staffName = "";
       source.status = sourceRule?.manual || isAuxiliaryCategory(sourceRule?.category) || !source.positionRuleId ? "manual" : "unfilled";
-      delete source.systemNotes;
+      clearAutomaticAssignmentEvidence(source);
     }
   }
   applyEarlyReleaseForStaff(state, assignment.id, person.id);
@@ -168,7 +181,7 @@ export function updateAssignmentField(
     assignment.staffId = null;
     assignment.staffName = staffName;
     assignment.status = "assigned";
-    delete assignment.systemNotes;
+    clearAutomaticAssignmentEvidence(assignment);
     return { changed: true };
   }
   return assignStaff(state, id, person.id);

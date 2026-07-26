@@ -1,13 +1,14 @@
 import type { AppState } from "../model";
 import { buildStaffLoads } from "../domain/fatigue";
-import { activeFlightPositions } from "../domain/scheduler";
+import { activeFlightPositions } from "../domain/schedule-position-rules";
+import { countedWorkloadAssignments } from "../domain/workload-accounting";
 import { escapeHtml } from "../utils";
 
 export function renderOverview(state: AppState, date: string): string {
   const available = state.staff.filter((person) => person.status === "正常").length;
   const assigned = state.assignments.filter((item) => item.status === "assigned").length;
   const unfilled = state.assignments.filter((item) => item.status === "unfilled").length;
-  const loads = buildStaffLoads(state.staff, state.assignments, state.history, date, state.settings)
+  const loads = buildStaffLoads(state.staff.filter((person) => person.staffType === "常规"), countedWorkloadAssignments(state), state.history, date, state.settings)
     .filter((item) => item.workHours > 0 || item.historyFatigue > 0)
     .sort((left, right) => right.totalFatigue - left.totalFatigue)
     .slice(0, 8);

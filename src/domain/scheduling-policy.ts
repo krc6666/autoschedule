@@ -1,9 +1,17 @@
-import type { SchedulingDecision, SchedulingRuleId, SchedulingRuleStage } from "../model";
+import type { PositionRule, SchedulingDecision, SchedulingRuleId, SchedulingRuleStage } from "../model";
 
 export interface SchedulingRuleDefinition {
   id: SchedulingRuleId;
   stage: SchedulingRuleStage;
   label: string;
+}
+
+export const PRIORITY_ROTATION_POSITION_KEYWORDS = ["一号", "申报", "督导", "控制", "送资料"] as const;
+
+export function isPriorityRotationPosition(rule: Pick<PositionRule, "category" | "name" | "remark">): boolean {
+  if (rule.category !== "常规") return false;
+  const searchable = `${rule.name} ${rule.remark}`;
+  return PRIORITY_ROTATION_POSITION_KEYWORDS.some((keyword) => searchable.includes(keyword));
 }
 
 export const SCHEDULING_STAGE_ORDER = [
@@ -32,11 +40,11 @@ export const SCHEDULING_RULES: readonly SchedulingRuleDefinition[] = [
   { id: "staff-coverage", stage: "coverage", label: "当日在岗覆盖" },
   { id: "position-compaction", stage: "coverage", label: "岗位空缺下沉" },
   { id: "position-transition", stage: "protection", label: "岗位衔接保护" },
-  { id: "late-shift-recovery", stage: "protection", label: "跨工作日晚班减负" },
+  { id: "late-shift-recovery", stage: "protection", label: "跨工作日恢复保护" },
   { id: "rolling-load", stage: "protection", label: "滚动负荷保护" },
   { id: "high-load-recovery", stage: "protection", label: "连续高负荷保护" },
-  { id: "position-frequency", stage: "protection", label: "同岗频率均衡" },
-  { id: "position-frequency-review", stage: "protection", label: "同岗频率均衡重排" },
+  { id: "position-frequency", stage: "protection", label: "重点岗位频率均衡" },
+  { id: "position-frequency-review", stage: "protection", label: "重点岗位频率安全重排" },
   { id: "workload-balance", stage: "protection", label: "工时与疲劳均衡" },
   { id: "historical-fatigue", stage: "stable-order", label: "历史疲劳" },
   { id: "staff-id", stage: "stable-order", label: "人员编号" },

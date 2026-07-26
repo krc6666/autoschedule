@@ -42,7 +42,7 @@ describe("config view", () => {
     expect(html).toContain('id="policy-fatigue-threshold"');
     expect(html).toContain('id="policy-recovery-minutes"');
     expect(html).toContain('id="policy-remarked-high-load"');
-    expect(html).toContain('id="policy-transition-mode"');
+    expect(html).not.toContain('id="policy-transition-mode"');
     expect(html).toContain('data-action="save-schedule-policy"');
     expect(html).toContain('data-action="add-transition-policy"');
     expect(html).toContain('data-entity="transition-policy"');
@@ -55,7 +55,7 @@ describe("config view", () => {
     expect(html).toContain('id="policy-rolling-load-enabled"');
     expect(html).toContain('id="policy-rolling-window-minutes"');
     expect(html).toContain('id="policy-rolling-max-fatigue"');
-    expect(html).toContain('id="policy-rolling-load-mode"');
+    expect(html).not.toContain('id="policy-rolling-load-mode"');
     expect(html).toContain('id="policy-rotation-enabled"');
     expect(html).not.toContain('id="policy-rotation-lookback-days"');
     expect(html).not.toContain('id="policy-rotation-mode"');
@@ -63,11 +63,15 @@ describe("config view", () => {
     expect(html).toContain('id="policy-late-shift-start-time"');
     expect(html).toContain('id="policy-late-shift-latest-window"');
     expect(html).toContain('id="policy-next-day-late-max-fatigue"');
-    expect(html).toContain('id="policy-late-shift-recovery-mode"');
+    expect(html).not.toContain('id="policy-late-shift-recovery-mode"');
     expect(html).toContain("滚动负荷上限");
-    expect(html).toContain("同岗频率均衡");
-    expect(html).toContain("连续轮岗复核");
-    expect(html).toContain("跨工作日晚班减负");
+    expect(html).toContain("重点岗位频率均衡");
+    expect(html).toContain("分级连续轮岗");
+    expect(html).toContain("跨工作日恢复保护");
+    expect(html).toContain('data-action="add-recovery-target"');
+    expect(html).toContain('data-entity="recovery-target"');
+    expect(html).toContain("CX937");
+    expect(html).toContain("KE166");
     expect(html).toContain('<details class="policy-rule-card"');
     expect(html).not.toContain('<details class="policy-rule-card" open');
   });

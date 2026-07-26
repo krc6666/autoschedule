@@ -1,4 +1,5 @@
 import type { AppState, Assignment, PositionRule } from "../model";
+import { clearAutomaticAssignmentEvidence } from "./assignment-evidence";
 import { durationHours } from "./time";
 import { evaluateMobileSupervisorCoverage } from "./mobile-supervisor-coverage";
 
@@ -34,7 +35,7 @@ function resetSupervisorLinkedAssignment(state: AppState, assignment: Assignment
   assignment.status = emptyStatus(state, assignment);
   assignment.workHours = flight ? durationHours(flight.startTime, flight.endTime) : assignment.workHours;
   assignment.fatiguePoints = rule?.fatiguePoints ?? assignment.workHours;
-  delete assignment.systemNotes;
+  clearAutomaticAssignmentEvidence(assignment);
 }
 
 export function moveSupervisorWithinFlight(
@@ -69,7 +70,7 @@ export function moveSupervisorWithinFlight(
   target.workHours = 0;
   target.fatiguePoints = targetRule?.fatiguePoints ?? 0;
   target.supervisorSourceAssignmentId = supervisor.id;
-  delete target.systemNotes;
+  clearAutomaticAssignmentEvidence(target);
   return null;
 }
 
@@ -99,11 +100,12 @@ export function normalizeSupervisorAssignments(state: AppState): void {
       return;
     }
     const rule = assignmentRule(state, assignment);
+    const changed = assignment.staffId !== source.staffId || assignment.staffName !== source.staffName;
     assignment.staffId = source.staffId;
     assignment.staffName = source.staffName;
     assignment.status = "assigned";
     assignment.workHours = 0;
     assignment.fatiguePoints = rule?.fatiguePoints ?? 0;
-    delete assignment.systemNotes;
+    if (changed) clearAutomaticAssignmentEvidence(assignment);
   });
 }

@@ -1,4 +1,4 @@
-import type { AppState, DutyPositionPriority } from "../model";
+import type { AppState, DutyPositionPriority, NextWorkdayRecoveryTarget } from "../model";
 import { createId, normalizeText } from "../utils";
 
 export interface SchedulePolicyInput {
@@ -6,17 +6,14 @@ export interface SchedulePolicyInput {
   highLoadFatigueThreshold: number;
   highLoadRecoveryMinutes: number;
   remarkedPositionHighLoad: boolean;
-  highLoadTransitionMode: "prefer" | "forbid";
   rollingLoadProtectionEnabled: boolean;
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
-  rollingLoadMode: "prefer" | "forbid";
   positionRotationEnabled: boolean;
   lateShiftRecoveryEnabled: boolean;
   lateShiftStartTime: string;
   lateShiftLatestWindowMinutes: number;
   nextDayLateMaxFatigue: number;
-  lateShiftRecoveryMode: "prefer" | "forbid";
   workloadBalanceEnabled: boolean;
   maxWorkHoursDifference: number;
   maxTodayFatigueDifference: number;
@@ -36,17 +33,14 @@ export function applySchedulePolicy(state: AppState, input: SchedulePolicyInput)
   settings.highLoadFatigueThreshold = finiteInRange(input.highLoadFatigueThreshold, 4, 0.5, 50);
   settings.highLoadRecoveryMinutes = Math.round(finiteInRange(input.highLoadRecoveryMinutes, 360, 0, 1440));
   settings.remarkedPositionHighLoad = input.remarkedPositionHighLoad;
-  settings.highLoadTransitionMode = input.highLoadTransitionMode;
   settings.rollingLoadProtectionEnabled = input.rollingLoadProtectionEnabled;
   settings.rollingLoadWindowMinutes = Math.round(finiteInRange(input.rollingLoadWindowMinutes, 360, 0, 1440));
   settings.rollingLoadMaxFatigue = finiteInRange(input.rollingLoadMaxFatigue, 8, 0.5, 100);
-  settings.rollingLoadMode = input.rollingLoadMode;
   settings.positionRotationEnabled = input.positionRotationEnabled;
   settings.lateShiftRecoveryEnabled = input.lateShiftRecoveryEnabled;
   settings.lateShiftStartTime = input.lateShiftStartTime || "20:00";
   settings.lateShiftLatestWindowMinutes = Math.round(finiteInRange(input.lateShiftLatestWindowMinutes, 180, 0, 720));
   settings.nextDayLateMaxFatigue = finiteInRange(input.nextDayLateMaxFatigue, 2, 0, 50);
-  settings.lateShiftRecoveryMode = input.lateShiftRecoveryMode;
   settings.workloadBalanceEnabled = input.workloadBalanceEnabled;
   settings.maxWorkHoursDifference = finiteInRange(input.maxWorkHoursDifference, 2, 0, 24);
   settings.maxTodayFatigueDifference = finiteInRange(input.maxTodayFatigueDifference, 4, 0, 100);
@@ -55,6 +49,11 @@ export function applySchedulePolicy(state: AppState, input: SchedulePolicyInput)
   settings.afternoonRestStartTime = input.afternoonRestStartTime || "12:00";
   settings.afternoonRestEndTime = input.afternoonRestEndTime || "18:00";
   settings.dutyPositionPriorities = settings.dutyPositionPriorities.map((item) => ({
+    ...item,
+    flightNo: normalizeText(item.flightNo).toUpperCase(),
+    positionKeyword: normalizeText(item.positionKeyword)
+  }));
+  settings.nextWorkdayRecoveryTargets = settings.nextWorkdayRecoveryTargets.map((item) => ({
     ...item,
     flightNo: normalizeText(item.flightNo).toUpperCase(),
     positionKeyword: normalizeText(item.positionKeyword)
@@ -116,6 +115,38 @@ export function updateDutyPriority(
   if (field === "flightNo") priority.flightNo = normalizeText(value).toUpperCase();
   else if (field === "positionKeyword") priority.positionKeyword = normalizeText(value);
   else if (field === "enabled") priority.enabled = Boolean(value);
+  else return false;
+  return true;
+}
+
+export function addNextWorkdayRecoveryTarget(state: AppState): NextWorkdayRecoveryTarget {
+  const target: NextWorkdayRecoveryTarget = {
+    id: createId("recovery-target"),
+    flightNo: "",
+    positionKeyword: "一号",
+    enabled: true
+  };
+  state.settings.nextWorkdayRecoveryTargets.push(target);
+  return target;
+}
+
+export function deleteNextWorkdayRecoveryTarget(state: AppState, id: string): boolean {
+  const before = state.settings.nextWorkdayRecoveryTargets.length;
+  state.settings.nextWorkdayRecoveryTargets = state.settings.nextWorkdayRecoveryTargets.filter((item) => item.id !== id);
+  return state.settings.nextWorkdayRecoveryTargets.length !== before;
+}
+
+export function updateNextWorkdayRecoveryTarget(
+  state: AppState,
+  id: string,
+  field: string,
+  value: string | number | boolean
+): boolean {
+  const target = state.settings.nextWorkdayRecoveryTargets.find((item) => item.id === id);
+  if (!target) return false;
+  if (field === "flightNo") target.flightNo = normalizeText(value).toUpperCase();
+  else if (field === "positionKeyword") target.positionKeyword = normalizeText(value);
+  else if (field === "enabled") target.enabled = Boolean(value);
   else return false;
   return true;
 }

@@ -9,6 +9,7 @@ import {
   addStaff as addStaffAction,
   addTemplate as addTemplateAction,
   addTemplateFlight as addTemplateFlightAction,
+  applyFlightPlanReconciliation,
   addTransitionPolicy as addTransitionPolicyAction,
   deleteFlight as deleteFlightAction,
   deleteMobileSupervisorCoverageRule,
@@ -28,10 +29,13 @@ import {
   replaceHistoryForDate as replaceHistoryForDateAction
 } from "./app/history-actions";
 import {
+  addNextWorkdayRecoveryTarget,
   addDutyPriority as addDutyPriorityAction,
   applySchedulePolicy,
+  deleteNextWorkdayRecoveryTarget,
   deleteDutyPriority as deleteDutyPriorityAction,
   moveDutyPriority as moveDutyPriorityAction,
+  updateNextWorkdayRecoveryTarget,
   updateDutyPriority
 } from "./app/policy-actions";
 import {
@@ -40,20 +44,26 @@ import {
   deleteTemporaryAssignment,
   updateAssignmentField as editScheduleAssignmentField
 } from "./app/schedule-actions";
-import { applyWorkbookImport } from "./app/workbook-actions";
+import { applyDutyRosterImport, applyWorkbookImport, validateDutyRosterImport } from "./app/workbook-actions";
 import { createDefaultState } from "./defaults";
 import { generateSchedule } from "./domain/scheduler";
 import { addIsoDays } from "./domain/time";
 import { applyStaffStatusChange } from "./domain/schedule-state";
+import { buildFlightPlanReconciliation } from "./domain/flight-plan-reconciliation";
 import { clearDutyRosterOverride, clearMonthlyDutyRosterOverrides, updateDutyRosterSlot, type DutyRosterSlot } from "./domain/duty-roster";
 import { clearState, loadState, saveState } from "./infrastructure/storage";
+import { queryInternationalFlights, type OnlineFlightQueryResult } from "./infrastructure/flight-query";
+import type { DutyRosterImportPreview } from "./infrastructure/duty-roster-excel";
 import type { AppSection, AppState, HistoryRecord } from "./model";
 import { renderConfig } from "./ui/config-view";
 import { renderFlights } from "./ui/flights-view";
 import { renderHistory } from "./ui/history-view";
 import { renderOverview } from "./ui/overview-view";
+import { renderOnlineFlightQuery } from "./ui/online-flight-query-view";
+import { renderDutyRosterImportPreview } from "./ui/duty-roster-import-view";
 import { renderSchedule, type LoadSortDirection, type LoadSortField } from "./ui/schedule-view";
 import { renderSchedulePolicy } from "./ui/schedule-policy-view";
+import { renderStatistics } from "./ui/statistics-view";
 import { renderShell } from "./ui/shell";
 import { assertElement, escapeHtml, normalizeText, todayIso } from "./utils";
 
@@ -66,11 +76,15 @@ export class AutoScheduleApp {
   private loadDetailsOpen = false;
   private openDutyRosterSections = new Set<string>();
   private scheduleZoom = Math.min(1.6, Math.max(0.7, Number(localStorage.getItem("autoschedule.scheduleZoom")) || 1));
-  private importMode: "all" | "config" | "history" = "all";
+  private importMode: "all" | "config" | "history" | "duty-roster" = "all";
+  private dutyRosterImportReferenceDate = this.scheduleDate;
+  private pendingDutyRosterImport: DutyRosterImportPreview | null = null;
   private openPositionFlights = new Set<string>();
   private openPolicyCards = new Set<string>();
   private policySearchOpenCards: Set<string> | null = null;
   private openConfigSections = new Set<string>();
+  private onlineFlightQueryDate = this.scheduleDate;
+  private onlineFlightQueryResult: OnlineFlightQueryResult | null = null;
   private pointerDrag: { assignmentId: string; pointerId: number; startX: number; startY: number; active: boolean } | null = null;
   private readonly root: HTMLElement;
 
@@ -98,6 +112,7 @@ export class AutoScheduleApp {
       case "flights": return renderFlights(this.state);
       case "schedule": return renderSchedule(this.state, this.scheduleDate, { field: this.loadSortField, direction: this.loadSortDirection, zoom: this.scheduleZoom });
       case "policy": return renderSchedulePolicy(this.state);
+      case "statistics": return renderStatistics(this.state, this.scheduleDate);
       case "history": return renderHistory(this.state);
       default: return renderOverview(this.state, this.scheduleDate);
     }
@@ -157,7 +172,7 @@ export class AutoScheduleApp {
     Modal.getInstance(assertElement<HTMLElement>("#app-modal"))?.hide();
   }
 
-  private openImport(mode: "all" | "config" | "history"): void {
+  private openImport(mode: "all" | "config" | "history" | "duty-roster"): void {
     this.importMode = mode;
     const input = assertElement<HTMLInputElement>("#workbook-input");
     input.value = "";
@@ -271,11 +286,17 @@ export class AutoScheduleApp {
       "import-workbook": () => this.openImport("all"),
       "import-config": () => this.openImport("config"),
       "import-history": () => this.openImport("history"),
+      "import-duty-roster": () => this.openDutyRosterImport(id),
+      "download-duty-roster-template": () => void this.downloadDutyRosterTemplate(id),
+      "apply-duty-roster-import": () => this.applyPendingDutyRosterImport(),
       "export-config": () => void this.exportConfig(),
       "export-schedule": () => void this.exportSchedule(),
       "export-share-html": () => void this.exportHtml(),
       "export-share-png": () => void this.exportPng(),
       "add-flight": () => this.addFlight(),
+      "open-online-flight-query": () => this.openOnlineFlightQuery(),
+      "run-online-flight-query": () => void this.runOnlineFlightQuery(),
+      "apply-flight-plan-reconciliation": () => this.applyOnlineFlightPlanReconciliation(),
       "delete-flight": () => this.deleteFlight(id),
       "add-from-template": () => this.showTemplates(),
       "select-template": () => this.addTemplateFlight(id),
@@ -297,6 +318,8 @@ export class AutoScheduleApp {
       "move-duty-priority-up": () => this.moveDutyPriority(id, -1),
       "move-duty-priority-down": () => this.moveDutyPriority(id, 1),
       "delete-duty-priority": () => this.deleteDutyPriority(id),
+      "add-recovery-target": () => this.addRecoveryTarget(),
+      "delete-recovery-target": () => this.deleteRecoveryTarget(id),
       "add-supervisor-coverage": () => this.addSupervisorCoverageRule(),
       "delete-supervisor-coverage": () => this.deleteSupervisorCoverageRule(id),
       "add-transition-policy": () => this.addTransitionPolicy(),
@@ -452,6 +475,78 @@ export class AutoScheduleApp {
     this.commit("已新增航班");
   }
 
+  private openOnlineFlightQuery(): void {
+    this.onlineFlightQueryDate = this.scheduleDate;
+    this.onlineFlightQueryResult = null;
+    this.showOnlineFlightQuery();
+  }
+
+  private showOnlineFlightQuery(): void {
+    this.modal(
+      "在线查询航班",
+      renderOnlineFlightQuery(this.state, this.scheduleDate, this.onlineFlightQueryDate, this.onlineFlightQueryResult),
+      `<button class="btn btn-secondary" type="button" data-bs-dismiss="modal">关闭</button>`
+    );
+  }
+
+  private async runOnlineFlightQuery(): Promise<void> {
+    const dateInput = assertElement<HTMLInputElement>("#online-flight-query-date");
+    this.onlineFlightQueryDate = dateInput.value;
+    const button = this.root.querySelector<HTMLButtonElement>('[data-action="run-online-flight-query"]');
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>正在查询`;
+    }
+    try {
+      this.onlineFlightQueryResult = await queryInternationalFlights(this.onlineFlightQueryDate);
+      this.showOnlineFlightQuery();
+    } catch (error) {
+      this.toast(`在线航班查询失败：${error instanceof Error ? error.message : String(error)}`, "danger");
+      if (button) {
+        button.disabled = false;
+        button.innerHTML = `<i class="bi bi-search me-2"></i>查询该日期`;
+      }
+    }
+  }
+
+  private applyOnlineFlightPlanReconciliation(): void {
+    if (!this.onlineFlightQueryResult) {
+      this.toast("请先查询在线航班计划", "warning");
+      return;
+    }
+    const reconciliation = buildFlightPlanReconciliation(this.state, this.scheduleDate, this.onlineFlightQueryResult);
+    const templateIds = [...this.root.querySelectorAll<HTMLInputElement>('input[name="online-flight-addition"]:checked')]
+      .map((input) => input.dataset.templateId ?? "")
+      .filter(Boolean);
+    const flightIds = [...this.root.querySelectorAll<HTMLInputElement>('input[name="online-flight-removal"]:checked')]
+      .map((input) => input.value)
+      .filter(Boolean);
+    if (!templateIds.length && !flightIds.length) {
+      this.toast("当前没有勾选需要新增或删减的航班", "warning");
+      return;
+    }
+    if (flightIds.length && !reconciliation.removalAllowed) {
+      this.toast(reconciliation.removalBlockedReason, "warning");
+      return;
+    }
+    if (flightIds.length) {
+      const flightNos = reconciliation.removals
+        .filter((flight) => flightIds.includes(flight.id))
+        .map((flight) => flight.flightNo)
+        .join("、");
+      if (!confirm(`确认从当前航班计划删除 ${flightIds.length} 个航班（${flightNos}）？删除后已有排班结果将失效，需重新排班。`)) return;
+    }
+    const result = applyFlightPlanReconciliation(this.state, reconciliation, templateIds, flightIds);
+    if (!result.added && !result.removed) {
+      this.toast("所选内容已失效，当前计划没有变化，请重新查询", "warning");
+      return;
+    }
+    this.scheduleDate = this.onlineFlightQueryResult.date;
+    localStorage.setItem("autoschedule.scheduleDate", this.scheduleDate);
+    this.closeModal();
+    this.commit(`已更新 ${this.scheduleDate} 航班计划：新增 ${result.added}、删除 ${result.removed}、保留 ${reconciliation.retained.length}${result.skipped ? `，跳过 ${result.skipped} 项` : ""}`);
+  }
+
   private toggleAdministrativeSupport(enabled: boolean): void {
     this.state.settings.adminSupportEnabled = enabled;
     const result = generateSchedule(this.state, this.scheduleDate);
@@ -472,23 +567,19 @@ export class AutoScheduleApp {
 
   private saveSchedulePolicy(): void {
     const readNumber = (selector: string): number => Number(assertElement<HTMLInputElement>(selector).value);
-    const readMode = (selector: string): "prefer" | "forbid" => assertElement<HTMLSelectElement>(selector).value === "forbid" ? "forbid" : "prefer";
     const regenerate = applySchedulePolicy(this.state, {
       highLoadProtectionEnabled: assertElement<HTMLInputElement>("#policy-enabled").checked,
       highLoadFatigueThreshold: readNumber("#policy-fatigue-threshold"),
       highLoadRecoveryMinutes: readNumber("#policy-recovery-minutes"),
       remarkedPositionHighLoad: assertElement<HTMLInputElement>("#policy-remarked-high-load").checked,
-      highLoadTransitionMode: readMode("#policy-transition-mode"),
       rollingLoadProtectionEnabled: assertElement<HTMLInputElement>("#policy-rolling-load-enabled").checked,
       rollingLoadWindowMinutes: readNumber("#policy-rolling-window-minutes"),
       rollingLoadMaxFatigue: readNumber("#policy-rolling-max-fatigue"),
-      rollingLoadMode: readMode("#policy-rolling-load-mode"),
       positionRotationEnabled: assertElement<HTMLInputElement>("#policy-rotation-enabled").checked,
       lateShiftRecoveryEnabled: assertElement<HTMLInputElement>("#policy-late-shift-recovery-enabled").checked,
       lateShiftStartTime: assertElement<HTMLInputElement>("#policy-late-shift-start-time").value,
       lateShiftLatestWindowMinutes: readNumber("#policy-late-shift-latest-window"),
       nextDayLateMaxFatigue: readNumber("#policy-next-day-late-max-fatigue"),
-      lateShiftRecoveryMode: readMode("#policy-late-shift-recovery-mode"),
       workloadBalanceEnabled: assertElement<HTMLInputElement>("#policy-workload-balance-enabled").checked,
       maxWorkHoursDifference: readNumber("#policy-max-work-hours-difference"),
       maxTodayFatigueDifference: readNumber("#policy-max-today-fatigue-difference"),
@@ -523,6 +614,20 @@ export class AutoScheduleApp {
     if (!deleteDutyPriorityAction(this.state, id)) return;
     this.openPolicyCards.add("duty-rules");
     this.commit("值班岗位优先项已删除");
+  }
+
+  private addRecoveryTarget(): void {
+    addNextWorkdayRecoveryTarget(this.state);
+    this.openPolicyCards.add("late-shift-recovery");
+    this.commit("已新增次班早班避让目标");
+  }
+
+  private deleteRecoveryTarget(id: string): void {
+    const target = this.state.settings.nextWorkdayRecoveryTargets.find((item) => item.id === id);
+    if (!target || !confirm(`确认删除 ${target.flightNo || "未填写航班"} / ${target.positionKeyword || "未填写关键词"}？`)) return;
+    if (!deleteNextWorkdayRecoveryTarget(this.state, id)) return;
+    this.openPolicyCards.add("late-shift-recovery");
+    this.commit("次班早班避让目标已删除");
   }
 
   private addSupervisorCoverageRule(): void {
@@ -707,6 +812,35 @@ export class AutoScheduleApp {
     this.commit(`${date} 轮值已调整`);
   }
 
+  private openDutyRosterImport(date: string): void {
+    this.dutyRosterImportReferenceDate = date || this.scheduleDate;
+    this.pendingDutyRosterImport = null;
+    this.openImport("duty-roster");
+  }
+
+  private async downloadDutyRosterTemplate(date: string): Promise<void> {
+    const { buildDutyRosterTemplateWorkbook } = await import("./infrastructure/duty-roster-excel");
+    const { writeWorkbook } = await import("./infrastructure/excel");
+    const referenceDate = date || this.scheduleDate;
+    writeWorkbook(buildDutyRosterTemplateWorkbook(this.state, referenceDate), `值班备勤表_${referenceDate.slice(0, 7)}.xlsx`);
+  }
+
+  private applyPendingDutyRosterImport(): void {
+    const preview = this.pendingDutyRosterImport;
+    if (!preview?.canApply) {
+      this.toast("当前值班备勤表存在阻止导入的问题", "danger");
+      return;
+    }
+    const result = applyDutyRosterImport(this.state, preview);
+    if (!result.importedDays) {
+      this.toast("值班备勤安排已发生变化，请重新选择文件并核对预览", "danger");
+      return;
+    }
+    this.pendingDutyRosterImport = null;
+    this.closeModal();
+    this.commit(`已导入 ${preview.month} 值班备勤表：${result.importedDays} 个工作班、${result.importedAssignments} 项安排；CX航前保持不变`);
+  }
+
   private replaceHistoryForDate(date: string, records: HistoryRecord[]): void {
     replaceHistoryForDateAction(this.state, date, records);
   }
@@ -749,12 +883,27 @@ export class AutoScheduleApp {
 
   private async loadWorkbook(file: File): Promise<void> {
     try {
+      const mode = this.importMode;
+      if (mode === "duty-roster") {
+        const { importDutyRosterWorkbook } = await import("./infrastructure/duty-roster-excel");
+        const parsed = await importDutyRosterWorkbook(file, this.state.staff, this.dutyRosterImportReferenceDate);
+        const preview = validateDutyRosterImport(this.state, parsed);
+        this.importMode = "all";
+        this.pendingDutyRosterImport = preview;
+        this.modal(
+          "值班备勤表导入预览",
+          renderDutyRosterImportPreview(this.state, preview),
+          `<button class="btn btn-secondary" type="button" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" type="button" data-action="apply-duty-roster-import" ${preview.canApply ? "" : "disabled"}>确认应用预览中的值班备勤</button>`
+        );
+        return;
+      }
       const { importWorkbook } = await import("./infrastructure/excel");
       const imported = await importWorkbook(file, this.state.staff);
-      const { recognized } = applyWorkbookImport(this.state, imported, this.importMode);
+      const { recognized } = applyWorkbookImport(this.state, imported, mode);
       this.importMode = "all";
       this.commit(recognized ? `已导入 ${recognized}` : imported.warnings[0] ?? "文件中没有有效数据");
     } catch (error) {
+      this.importMode = "all";
       this.toast(`导入失败：${error instanceof Error ? error.message : String(error)}`, "danger");
     }
   }
@@ -788,6 +937,11 @@ export class AutoScheduleApp {
     }
     if (entity === "duty-priority") {
       if (!updateDutyPriority(this.state, id, field, value)) return;
+      this.state = saveState(this.state);
+      return;
+    }
+    if (entity === "recovery-target") {
+      if (!updateNextWorkdayRecoveryTarget(this.state, id, field, value)) return;
       this.state = saveState(this.state);
       return;
     }

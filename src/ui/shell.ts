@@ -7,6 +7,7 @@ const navigation: Array<{ id: AppSection; label: string; icon: string }> = [
   { id: "flights", label: "航班", icon: "airplane" },
   { id: "schedule", label: "排班", icon: "calendar2-check" },
   { id: "policy", label: "规则", icon: "diagram-3" },
+  { id: "statistics", label: "统计", icon: "bar-chart" },
   { id: "history", label: "历史", icon: "clock-history" }
 ];
 

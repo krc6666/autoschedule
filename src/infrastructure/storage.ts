@@ -36,6 +36,9 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
       version: 3,
       settings: { ...fallback.settings, ...parsed.settings }
     };
+    Reflect.deleteProperty(next.settings, "highLoadTransitionMode");
+    Reflect.deleteProperty(next.settings, "rollingLoadMode");
+    Reflect.deleteProperty(next.settings, "lateShiftRecoveryMode");
     const persistedPolicies = Array.isArray(next.settings.positionTransitionPolicies)
       ? next.settings.positionTransitionPolicies
       : fallback.settings.positionTransitionPolicies;
@@ -55,7 +58,6 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     next.settings.rollingLoadProtectionEnabled = next.settings.rollingLoadProtectionEnabled !== false;
     next.settings.rollingLoadWindowMinutes = Math.min(1440, Math.max(0, Math.round(Number(next.settings.rollingLoadWindowMinutes)) || 0));
     next.settings.rollingLoadMaxFatigue = Math.min(100, Math.max(0.5, Number(next.settings.rollingLoadMaxFatigue) || fallback.settings.rollingLoadMaxFatigue));
-    next.settings.rollingLoadMode = next.settings.rollingLoadMode === "forbid" ? "forbid" : "prefer";
     next.settings.positionRotationEnabled = next.settings.positionRotationEnabled !== false;
     next.settings.lateShiftRecoveryEnabled = next.settings.lateShiftRecoveryEnabled !== false;
     next.settings.lateShiftStartTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(next.settings.lateShiftStartTime)) ? String(next.settings.lateShiftStartTime) : fallback.settings.lateShiftStartTime;
@@ -63,7 +65,17 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     next.settings.lateShiftLatestWindowMinutes = Math.min(720, Math.max(0, Number.isFinite(lateShiftWindow) ? Math.round(lateShiftWindow) : fallback.settings.lateShiftLatestWindowMinutes));
     const nextDayLateMaxFatigue = Number(next.settings.nextDayLateMaxFatigue);
     next.settings.nextDayLateMaxFatigue = Math.min(50, Math.max(0, Number.isFinite(nextDayLateMaxFatigue) ? nextDayLateMaxFatigue : fallback.settings.nextDayLateMaxFatigue));
-    next.settings.lateShiftRecoveryMode = next.settings.lateShiftRecoveryMode === "forbid" ? "forbid" : "prefer";
+    const persistedRecoveryTargets = Array.isArray(next.settings.nextWorkdayRecoveryTargets)
+      ? next.settings.nextWorkdayRecoveryTargets
+      : fallback.settings.nextWorkdayRecoveryTargets;
+    next.settings.nextWorkdayRecoveryTargets = persistedRecoveryTargets
+      .filter((item) => item && typeof item === "object")
+      .map((item, index) => ({
+        id: String(item.id ?? "").trim() || `recovery-target-${index + 1}`,
+        flightNo: String(item.flightNo ?? "").trim().toUpperCase(),
+        positionKeyword: String(item.positionKeyword ?? "").trim(),
+        enabled: item.enabled !== false
+      }));
     const dutyFatiguePoints = Number(next.settings.dutyFatiguePoints);
     next.settings.dutyFatiguePoints = Math.min(50, Math.max(0, Number.isFinite(dutyFatiguePoints) ? dutyFatiguePoints : fallback.settings.dutyFatiguePoints));
     const persistedDutyPriorities = Array.isArray(next.settings.dutyPositionPriorities)

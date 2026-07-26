@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   compareCandidatePriority,
   firstDifferentCandidateRule,
+  isPriorityRotationPosition,
   CANDIDATE_PRIORITY_ORDER,
   SCHEDULING_RULES,
   SCHEDULING_STAGE_ORDER,
@@ -37,6 +38,15 @@ function priority(overrides: Partial<CandidatePriority> = {}): CandidatePriority
 }
 
 describe("scheduling policy contract", () => {
+  it("classifies only configured regular priority positions for frequency balancing", () => {
+    for (const keyword of ["一号", "申报", "督导", "控制", "送资料"]) {
+      expect(isPriorityRotationPosition({ category: "常规", name: "G20", remark: keyword })).toBe(true);
+    }
+    expect(isPriorityRotationPosition({ category: "常规", name: "G15", remark: "" })).toBe(false);
+    expect(isPriorityRotationPosition({ category: "机动督导", name: "督导", remark: "" })).toBe(false);
+    expect(isPriorityRotationPosition({ category: "行政支援", name: "督导", remark: "" })).toBe(false);
+  });
+
   it("keeps reserved assignments ahead of protection and fairness rules", () => {
     expect(CANDIDATE_PRIORITY_ORDER.indexOf("ke166-supervisor")).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf("workload-balance"));
     expect(CANDIDATE_PRIORITY_ORDER.indexOf("staff-coverage")).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf("position-transition"));

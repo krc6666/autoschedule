@@ -67,12 +67,10 @@ describe("state persistence", () => {
     delete legacy.settings.highLoadFatigueThreshold;
     delete legacy.settings.highLoadRecoveryMinutes;
     delete legacy.settings.remarkedPositionHighLoad;
-    delete legacy.settings.highLoadTransitionMode;
     delete legacy.settings.positionTransitionPolicies;
     delete legacy.settings.rollingLoadProtectionEnabled;
     delete legacy.settings.rollingLoadWindowMinutes;
     delete legacy.settings.rollingLoadMaxFatigue;
-    delete legacy.settings.rollingLoadMode;
     delete legacy.settings.positionRotationEnabled;
     delete legacy.settings.dutyFatiguePoints;
     delete legacy.settings.dutyPositionPriorities;
@@ -87,7 +85,10 @@ describe("state persistence", () => {
     delete legacy.settings.lateShiftStartTime;
     delete legacy.settings.lateShiftLatestWindowMinutes;
     delete legacy.settings.nextDayLateMaxFatigue;
-    delete legacy.settings.lateShiftRecoveryMode;
+    legacy.settings.highLoadTransitionMode = "forbid";
+    legacy.settings.rollingLoadMode = "forbid";
+    legacy.settings.lateShiftRecoveryMode = "forbid";
+    delete legacy.settings.nextWorkdayRecoveryTargets;
     const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
     expect(loaded.staff[0]?.staffType).toBe("常规");
     expect(loaded.staff[0]?.teamLeader).toBe(false);
@@ -99,12 +100,12 @@ describe("state persistence", () => {
     expect(loaded.settings.highLoadFatigueThreshold).toBe(4);
     expect(loaded.settings.highLoadRecoveryMinutes).toBe(360);
     expect(loaded.settings.remarkedPositionHighLoad).toBe(true);
-    expect(loaded.settings.highLoadTransitionMode).toBe("prefer");
+    expect(loaded.settings).not.toHaveProperty("highLoadTransitionMode");
     expect(loaded.settings.positionTransitionPolicies).toMatchObject([{ targetFlightNo: "TR121", targetPosition: "H02" }]);
     expect(loaded.settings.rollingLoadProtectionEnabled).toBe(true);
     expect(loaded.settings.rollingLoadWindowMinutes).toBe(360);
     expect(loaded.settings.rollingLoadMaxFatigue).toBe(8);
-    expect(loaded.settings.rollingLoadMode).toBe("prefer");
+    expect(loaded.settings).not.toHaveProperty("rollingLoadMode");
     expect(loaded.settings.positionRotationEnabled).toBe(true);
     expect(loaded.settings.dutyFatiguePoints).toBe(12);
     expect(loaded.settings.dutyPositionPriorities).toMatchObject([
@@ -126,7 +127,12 @@ describe("state persistence", () => {
     expect(loaded.settings.lateShiftStartTime).toBe("20:00");
     expect(loaded.settings.lateShiftLatestWindowMinutes).toBe(180);
     expect(loaded.settings.nextDayLateMaxFatigue).toBe(2);
-    expect(loaded.settings.lateShiftRecoveryMode).toBe("prefer");
+    expect(loaded.settings).not.toHaveProperty("lateShiftRecoveryMode");
+    expect(loaded.settings.nextWorkdayRecoveryTargets).toMatchObject([
+      { flightNo: "CX937", positionKeyword: "一号", enabled: true },
+      { flightNo: "CX937", positionKeyword: "控制", enabled: true },
+      { flightNo: "KE166", positionKeyword: "一号", enabled: true }
+    ]);
   });
 
   it("removes rules that use the retired support category", () => {
