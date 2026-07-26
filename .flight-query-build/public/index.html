@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>国际航班查询</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">FlightStats 计划数据</p>
+          <h1>国际航班查询</h1>
+        </div>
+        <p class="topbar-note">出港航班 · 目的地不为中国大陆</p>
+      </header>
+
+      <section class="query-panel" aria-label="查询条件">
+        <form id="query-form">
+          <label>
+            出发机场 IATA
+            <input id="airport" name="airport" value="WUH" maxlength="3" autocomplete="off" required />
+          </label>
+          <label>
+            查询日期
+            <input id="date" name="date" type="date" required />
+          </label>
+          <label>
+            当日凌晨排除至
+            <select id="start-cutoff" name="start-cutoff">
+              <option value="0" selected>不排除（00:00）</option>
+              <option value="2">02:00</option>
+              <option value="4">04:00</option>
+              <option value="6">06:00</option>
+              <option value="8">08:00</option>
+              <option value="10">10:00</option>
+              <option value="12">12:00</option>
+            </select>
+          </label>
+          <label>
+            次日凌晨截止
+            <select id="cutoff" name="cutoff">
+              <option value="0">不包含次日</option>
+              <option value="2">02:00</option>
+              <option value="4">04:00</option>
+              <option value="6" selected>06:00</option>
+              <option value="8">08:00</option>
+              <option value="10">10:00</option>
+              <option value="12">12:00</option>
+            </select>
+          </label>
+          <button type="submit" id="search-button">查询航班</button>
+        </form>
+        <p class="query-help">可先排除查询当天凌晨起飞的航班，再按需要纳入次日凌晨航班。起飞时间为出发机场当地时间，到达时间为目的地当地时间；CA、MU、CZ 航班、共享航班和货运航空航班固定不显示。</p>
+      </section>
+
+      <section class="results-panel" aria-live="polite">
+        <div class="results-toolbar">
+          <div>
+            <p class="eyebrow">筛选结果</p>
+            <h2 id="result-title">等待查询</h2>
+          </div>
+          <label class="inline-field">
+            表内搜索
+            <input id="text-filter" type="search" placeholder="航班号、目的地或航司" disabled />
+          </label>
+          <label class="checkbox-field">
+            <input id="include-regions" type="checkbox" checked disabled />
+            包含港澳台
+          </label>
+        </div>
+        <p id="status" class="status">输入条件后点击“查询航班”。</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>起飞日期</th>
+                <th>起飞</th>
+                <th>航班</th>
+                <th>航司</th>
+                <th>目的地</th>
+                <th>国家/地区</th>
+                <th>到达</th>
+              </tr>
+            </thead>
+            <tbody id="flight-rows">
+              <tr><td colspan="7" class="empty">暂无数据</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="source" class="source"></p>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

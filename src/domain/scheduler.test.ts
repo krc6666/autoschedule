@@ -5,6 +5,7 @@ import { sortFlightCountersDescending, visiblePositionRemark } from "../utils";
 import { intervalsOverlap } from "./time";
 import { activeFlightPositions, canAssignStaff, generateSchedule } from "./scheduler";
 import { getDutyRosterForDate } from "./duty-roster";
+import { buildScheduleFeedback } from "./schedule-feedback";
 
 describe("scheduler domain", () => {
   it("assigns only available and qualified staff without time conflicts", () => {
@@ -41,6 +42,169 @@ describe("scheduler domain", () => {
     state.history = [{ id: "h1", date: "2026-07-17", flightNo: "F", position: "P", staffId: "2", staffName: "华嘉慧", startTime: "08:00", endTime: "12:00", workHours: 4, fatiguePoints: 30, remark: "" }];
     const result = generateSchedule(state, "2026-07-18");
     expect(result.assignments[0]!.staffId).not.toBe("2");
+  });
+
+  it("prefers the qualified worker with fewer same-position assignments in the last six archived workdays", () => {
+    const state = createDefaultState();
+    const [frequent, lessFrequent] = state.staff;
+    state.staff = [frequent!, lessFrequent!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "cx", flightNo: "CX937", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{ ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", fatiguePoints: 1, remark: "", qualifiedStaffIds: [frequent!.id, lessFrequent!.id] }];
+    state.settings.historyWindowDays = 1;
+    state.history = [
+      "2026-10-02", "2026-10-04", "2026-10-06", "2026-10-08"
+    ].map((date, index) => ({
+      id: `frequent-${index}`, date, flightNo: "CX937", position: "G20", staffId: frequent!.id, staffName: frequent!.name,
+      startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: ""
+    })).concat(
+      ["2026-09-20", "2026-09-22", "2026-09-24", "2026-09-26"].map((date, index) => ({
+        id: `older-less-frequent-${index}`, date, flightNo: "CX937", position: "G20", staffId: lessFrequent!.id, staffName: lessFrequent!.name,
+        startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: ""
+      })),
+      [
+        { id: "less-frequent", date: "2026-10-10", flightNo: "CX937", position: "G20", staffId: lessFrequent!.id, staffName: lessFrequent!.name, startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: "" },
+        { id: "unrelated", date: "2026-10-12", flightNo: "CX937", position: "G18", staffId: frequent!.id, staffName: frequent!.name, startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: "" }
+      ]
+    );
+
+    const assignment = generateSchedule(state, "2026-10-14").assignments[0]!;
+    expect(assignment.staffId).toBe(lessFrequent!.id);
+    expect(assignment.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "position-frequency", outcome: "selected" })
+    ]));
+  });
+
+  it("uses the current-month total before the recent-six-workday count for long-term same-position fairness", () => {
+    const state = createDefaultState();
+    const [frequent, medium, leastFrequent] = state.staff.filter((person) => person.status === "正常").slice(0, 3);
+    state.staff = [frequent!, medium!, leastFrequent!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "target-flight", flightNo: "TARGET100", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{
+      ...base,
+      id: "target-g20",
+      flightNo: "TARGET100",
+      name: "G20",
+      category: "常规",
+      fatiguePoints: 1,
+      remark: "",
+      qualifiedStaffIds: state.staff.map((person) => person.id)
+    }];
+    const dates = [
+      "2026-10-02", "2026-10-04", "2026-10-06", "2026-10-08", "2026-10-10", "2026-10-12", "2026-10-14", "2026-10-16",
+      "2026-10-18", "2026-10-20", "2026-10-22", "2026-10-24", "2026-10-26"
+    ];
+    state.history = dates.map((date, index) => {
+      const person = index < 8 ? frequent! : index < 11 ? medium! : leastFrequent!;
+      return {
+        id: `monthly-g20-${index}`,
+        date,
+        flightNo: "TARGET100",
+        position: "G20",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "08:30",
+        endTime: "10:30",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: ""
+      };
+    });
+
+    const assignment = generateSchedule(state, "2026-10-28").assignments[0]!;
+    expect(assignment.staffId).toBe(leastFrequent!.id);
+    expect(assignment.staffId).not.toBe(frequent!.id);
+  });
+
+  it("repairs task-order capture through a safe three-person reassignment path", () => {
+    const state = createDefaultState();
+    const [frequent, lessFrequent, releaseWorker] = state.staff.filter((person) => person.status === "正常").slice(0, 3);
+    state.staff = [lessFrequent!, frequent!, releaseWorker!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [
+      { id: "base", flightNo: "BASE100", startTime: "06:00", endTime: "07:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "source", flightNo: "SOURCE100", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "target", flightNo: "TARGET100", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "base-position", flightNo: "BASE100", name: "B01", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [frequent!.id] },
+      { ...base, id: "release-base-position", flightNo: "BASE100", name: "B02", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [releaseWorker!.id] },
+      { ...base, id: "source-position", flightNo: "SOURCE100", name: "S01", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [lessFrequent!.id, releaseWorker!.id] },
+      { ...base, id: "target-position", flightNo: "TARGET100", name: "G20", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [frequent!.id, lessFrequent!.id, releaseWorker!.id] }
+    ];
+    state.history = ["2026-10-02", "2026-10-04", "2026-10-06", "2026-10-08"].flatMap((date, index) => [
+      {
+        id: `frequent-target-${index}`,
+        date,
+        flightNo: "TARGET100",
+        position: "G20",
+        staffId: frequent!.id,
+        staffName: frequent!.name,
+        startTime: "08:30",
+        endTime: "10:30",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: ""
+      },
+      {
+        id: `release-target-${index}`,
+        date,
+        flightNo: "TARGET100",
+        position: "G20",
+        staffId: releaseWorker!.id,
+        staffName: releaseWorker!.name,
+        startTime: "08:30",
+        endTime: "10:30",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: ""
+      }
+    ]);
+
+    const assignments = generateSchedule(state, "2026-10-10").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "base-position")?.staffId).toBe(frequent!.id);
+    expect(assignments.find((item) => item.positionRuleId === "target-position")?.staffId).toBe(lessFrequent!.id);
+    expect(assignments.find((item) => item.positionRuleId === "source-position")?.staffId).toBe(releaseWorker!.id);
+    expect(assignments.find((item) => item.positionRuleId === "target-position")?.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "position-frequency-review", outcome: "selected" })
+    ]));
+  });
+
+  it("records why a high-frequency position cannot be balanced when no other worker is qualified", () => {
+    const state = createDefaultState();
+    const [onlyQualified, unqualified] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [onlyQualified!, unqualified!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "target", flightNo: "TARGET100", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{ ...base, id: "target-position", flightNo: "TARGET100", name: "G20", category: "常规", qualifiedStaffIds: [onlyQualified!.id] }];
+    state.history = ["2026-10-02", "2026-10-04", "2026-10-06"].map((date, index) => ({
+      id: `only-qualified-${index}`,
+      date,
+      flightNo: "TARGET100",
+      position: "G20",
+      staffId: onlyQualified!.id,
+      staffName: onlyQualified!.name,
+      startTime: "08:30",
+      endTime: "10:30",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: ""
+    }));
+
+    state.assignments = generateSchedule(state, "2026-10-08").assignments;
+    const target = state.assignments[0]!;
+    expect(target.staffId).toBe(onlyQualified!.id);
+    expect(target.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "position-frequency-review", outcome: "fallback" })
+    ]));
+    const feedback = buildScheduleFeedback(state, "2026-10-08").find((item) => item.key === "position-frequency-review")!;
+    expect(feedback).toMatchObject({ status: "需复核" });
+    expect(feedback.text).toContain("无其他具备目标岗位资质的人员");
   });
 
   it("prefers a rested worker for a high-load position during the recovery window", () => {
@@ -159,7 +323,7 @@ describe("scheduler domain", () => {
     expect(generateSchedule(state, "2026-07-18").assignments.find((item) => item.positionRuleId === "next-load")?.staffId).toBe(first!.id);
   });
 
-  it("rotates a qualified worker away from a recently repeated flight position", () => {
+  it("uses the same-position frequency rule only while same-position fairness is enabled", () => {
     const state = createDefaultState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
@@ -172,8 +336,6 @@ describe("scheduler domain", () => {
       { id: "other-load", date: "2026-07-17", flightNo: "OLD", position: "OTHER", staffId: second!.id, staffName: second!.name, startTime: "11:00", endTime: "13:00", workHours: 2, fatiguePoints: 20, remark: "" }
     ];
     state.settings.positionRotationEnabled = true;
-    state.settings.positionRotationLookbackDays = 3;
-    state.settings.positionRotationMode = "prefer";
     expect(generateSchedule(state, "2026-07-18").assignments[0]!.staffId).toBe(second!.id);
     state.settings.positionRotationEnabled = false;
     expect(generateSchedule(state, "2026-07-18").assignments[0]!.staffId).toBe(first!.id);
@@ -192,7 +354,6 @@ describe("scheduler domain", () => {
       startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: ""
     }));
     state.settings.positionRotationEnabled = true;
-    state.settings.positionRotationMode = "forbid";
     expect(generateSchedule(state, "2026-07-18").assignments[0]).toMatchObject({ status: "assigned", staffId: expect.any(String) });
   });
 
@@ -1352,7 +1513,7 @@ describe("scheduler domain", () => {
     expect(assignments.find((item) => item.positionRuleId === "tw-one")?.staffId).toBe(duty!.id);
   });
 
-  it("continues to the next duty priority when a strict transition blocks the first target", () => {
+  it("keeps the configured duty lock ahead of a strict transition preference", () => {
     const state = createDefaultState();
     const [duty, other, third] = state.staff.filter((person) => person.status === "正常").slice(0, 3);
     state.staff = [duty!, other!, third!];
@@ -1383,7 +1544,266 @@ describe("scheduler domain", () => {
 
     const assignments = generateSchedule(state, "2026-07-18").assignments;
     expect(assignments.find((item) => item.positionRuleId === "morning-source")?.staffId).toBe(duty!.id);
-    expect(assignments.find((item) => item.positionRuleId === "tr-one")?.staffId).not.toBe(duty!.id);
-    expect(assignments.find((item) => item.positionRuleId === "tw-one")?.staffId).toBe(duty!.id);
+    const target = assignments.find((item) => item.positionRuleId === "tr-one")!;
+    expect(target.staffId).toBe(duty!.id);
+    expect(target.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "duty-position", outcome: "selected" }),
+      expect.objectContaining({ ruleId: "position-transition", outcome: "fallback" })
+    ]));
+    expect(assignments.find((item) => item.positionRuleId === "tw-one")?.staffId).not.toBe(duty!.id);
+  });
+
+  it("keeps the duty position lock ahead of same-position rotation", () => {
+    const state = createDefaultState();
+    const [duty, other] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [duty!, other!];
+    state.flights = [{ id: "tr", flightNo: "TR121", startTime: "21:30", endTime: "23:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [{ ...base, id: "tr-h02", flightNo: "TR121", name: "H02", remark: "一号", category: "常规", qualifiedStaffIds: [duty!.id, other!.id] }];
+    state.dutyRosterOverrides = [{ date: "2026-07-20", cxPreflightStaffId: null, dutyStaffId: duty!.id, standbyStaffIds: [null, null] }];
+    state.history = [{
+      id: "repeat", date: "2026-07-18", flightNo: "TR121", position: "H02", staffId: duty!.id, staffName: duty!.name,
+      startTime: "21:30", endTime: "23:30", workHours: 2, fatiguePoints: 10, remark: "一号"
+    }];
+    expect(generateSchedule(state, "2026-07-20").assignments[0]).toMatchObject({ staffId: duty!.id, position: "H02" });
+  });
+
+  it("reviews a high-frequency position through a safe KE166 ordinary-position exchange", () => {
+    const state = createDefaultState();
+    const [alternate, frequent] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [alternate!, frequent!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [
+      { id: "ke166", flightNo: "KE166", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "cx937", flightNo: "CX937", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "ke-g18", flightNo: "KE166", name: "G18", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [alternate!.id, frequent!.id] },
+      { ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [alternate!.id, frequent!.id] }
+    ];
+    state.settings.historyWindowDays = 1;
+    state.history = ["2026-10-02", "2026-10-04", "2026-10-06", "2026-10-08"].map((date, index) => ({
+      id: `frequent-g20-${index}`, date, flightNo: "CX937", position: "G20", staffId: frequent!.id, staffName: frequent!.name,
+      startTime: "08:30", endTime: "10:30", workHours: 2, fatiguePoints: 1, remark: ""
+    })).concat([
+      { id: "other-1", date: "2026-10-10", flightNo: "MU100", position: "G18", staffId: alternate!.id, staffName: alternate!.name, startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: "" },
+      { id: "other-2", date: "2026-10-12", flightNo: "MU200", position: "G18", staffId: alternate!.id, staffName: alternate!.name, startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: "" }
+    ]);
+
+    const assignments = generateSchedule(state, "2026-10-14").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "cx-g20")?.staffId).toBe(alternate!.id);
+    expect(assignments.find((item) => item.positionRuleId === "ke-g18")?.staffId).toBe(frequent!.id);
+    expect(assignments.find((item) => item.positionRuleId === "cx-g20")?.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "position-frequency-review", outcome: "selected" })
+    ]));
+    state.assignments = assignments;
+    expect(buildScheduleFeedback(state, "2026-10-14").find((item) => item.key === "position-frequency-review")).toMatchObject({
+      status: "已执行"
+    });
+  });
+
+  it("continues to every overlapping flight when KE166 cannot form a safe high-frequency exchange", () => {
+    const state = createDefaultState();
+    const [keWorker, alternate, frequent] = state.staff.filter((person) => person.status === "正常").slice(0, 3);
+    state.staff = [keWorker!, alternate!, frequent!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [
+      { id: "ke166", flightNo: "KE166", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "mu100", flightNo: "MU100", startTime: "08:10", endTime: "10:10", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "cx937", flightNo: "CX937", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "ke-g18", flightNo: "KE166", name: "G18", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [keWorker!.id] },
+      { ...base, id: "mu-h02", flightNo: "MU100", name: "H02", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [alternate!.id, frequent!.id] },
+      { ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", fatiguePoints: 1, qualifiedStaffIds: [keWorker!.id, alternate!.id, frequent!.id] }
+    ];
+    state.settings.historyWindowDays = 1;
+    state.history = ["2026-10-02", "2026-10-04", "2026-10-06", "2026-10-08"].map((date, index) => ({
+      id: `frequent-g20-${index}`, date, flightNo: "CX937", position: "G20", staffId: frequent!.id, staffName: frequent!.name,
+      startTime: "08:30", endTime: "10:30", workHours: 2, fatiguePoints: 1, remark: ""
+    })).concat([
+      { id: "other-1", date: "2026-10-10", flightNo: "MU100", position: "H02", staffId: alternate!.id, staffName: alternate!.name, startTime: "08:10", endTime: "10:10", workHours: 2, fatiguePoints: 1, remark: "" },
+      { id: "other-2", date: "2026-10-12", flightNo: "MU200", position: "H02", staffId: alternate!.id, staffName: alternate!.name, startTime: "08:10", endTime: "10:10", workHours: 2, fatiguePoints: 1, remark: "" }
+    ]);
+
+    const assignments = generateSchedule(state, "2026-10-14").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "ke-g18")?.staffId).toBe(keWorker!.id);
+    expect(assignments.find((item) => item.positionRuleId === "mu-h02")?.staffId).toBe(frequent!.id);
+    expect(assignments.find((item) => item.positionRuleId === "cx-g20")?.staffId).toBe(alternate!.id);
+  });
+
+  it("reviews a repeated position after scheduling and swaps within the same flight first", () => {
+    const state = createDefaultState();
+    const [alternate, repeated] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [alternate!, repeated!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [
+      { id: "g18", flightNo: "MU100", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "g16", flightNo: "MU200", startTime: "08:15", endTime: "10:15", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "g20", flightNo: "CX937", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "cx-g18", flightNo: "CX937", name: "G18", category: "常规", qualifiedStaffIds: [alternate!.id, repeated!.id] },
+      { ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", qualifiedStaffIds: [alternate!.id, repeated!.id] }
+    ];
+    state.history = [{
+      id: "previous-g20", date: "2026-10-22", flightNo: "CX937", position: "G20", staffId: repeated!.id, staffName: repeated!.name,
+      startTime: "08:30", endTime: "10:30", workHours: 2, fatiguePoints: 1, remark: ""
+    }];
+
+    const assignments = generateSchedule(state, "2026-10-24").assignments;
+    expect(assignments.find((item) => item.position === "G20")?.staffId).toBe(alternate!.id);
+    expect(assignments.find((item) => item.position === "G18")?.staffId).toBe(repeated!.id);
+    expect(assignments.find((item) => item.position === "G20")?.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "position-rotation", outcome: "selected" })
+    ]));
+  });
+
+  it("uses a three-person cycle when no direct swap can resolve a third consecutive assignment", () => {
+    const state = createDefaultState();
+    const [first, second, third] = state.staff.filter((person) => person.status === "正常").slice(0, 3);
+    const repeated = third!;
+    const nextForRepeated = second!;
+    const nextForSecond = first!;
+    state.staff = [nextForRepeated, repeated, nextForSecond];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [
+      { id: "g18", flightNo: "MU100", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "g16", flightNo: "MU200", startTime: "08:15", endTime: "10:15", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "g20", flightNo: "CX937", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "cx-g18", flightNo: "MU100", name: "G18", category: "常规", qualifiedStaffIds: [nextForRepeated.id, nextForSecond.id] },
+      { ...base, id: "cx-g16", flightNo: "MU200", name: "G16", category: "常规", qualifiedStaffIds: [repeated.id, nextForSecond.id] },
+      { ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", qualifiedStaffIds: [repeated.id, nextForRepeated.id] }
+    ];
+    state.history = ["2026-10-20", "2026-10-22"].map((date, index) => ({
+      id: `repeated-g20-${index}`, date, flightNo: "CX937", position: "G20", staffId: repeated.id, staffName: repeated.name,
+      startTime: "08:30", endTime: "10:30", workHours: 2, fatiguePoints: 1, remark: ""
+    })).concat(["2026-10-02", "2026-10-04"].map((date, index) => ({
+      id: `older-g18-${index}`, date, flightNo: "MU100", position: "G18", staffId: nextForSecond.id, staffName: nextForSecond.name,
+      startTime: "08:00", endTime: "10:00", workHours: 2, fatiguePoints: 1, remark: ""
+    })));
+
+    const assignments = generateSchedule(state, "2026-10-24").assignments;
+    expect(assignments.find((item) => item.position === "G20")?.staffId).toBe(nextForRepeated.id);
+    expect(assignments.find((item) => item.position === "G18")?.staffId).toBe(nextForSecond.id);
+    expect(assignments.find((item) => item.position === "G16")?.staffId).toBe(repeated.id);
+    expect(assignments.find((item) => item.position === "G20")?.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "position-rotation", outcome: "selected" })
+    ]));
+  });
+
+  it("uses an overlapping-flight direct swap after same-flight candidates are unavailable", () => {
+    const state = createDefaultState();
+    const [alternate, repeated] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [alternate!, repeated!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [
+      { id: "other", flightNo: "MU100", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "cx", flightNo: "CX937", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "other-g18", flightNo: "MU100", name: "G18", category: "常规", qualifiedStaffIds: [alternate!.id, repeated!.id] },
+      { ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", qualifiedStaffIds: [alternate!.id, repeated!.id] }
+    ];
+    state.history = [{
+      id: "previous-g20", date: "2026-10-22", flightNo: "CX937", position: "G20", staffId: repeated!.id, staffName: repeated!.name,
+      startTime: "08:30", endTime: "10:30", workHours: 2, fatiguePoints: 1, remark: ""
+    }];
+
+    const assignments = generateSchedule(state, "2026-10-24").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "cx-g20")?.staffId).toBe(alternate!.id);
+    expect(assignments.find((item) => item.positionRuleId === "other-g18")?.staffId).toBe(repeated!.id);
+  });
+
+  it("keeps an unavoidable third consecutive assignment and records the rotation review reason", () => {
+    const state = createDefaultState();
+    const [alternate, repeated] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [alternate!, repeated!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "cx", flightNo: "CX937", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "cx-g18", flightNo: "CX937", name: "G18", category: "常规", qualifiedStaffIds: [alternate!.id] },
+      { ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", qualifiedStaffIds: [repeated!.id, alternate!.id] }
+    ];
+    state.history = ["2026-10-20", "2026-10-22"].map((date, index) => ({
+      id: `repeated-g20-${index}`, date, flightNo: "CX937", position: "G20", staffId: repeated!.id, staffName: repeated!.name,
+      startTime: "08:30", endTime: "10:30", workHours: 2, fatiguePoints: 1, remark: ""
+    }));
+
+    state.assignments = generateSchedule(state, "2026-10-24").assignments;
+    const repeatedAssignment = state.assignments.find((item) => item.position === "G20")!;
+    expect(repeatedAssignment.staffId).toBe(repeated!.id);
+    expect(repeatedAssignment.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "position-rotation", outcome: "fallback" })
+    ]));
+    const feedback = buildScheduleFeedback(state, "2026-10-24").find((item) => item.key === "position-rotation")!;
+    expect(feedback).toMatchObject({ status: "需复核" });
+    expect(feedback.text).toContain("连续轮岗未落实");
+    expect(feedback.text).toContain("双向岗位资质");
+  });
+
+  it("does not exchange through a manually marked position", () => {
+    const state = createDefaultState();
+    const [alternate, repeated] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [alternate!, repeated!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [{ id: "cx", flightNo: "CX937", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "manual-g18", flightNo: "CX937", name: "G18", category: "常规", manual: true, qualifiedStaffIds: [alternate!.id, repeated!.id] },
+      { ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", qualifiedStaffIds: [alternate!.id, repeated!.id] }
+    ];
+    state.history = ["2026-10-20", "2026-10-22"].map((date, index) => ({
+      id: `repeated-g20-${index}`, date, flightNo: "CX937", position: "G20", staffId: repeated!.id, staffName: repeated!.name,
+      startTime: "08:30", endTime: "10:30", workHours: 2, fatiguePoints: 1, remark: ""
+    }));
+
+    const assignments = generateSchedule(state, "2026-10-24").assignments;
+    expect(assignments.find((item) => item.position === "G20")?.staffId).toBe(repeated!.id);
+    expect(assignments.find((item) => item.position === "G20")?.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: "position-rotation", outcome: "fallback" })
+    ]));
+  });
+
+  it("does not move duty and KE166 mobile-supervisor locks during rotation review", () => {
+    const state = createDefaultState();
+    const [supervisor, repeated] = state.staff.filter((person) => person.status === "正常").slice(0, 2);
+    state.staff = [supervisor!, repeated!];
+    state.staff.forEach((person) => { person.dutyQualified = false; });
+    state.flights = [
+      { id: "ke166", flightNo: "KE166", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" },
+      { id: "cx", flightNo: "CX937", startTime: "08:30", endTime: "10:30", bookedPassengers: 100, positions: [], remark: "" }
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      { ...base, id: "ke-supervisor", flightNo: "KE166", name: "督导", category: "机动督导", qualifiedStaffIds: [supervisor!.id] },
+      { ...base, id: "ke-counter", flightNo: "KE166", name: "H04", category: "常规", qualifiedStaffIds: [supervisor!.id, repeated!.id] },
+      { ...base, id: "cx-g20", flightNo: "CX937", name: "G20", category: "常规", qualifiedStaffIds: [supervisor!.id, repeated!.id] }
+    ];
+    state.history = ["2026-10-20", "2026-10-22"].map((date, index) => ({
+      id: `repeated-g20-${index}`, date, flightNo: "CX937", position: "G20", staffId: repeated!.id, staffName: repeated!.name,
+      startTime: "08:30", endTime: "10:30", workHours: 2, fatiguePoints: 1, remark: ""
+    }));
+
+    const assignments = generateSchedule(state, "2026-10-24").assignments;
+    expect(assignments.find((item) => item.positionRuleId === "ke-supervisor")?.staffId).toBe(supervisor!.id);
+    expect(assignments.find((item) => item.positionRuleId === "ke-counter")?.supervisorSourceAssignmentId).toBeTruthy();
+    expect(assignments.find((item) => item.positionRuleId === "cx-g20")?.staffId).toBe(repeated!.id);
+    expect(assignments.find((item) => item.positionRuleId === "cx-g20")?.decisionTrace).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        ruleId: "position-frequency-review",
+        outcome: "fallback",
+        message: expect.stringContaining("值班或KE166特殊锁定")
+      }),
+      expect.objectContaining({ ruleId: "position-rotation", outcome: "fallback" })
+    ]));
   });
 });

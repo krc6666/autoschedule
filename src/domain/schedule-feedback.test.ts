@@ -10,8 +10,8 @@ describe("schedule feedback", () => {
     const state = createDefaultState();
     state.assignments = generateSchedule(state, "2026-07-20").assignments;
     const feedback = buildScheduleFeedback(state, "2026-07-20");
-    expect(feedback).toHaveLength(8);
-    expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "负荷均衡", "航班衔接", "12点前岗位完整性", "连续高负荷", "上一工作日晚班", "分队长督导补缺", "值班与轮值"]);
+    expect(feedback).toHaveLength(11);
+    expect(feedback.map((item) => item.label)).toEqual(["人员覆盖", "负荷均衡", "航班衔接", "12点前岗位完整性", "连续高负荷", "同岗频率均衡", "连续轮岗复核", "上一工作日晚班人员跟踪", "本班末班人员预告", "分队长督导补缺", "值班与轮值"]);
     expect(feedback.slice(0, 3).every((item) => item.group === "flight-staff")).toBe(true);
     expect(feedback.slice(3).every((item) => item.group === "rule-execution")).toBe(true);
     expect(feedback.every((item) => ["已执行", "需复核", "无基准"].includes(item.status))).toBe(true);
@@ -84,6 +84,28 @@ describe("schedule feedback", () => {
     expect(feedback.text).toContain("KE166/H03");
     expect(feedback.text).toContain("早班岗位完整性优先");
     expect(feedback.text).toContain("已超保护仍安排");
+  });
+
+  it("reports both previous-shift follow-up and the current late-shift protection list", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.staff = [person];
+    state.flights = [{ id: "late", flightNo: "TR121", startTime: "21:55", endTime: "23:55", bookedPassengers: 100, positions: [], remark: "" }];
+    state.assignments = [{
+      id: "today", flightId: "late", flightNo: "TR121", positionRuleId: null, position: "H02",
+      staffId: person.id, staffName: person.name, startTime: "21:55", endTime: "23:55", workHours: 2,
+      fatiguePoints: 8, remark: "一号", manualRemark: "", status: "assigned"
+    }];
+    state.history = [{
+      id: "previous", date: "2026-07-18", flightNo: "TR121", position: "H04", staffId: person.id, staffName: person.name,
+      startTime: "21:55", endTime: "23:55", workHours: 2, fatiguePoints: 7, remark: "申报"
+    }];
+
+    const feedback = buildScheduleFeedback(state, "2026-07-20");
+    expect(feedback.find((item) => item.key === "previous-late")?.text).toContain("上一班末班高负荷");
+    expect(feedback.find((item) => item.key === "previous-late")?.text).toContain("今日最早TR121/H02、最晚TR121/H02");
+    expect(feedback.find((item) => item.key === "current-late")?.text).toContain(`${person.name} TR121/H02（8点）`);
+    expect(feedback.find((item) => item.key === "current-late")?.text).toContain("下个工作日需优先减负");
   });
 
   it("explains whether the duty person received a preferred latest-flight position", () => {

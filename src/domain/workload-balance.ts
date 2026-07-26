@@ -28,6 +28,26 @@ export interface WorkloadBalanceMetrics {
   summary: string;
 }
 
+export interface WorkloadBalancePriority {
+  violatesConfiguredTarget: boolean;
+  todayHoursExcess: number;
+  rollingHoursExcess: number;
+  todayFatigueExcess: number;
+  todayHoursSpread: number;
+  rollingHoursSpread: number;
+  todayFatigueSpread: number;
+}
+
+const EMPTY_WORKLOAD_PRIORITY: WorkloadBalancePriority = {
+  violatesConfiguredTarget: false,
+  todayHoursExcess: 0,
+  rollingHoursExcess: 0,
+  todayFatigueExcess: 0,
+  todayHoursSpread: 0,
+  rollingHoursSpread: 0,
+  todayFatigueSpread: 0
+};
+
 function operationalRange(flight: Pick<Flight, "startTime" | "endTime">): [number, number] | null {
   const start = timeToMinutes(flight.startTime);
   let end = timeToMinutes(flight.endTime);
@@ -151,7 +171,7 @@ export function evaluateWorkloadBalance(state: AppState, date: string, assignmen
   return { enabled, ...pressure, workHoursDifference, rollingWorkHoursDifference, todayFatigueDifference, withinConfiguredTargets, summary };
 }
 
-export function workloadBalanceCost(
+export function workloadBalancePriority(
   person: Staff,
   assignments: Assignment[],
   state: AppState,
@@ -159,25 +179,11 @@ export function workloadBalanceCost(
   targetFatigue: number,
   dutyStaffId: string | null,
   date: string,
-  pressure = analyzeWorkloadPressure(state)
-): number {
-  if (!state.settings.workloadBalanceEnabled) return 0;
+): WorkloadBalancePriority {
+  if (!state.settings.workloadBalanceEnabled) return EMPTY_WORKLOAD_PRIORITY;
   const loads = snapshots(state, assignments, date, dutyStaffId);
   const current = loads.find((load) => load.id === person.id);
-  if (!current || !loads.length) return 0;
-  if (pressure.pressure === "宽松" || state.flights.length < 4) {
-    const nextToday = current.todayHours + targetHours;
-    const nextRolling = current.rollingHours + current.todayHours + targetHours;
-    const minimumToday = Math.min(...loads.map((load) => load.todayHours));
-    const minimumRolling = Math.min(...loads.map((load) => load.rollingHours + load.todayHours));
-    const todayExcess = Math.max(0, nextToday - minimumToday);
-    const rollingExcess = Math.max(0, nextRolling - minimumRolling);
-    const configuredHoursTarget = Math.max(0.5, state.settings.maxWorkHoursDifference);
-    const rollingTarget = configuredHoursTarget + Math.max(0, state.settings.historyWindowDays / 2);
-    return (Math.max(0, todayExcess - configuredHoursTarget) / configuredHoursTarget
-      + Math.max(0, rollingExcess - rollingTarget) / rollingTarget) * 10000;
-  }
-  const intensity = pressure.pressure === "密集" ? 4 : pressure.pressure === "紧张" ? 1.5 : 0.35;
+  if (!current || !loads.length) return EMPTY_WORKLOAD_PRIORITY;
   const configuredHoursTarget = Math.max(0.5, state.settings.maxWorkHoursDifference);
   const rollingTarget = configuredHoursTarget + Math.max(0, state.settings.historyWindowDays / 2);
   const configuredFatigueTarget = Math.max(0.5, state.settings.maxTodayFatigueDifference);
@@ -190,11 +196,18 @@ export function workloadBalanceCost(
   const todaySpread = spread(projected.map((load) => load.today));
   const rollingSpread = spread(projected.map((load) => load.rolling));
   const fatigueSpread = spread(projected.map((load) => load.fatigue));
-  const hardExcess = Math.max(0, todaySpread - configuredHoursTarget) / configuredHoursTarget
-    + Math.max(0, rollingSpread - rollingTarget) / rollingTarget
-    + Math.max(0, fatigueSpread - configuredFatigueTarget) / configuredFatigueTarget;
-  return hardExcess * 10000 * intensity
-    + (todaySpread / configuredHoursTarget
-      + rollingSpread / rollingTarget
-      + fatigueSpread / configuredFatigueTarget * (pressure.pressure === "密集" ? 1.5 : 1)) * intensity;
+  const todayHoursExcess = Math.max(0, todaySpread - configuredHoursTarget);
+  const rollingHoursExcess = Math.max(0, rollingSpread - rollingTarget);
+  const pressure = analyzeWorkloadPressure(state);
+  const compareWithinTargets = state.flights.length >= 4 && pressure.pressure !== "宽松";
+  const todayFatigueExcess = compareWithinTargets ? Math.max(0, fatigueSpread - configuredFatigueTarget) : 0;
+  return {
+    violatesConfiguredTarget: todayHoursExcess > 0 || rollingHoursExcess > 0 || todayFatigueExcess > 0,
+    todayHoursExcess,
+    rollingHoursExcess,
+    todayFatigueExcess,
+    todayHoursSpread: compareWithinTargets ? todaySpread : 0,
+    rollingHoursSpread: compareWithinTargets ? rollingSpread : 0,
+    todayFatigueSpread: compareWithinTargets ? fatigueSpread : 0
+  };
 }

@@ -1,5 +1,6 @@
 import type { AppState } from "../model";
 import { escapeHtml } from "../utils";
+import { SCHEDULING_STAGE_LABELS, SCHEDULING_STAGE_ORDER } from "../domain/scheduling-policy";
 
 function policyState(enabled: boolean, mode: "prefer" | "forbid"): string {
   if (!enabled) return "已停用";
@@ -50,7 +51,9 @@ function supervisorCoverageRows(state: AppState): string {
 }
 
 function ruleLedgerRows(state: AppState): string {
+  const stageOrder = SCHEDULING_STAGE_ORDER.map((stage) => SCHEDULING_STAGE_LABELS[stage]).join(" → ");
   const rows = [
+    ["R00", "总执行顺序", "分阶段顺序判定", stageOrder, "中央规则合同；前一阶段完成后才进入下一阶段"],
     ["R01", "硬约束", "人员可用状态", "仅状态为正常的人员可参与排班；状态变化后立即重新计算当前排班", "人员信息"],
     ["R02", "硬约束", "岗位资质硬约束", "常规与行政支援人员均须具备已配置岗位资质", "岗位规则 / 资质人员"],
     ["R03", "硬约束", "夜班能力", `与 ${state.settings.nightStart}-${state.settings.nightEnd} 重叠时必须具备夜班能力`, "人员信息 / 排班约束"],
@@ -65,17 +68,18 @@ function ruleLedgerRows(state: AppState): string {
     ["R12", "分配优先级", "特殊岗位衔接", `${state.settings.positionTransitionPolicies.filter((item) => item.enabled).length} 条启用；12点前无人替代时可突破严格限制并反馈留痕`, "规则 / 岗位衔接"],
     ["R13", "分配优先级", "高负荷衔接保护", state.settings.highLoadProtectionEnabled ? `疲劳点 ≥ ${state.settings.highLoadFatigueThreshold} 或带备注，恢复 ${state.settings.highLoadRecoveryMinutes} 分钟` : "已停用", "规则"],
     ["R14", "分配优先级", "滚动负荷上限", state.settings.rollingLoadProtectionEnabled ? `${state.settings.rollingLoadWindowMinutes} 分钟内投放新岗位后不超过 ${state.settings.rollingLoadMaxFatigue} 疲劳点` : "已停用", "规则"],
-    ["R15", "分配优先级", "同岗轮换", state.settings.positionRotationEnabled ? `回看 ${state.settings.positionRotationLookbackDays} 天，同航班同岗位优先更换合格人员` : "已停用", "规则 / 历史"],
-    ["R16", "分配优先级", "跨工作日晚班减负", state.settings.lateShiftRecoveryEnabled ? `最近工作日最后一批晚班高负荷人员，下个工作日晚班岗位负荷优先不超过 ${state.settings.nextDayLateMaxFatigue} 点` : "已停用", "规则 / 历史"],
-    ["R17", "分配优先级", "历史疲劳均衡", `历史 ${state.settings.historyWindowDays} 天 + 当日岗位疲劳 + 连续工作惩罚`, "排班约束 / 历史"],
-    ["R18", "岗位调整", "引导复用与机动督导", `引导复用同航班常规人员；KE166明确配置机动督导时，在常规及行政支援模式下均先保留一名机动督导资质人员到允许兼任的常规岗位，再同步顶部督导；自动兼任和人工拖拽统一执行 ${state.settings.mobileSupervisorCoverageRules.filter((item) => item.enabled).length} 条兼任范围规则`, "规则 / 机动督导兼任范围"],
-    ["R19", "岗位衔接", "分流提前撤岗", "下午及晚间按岗位提前撤岗分钟释放人员，早班不适用", "岗位规则 / 提前撤岗"],
-    ["R20", "稳定排序", "同分人员顺序", "规则风险、在岗覆盖、稀缺预留和疲劳相同时按人员编号稳定排序", "人员编号"],
-    ["R21", "岗位完整性", "常规岗位空缺下沉", "自动排班完成后重新匹配同航班合格人员，保持已填岗位数不下降，优先填满上方常规岗位并将无法避免的空缺尽量沉底", "岗位顺序 / 岗位资质"],
-    ["R22", "值班落位", "值班岗位有序优先", `按启用顺序依次尝试航班号与岗位关键词；均不可执行时回退到最晚两档的一号、督导、申报、送资料`, "规则 / 值班任务规则"],
-    ["R23", "月度统计", "轻松班次统计", `最后航班截载严格早于 ${state.settings.earlyDepartureCutoffTime} 计提前下班；${state.settings.afternoonRestStartTime}-${state.settings.afternoonRestEndTime} 无航班重叠计下午无航班`, "规则 / 排班结果"],
-    ["R24", "硬约束", "机动督导兼任范围", "禁止规则优先；配置允许规则后，只能兼任命中允许项且未命中禁止项的岗位", "规则 / 机动督导兼任范围"],
-    ["R25", "分配优先级", "分队长督导补缺", `人员信息中标记的 ${state.staff.filter((person) => person.staffType === "常规" && person.teamLeader).length} 名分队长仅作为督导岗位兜底；有其他满足硬约束的非分队长候选时优先使用其他人`, "人员信息 / 分队长"]
+    ["R15", "人员保护与公平", "同岗频率均衡与安全重排", state.settings.positionRotationEnabled ? "严格按航班号+岗位统计；先比较本月累计、再比较最近6个归档工作日；累计至少2次时依次尝试直接接替、两人交换和最多三人安全重排" : "已停用", "规则 / 历史"],
+    ["R16", "排班后轮岗复核", "连续轮岗", state.settings.positionRotationEnabled ? "检查最近两个已归档工作日；优先两人交换，必要时最多三人闭环交换" : "已停用", "规则 / 历史"],
+    ["R17", "分配优先级", "跨工作日晚班减负", state.settings.lateShiftRecoveryEnabled ? `最近工作日最后一批晚班高负荷人员，下个工作日晚班岗位负荷优先不超过 ${state.settings.nextDayLateMaxFatigue} 点` : "已停用", "规则 / 历史"],
+    ["R18", "分配优先级", "历史疲劳均衡", `历史 ${state.settings.historyWindowDays} 天 + 当日岗位疲劳 + 连续工作惩罚`, "排班约束 / 历史"],
+    ["R19", "岗位调整", "引导复用与机动督导", `引导复用同航班常规人员；KE166明确配置机动督导时，在常规及行政支援模式下均先保留一名机动督导资质人员到允许兼任的常规岗位，再同步顶部督导；自动兼任和人工拖拽统一执行 ${state.settings.mobileSupervisorCoverageRules.filter((item) => item.enabled).length} 条兼任范围规则`, "规则 / 机动督导兼任范围"],
+    ["R20", "岗位衔接", "分流提前撤岗", "下午及晚间按岗位提前撤岗分钟释放人员，早班不适用", "岗位规则 / 提前撤岗"],
+    ["R21", "稳定排序", "同分人员顺序", "规则风险、在岗覆盖、稀缺预留和疲劳相同时按人员编号稳定排序", "人员编号"],
+    ["R22", "岗位完整性", "常规岗位空缺下沉", "自动排班完成后重新匹配同航班合格人员，保持已填岗位数不下降，优先填满上方常规岗位并将无法避免的空缺尽量沉底", "岗位顺序 / 岗位资质"],
+    ["R23", "值班落位", "值班岗位有序优先", `按启用顺序依次尝试航班号与岗位关键词；均不可执行时回退到最晚两档的一号、督导、申报、送资料`, "规则 / 值班任务规则"],
+    ["R24", "月度统计", "轻松班次统计", `最后航班截载严格早于 ${state.settings.earlyDepartureCutoffTime} 计提前下班；${state.settings.afternoonRestStartTime}-${state.settings.afternoonRestEndTime} 无航班重叠计下午无航班`, "规则 / 排班结果"],
+    ["R25", "硬约束", "机动督导兼任范围", "禁止规则优先；配置允许规则后，只能兼任命中允许项且未命中禁止项的岗位", "规则 / 机动督导兼任范围"],
+    ["R26", "分配优先级", "分队长督导补缺", `人员信息中标记的 ${state.staff.filter((person) => person.staffType === "常规" && person.teamLeader).length} 名分队长仅作为督导岗位兜底；有其他满足硬约束的非分队长候选时优先使用其他人`, "人员信息 / 分队长"]
   ];
   return rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(String(cell))}</td>`).join("")}</tr>`).join("");
 }
@@ -161,14 +165,12 @@ export function renderSchedulePolicy(state: AppState): string {
       </details>
 
       <details class="policy-rule-card" data-policy-card="rotation">
-        <summary><span><strong>同岗轮换</strong><small>${policyState(state.settings.positionRotationEnabled, state.settings.positionRotationMode)} · 避免长期固定岗位</small></span><i class="bi bi-chevron-down"></i></summary>
+        <summary><span><strong>同岗频率均衡与连续轮岗复核</strong><small>${state.settings.positionRotationEnabled ? "已启用" : "已停用"} · 避免长期固定岗位</small></span><i class="bi bi-chevron-down"></i></summary>
         <div class="policy-rule-content">
-          <div class="schedule-policy-controls policy-controls-three">
-            <label class="policy-switch"><span><strong>启用规则</strong><small>依据已归档排班判断近期重复</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-rotation-enabled" type="checkbox" ${state.settings.positionRotationEnabled ? "checked" : ""}></span></label>
-            <label class="form-label">轮换回看天数<input class="form-control" id="policy-rotation-lookback-days" type="number" min="1" max="90" step="1" value="${state.settings.positionRotationLookbackDays}"></label>
-            <label class="form-label">执行强度<select class="form-select" id="policy-rotation-mode"><option value="prefer" ${state.settings.positionRotationMode === "prefer" ? "selected" : ""}>优先轮换（无人可换时兜底）</option><option value="forbid" ${state.settings.positionRotationMode === "forbid" ? "selected" : ""}>强轮换（无人可换时仍回填）</option></select></label>
+          <div class="schedule-policy-controls">
+            <label class="policy-switch"><span><strong>启用规则</strong><small>严格按航班号+岗位统计；先比较本月累计，再比较最近 6 个已归档工作日；累计至少 2 次时进入安全重排</small></span><span class="form-check form-switch m-0"><input class="form-check-input" id="policy-rotation-enabled" type="checkbox" ${state.settings.positionRotationEnabled ? "checked" : ""}></span></label>
           </div>
-          <div class="policy-expression"><span>判定</span><strong>最近 ${state.settings.positionRotationLookbackDays} 天已承担同航班同岗位</strong><i class="bi bi-arrow-right"></i><strong>优先选择其他合格人员；全部重复时仍安排</strong></div>
+          <div class="policy-expression"><span>生成阶段</span><strong>本月累计较少者优先，同数再比较最近 6 个归档工作日</strong><i class="bi bi-arrow-right"></i><strong>直接接替 → 同航班/重叠航班两人交换 → 最多三人安全重排</strong><i class="bi bi-arrow-right"></i><span>最后复核连续承担</span></div>
         </div>
       </details>
 

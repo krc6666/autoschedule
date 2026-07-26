@@ -1,10 +1,12 @@
 import { getDutyRosterForDate } from "../domain/duty-roster";
+import { assignmentUsesUnavailableStaff } from "../domain/schedule-state";
 import type { AppState, HistoryRecord } from "../model";
 import { combinedAssignmentRemark, createId } from "../utils";
 
 export function currentScheduleHistory(state: AppState, date: string): HistoryRecord[] {
   const records = state.assignments
     .filter((item) => item.status === "assigned" && item.staffName)
+    .filter((item) => !assignmentUsesUnavailableStaff(state, item))
     .map((item) => ({
       id: createId("history"), date, flightNo: item.flightNo, position: item.position,
       staffId: item.staffId ?? "", staffName: item.staffName, startTime: item.startTime, endTime: item.endTime,

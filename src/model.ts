@@ -70,9 +70,37 @@ export interface Assignment {
   manualRemark: string;
   status: "assigned" | "unfilled" | "manual";
   systemNotes?: string[];
+  decisionTrace?: SchedulingDecision[];
   supervisorSourceAssignmentId?: string;
   layoutGroup?: "primary" | "bottom";
   layoutIndex?: number;
+}
+
+export type SchedulingRuleStage = "hard-constraint" | "reserved-assignment" | "coverage" | "protection" | "stable-order" | "post-schedule-review";
+
+export type SchedulingRuleId =
+  | "staff-eligibility"
+  | "duty-position"
+  | "ke166-supervisor"
+  | "position-transition"
+  | "scarce-qualification"
+  | "staff-coverage"
+  | "late-shift-recovery"
+  | "rolling-load"
+  | "high-load-recovery"
+  | "position-frequency"
+  | "position-frequency-review"
+  | "position-rotation"
+  | "workload-balance"
+  | "historical-fatigue"
+  | "staff-id"
+  | "position-compaction";
+
+export interface SchedulingDecision {
+  ruleId: SchedulingRuleId;
+  stage: SchedulingRuleStage;
+  outcome: "selected" | "blocked" | "fallback" | "preserved";
+  message: string;
 }
 
 export interface PositionTransitionPolicy {
@@ -128,8 +156,6 @@ export interface ScheduleSettings {
   rollingLoadMaxFatigue: number;
   rollingLoadMode: "prefer" | "forbid";
   positionRotationEnabled: boolean;
-  positionRotationLookbackDays: number;
-  positionRotationMode: "prefer" | "forbid";
   lateShiftRecoveryEnabled: boolean;
   lateShiftStartTime: string;
   lateShiftLatestWindowMinutes: number;
@@ -147,7 +173,7 @@ export interface ScheduleSettings {
 }
 
 export interface AppState {
-  version: 2;
+  version: 3;
   staff: Staff[];
   flights: Flight[];
   templates: FlightTemplate[];

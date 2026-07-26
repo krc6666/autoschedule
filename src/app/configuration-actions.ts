@@ -240,10 +240,8 @@ export function updateConfigurationField(
     if (field === "category") {
       if (value === "分流" && !rule.earlyReleaseMinutes) rule.earlyReleaseMinutes = 60;
       if (value !== "分流") rule.earlyReleaseMinutes = 0;
-      if (value === "引导") {
-        rule.manual = false;
-        rule.qualifiedStaffIds = [];
-      }
+      if (value === "引导" || value === "机动督导") rule.manual = false;
+      if (value === "引导") rule.qualifiedStaffIds = [];
     }
     if (field === "name" || field === "flightNo") state.positionRules = orderPositionRules(state.positionRules);
     clearSchedule(state);

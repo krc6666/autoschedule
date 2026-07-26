@@ -131,7 +131,7 @@ export const defaultPositionRules: PositionRule[] = [
 
 export function createDefaultState(): AppState {
   return {
-    version: 2,
+    version: 3,
     staff: structuredClone(defaultStaff),
     flights: structuredClone(defaultFlights),
     templates: defaultFlights.map(({ id, bookedPassengers: _bookedPassengers, ...flight }) => ({
@@ -160,8 +160,6 @@ export function createDefaultState(): AppState {
       rollingLoadMaxFatigue: 8,
       rollingLoadMode: "prefer",
       positionRotationEnabled: true,
-      positionRotationLookbackDays: 3,
-      positionRotationMode: "prefer",
       lateShiftRecoveryEnabled: true,
       lateShiftStartTime: "20:00",
       lateShiftLatestWindowMinutes: 180,
@@ -169,7 +167,7 @@ export function createDefaultState(): AppState {
       lateShiftRecoveryMode: "prefer",
       dutyFatiguePoints: 12,
       dutyPositionPriorities: [
-        { id: "duty-priority-tr121-one", flightNo: "TR121", positionKeyword: "一号", enabled: true },
+        { id: "duty-priority-tr121-h02", flightNo: "TR121", positionKeyword: "H02", enabled: true },
         { id: "duty-priority-tw616-one", flightNo: "TW616", positionKeyword: "一号", enabled: true }
       ],
       mobileSupervisorCoverageRules: [

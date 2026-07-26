@@ -1,4 +1,4 @@
-import type { AppState, Assignment, HistoryRecord } from "../model";
+import type { AppState, Assignment } from "../model";
 import { buildStaffLoads, recentHistory } from "./fatigue";
 import { dutyFatigueByStaff, getDutyRosterForDate, getMonthlyDutyRoster, getMonthlyDutyRosterStats } from "./duty-roster";
 import { configuredDutyPositionPriority, dutyLatePositionPriority, isDutyMorningFlight, isHighLoadPosition, isInFinalLateBatch, isPreNoonFlight, isSupervisorPosition } from "./scheduler";
@@ -10,7 +10,7 @@ export type ScheduleFeedbackGroup = "flight-staff" | "rule-execution";
 export type ScheduleFeedbackStatus = "已执行" | "需复核" | "无基准";
 
 export interface ScheduleFeedbackItem {
-  key: "coverage" | "fatigue" | "connections" | "morning-priority" | "high-load" | "previous-late" | "team-leader-supervisor" | "duty-roster";
+  key: "coverage" | "fatigue" | "connections" | "morning-priority" | "high-load" | "position-frequency-review" | "position-rotation" | "previous-late" | "current-late" | "team-leader-supervisor" | "duty-roster";
   group: ScheduleFeedbackGroup;
   label: string;
   level: ScheduleFeedbackLevel;
@@ -194,32 +194,88 @@ function highLoadFeedback(state: AppState): ScheduleFeedbackItem {
 function previousLateFeedback(state: AppState, date: string): ScheduleFeedbackItem {
   const recent = recentHistory(state.history, date, 3);
   const previousDate = recent.map((record) => record.date).sort().at(-1);
-  if (!previousDate) return feedbackItem("rule-execution", "previous-late", "上一工作日晚班", "info", "暂无最近工作日归档，无法核对跨工作日晚班减负。");
+  if (!previousDate) return feedbackItem("rule-execution", "previous-late", "上一工作日晚班人员跟踪", "info", "暂无最近工作日归档，无法核对跨工作日晚班减负。");
   const previousDay = recent.filter((record) => record.date === previousDate);
   const protectedRecords = previousDay
     .filter((record) => isInFinalLateBatch(record, previousDay, state))
     .filter((record) => isHighLoadPosition(record.fatiguePoints, record.remark, state));
   const protectedIds = [...new Set(protectedRecords.map((record) => record.staffId))];
-  if (!protectedIds.length) return feedbackItem("rule-execution", "previous-late", "上一工作日晚班", "ok", `${previousDate} 最后一批晚班没有高负荷人员需要跨工作日保护。`);
-  const currentEarly = state.assignments
-    .filter((assignment) => assignment.status === "assigned" && assignment.staffId && assignment.workHours > 0)
-    .filter((assignment) => protectedIds.includes(assignment.staffId!))
-    .filter((assignment) => isDutyMorningFlight({ startTime: assignment.startTime }, state));
-  if (currentEarly.length) {
-    const details = currentEarly.map((assignment) => `${assignment.staffName} ${assignment.flightNo}/${assignment.position}`).join("、");
-    return feedbackItem("rule-execution", "previous-late", "上一工作日晚班", "attention", `${details}由上一工作日晚班高负荷人员承担早班；早班岗位完整性优先，已超保护仍安排。`);
+  if (!protectedIds.length) return feedbackItem("rule-execution", "previous-late", "上一工作日晚班人员跟踪", "ok", `${previousDate} 最后一批晚班没有高负荷人员需要跨工作日保护。`);
+  const previousDetails = protectedIds.map((staffId) => {
+    const own = protectedRecords.filter((record) => record.staffId === staffId);
+    return `${own[0]?.staffName ?? staffId} ${own.map((record) => `${record.flightNo}/${record.position}（${record.fatiguePoints}点）`).join("、")}`;
+  }).join("；");
+  let needsReview = false;
+  const currentDetails = protectedIds.map((staffId) => {
+    const own = state.assignments
+      .filter((assignment) => assignment.staffId === staffId && assignment.status === "assigned" && assignment.workHours > 0)
+      .sort((left, right) => operationalStart(left.startTime, state) - operationalStart(right.startTime, state));
+    const name = protectedRecords.find((record) => record.staffId === staffId)?.staffName ?? staffId;
+    if (!own.length) return `${name}今日未安排实际岗位，已休整`;
+    const earliest = own[0]!;
+    const latest = own.at(-1)!;
+    const fatigue = own.reduce((sum, assignment) => sum + assignment.fatiguePoints, 0);
+    const early = own.some((assignment) => isDutyMorningFlight({ startTime: assignment.startTime }, state));
+    const lateOverload = own.some((assignment) => isInFinalLateBatch(assignment, state.flights, state)
+      && assignment.fatiguePoints > state.settings.nextDayLateMaxFatigue);
+    needsReview ||= early || lateOverload;
+    const outcome = lateOverload
+      ? `仍承担末班高负荷岗位，超过 ${state.settings.nextDayLateMaxFatigue} 点保护上限，已超保护仍安排`
+      : early
+        ? "早班岗位完整性优先，已超保护仍安排"
+        : "未再次承担超限末班岗位";
+    return `${name}今日最早${earliest.flightNo}/${earliest.position}、最晚${latest.flightNo}/${latest.position}，岗位疲劳${fatigue}点（${outcome}）`;
+  }).join("；");
+  return feedbackItem(
+    "rule-execution",
+    "previous-late",
+    "上一工作日晚班人员跟踪",
+    needsReview ? "attention" : "ok",
+    `${previousDate}上一班末班高负荷：${previousDetails}。今日安排：${currentDetails}。`
+  );
+}
+
+function positionRotationFeedback(state: AppState): ScheduleFeedbackItem {
+  const decisions = state.assignments.flatMap((assignment) => assignment.decisionTrace ?? [])
+    .filter((decision) => decision.ruleId === "position-rotation");
+  const unresolved = [...new Map(decisions.filter((decision) => decision.outcome === "fallback").map((decision) => [decision.message, decision])).values()];
+  if (unresolved.length) {
+    return feedbackItem("rule-execution", "position-rotation", "连续轮岗复核", "attention", unresolved.map((decision) => decision.message).join("；"));
   }
+  const fulfilled = [...new Map(decisions.filter((decision) => decision.outcome === "selected").map((decision) => [decision.message, decision])).values()];
+  if (fulfilled.length) {
+    return feedbackItem("rule-execution", "position-rotation", "连续轮岗复核", "ok", fulfilled.map((decision) => decision.message).join("；"));
+  }
+  return feedbackItem("rule-execution", "position-rotation", "连续轮岗复核", "info", "没有触发连续轮岗复核；上一工作班未出现同一人员承担相同航班与岗位的连续记录。");
+}
+
+function positionFrequencyReviewFeedback(state: AppState): ScheduleFeedbackItem {
+  const decisions = state.assignments.flatMap((assignment) => assignment.decisionTrace ?? [])
+    .filter((decision) => decision.ruleId === "position-frequency-review");
+  const unresolved = [...new Map(decisions.filter((decision) => decision.outcome === "fallback").map((decision) => [decision.message, decision])).values()];
+  if (unresolved.length) {
+    return feedbackItem("rule-execution", "position-frequency-review", "同岗频率均衡", "attention", unresolved.map((decision) => decision.message).join("；"));
+  }
+  const fulfilled = [...new Map(decisions.filter((decision) => decision.outcome === "selected").map((decision) => [decision.message, decision])).values()];
+  if (fulfilled.length) {
+    return feedbackItem("rule-execution", "position-frequency-review", "同岗频率均衡", "ok", fulfilled.map((decision) => decision.message).join("；"));
+  }
+  return feedbackItem("rule-execution", "position-frequency-review", "同岗频率均衡", "info", "当前自然月与最近 6 个已归档工作日未出现累计至少 2 次且需要安全重排的同岗高频安排。");
+}
+
+function currentLateFeedback(state: AppState): ScheduleFeedbackItem {
   const currentLate = state.assignments
     .filter((assignment) => assignment.status === "assigned" && assignment.staffId && assignment.workHours > 0)
-    .filter((assignment) => isInFinalLateBatch(assignment, state.flights, state));
-  const violations = currentLate.filter((assignment) => protectedIds.includes(assignment.staffId!)
-    && assignment.fatiguePoints > state.settings.nextDayLateMaxFatigue);
-  if (violations.length) {
-    const details = violations.map((assignment) => `${assignment.staffName} ${assignment.flightNo}/${assignment.position}`).join("、");
-    return feedbackItem("rule-execution", "previous-late", "上一工作日晚班", "attention", `${details}仍承担末班高负荷岗位，超过 ${state.settings.nextDayLateMaxFatigue} 点；为保证岗位完整性，已超保护仍安排。`);
+    .filter((assignment) => isInFinalLateBatch(assignment, state.flights, state))
+    .filter((assignment) => isHighLoadPosition(assignment.fatiguePoints, assignment.remark, state));
+  if (!state.flights.length) {
+    return feedbackItem("rule-execution", "current-late", "本班末班人员预告", "info", "当天没有航班，无法形成末班人员基准。");
   }
-  const names = protectedRecords.map((record: HistoryRecord) => record.staffName);
-  return feedbackItem("rule-execution", "previous-late", "上一工作日晚班", "ok", `${previousDate} 的${conciseNames(names)}本次均未承担超过 ${state.settings.nextDayLateMaxFatigue} 点的末班岗位，减负规则已落实。`);
+  if (!currentLate.length) {
+    return feedbackItem("rule-execution", "current-late", "本班末班人员预告", "ok", "本班最后一批航班没有高负荷岗位，下个工作日无需新增跨日晚班保护人员。");
+  }
+  const details = currentLate.map((assignment) => `${assignment.staffName} ${assignment.flightNo}/${assignment.position}（${assignment.fatiguePoints}点）`).join("、");
+  return feedbackItem("rule-execution", "current-late", "本班末班人员预告", "ok", `本班最后一批高负荷人员：${details}；${conciseNames(currentLate.map((assignment) => assignment.staffName))}下个工作日需优先减负。`);
 }
 
 function teamLeaderSupervisorFeedback(state: AppState): ScheduleFeedbackItem {
@@ -343,7 +399,11 @@ function dutyRosterFeedback(state: AppState, date: string): ScheduleFeedbackItem
     return feedbackItem("rule-execution", "duty-roster", "值班与轮值", level, `CX航前${cxName}；${dutyDescription}安排在${placement}，未命中已配置优先项，按回退逻辑落位并符合值班晚撤规则；${morningDutyEvidence}；备勤${standbyDetails}${standbyNote}。${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`);
   }
   const lastDuty = [...dutyAssignments].sort((left, right) => operationalStart(right.startTime, state) - operationalStart(left.startTime, state))[0]!;
-  return feedbackItem("rule-execution", "duty-roster", "值班与轮值", "attention", `CX航前${cxName}；${dutyDescription}未满足值班晚撤规则：实际最晚只排到 ${lastDuty.flightNo}/${lastDuty.position}，应落在最晚或倒数第二晚航班的一号、督导、申报或送资料岗位，请复核资质、夜班能力或严格限制；${morningDutyEvidence}；备勤${standbyDetails}。${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`);
+  const blockedDecision = state.assignments
+    .flatMap((assignment) => assignment.decisionTrace ?? [])
+    .find((decision) => decision.ruleId === "duty-position" && decision.outcome === "blocked");
+  const reason = blockedDecision?.message ?? "没有满足目标岗位的硬约束";
+  return feedbackItem("rule-execution", "duty-roster", "值班与轮值", "attention", `CX航前${cxName}；${dutyDescription}未满足值班晚撤规则：实际最晚只排到 ${lastDuty.flightNo}/${lastDuty.position}；目标岗位未落位原因：${reason}；${morningDutyEvidence}；备勤${standbyDetails}。${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`);
 }
 
 export function buildScheduleFeedback(state: AppState, date: string): ScheduleFeedbackItem[] {
@@ -353,7 +413,10 @@ export function buildScheduleFeedback(state: AppState, date: string): ScheduleFe
     connectionFeedback(state),
     morningPriorityFeedback(state),
     highLoadFeedback(state),
+    positionFrequencyReviewFeedback(state),
+    positionRotationFeedback(state),
     previousLateFeedback(state, date),
+    currentLateFeedback(state),
     teamLeaderSupervisorFeedback(state),
     dutyRosterFeedback(state, date)
   ];

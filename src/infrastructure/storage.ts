@@ -1,17 +1,18 @@
 import { createDefaultState } from "../defaults";
 import { removeUnavailableStaffAssignments } from "../domain/schedule-state";
 import { normalizeSupervisorAssignments } from "../domain/schedule-adjustment";
-import type { AppState, PositionRule } from "../model";
+import type { AppState, PositionRule, ScheduleSettings, SchedulingDecision } from "../model";
 import { orderPositionRules } from "../utils";
 
 export const STORAGE_KEY = "autoschedule.state.v1";
 
-type PersistedAppState = Omit<AppState, "version"> & { version: 1 | 2 };
+type PersistedSettings = Partial<ScheduleSettings>;
+type PersistedAppState = Omit<AppState, "version" | "settings"> & { version: 1 | 2 | 3; settings: PersistedSettings };
 
 function isState(value: unknown): value is PersistedAppState {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<PersistedAppState>;
-  return (candidate.version === 1 || candidate.version === 2)
+  return (candidate.version === 1 || candidate.version === 2 || candidate.version === 3)
     && Array.isArray(candidate.staff)
     && Array.isArray(candidate.flights)
     && Array.isArray(candidate.templates)
@@ -32,7 +33,7 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     const next: AppState = {
       ...fallback,
       ...parsed,
-      version: 2,
+      version: 3,
       settings: { ...fallback.settings, ...parsed.settings }
     };
     const persistedPolicies = Array.isArray(next.settings.positionTransitionPolicies)
@@ -56,8 +57,6 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     next.settings.rollingLoadMaxFatigue = Math.min(100, Math.max(0.5, Number(next.settings.rollingLoadMaxFatigue) || fallback.settings.rollingLoadMaxFatigue));
     next.settings.rollingLoadMode = next.settings.rollingLoadMode === "forbid" ? "forbid" : "prefer";
     next.settings.positionRotationEnabled = next.settings.positionRotationEnabled !== false;
-    next.settings.positionRotationLookbackDays = Math.min(90, Math.max(1, Math.round(Number(next.settings.positionRotationLookbackDays)) || fallback.settings.positionRotationLookbackDays));
-    next.settings.positionRotationMode = next.settings.positionRotationMode === "forbid" ? "forbid" : "prefer";
     next.settings.lateShiftRecoveryEnabled = next.settings.lateShiftRecoveryEnabled !== false;
     next.settings.lateShiftStartTime = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(next.settings.lateShiftStartTime)) ? String(next.settings.lateShiftStartTime) : fallback.settings.lateShiftStartTime;
     const lateShiftWindow = Number(next.settings.lateShiftLatestWindowMinutes);
@@ -73,9 +72,13 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
     next.settings.dutyPositionPriorities = persistedDutyPriorities
       .filter((item) => item && typeof item === "object")
       .map((item, index) => ({
-        id: String(item.id ?? "").trim() || `duty-priority-${index + 1}`,
+        id: parsed.version < 3 && String(item.flightNo ?? "").trim().toUpperCase() === "TR121" && String(item.positionKeyword ?? "").trim() === "一号"
+          ? "duty-priority-tr121-h02"
+          : String(item.id ?? "").trim() || `duty-priority-${index + 1}`,
         flightNo: String(item.flightNo ?? "").trim().toUpperCase(),
-        positionKeyword: String(item.positionKeyword ?? "").trim(),
+        positionKeyword: parsed.version < 3 && String(item.flightNo ?? "").trim().toUpperCase() === "TR121" && String(item.positionKeyword ?? "").trim() === "一号"
+          ? "H02"
+          : String(item.positionKeyword ?? "").trim(),
         enabled: item.enabled !== false
       }));
     const persistedSupervisorRules = Array.isArray(next.settings.mobileSupervisorCoverageRules)
@@ -139,7 +142,12 @@ export function loadState(storage: Pick<Storage, "getItem"> = localStorage): App
         ...assignment,
         supervisorSourceAssignmentId,
         manualRemark: assignment.manualRemark ?? "",
-        systemNotes: Array.isArray(assignment.systemNotes) ? assignment.systemNotes.map(String).filter(Boolean) : undefined
+        systemNotes: Array.isArray(assignment.systemNotes) ? assignment.systemNotes.map(String).filter(Boolean) : undefined,
+        decisionTrace: Array.isArray(assignment.decisionTrace)
+          ? assignment.decisionTrace.filter((decision): decision is SchedulingDecision => Boolean(
+            decision && typeof decision === "object" && typeof decision.ruleId === "string" && typeof decision.message === "string"
+          ))
+          : undefined
       };
       })
       .filter((assignment) => {

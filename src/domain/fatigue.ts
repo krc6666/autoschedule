@@ -17,6 +17,19 @@ export function recentHistory(records: HistoryRecord[], date: string, windowDays
   });
 }
 
+export function recentArchivedWorkdays(records: HistoryRecord[], date: string, workdayCount: number): HistoryRecord[] {
+  const target = isoDateToTime(date);
+  if (target === null) return [];
+  const dates = [...new Set(records
+    .map((record) => ({ date: record.date, timestamp: isoDateToTime(record.date) }))
+    .filter((item): item is { date: string; timestamp: number } => item.timestamp !== null && item.timestamp < target)
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .map((item) => item.date))]
+    .slice(0, Math.max(0, Math.round(workdayCount)));
+  const selected = new Set(dates);
+  return records.filter((record) => selected.has(record.date));
+}
+
 export function consecutiveWorkDays(records: HistoryRecord[], staffId: string, date: string): number {
   const dates = new Set(records.filter((record) => record.staffId === staffId).map((record) => record.date));
   const cursor = isoDateToTime(date);

@@ -6,7 +6,7 @@ import { loadState, saveState, STORAGE_KEY } from "./storage";
 describe("state persistence", () => {
   it("falls back to valid defaults for corrupt persisted data", () => {
     const state = loadState({ getItem: () => "not-json" });
-    expect(state.version).toBe(2);
+    expect(state.version).toBe(3);
     expect(state.staff.length).toBeGreaterThan(0);
     expect(state.positionRules.some((rule) => rule.category === "机动督导")).toBe(false);
   });
@@ -19,7 +19,7 @@ describe("state persistence", () => {
 
     const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
 
-    expect(loaded.version).toBe(2);
+    expect(loaded.version).toBe(3);
     expect(loaded.positionRules.some((rule) => rule.category === "机动督导")).toBe(false);
   });
 
@@ -56,6 +56,7 @@ describe("state persistence", () => {
   it("migrates personnel type, administrative mode, and scheduling policy defaults", () => {
     const state = createDefaultState();
     const legacy = JSON.parse(JSON.stringify(state));
+    legacy.version = 2;
     delete legacy.staff[0].staffType;
     delete legacy.staff[0].teamLeader;
     delete legacy.staff[0].cxPreflightQualified;
@@ -73,8 +74,6 @@ describe("state persistence", () => {
     delete legacy.settings.rollingLoadMaxFatigue;
     delete legacy.settings.rollingLoadMode;
     delete legacy.settings.positionRotationEnabled;
-    delete legacy.settings.positionRotationLookbackDays;
-    delete legacy.settings.positionRotationMode;
     delete legacy.settings.dutyFatiguePoints;
     delete legacy.settings.dutyPositionPriorities;
     delete legacy.settings.mobileSupervisorCoverageRules;
@@ -107,11 +106,9 @@ describe("state persistence", () => {
     expect(loaded.settings.rollingLoadMaxFatigue).toBe(8);
     expect(loaded.settings.rollingLoadMode).toBe("prefer");
     expect(loaded.settings.positionRotationEnabled).toBe(true);
-    expect(loaded.settings.positionRotationLookbackDays).toBe(3);
-    expect(loaded.settings.positionRotationMode).toBe("prefer");
     expect(loaded.settings.dutyFatiguePoints).toBe(12);
     expect(loaded.settings.dutyPositionPriorities).toMatchObject([
-      { flightNo: "TR121", positionKeyword: "一号", enabled: true },
+      { flightNo: "TR121", positionKeyword: "H02", enabled: true },
       { flightNo: "TW616", positionKeyword: "一号", enabled: true }
     ]);
     expect(loaded.settings.mobileSupervisorCoverageRules).toMatchObject([
