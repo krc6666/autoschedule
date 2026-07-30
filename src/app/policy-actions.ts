@@ -1,5 +1,21 @@
-import type { AppState, DutyPositionPriority, NextWorkdayRecoveryTarget } from "../model";
-import { createId, normalizeText } from "../utils";
+import type { AppState } from "../model";
+import type {
+  DutyPositionPriority,
+  LateShiftRecoveryPositionRule,
+  NextWorkdayRecoveryTarget,
+} from "../structured-policy-contract";
+import { applyScheduleSettingsPatch } from "../domain/schedule-settings";
+import { markActiveScheduleStale } from "../domain/schedule-lifecycle";
+import { createId, normalizeText, splitList } from "../utils";
+
+export type PolicyValue = string | number | boolean;
+export type PolicyEntity =
+  | "duty-priority"
+  | "recovery-target"
+  | "late-shift-recovery-position"
+  | "transition-policy"
+  | "supervisor-coverage";
+export type PolicyFieldUpdateResult = "not-policy" | "missing" | "saved";
 
 export interface SchedulePolicyInput {
   highLoadProtectionEnabled: boolean;
@@ -10,10 +26,11 @@ export interface SchedulePolicyInput {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
+  nextDutyRestProtectionEnabled: boolean;
   lateShiftRecoveryEnabled: boolean;
   lateShiftStartTime: string;
   lateShiftLatestWindowMinutes: number;
-  nextDayLateMaxFatigue: number;
+  teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
   workloadBalanceEnabled: boolean;
   maxWorkHoursDifference: number;
   maxTodayFatigueDifference: number;
@@ -23,57 +40,16 @@ export interface SchedulePolicyInput {
   afternoonRestEndTime: string;
 }
 
-function finiteInRange(value: number, fallback: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, Number.isFinite(value) ? value : fallback));
+function markPolicyMutation(state: AppState): void {
+  markActiveScheduleStale(state);
 }
 
-export function applySchedulePolicy(state: AppState, input: SchedulePolicyInput): boolean {
-  const settings = state.settings;
-  settings.highLoadProtectionEnabled = input.highLoadProtectionEnabled;
-  settings.highLoadFatigueThreshold = finiteInRange(input.highLoadFatigueThreshold, 4, 0.5, 50);
-  settings.highLoadRecoveryMinutes = Math.round(finiteInRange(input.highLoadRecoveryMinutes, 360, 0, 1440));
-  settings.remarkedPositionHighLoad = input.remarkedPositionHighLoad;
-  settings.rollingLoadProtectionEnabled = input.rollingLoadProtectionEnabled;
-  settings.rollingLoadWindowMinutes = Math.round(finiteInRange(input.rollingLoadWindowMinutes, 360, 0, 1440));
-  settings.rollingLoadMaxFatigue = finiteInRange(input.rollingLoadMaxFatigue, 8, 0.5, 100);
-  settings.positionRotationEnabled = input.positionRotationEnabled;
-  settings.lateShiftRecoveryEnabled = input.lateShiftRecoveryEnabled;
-  settings.lateShiftStartTime = input.lateShiftStartTime || "20:00";
-  settings.lateShiftLatestWindowMinutes = Math.round(finiteInRange(input.lateShiftLatestWindowMinutes, 180, 0, 720));
-  settings.nextDayLateMaxFatigue = finiteInRange(input.nextDayLateMaxFatigue, 2, 0, 50);
-  settings.workloadBalanceEnabled = input.workloadBalanceEnabled;
-  settings.maxWorkHoursDifference = finiteInRange(input.maxWorkHoursDifference, 2, 0, 24);
-  settings.maxTodayFatigueDifference = finiteInRange(input.maxTodayFatigueDifference, 4, 0, 100);
-  settings.dutyFatiguePoints = finiteInRange(input.dutyFatiguePoints, 12, 0, 50);
-  settings.earlyDepartureCutoffTime = input.earlyDepartureCutoffTime || "12:00";
-  settings.afternoonRestStartTime = input.afternoonRestStartTime || "12:00";
-  settings.afternoonRestEndTime = input.afternoonRestEndTime || "18:00";
-  settings.dutyPositionPriorities = settings.dutyPositionPriorities.map((item) => ({
-    ...item,
-    flightNo: normalizeText(item.flightNo).toUpperCase(),
-    positionKeyword: normalizeText(item.positionKeyword)
-  }));
-  settings.nextWorkdayRecoveryTargets = settings.nextWorkdayRecoveryTargets.map((item) => ({
-    ...item,
-    flightNo: normalizeText(item.flightNo).toUpperCase(),
-    positionKeyword: normalizeText(item.positionKeyword)
-  }));
-  settings.mobileSupervisorCoverageRules = settings.mobileSupervisorCoverageRules.map((item) => ({
-    ...item,
-    flightNo: normalizeText(item.flightNo).toUpperCase(),
-    keyword: normalizeText(item.keyword)
-  }));
-  settings.positionTransitionPolicies = settings.positionTransitionPolicies.map((policy) => ({
-    ...policy,
-    name: normalizeText(policy.name) || "未命名衔接规则",
-    sourceFlightNo: normalizeText(policy.sourceFlightNo).toUpperCase(),
-    sourcePositions: policy.sourcePositions.map(normalizeText).filter(Boolean),
-    targetFlightNo: normalizeText(policy.targetFlightNo).toUpperCase(),
-    targetPosition: normalizeText(policy.targetPosition),
-    minimumGapMinutes: Math.round(finiteInRange(policy.minimumGapMinutes, 0, 0, 1440)),
-    mode: policy.mode === "forbid" ? "forbid" : "prefer"
-  }));
-  return state.assignments.length > 0;
+export function applySchedulePolicy(
+  state: AppState,
+  input: SchedulePolicyInput
+): boolean {
+  state.settings = applyScheduleSettingsPatch(state.settings, input);
+  return markActiveScheduleStale(state);
 }
 
 export function addDutyPriority(state: AppState): DutyPositionPriority {
@@ -81,27 +57,46 @@ export function addDutyPriority(state: AppState): DutyPositionPriority {
     id: createId("duty-priority"),
     flightNo: "",
     positionKeyword: "一号",
-    enabled: true
+    enabled: true,
   };
   state.settings.dutyPositionPriorities.push(priority);
+  markPolicyMutation(state);
   return priority;
 }
 
-export function moveDutyPriority(state: AppState, id: string, direction: -1 | 1): boolean {
-  const index = state.settings.dutyPositionPriorities.findIndex((item) => item.id === id);
+export function moveDutyPriority(
+  state: AppState,
+  id: string,
+  direction: -1 | 1
+): boolean {
+  const index = state.settings.dutyPositionPriorities.findIndex(
+    (item) => item.id === id
+  );
   const targetIndex = index + direction;
-  if (index < 0 || targetIndex < 0 || targetIndex >= state.settings.dutyPositionPriorities.length) return false;
-  [state.settings.dutyPositionPriorities[index], state.settings.dutyPositionPriorities[targetIndex]] = [
+  if (
+    index < 0 ||
+    targetIndex < 0 ||
+    targetIndex >= state.settings.dutyPositionPriorities.length
+  )
+    return false;
+  [
+    state.settings.dutyPositionPriorities[index],
+    state.settings.dutyPositionPriorities[targetIndex],
+  ] = [
     state.settings.dutyPositionPriorities[targetIndex]!,
-    state.settings.dutyPositionPriorities[index]!
+    state.settings.dutyPositionPriorities[index]!,
   ];
+  markPolicyMutation(state);
   return true;
 }
 
 export function deleteDutyPriority(state: AppState, id: string): boolean {
   const before = state.settings.dutyPositionPriorities.length;
-  state.settings.dutyPositionPriorities = state.settings.dutyPositionPriorities.filter((item) => item.id !== id);
-  return state.settings.dutyPositionPriorities.length !== before;
+  state.settings.dutyPositionPriorities =
+    state.settings.dutyPositionPriorities.filter((item) => item.id !== id);
+  const deleted = state.settings.dutyPositionPriorities.length !== before;
+  if (deleted) markPolicyMutation(state);
+  return deleted;
 }
 
 export function updateDutyPriority(
@@ -110,30 +105,56 @@ export function updateDutyPriority(
   field: string,
   value: string | number | boolean
 ): boolean {
-  const priority = state.settings.dutyPositionPriorities.find((item) => item.id === id);
+  const priority = state.settings.dutyPositionPriorities.find(
+    (item) => item.id === id
+  );
   if (!priority) return false;
-  if (field === "flightNo") priority.flightNo = normalizeText(value).toUpperCase();
-  else if (field === "positionKeyword") priority.positionKeyword = normalizeText(value);
-  else if (field === "enabled") priority.enabled = Boolean(value);
-  else return false;
+  if (field === "flightNo") {
+    const nextValue = normalizeText(value).toUpperCase();
+    if (priority.flightNo !== nextValue) {
+      priority.flightNo = nextValue;
+      markPolicyMutation(state);
+    }
+  } else if (field === "positionKeyword") {
+    const nextValue = normalizeText(value);
+    if (priority.positionKeyword !== nextValue) {
+      priority.positionKeyword = nextValue;
+      markPolicyMutation(state);
+    }
+  } else if (field === "enabled") {
+    const nextValue = Boolean(value);
+    if (priority.enabled !== nextValue) {
+      priority.enabled = nextValue;
+      markPolicyMutation(state);
+    }
+  } else return false;
   return true;
 }
 
-export function addNextWorkdayRecoveryTarget(state: AppState): NextWorkdayRecoveryTarget {
+export function addNextWorkdayRecoveryTarget(
+  state: AppState
+): NextWorkdayRecoveryTarget {
   const target: NextWorkdayRecoveryTarget = {
     id: createId("recovery-target"),
     flightNo: "",
     positionKeyword: "一号",
-    enabled: true
+    enabled: true,
   };
   state.settings.nextWorkdayRecoveryTargets.push(target);
+  markPolicyMutation(state);
   return target;
 }
 
-export function deleteNextWorkdayRecoveryTarget(state: AppState, id: string): boolean {
+export function deleteNextWorkdayRecoveryTarget(
+  state: AppState,
+  id: string
+): boolean {
   const before = state.settings.nextWorkdayRecoveryTargets.length;
-  state.settings.nextWorkdayRecoveryTargets = state.settings.nextWorkdayRecoveryTargets.filter((item) => item.id !== id);
-  return state.settings.nextWorkdayRecoveryTargets.length !== before;
+  state.settings.nextWorkdayRecoveryTargets =
+    state.settings.nextWorkdayRecoveryTargets.filter((item) => item.id !== id);
+  const deleted = state.settings.nextWorkdayRecoveryTargets.length !== before;
+  if (deleted) markPolicyMutation(state);
+  return deleted;
 }
 
 export function updateNextWorkdayRecoveryTarget(
@@ -142,11 +163,263 @@ export function updateNextWorkdayRecoveryTarget(
   field: string,
   value: string | number | boolean
 ): boolean {
-  const target = state.settings.nextWorkdayRecoveryTargets.find((item) => item.id === id);
+  const target = state.settings.nextWorkdayRecoveryTargets.find(
+    (item) => item.id === id
+  );
   if (!target) return false;
-  if (field === "flightNo") target.flightNo = normalizeText(value).toUpperCase();
-  else if (field === "positionKeyword") target.positionKeyword = normalizeText(value);
-  else if (field === "enabled") target.enabled = Boolean(value);
-  else return false;
+  if (field === "flightNo") {
+    const nextValue = normalizeText(value).toUpperCase();
+    if (target.flightNo !== nextValue) {
+      target.flightNo = nextValue;
+      markPolicyMutation(state);
+    }
+  } else if (field === "positionKeyword") {
+    const nextValue = normalizeText(value);
+    if (target.positionKeyword !== nextValue) {
+      target.positionKeyword = nextValue;
+      markPolicyMutation(state);
+    }
+  } else if (field === "enabled") {
+    const nextValue = Boolean(value);
+    if (target.enabled !== nextValue) {
+      target.enabled = nextValue;
+      markPolicyMutation(state);
+    }
+  } else return false;
   return true;
+}
+
+export function addLateShiftRecoveryPositionRule(
+  state: AppState
+): LateShiftRecoveryPositionRule {
+  const rule: LateShiftRecoveryPositionRule = {
+    id: createId("late-recovery-position"),
+    enabled: true,
+    flightNo: "",
+    matchField: "remark",
+    keyword: "一号",
+    nextWorkdayCutoffTime: "",
+  };
+  state.settings.lateShiftRecoveryPositionRules.push(rule);
+  markPolicyMutation(state);
+  return rule;
+}
+
+export function deleteLateShiftRecoveryPositionRule(
+  state: AppState,
+  id: string
+): boolean {
+  const before = state.settings.lateShiftRecoveryPositionRules.length;
+  state.settings.lateShiftRecoveryPositionRules =
+    state.settings.lateShiftRecoveryPositionRules.filter(
+      (item) => item.id !== id
+    );
+  const deleted =
+    state.settings.lateShiftRecoveryPositionRules.length !== before;
+  if (deleted) markPolicyMutation(state);
+  return deleted;
+}
+
+export function updateLateShiftRecoveryPositionRule(
+  state: AppState,
+  id: string,
+  field: string,
+  value: string | number | boolean
+): boolean {
+  const rule = state.settings.lateShiftRecoveryPositionRules.find(
+    (item) => item.id === id
+  );
+  if (!rule) return false;
+  let changed = false;
+  if (field === "flightNo") {
+    const nextValue = normalizeText(value).toUpperCase();
+    changed = rule.flightNo !== nextValue;
+    rule.flightNo = nextValue;
+  } else if (field === "matchField") {
+    const nextValue = value === "position" ? "position" : "remark";
+    changed = rule.matchField !== nextValue;
+    rule.matchField = nextValue;
+  } else if (field === "keyword") {
+    const nextValue = normalizeText(value);
+    changed = rule.keyword !== nextValue;
+    rule.keyword = nextValue;
+  } else if (field === "nextWorkdayCutoffTime") {
+    const nextValue = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value))
+      ? String(value)
+      : "";
+    changed = rule.nextWorkdayCutoffTime !== nextValue;
+    rule.nextWorkdayCutoffTime = nextValue;
+  } else if (field === "enabled") {
+    const nextValue = Boolean(value);
+    changed = rule.enabled !== nextValue;
+    rule.enabled = nextValue;
+  } else return false;
+  if (changed) markPolicyMutation(state);
+  return true;
+}
+
+export function addTransitionPolicy(state: AppState): void {
+  const sourceFlight = state.flights[0];
+  const targetFlight = state.flights.at(-1) ?? sourceFlight;
+  state.settings.positionTransitionPolicies.push({
+    id: createId("transition-policy"),
+    name: "新岗位衔接规则",
+    enabled: false,
+    sourceFlightNo: sourceFlight?.flightNo ?? "",
+    sourcePositions: [],
+    targetFlightNo: targetFlight?.flightNo ?? "",
+    targetPosition: "",
+    minimumGapMinutes: 180,
+    mode: "prefer",
+  });
+  markPolicyMutation(state);
+}
+
+export function deleteTransitionPolicy(state: AppState, id: string): boolean {
+  const before = state.settings.positionTransitionPolicies.length;
+  state.settings.positionTransitionPolicies =
+    state.settings.positionTransitionPolicies.filter((item) => item.id !== id);
+  const deleted = state.settings.positionTransitionPolicies.length !== before;
+  if (deleted) markPolicyMutation(state);
+  return deleted;
+}
+
+export function addMobileSupervisorCoverageRule(state: AppState): void {
+  state.settings.mobileSupervisorCoverageRules.push({
+    id: createId("supervisor-coverage"),
+    enabled: true,
+    flightNo: "",
+    matchField: "remark",
+    keyword: "",
+    mode: "forbid",
+  });
+  markPolicyMutation(state);
+}
+
+export function deleteMobileSupervisorCoverageRule(
+  state: AppState,
+  id: string
+): boolean {
+  const before = state.settings.mobileSupervisorCoverageRules.length;
+  state.settings.mobileSupervisorCoverageRules =
+    state.settings.mobileSupervisorCoverageRules.filter(
+      (item) => item.id !== id
+    );
+  const deleted =
+    state.settings.mobileSupervisorCoverageRules.length !== before;
+  if (deleted) markPolicyMutation(state);
+  return deleted;
+}
+
+function updateTransitionPolicy(
+  state: AppState,
+  id: string,
+  field: string,
+  value: PolicyValue
+): boolean {
+  const policy = state.settings.positionTransitionPolicies.find(
+    (item) => item.id === id
+  );
+  if (!policy) return false;
+  let changed = false;
+  if (field === "sourcePositions") {
+    const nextValue = splitList(value);
+    changed =
+      policy.sourcePositions.join("\u0000") !== nextValue.join("\u0000");
+    policy.sourcePositions = nextValue;
+  } else if (field === "minimumGapMinutes") {
+    const nextValue = Math.min(
+      1440,
+      Math.max(0, Math.round(Number(value)) || 0)
+    );
+    changed = policy.minimumGapMinutes !== nextValue;
+    policy.minimumGapMinutes = nextValue;
+  } else if (field === "sourceFlightNo" || field === "targetFlightNo") {
+    const nextValue = normalizeText(value).toUpperCase();
+    changed = policy[field] !== nextValue;
+    policy[field] = nextValue;
+  } else if (field === "mode") {
+    const nextValue = value === "forbid" ? "forbid" : "prefer";
+    changed = policy.mode !== nextValue;
+    policy.mode = nextValue;
+  } else if (field === "enabled") {
+    const nextValue = Boolean(value);
+    changed = policy.enabled !== nextValue;
+    policy.enabled = nextValue;
+  } else if (field === "name" || field === "targetPosition") {
+    const nextValue = normalizeText(value);
+    changed = policy[field] !== nextValue;
+    policy[field] = nextValue;
+  } else return false;
+  if (changed) markPolicyMutation(state);
+  return true;
+}
+
+function updateMobileSupervisorCoverageRule(
+  state: AppState,
+  id: string,
+  field: string,
+  value: PolicyValue
+): boolean {
+  const rule = state.settings.mobileSupervisorCoverageRules.find(
+    (item) => item.id === id
+  );
+  if (!rule) return false;
+  let changed = false;
+  if (field === "enabled") {
+    const nextValue = Boolean(value);
+    changed = rule.enabled !== nextValue;
+    rule.enabled = nextValue;
+  } else if (field === "flightNo") {
+    const nextValue = normalizeText(value).toUpperCase();
+    changed = rule.flightNo !== nextValue;
+    rule.flightNo = nextValue;
+  } else if (field === "matchField") {
+    const nextValue = value === "position" ? "position" : "remark";
+    changed = rule.matchField !== nextValue;
+    rule.matchField = nextValue;
+  } else if (field === "keyword") {
+    const nextValue = normalizeText(value);
+    changed = rule.keyword !== nextValue;
+    rule.keyword = nextValue;
+  } else if (field === "mode") {
+    const nextValue = value === "allow" ? "allow" : "forbid";
+    changed = rule.mode !== nextValue;
+    rule.mode = nextValue;
+  } else return false;
+  if (changed) markPolicyMutation(state);
+  return true;
+}
+
+type PolicyEntityUpdater = (
+  state: AppState,
+  id: string,
+  field: string,
+  value: PolicyValue
+) => boolean;
+
+const POLICY_ENTITY_UPDATERS: Readonly<
+  Record<PolicyEntity, PolicyEntityUpdater>
+> = {
+  "duty-priority": updateDutyPriority,
+  "recovery-target": updateNextWorkdayRecoveryTarget,
+  "late-shift-recovery-position": updateLateShiftRecoveryPositionRule,
+  "transition-policy": updateTransitionPolicy,
+  "supervisor-coverage": updateMobileSupervisorCoverageRule,
+};
+
+function isPolicyEntity(entity: string): entity is PolicyEntity {
+  return Object.hasOwn(POLICY_ENTITY_UPDATERS, entity);
+}
+
+export function updatePolicyEntityField(
+  state: AppState,
+  entity: string,
+  id: string,
+  field: string,
+  value: PolicyValue
+): PolicyFieldUpdateResult {
+  if (!isPolicyEntity(entity)) return "not-policy";
+  const updated = POLICY_ENTITY_UPDATERS[entity](state, id, field, value);
+  return updated ? "saved" : "missing";
 }

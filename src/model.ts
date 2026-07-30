@@ -1,3 +1,12 @@
+import type { SchedulingDecision } from "./schedule-rule-contract";
+import type {
+  DutyPositionPriority,
+  LateShiftRecoveryPositionRule,
+  MobileSupervisorCoverageRule,
+  NextWorkdayRecoveryTarget,
+  PositionTransitionPolicy,
+} from "./structured-policy-contract";
+
 export type StaffStatus = "正常" | "病假" | "休假";
 export type StaffType = "常规" | "行政支援";
 
@@ -23,7 +32,10 @@ export interface Flight {
   remark: string;
 }
 
-export interface FlightTemplate extends Omit<Flight, "id" | "bookedPassengers"> {
+export interface FlightTemplate extends Omit<
+  Flight,
+  "id" | "bookedPassengers"
+> {
   id: string;
 }
 
@@ -76,68 +88,6 @@ export interface Assignment {
   layoutIndex?: number;
 }
 
-export type SchedulingRuleStage = "hard-constraint" | "reserved-assignment" | "coverage" | "protection" | "stable-order" | "post-schedule-review";
-
-export type SchedulingRuleId =
-  | "staff-eligibility"
-  | "duty-position"
-  | "ke166-supervisor"
-  | "position-transition"
-  | "scarce-qualification"
-  | "staff-coverage"
-  | "late-shift-recovery"
-  | "rolling-load"
-  | "high-load-recovery"
-  | "position-frequency"
-  | "position-frequency-review"
-  | "position-rotation"
-  | "workload-balance"
-  | "historical-fatigue"
-  | "staff-id"
-  | "position-compaction";
-
-export interface SchedulingDecision {
-  ruleId: SchedulingRuleId;
-  stage: SchedulingRuleStage;
-  outcome: "selected" | "blocked" | "fallback" | "preserved";
-  message: string;
-}
-
-export interface PositionTransitionPolicy {
-  id: string;
-  name: string;
-  enabled: boolean;
-  sourceFlightNo: string;
-  sourcePositions: string[];
-  targetFlightNo: string;
-  targetPosition: string;
-  minimumGapMinutes: number;
-  mode: "prefer" | "forbid";
-}
-
-export interface DutyPositionPriority {
-  id: string;
-  flightNo: string;
-  positionKeyword: string;
-  enabled: boolean;
-}
-
-export interface NextWorkdayRecoveryTarget {
-  id: string;
-  flightNo: string;
-  positionKeyword: string;
-  enabled: boolean;
-}
-
-export interface MobileSupervisorCoverageRule {
-  id: string;
-  enabled: boolean;
-  flightNo: string;
-  matchField: "position" | "remark";
-  keyword: string;
-  mode: "allow" | "forbid";
-}
-
 export interface DutyRosterOverride {
   date: string;
   cxPreflightStaffId: string | null;
@@ -161,10 +111,12 @@ export interface ScheduleSettings {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
+  nextDutyRestProtectionEnabled: boolean;
   lateShiftRecoveryEnabled: boolean;
   lateShiftStartTime: string;
   lateShiftLatestWindowMinutes: number;
-  nextDayLateMaxFatigue: number;
+  teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
+  lateShiftRecoveryPositionRules: LateShiftRecoveryPositionRule[];
   nextWorkdayRecoveryTargets: NextWorkdayRecoveryTarget[];
   dutyFatiguePoints: number;
   dutyPositionPriorities: DutyPositionPriority[];
@@ -187,6 +139,7 @@ export interface AppState {
   dutyRosterOverrides: DutyRosterOverride[];
   assignments: Assignment[];
   activeScheduleDate: string | null;
+  schedulePolicyStale: boolean;
   settings: ScheduleSettings;
   updatedAt: string;
 }
@@ -197,4 +150,11 @@ export interface ScheduleResult {
   warnings: string[];
 }
 
-export type AppSection = "overview" | "config" | "flights" | "schedule" | "policy" | "statistics" | "history";
+export type AppSection =
+  | "overview"
+  | "config"
+  | "flights"
+  | "schedule"
+  | "policy"
+  | "statistics"
+  | "history";

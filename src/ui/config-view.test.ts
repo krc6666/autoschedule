@@ -8,8 +8,12 @@ describe("config view", () => {
   it("keeps scheduling policies out of the base configuration module", () => {
     const html = renderConfig(createDefaultState());
     expect(html).not.toContain("排班规则");
-    expect(html).toContain('<details class="workspace-section config-collapsible" data-config-section="staff">');
-    expect(html).not.toContain('<details class="workspace-section config-collapsible" data-config-section="staff" open');
+    expect(html).toContain(
+      '<details class="workspace-section config-collapsible" data-config-section="staff">'
+    );
+    expect(html).not.toContain(
+      '<details class="workspace-section config-collapsible" data-config-section="staff" open'
+    );
     expect(html).toContain("CX航前资质");
     expect(html).toContain('data-field="cxPreflightQualified"');
     expect(html).toContain("值班资质");
@@ -37,7 +41,7 @@ describe("config view", () => {
     expect(html).toContain('id="policy-max-work-hours-difference"');
     expect(html).toContain('id="policy-max-today-fatigue-difference"');
     expect(html).toContain('id="policy-duty-fatigue-points"');
-    expect(html).toContain("08:30前早班");
+    expect(html).toContain("12点前上午航班");
     expect(html).toContain('id="policy-enabled"');
     expect(html).toContain('id="policy-fatigue-threshold"');
     expect(html).toContain('id="policy-recovery-minutes"');
@@ -62,7 +66,8 @@ describe("config view", () => {
     expect(html).toContain('id="policy-late-shift-recovery-enabled"');
     expect(html).toContain('id="policy-late-shift-start-time"');
     expect(html).toContain('id="policy-late-shift-latest-window"');
-    expect(html).toContain('id="policy-next-day-late-max-fatigue"');
+    expect(html).not.toContain('id="policy-next-day-late-max-fatigue"');
+    expect(html).toContain('data-entity="late-shift-recovery-position"');
     expect(html).not.toContain('id="policy-late-shift-recovery-mode"');
     expect(html).toContain("滚动负荷上限");
     expect(html).toContain("重点岗位频率均衡");

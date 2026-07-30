@@ -1,7 +1,24 @@
-import { applyEarlyReleaseForStaff, canAssignStaff, isDiversionTransfer } from "../domain/assignment-validation";
+import { canAssignStaff } from "../domain/assignment-eligibility";
+import {
+  applyEarlyReleaseForStaff,
+  isDiversionTransfer,
+} from "../domain/assignment-timing";
 import { clearAutomaticAssignmentEvidence } from "../domain/assignment-evidence";
-import { activeFlightRules, isAuxiliaryCategory, isGuideAssignment } from "../domain/schedule-position-rules";
-import { clearSupervisorLink, moveSupervisorWithinFlight, normalizeSupervisorAssignments } from "../domain/schedule-adjustment";
+import {
+  activeFlightRules,
+  isAuxiliaryCategory,
+  isGuideAssignment,
+} from "../domain/schedule-position-rules";
+import {
+  clearSupervisorLink,
+  moveSupervisorWithinFlight,
+  normalizeSupervisorAssignments,
+} from "../domain/schedule-adjustment";
+import { refreshPositionRotationEvidence } from "../domain/position-rotation-evidence";
+import {
+  isNextWorkdayCutoffConflict,
+  nextWorkdayCutoffProtection,
+} from "../domain/cross-day-recovery";
 import type { AppState, Staff } from "../model";
 import { createId, normalizeText } from "../utils";
 
@@ -9,6 +26,32 @@ export interface ScheduleEditResult {
   changed: boolean;
   message?: string;
   error?: string;
+}
+
+function refreshManualRuleEvidence(state: AppState): void {
+  refreshPositionRotationEvidence(state, state.activeScheduleDate);
+}
+
+export function manualAssignmentConfirmation(
+  state: AppState,
+  assignmentId: string,
+  staffId: string,
+  date: string
+): string | null {
+  const assignment = state.assignments.find((item) => item.id === assignmentId);
+  const rule = assignment
+    ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
+    : undefined;
+  if (
+    !assignment ||
+    rule?.category !== "常规" ||
+    !isNextWorkdayCutoffConflict(state, staffId, assignment.startTime, date)
+  )
+    return null;
+  const person = state.staff.find((item) => item.id === staffId);
+  const protection = nextWorkdayCutoffProtection(state, staffId, date);
+  if (!person || !protection) return null;
+  return `${person.name}属于上一班末班重点岗位人员，本次安排会突破次班截止保护。确认仍安排到${assignment.flightNo}/${assignment.position}？`;
 }
 
 export function createTemporaryAssignment(
@@ -22,10 +65,22 @@ export function createTemporaryAssignment(
   const flight = state.flights.find((item) => item.id === flightId);
   if (!flight) return false;
   state.assignments.push({
-    id: createId("assignment"), flightId: flight.id, flightNo: flight.flightNo, positionRuleId: null,
-    position: normalizeText(position) || "临时岗位", staffId: null, staffName: normalizeText(staffName),
-    startTime: flight.startTime, endTime: flight.endTime, workHours: 0, fatiguePoints: 0, remark: "", manualRemark: "",
-    status: normalizeText(staffName) ? "assigned" : "manual", layoutGroup, layoutIndex
+    id: createId("assignment"),
+    flightId: flight.id,
+    flightNo: flight.flightNo,
+    positionRuleId: null,
+    position: normalizeText(position) || "临时岗位",
+    staffId: null,
+    staffName: normalizeText(staffName),
+    startTime: flight.startTime,
+    endTime: flight.endTime,
+    workHours: 0,
+    fatiguePoints: 0,
+    remark: "",
+    manualRemark: "",
+    status: normalizeText(staffName) ? "assigned" : "manual",
+    layoutGroup,
+    layoutIndex,
   });
   return true;
 }
@@ -33,24 +88,53 @@ export function createTemporaryAssignment(
 function refreshSameFlightGuides(state: AppState, flightIds: string[]): void {
   normalizeSupervisorAssignments(state);
   for (const flightId of new Set(flightIds)) {
-    const guideAssignments = state.assignments.filter((item) => item.flightId === flightId && isGuideAssignment(state, item));
+    const guideAssignments = state.assignments.filter(
+      (item) => item.flightId === flightId && isGuideAssignment(state, item)
+    );
     const flight = state.flights.find((item) => item.id === flightId);
-    const displayIndex = new Map((flight ? activeFlightRules(state, flight) : []).map((rule, index) => [rule.id, index]));
+    const displayIndex = new Map(
+      (flight ? activeFlightRules(state, flight) : []).map((rule, index) => [
+        rule.id,
+        index,
+      ])
+    );
     const usedStaffIds = new Set<string>();
     for (const guide of guideAssignments) {
       const candidates = state.assignments
-        .filter((item) => item.flightId === flightId && item.id !== guide.id && item.status === "assigned")
+        .filter(
+          (item) =>
+            item.flightId === flightId &&
+            item.id !== guide.id &&
+            item.status === "assigned"
+        )
         .filter((item) => item.staffId && !usedStaffIds.has(item.staffId))
         .map((item) => ({
           assignment: item,
-          sourceRule: item.positionRuleId ? state.positionRules.find((rule) => rule.id === item.positionRuleId) : undefined,
-          person: state.staff.find((person) => person.id === item.staffId)
+          sourceRule: item.positionRuleId
+            ? state.positionRules.find(
+                (rule) => rule.id === item.positionRuleId
+              )
+            : undefined,
+          person: state.staff.find((person) => person.id === item.staffId),
         }))
-        .filter((item): item is typeof item & { person: Staff } => Boolean(item.sourceRule?.category === "常规" && item.person?.status === "正常" && item.person.staffType === "常规"))
-        .sort((left, right) => (displayIndex.get(right.assignment.positionRuleId ?? "") ?? -1) - (displayIndex.get(left.assignment.positionRuleId ?? "") ?? -1));
-      const manualSelection = guide.status === "manual" && guide.staffId
-        ? candidates.find((candidate) => candidate.person.id === guide.staffId)
-        : undefined;
+        .filter((item): item is typeof item & { person: Staff } =>
+          Boolean(
+            item.sourceRule?.category === "常规" &&
+            item.person?.status === "正常" &&
+            item.person.staffType === "常规"
+          )
+        )
+        .sort(
+          (left, right) =>
+            (displayIndex.get(right.assignment.positionRuleId ?? "") ?? -1) -
+            (displayIndex.get(left.assignment.positionRuleId ?? "") ?? -1)
+        );
+      const manualSelection =
+        guide.status === "manual" && guide.staffId
+          ? candidates.find(
+              (candidate) => candidate.person.id === guide.staffId
+            )
+          : undefined;
       if (manualSelection) {
         guide.staffName = manualSelection.person.name;
         guide.workHours = 0;
@@ -77,38 +161,73 @@ export function assignStaff(
   sourceAssignmentId?: string
 ): ScheduleEditResult {
   const assignment = state.assignments.find((item) => item.id === assignmentId);
-  if (!assignment || sourceAssignmentId === assignmentId) return { changed: false };
+  if (!assignment || sourceAssignmentId === assignmentId)
+    return { changed: false };
   if (!staffId) {
-    const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
+    const rule = assignment.positionRuleId
+      ? state.positionRules.find(
+          (item) => item.id === assignment.positionRuleId
+        )
+      : undefined;
     clearSupervisorLink(state, assignment);
     assignment.staffId = null;
     assignment.staffName = "";
-    assignment.status = rule?.manual || isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId ? "manual" : "unfilled";
+    assignment.status =
+      rule?.manual ||
+      isAuxiliaryCategory(rule?.category) ||
+      !assignment.positionRuleId
+        ? "manual"
+        : "unfilled";
     clearAutomaticAssignmentEvidence(assignment);
     refreshSameFlightGuides(state, [assignment.flightId]);
+    refreshManualRuleEvidence(state);
     return { changed: true, message: "岗位已设为待补位" };
   }
-  const source = sourceAssignmentId ? state.assignments.find((item) => item.id === sourceAssignmentId) : undefined;
+  const source = sourceAssignmentId
+    ? state.assignments.find((item) => item.id === sourceAssignmentId)
+    : undefined;
   if (source) {
     const error = moveSupervisorWithinFlight(state, source.id, assignment.id);
     if (!error) {
       refreshSameFlightGuides(state, [assignment.flightId]);
+      refreshManualRuleEvidence(state);
       return { changed: true, message: "督导已机动补位至目标岗位" };
     }
-    const sourceRule = source.positionRuleId ? state.positionRules.find((item) => item.id === source.positionRuleId) : undefined;
-    if (sourceRule?.category === "机动督导" || source.supervisorSourceAssignmentId) return { changed: false, error };
+    const sourceRule = source.positionRuleId
+      ? state.positionRules.find((item) => item.id === source.positionRuleId)
+      : undefined;
+    if (
+      sourceRule?.category === "机动督导" ||
+      source.supervisorSourceAssignmentId
+    )
+      return { changed: false, error };
   }
   const targetStaffId = assignment.staffId;
   const targetStaffName = assignment.staffName;
-  const copySource = Boolean(sourceAssignmentId && (isGuideAssignment(state, assignment)
-    || (!targetStaffId && isDiversionTransfer(state, sourceAssignmentId, assignmentId))));
-  const error = canAssignStaff(state, assignmentId, staffId, copySource ? undefined : sourceAssignmentId);
+  const copySource = Boolean(
+    sourceAssignmentId &&
+    (isGuideAssignment(state, assignment) ||
+      (!targetStaffId &&
+        isDiversionTransfer(state, sourceAssignmentId, assignmentId)))
+  );
+  const error = canAssignStaff(
+    state,
+    assignmentId,
+    staffId,
+    copySource ? undefined : sourceAssignmentId
+  );
   if (error) return { changed: false, error };
   const person = state.staff.find((item) => item.id === staffId);
   if (!person) return { changed: false };
   if (source && !copySource && targetStaffId) {
-    const reverseError = canAssignStaff(state, source.id, targetStaffId, assignment.id);
-    if (reverseError) return { changed: false, error: `无法交换：${reverseError}` };
+    const reverseError = canAssignStaff(
+      state,
+      source.id,
+      targetStaffId,
+      assignment.id
+    );
+    if (reverseError)
+      return { changed: false, error: `无法交换：${reverseError}` };
   }
   clearSupervisorLink(state, assignment);
   assignment.staffId = person.id;
@@ -128,23 +247,38 @@ export function assignStaff(
       source.status = "assigned";
       clearAutomaticAssignmentEvidence(source);
     } else {
-      const sourceRule = source.positionRuleId ? state.positionRules.find((item) => item.id === source.positionRuleId) : undefined;
+      const sourceRule = source.positionRuleId
+        ? state.positionRules.find((item) => item.id === source.positionRuleId)
+        : undefined;
       source.staffId = null;
       source.staffName = "";
-      source.status = sourceRule?.manual || isAuxiliaryCategory(sourceRule?.category) || !source.positionRuleId ? "manual" : "unfilled";
+      source.status =
+        sourceRule?.manual ||
+        isAuxiliaryCategory(sourceRule?.category) ||
+        !source.positionRuleId
+          ? "manual"
+          : "unfilled";
       clearAutomaticAssignmentEvidence(source);
     }
   }
   applyEarlyReleaseForStaff(state, assignment.id, person.id);
-  if (source && targetStaffId && !copySource) applyEarlyReleaseForStaff(state, source.id, targetStaffId);
-  refreshSameFlightGuides(state, [assignment.flightId, ...(source ? [source.flightId] : [])]);
+  if (source && targetStaffId && !copySource)
+    applyEarlyReleaseForStaff(state, source.id, targetStaffId);
+  refreshSameFlightGuides(state, [
+    assignment.flightId,
+    ...(source ? [source.flightId] : []),
+  ]);
+  refreshManualRuleEvidence(state);
   return {
     changed: true,
-    message: source && targetStaffId && !copySource
-      ? "人员岗位已交换"
-      : copySource
-        ? isGuideAssignment(state, assignment) ? "引导人员已复用" : "分流人员已转派"
-        : "人员分配已更新"
+    message:
+      source && targetStaffId && !copySource
+        ? "人员岗位已交换"
+        : copySource
+          ? isGuideAssignment(state, assignment)
+            ? "引导人员已复用"
+            : "分流人员已转派"
+          : "人员分配已更新",
   };
 }
 
@@ -167,27 +301,37 @@ export function updateAssignmentField(
   if (field !== "staffName") return { changed: false };
 
   const staffName = normalizeText(value);
-  const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
+  const rule = assignment.positionRuleId
+    ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
+    : undefined;
   if (!staffName) return assignStaff(state, id, "");
   const person = state.staff.find((item) => item.name === staffName);
   if (!person && rule?.category === "引导") {
     return {
       changed: false,
-      error: "引导岗位只能复用同一航班中已排常规岗位的常规人员"
+      error: "引导岗位只能复用同一航班中已排常规岗位的常规人员",
     };
   }
-  if (!person || (person.staffType !== "行政支援" && (isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId))) {
+  if (
+    !person ||
+    (person.staffType !== "行政支援" &&
+      (isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId))
+  ) {
     clearSupervisorLink(state, assignment);
     assignment.staffId = null;
     assignment.staffName = staffName;
     assignment.status = "assigned";
     clearAutomaticAssignmentEvidence(assignment);
+    refreshManualRuleEvidence(state);
     return { changed: true };
   }
   return assignStaff(state, id, person.id);
 }
 
-export function deleteTemporaryAssignment(state: AppState, id: string): boolean {
+export function deleteTemporaryAssignment(
+  state: AppState,
+  id: string
+): boolean {
   const assignment = state.assignments.find((item) => item.id === id);
   if (!assignment || assignment.positionRuleId) return false;
   state.assignments = state.assignments.filter((item) => item.id !== id);

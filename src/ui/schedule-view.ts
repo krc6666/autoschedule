@@ -3,11 +3,15 @@ import { buildStaffLoads } from "../domain/fatigue";
 import { countedWorkloadAssignments } from "../domain/workload-accounting";
 import { buildScheduleFeedback } from "../domain/schedule-feedback";
 import { dutyFatigueByStaff } from "../domain/duty-roster";
-import { assignmentRule, isFixedBottomPosition } from "../domain/schedule-position-rules";
+import {
+  assignmentRule,
+  isFixedBottomPosition,
+} from "../domain/schedule-position-rules";
 import { escapeHtml, visiblePositionRemark } from "../utils";
 import { renderDutyRosterSummary } from "./duty-roster-view";
 
-export type LoadSortField = "workHours" | "todayFatigue" | "historyFatigue" | "totalFatigue";
+export type LoadSortField =
+  "workHours" | "todayFatigue" | "historyFatigue" | "totalFatigue";
 export type LoadSortDirection = "asc" | "desc";
 
 export interface LoadSortOptions {
@@ -19,31 +23,52 @@ export interface ScheduleViewOptions extends LoadSortOptions {
   zoom?: number;
 }
 
-function assignmentCells(state: AppState, assignment: Assignment, guideListId: string): string {
+function assignmentCells(
+  state: AppState,
+  assignment: Assignment,
+  guideListId: string
+): string {
   const assigned = Boolean(assignment.staffId);
-  const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
+  const rule = assignment.positionRuleId
+    ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
+    : undefined;
   const temporary = !rule && Boolean(assignment.layoutGroup);
   const guide = rule?.category === "引导";
   const adminSupport = rule?.category === "行政支援";
   const auxiliary = adminSupport || !rule;
   const diversion = rule?.category === "分流";
+  const softRuleWarning = assignment.decisionTrace?.find(
+    (decision) => decision.outcome === "fallback"
+  );
+  const softRuleWarningLabel =
+    softRuleWarning?.ruleId === "position-rotation"
+      ? "连续轮岗异常"
+      : "软约束提醒";
   const positionRemark = visiblePositionRemark(assignment.remark);
   const positionControl = temporary
     ? `<input class="schedule-position-input" value="${escapeHtml(assignment.position)}" data-entity="assignment" data-id="${assignment.id}" data-field="position" aria-label="临时岗位名称">`
     : `<strong class="schedule-position" title="${escapeHtml(assignment.position)}">${guide ? `<span class="guide-tag">引</span>` : adminSupport ? `<span class="admin-support-tag">行</span>` : diversion ? `<span class="diversion-tag">流</span>` : ""}${escapeHtml(assignment.position)}</strong>`;
-  const stateClasses = `${assignment.staffName ? "is-assigned" : "is-unfilled"} ${guide ? "is-guide" : ""} ${adminSupport ? "is-admin-support" : ""} ${diversion ? "is-diversion" : ""}`;
-  const nameList = guide ? `list="${guideListId}"` : auxiliary ? "" : `list="schedule-staff-names"`;
+  const stateClasses = `${assignment.staffName ? "is-assigned" : "is-unfilled"} ${guide ? "is-guide" : ""} ${adminSupport ? "is-admin-support" : ""} ${diversion ? "is-diversion" : ""} ${softRuleWarning ? "is-soft-rule-warning" : ""}`;
+  const nameList = guide
+    ? `list="${guideListId}"`
+    : auxiliary
+      ? ""
+      : `list="schedule-staff-names"`;
   return `<td class="schedule-grid-slot schedule-position-slot"><article class="schedule-cell schedule-position-cell ${stateClasses}">
     <div class="schedule-position-content">${positionControl}${positionRemark ? `<span class="position-remark" title="${escapeHtml(positionRemark)}">${escapeHtml(positionRemark)}</span>` : ""}</div>
     ${temporary ? `<div class="schedule-cell-actions"><button class="btn btn-sm btn-light icon-btn" type="button" data-action="delete-assignment" data-id="${assignment.id}" title="删除本次临时岗位"><i class="bi bi-x-lg"></i></button></div>` : ""}
   </article></td><td class="schedule-grid-slot schedule-person-slot"><article class="schedule-cell schedule-person-cell ${stateClasses}" data-drop-assignment="${assignment.id}">
-    <div class="schedule-person-edit" ${assigned ? `data-drag-assignment="${assignment.id}" title="按住姓名可拖动调整岗位"` : ""}>${assigned ? `<i class="bi bi-grip-vertical assignment-drag-handle" aria-hidden="true"></i>` : ""}<input class="schedule-name-input" ${nameList} value="${escapeHtml(assignment.staffName)}" data-entity="assignment" data-id="${assignment.id}" data-field="staffName" aria-label="${escapeHtml(assignment.position)}人员"></div>
+    <div class="schedule-person-edit" ${assigned ? `data-drag-assignment="${assignment.id}" title="按住姓名可拖动调整岗位"` : ""}>${assigned ? `<i class="bi bi-grip-vertical assignment-drag-handle" aria-hidden="true"></i>` : ""}${softRuleWarning ? `<i class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon" title="${escapeHtml(softRuleWarning.message)}" aria-label="${softRuleWarningLabel}"></i>` : ""}<input class="schedule-name-input" ${nameList} value="${escapeHtml(assignment.staffName)}" data-entity="assignment" data-id="${assignment.id}" data-field="staffName" aria-label="${escapeHtml(assignment.position)}人员"></div>
     <div class="schedule-cell-actions"><button class="btn btn-sm btn-light icon-btn" type="button" data-action="clear-assignment" data-id="${assignment.id}" title="清空人员"><i class="bi bi-eraser"></i></button></div>
     <input class="schedule-manual-remark" value="${escapeHtml(assignment.manualRemark)}" placeholder=" " title="输入临时备注" data-entity="assignment" data-id="${assignment.id}" data-field="manualRemark" aria-label="${escapeHtml(assignment.position)}临时备注">
   </article></td>`;
 }
 
-function emptyScheduleCells(flightId: string, layoutGroup: "primary" | "bottom", layoutIndex: number): string {
+function emptyScheduleCells(
+  flightId: string,
+  layoutGroup: "primary" | "bottom",
+  layoutIndex: number
+): string {
   const slotData = `data-empty-slot data-flight-id="${escapeHtml(flightId)}" data-layout-group="${layoutGroup}" data-layout-index="${layoutIndex}"`;
   return `<td class="schedule-grid-slot schedule-position-slot"><div class="schedule-cell schedule-cell-placeholder schedule-position-cell" ${slotData}>
     <input class="schedule-empty-input schedule-empty-position" placeholder="岗位" data-action="create-temporary-assignment" data-empty-field="position" aria-label="新增临时岗位">
@@ -56,15 +81,21 @@ function staffPaletteItem(person: Staff, administrative: boolean): string {
   const disabled = person.status !== "正常";
   return `<div class="staff-palette-item ${administrative ? "is-admin-support" : ""} ${disabled ? "is-disabled" : ""}" draggable="${!disabled}" data-drag-staff="${escapeHtml(person.id)}" title="#${escapeHtml(person.id)} ${escapeHtml(person.status)}">
     <i class="bi bi-grip-vertical"></i>
-    ${administrative
-      ? `<input class="staff-palette-name" value="${escapeHtml(person.name)}" data-entity="staff" data-id="${escapeHtml(person.id)}" data-field="name" aria-label="行政支援人员姓名"><button class="btn btn-sm icon-btn" type="button" data-action="delete-staff" data-id="${escapeHtml(person.id)}" title="删除行政支援人员"><i class="bi bi-x"></i></button>`
-      : `<span>${escapeHtml(person.name)}</span>`}
+    ${
+      administrative
+        ? `<input class="staff-palette-name" value="${escapeHtml(person.name)}" data-entity="staff" data-id="${escapeHtml(person.id)}" data-field="name" aria-label="行政支援人员姓名"><button class="btn btn-sm icon-btn" type="button" data-action="delete-staff" data-id="${escapeHtml(person.id)}" title="删除行政支援人员"><i class="bi bi-x"></i></button>`
+        : `<span>${escapeHtml(person.name)}</span>`
+    }
   </div>`;
 }
 
 function isBottomAssignment(state: AppState, assignment: Assignment): boolean {
-  const rule = assignment.positionRuleId ? state.positionRules.find((item) => item.id === assignment.positionRuleId) : undefined;
-  return rule?.category === "引导" || isFixedBottomPosition(assignment.position);
+  const rule = assignment.positionRuleId
+    ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
+    : undefined;
+  return (
+    rule?.category === "引导" || isFixedBottomPosition(assignment.position)
+  );
 }
 
 export function renderSchedule(
@@ -75,41 +106,120 @@ export function renderSchedule(
   if (!state.assignments.length) {
     return `<section class="workspace-section empty-workspace"><i class="bi bi-calendar2-plus"></i><h3>尚未生成排班</h3><button class="btn btn-primary" type="button" data-action="generate-schedule"><i class="bi bi-stars me-2"></i>生成排班</button></section>`;
   }
-  const loads = buildStaffLoads(state.staff.filter((person) => person.staffType !== "行政支援"), countedWorkloadAssignments(state), state.history, date, state.settings, dutyFatigueByStaff(state, date))
-    .sort((left, right) => {
-      const result = left[options.field] - right[options.field];
-      return (options.direction === "asc" ? result : -result) || left.staff.name.localeCompare(right.staff.name, "zh-CN");
-    });
+  const loads = buildStaffLoads(
+    state.staff.filter((person) => person.staffType !== "行政支援"),
+    countedWorkloadAssignments(state),
+    state.history,
+    date,
+    state.settings,
+    dutyFatigueByStaff(state, date)
+  ).sort((left, right) => {
+    const result = left[options.field] - right[options.field];
+    return (
+      (options.direction === "asc" ? result : -result) ||
+      left.staff.name.localeCompare(right.staff.name, "zh-CN")
+    );
+  });
   const zoom = Math.min(1.6, Math.max(0.7, options.zoom ?? 1));
   const scaled = (value: number): number => Number((value * zoom).toFixed(1));
-  const regularStaff = state.staff.filter((person) => person.staffType !== "行政支援");
-  const administrativeStaff = state.staff.filter((person) => person.staffType === "行政支援");
-  const flights = [...state.flights].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const regularStaff = state.staff.filter(
+    (person) => person.staffType !== "行政支援"
+  );
+  const administrativeStaff = state.staff.filter(
+    (person) => person.staffType === "行政支援"
+  );
+  const flights = [...state.flights].sort((a, b) =>
+    a.startTime.localeCompare(b.startTime)
+  );
   const groups = flights.map((flight, groupIndex) => {
-    const assignments = state.assignments.filter((item) => item.flightId === flight.id);
-    const ordered = (items: Assignment[]) => items.map((item, index) => ({ item, index }))
-      .sort((left, right) => (left.item.layoutIndex ?? left.index) - (right.item.layoutIndex ?? right.index) || left.index - right.index)
-      .map(({ item }) => item);
+    const assignments = state.assignments.filter(
+      (item) => item.flightId === flight.id
+    );
+    const ordered = (items: Assignment[]) =>
+      items
+        .map((item, index) => ({ item, index }))
+        .sort(
+          (left, right) =>
+            (left.item.layoutIndex ?? left.index) -
+              (right.item.layoutIndex ?? right.index) ||
+            left.index - right.index
+        )
+        .map(({ item }) => item);
     return {
       flight,
       guideListId: `schedule-guide-staff-${groupIndex}`,
       guideCandidates: assignments
-        .filter((assignment) => assignment.status === "assigned" && assignment.staffId && assignmentRule(state, assignment)?.category === "常规")
-        .map((assignment) => state.staff.find((person) => person.id === assignment.staffId))
-        .filter((person): person is Staff => Boolean(person?.status === "正常" && person.staffType === "常规"))
-        .filter((person, index, people) => people.findIndex((candidate) => candidate.id === person.id) === index),
-      primary: ordered(assignments.filter((item) => item.layoutGroup === "primary" || (item.layoutGroup !== "bottom" && !isBottomAssignment(state, item)))),
-      bottom: ordered(assignments.filter((item) => item.layoutGroup === "bottom" || (item.layoutGroup !== "primary" && isBottomAssignment(state, item))))
+        .filter(
+          (assignment) =>
+            assignment.status === "assigned" &&
+            assignment.staffId &&
+            assignmentRule(state, assignment)?.category === "常规"
+        )
+        .map((assignment) =>
+          state.staff.find((person) => person.id === assignment.staffId)
+        )
+        .filter((person): person is Staff =>
+          Boolean(person?.status === "正常" && person.staffType === "常规")
+        )
+        .filter(
+          (person, index, people) =>
+            people.findIndex((candidate) => candidate.id === person.id) ===
+            index
+        ),
+      primary: ordered(
+        assignments.filter(
+          (item) =>
+            item.layoutGroup === "primary" ||
+            (item.layoutGroup !== "bottom" && !isBottomAssignment(state, item))
+        )
+      ),
+      bottom: ordered(
+        assignments.filter(
+          (item) =>
+            item.layoutGroup === "bottom" ||
+            (item.layoutGroup !== "primary" && isBottomAssignment(state, item))
+        )
+      ),
     };
   });
-  const primaryRowCount = Math.max(0, ...groups.map((group) => group.primary.length)) + 1;
-  const bottomRowCount = Math.max(0, ...groups.map((group) => group.bottom.length)) + 1;
-  const columnGroups = groups.map(() => `<col class="schedule-position-column"><col class="schedule-person-column">`).join("");
-  const flightHeaders = groups.map(({ flight }) => `<th scope="col" colspan="2"><div class="schedule-flight-head"><div><strong>${escapeHtml(flight.flightNo)}</strong><span>${escapeHtml(flight.startTime)}–${escapeHtml(flight.endTime)}</span>${flight.remark ? `<small>${escapeHtml(flight.remark)}</small>` : ""}</div></div></th>`).join("");
-  const subHeaders = groups.map(() => `<th scope="col" class="schedule-subhead-position">岗位</th><th scope="col" class="schedule-subhead-person">人员</th>`).join("");
-  const primaryRows = Array.from({ length: primaryRowCount }, (_, rowIndex) => `<tr>${groups.map(({ flight, primary, guideListId }) => primary[rowIndex] ? assignmentCells(state, primary[rowIndex], guideListId) : emptyScheduleCells(flight.id, "primary", rowIndex)).join("")}</tr>`).join("");
-  const bottomRows = Array.from({ length: bottomRowCount }, (_, rowIndex) => `<tr>${groups.map(({ flight, bottom, guideListId }) => bottom[rowIndex] ? assignmentCells(state, bottom[rowIndex], guideListId) : emptyScheduleCells(flight.id, "bottom", rowIndex)).join("")}</tr>`).join("");
-  const guideCandidateLists = groups.map((group) => `<datalist id="${group.guideListId}">${group.guideCandidates.map((person) => `<option value="${escapeHtml(person.name)}"></option>`).join("")}</datalist>`).join("");
+  const primaryRowCount =
+    Math.max(0, ...groups.map((group) => group.primary.length)) + 1;
+  const bottomRowCount =
+    Math.max(0, ...groups.map((group) => group.bottom.length)) + 1;
+  const columnGroups = groups
+    .map(
+      () =>
+        `<col class="schedule-position-column"><col class="schedule-person-column">`
+    )
+    .join("");
+  const flightHeaders = groups
+    .map(
+      ({ flight }) =>
+        `<th scope="col" colspan="2"><div class="schedule-flight-head"><div><strong>${escapeHtml(flight.flightNo)}</strong><span>${escapeHtml(flight.startTime)}–${escapeHtml(flight.endTime)}</span>${flight.remark ? `<small>${escapeHtml(flight.remark)}</small>` : ""}</div></div></th>`
+    )
+    .join("");
+  const subHeaders = groups
+    .map(
+      () =>
+        `<th scope="col" class="schedule-subhead-position">岗位</th><th scope="col" class="schedule-subhead-person">人员</th>`
+    )
+    .join("");
+  const primaryRows = Array.from(
+    { length: primaryRowCount },
+    (_, rowIndex) =>
+      `<tr>${groups.map(({ flight, primary, guideListId }) => (primary[rowIndex] ? assignmentCells(state, primary[rowIndex], guideListId) : emptyScheduleCells(flight.id, "primary", rowIndex))).join("")}</tr>`
+  ).join("");
+  const bottomRows = Array.from(
+    { length: bottomRowCount },
+    (_, rowIndex) =>
+      `<tr>${groups.map(({ flight, bottom, guideListId }) => (bottom[rowIndex] ? assignmentCells(state, bottom[rowIndex], guideListId) : emptyScheduleCells(flight.id, "bottom", rowIndex))).join("")}</tr>`
+  ).join("");
+  const guideCandidateLists = groups
+    .map(
+      (group) =>
+        `<datalist id="${group.guideListId}">${group.guideCandidates.map((person) => `<option value="${escapeHtml(person.name)}"></option>`).join("")}</datalist>`
+    )
+    .join("");
   const auxiliaryDivider = `<tr class="schedule-divider-row">${groups.map(() => `<td colspan="2"><div class="support-divider"><span>引导岗位</span></div></td>`).join("")}</tr>`;
   const scheduleStyle = [
     `--flight-count:${Math.max(1, flights.length)}`,
@@ -124,14 +234,36 @@ export function renderSchedule(
     `--schedule-tiny-size:${scaled(9)}px`,
     `--schedule-input-height:${scaled(19)}px`,
     `--schedule-name-width:${scaled(48)}px`,
-    `--schedule-divider-height:${scaled(20)}px`
+    `--schedule-divider-height:${scaled(20)}px`,
   ].join(";");
   const zoomPercent = Math.round(zoom * 100);
   const feedback = buildScheduleFeedback(state, date);
-  const feedbackIcon = (level: "ok" | "attention" | "info"): string => level === "ok" ? "check-circle-fill" : level === "attention" ? "exclamation-triangle-fill" : "info-circle-fill";
-  const renderFeedbackGroup = (group: "flight-staff" | "rule-execution", title: string, description: string): string => `<div class="schedule-feedback-group"><div class="schedule-feedback-group-heading"><strong>${title}</strong><span>${description}</span></div><div class="schedule-feedback-list">${feedback.filter((item) => item.group === group).map((item) => `<div class="schedule-feedback-item is-${item.level}"><i class="bi bi-${feedbackIcon(item.level)}"></i><strong>${escapeHtml(item.label)}<em class="feedback-status is-${item.level}">${escapeHtml(item.status)}</em></strong><span>${escapeHtml(item.text)}</span></div>`).join("")}</div></div>`;
+  const feedbackIcon = (level: "ok" | "attention" | "info"): string =>
+    level === "ok"
+      ? "check-circle-fill"
+      : level === "attention"
+        ? "exclamation-triangle-fill"
+        : "info-circle-fill";
+  const renderFeedbackGroup = (
+    group: "flight-staff" | "rule-execution",
+    title: string,
+    description: string
+  ): string => {
+    const items = feedback.filter((item) => item.group === group);
+    const content =
+      group === "rule-execution" && state.schedulePolicyStale
+        ? `<div class="schedule-feedback-item is-attention"><i class="bi bi-exclamation-triangle-fill"></i><strong>规则已更新<em class="feedback-status is-attention">待重新排班</em></strong><span>当前排班尚未按新规则重新生成；请重新排班后查看规则执行反馈。</span></div>`
+        : items
+            .map(
+              (item) =>
+                `<div class="schedule-feedback-item is-${item.level}"><i class="bi bi-${feedbackIcon(item.level)}"></i><strong>${escapeHtml(item.label)}<em class="feedback-status is-${item.level}">${escapeHtml(item.status)}</em></strong><span>${escapeHtml(item.text)}</span></div>`
+            )
+            .join("");
+    return `<div class="schedule-feedback-group"><div class="schedule-feedback-group-heading"><strong>${title}</strong><span>${description}</span></div><div class="schedule-feedback-list">${content}</div></div>`;
+  };
   return `
     <section class="toolbar-band schedule-toolbar"><div class="d-flex gap-1 flex-wrap"><button class="btn btn-sm btn-primary" type="button" data-action="generate-schedule"><i class="bi bi-arrow-repeat me-1"></i>重新排班</button><button class="btn btn-sm btn-success" type="button" data-action="archive-and-next-duty"><i class="bi bi-calendar2-plus me-1"></i>归档并排后天</button><button class="btn btn-sm btn-outline-success" type="button" data-action="export-schedule"><i class="bi bi-file-earmark-excel me-1"></i>导出结果</button><button class="btn btn-sm btn-outline-primary icon-btn" type="button" data-action="export-share-html" title="导出 HTML"><i class="bi bi-filetype-html"></i></button><button class="btn btn-sm btn-outline-primary icon-btn" type="button" data-action="export-share-png" title="导出图片"><i class="bi bi-file-earmark-image"></i></button><button class="btn btn-sm btn-outline-secondary" type="button" data-action="archive-schedule"><i class="bi bi-archive me-1"></i>仅归档</button><button class="btn btn-sm btn-outline-danger icon-btn" type="button" data-action="clear-schedule" title="清空排班"><i class="bi bi-x-circle"></i></button></div><div class="schedule-toolbar-meta"><div class="schedule-zoom-control" role="group" aria-label="排班表缩放"><button class="btn btn-sm icon-btn" type="button" data-action="zoom-schedule-out" title="缩小排班表" ${zoom <= 0.7 ? "disabled" : ""}><i class="bi bi-zoom-out"></i></button><output aria-label="当前排班表比例">${zoomPercent}%</output><button class="btn btn-sm icon-btn" type="button" data-action="zoom-schedule-reset" title="恢复 100%"><i class="bi bi-arrow-counterclockwise"></i></button><button class="btn btn-sm icon-btn" type="button" data-action="zoom-schedule-in" title="放大排班表" ${zoom >= 1.6 ? "disabled" : ""}><i class="bi bi-zoom-in"></i></button></div><label class="form-check form-switch admin-support-switch" title="切换后会按当前模式重新排班"><input class="form-check-input" type="checkbox" data-action="toggle-admin-support-mode" ${state.settings.adminSupportEnabled ? "checked" : ""}><span class="form-check-label">是否启用行政支援模式</span></label><span class="small text-secondary">${escapeHtml(date)}</span></div></section>
+    ${state.schedulePolicyStale ? `<div class="alert alert-warning py-2" role="status"><i class="bi bi-exclamation-triangle me-2"></i>排班规则已更新，当前排班尚未按新规则重新生成。</div>` : ""}
     <section class="schedule-workspace">
       <aside class="staff-palette"><div class="staff-palette-section"><div class="staff-palette-head"><strong>常规人员</strong><span>${regularStaff.filter((person) => person.status === "正常").length} 人可用</span></div>
         <div class="staff-palette-list">${regularStaff.map((person) => staffPaletteItem(person, false)).join("")}</div></div>
@@ -150,7 +282,15 @@ export function renderSchedule(
       ${renderFeedbackGroup("flight-staff", "一、航班安排反馈（航班与人员安排）", "航班密度、人员覆盖、工时与航班衔接")}
       ${renderFeedbackGroup("rule-execution", "二、规则执行反馈（规则执行情况）", "逐条标明已执行、需复核或暂无历史基准")}
     </section>
-    <datalist id="schedule-staff-names">${state.staff.filter((person) => person.status === "正常" && (state.settings.adminSupportEnabled || person.staffType !== "行政支援")).map((person) => `<option value="${escapeHtml(person.name)}"></option>`).join("")}</datalist>
+    <datalist id="schedule-staff-names">${state.staff
+      .filter(
+        (person) =>
+          person.status === "正常" &&
+          (state.settings.adminSupportEnabled ||
+            person.staffType !== "行政支援")
+      )
+      .map((person) => `<option value="${escapeHtml(person.name)}"></option>`)
+      .join("")}</datalist>
     ${guideCandidateLists}
     <details class="workspace-section load-details"><summary>人员负荷与疲劳</summary><div class="load-sort-controls"><select class="form-select form-select-sm" data-action="load-sort-field" aria-label="负荷排序字段"><option value="workHours" ${options.field === "workHours" ? "selected" : ""}>当日工时</option><option value="todayFatigue" ${options.field === "todayFatigue" ? "selected" : ""}>岗位疲劳</option><option value="historyFatigue" ${options.field === "historyFatigue" ? "selected" : ""}>历史疲劳</option><option value="totalFatigue" ${options.field === "totalFatigue" ? "selected" : ""}>总疲劳</option></select><select class="form-select form-select-sm" data-action="load-sort-direction" aria-label="负荷排序方向"><option value="desc" ${options.direction === "desc" ? "selected" : ""}>从高到低</option><option value="asc" ${options.direction === "asc" ? "selected" : ""}>从低到高</option></select></div><div class="table-responsive mt-2"><table class="table table-sm align-middle data-table"><thead><tr><th>人员</th><th>状态</th><th>当日工时</th><th>岗位疲劳</th><th>历史疲劳</th><th>总疲劳</th></tr></thead><tbody>
       ${loads.map((load) => `<tr><td>${escapeHtml(load.staff.name)}</td><td>${escapeHtml(load.staff.status)}</td><td>${load.workHours.toFixed(1)}h</td><td>${load.todayFatigue.toFixed(1)}</td><td>${load.historyFatigue.toFixed(1)}</td><td><span class="badge ${load.totalFatigue >= 20 ? "text-bg-danger" : load.totalFatigue >= 10 ? "text-bg-warning" : "text-bg-success"}">${load.totalFatigue.toFixed(1)}</span></td></tr>`).join("")}

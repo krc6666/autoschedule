@@ -4,29 +4,41 @@ export function orderPositionRules(rules: PositionRule[]): PositionRule[] {
   const flightNumbers = [...new Set(rules.map((rule) => rule.flightNo))];
   return flightNumbers.flatMap((flightNo) => {
     const flightRules = rules.filter((rule) => rule.flightNo === flightNo);
-    return flightRules.filter((rule) => rule.name.includes("督导"))
+    return flightRules
+      .filter((rule) => rule.name.includes("督导"))
       .concat(flightRules.filter((rule) => !rule.name.includes("督导")));
   });
 }
 
-export function sortFlightCountersDescending(rules: PositionRule[], flightNo: string): PositionRule[] {
+export function sortFlightCountersDescending(
+  rules: PositionRule[],
+  flightNo: string
+): PositionRule[] {
   const counterNumber = (name: string): number | null => {
     const match = name.trim().match(/^[GH](\d{1,2})$/i);
     return match ? Number(match[1]) : null;
   };
-  const selected = rules.filter((rule) => rule.flightNo === flightNo).map((rule, index) => ({ rule, index }));
-  const sorted = [...selected].sort((left, right) => {
-    const leftSupervisor = left.rule.name.includes("督导");
-    const rightSupervisor = right.rule.name.includes("督导");
-    if (leftSupervisor !== rightSupervisor) return leftSupervisor ? -1 : 1;
-    const leftCounter = counterNumber(left.rule.name);
-    const rightCounter = counterNumber(right.rule.name);
-    if (leftCounter !== null && rightCounter !== null) return rightCounter - leftCounter;
-    if (leftCounter !== null || rightCounter !== null) return leftCounter !== null ? -1 : 1;
-    return left.index - right.index;
-  }).map(({ rule }) => rule);
+  const selected = rules
+    .filter((rule) => rule.flightNo === flightNo)
+    .map((rule, index) => ({ rule, index }));
+  const sorted = [...selected]
+    .sort((left, right) => {
+      const leftSupervisor = left.rule.name.includes("督导");
+      const rightSupervisor = right.rule.name.includes("督导");
+      if (leftSupervisor !== rightSupervisor) return leftSupervisor ? -1 : 1;
+      const leftCounter = counterNumber(left.rule.name);
+      const rightCounter = counterNumber(right.rule.name);
+      if (leftCounter !== null && rightCounter !== null)
+        return rightCounter - leftCounter;
+      if (leftCounter !== null || rightCounter !== null)
+        return leftCounter !== null ? -1 : 1;
+      return left.index - right.index;
+    })
+    .map(({ rule }) => rule);
   let selectedIndex = 0;
-  return rules.map((rule) => rule.flightNo === flightNo ? sorted[selectedIndex++]! : rule);
+  return rules.map((rule) =>
+    rule.flightNo === flightNo ? sorted[selectedIndex++]! : rule
+  );
 }
 
 export function createId(prefix: string): string {
@@ -60,8 +72,22 @@ export function visiblePositionRemark(value: unknown): string {
     .trim();
 }
 
-export function combinedAssignmentRemark(positionRemark: unknown, manualRemark: unknown): string {
-  return [visiblePositionRemark(positionRemark), normalizeText(manualRemark)].filter(Boolean).join("；");
+export function combinedAssignmentRemark(
+  positionRemark: unknown,
+  manualRemark: unknown
+): string {
+  return [visiblePositionRemark(positionRemark), normalizeText(manualRemark)]
+    .filter(Boolean)
+    .join("；");
+}
+
+export function persistedAssignmentRemark(
+  positionRemark: unknown,
+  manualRemark: unknown
+): string {
+  return [normalizeText(positionRemark), normalizeText(manualRemark)]
+    .filter(Boolean)
+    .join("；");
 }
 
 export function todayIso(): string {

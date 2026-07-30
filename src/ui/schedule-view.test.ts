@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../defaults";
-import { getMonthlyDutyRoster, updateDutyRosterSlot } from "../domain/duty-roster";
+import {
+  getMonthlyDutyRoster,
+  updateDutyRosterSlot,
+} from "../domain/duty-roster";
 import { generateSchedule } from "../domain/scheduler";
+import { schedulingDecision } from "../schedule-rule-contract";
 import { renderSchedule } from "./schedule-view";
 
 describe("schedule view", () => {
@@ -20,11 +24,11 @@ describe("schedule view", () => {
     expect(html).not.toContain("flight-column-cells");
     expect(html).toContain("是否启用行政支援模式");
     expect(html).not.toContain("行政支援人员");
-    expect(html).toContain("data-action=\"load-sort-field\"");
-    expect(html).toContain("data-action=\"load-sort-direction\"");
-    expect(html).toContain("data-action=\"zoom-schedule-out\"");
-    expect(html).toContain("data-action=\"zoom-schedule-reset\"");
-    expect(html).toContain("data-action=\"zoom-schedule-in\"");
+    expect(html).toContain('data-action="load-sort-field"');
+    expect(html).toContain('data-action="load-sort-direction"');
+    expect(html).toContain('data-action="zoom-schedule-out"');
+    expect(html).toContain('data-action="zoom-schedule-reset"');
+    expect(html).toContain('data-action="zoom-schedule-in"');
     expect(html).not.toContain('data-action="import-duty-roster"');
     expect(html).not.toContain('data-action="download-duty-roster-template"');
     expect(html).toContain("次日备勤人员");
@@ -40,14 +44,22 @@ describe("schedule view", () => {
     expect(html).toContain('<th scope="col" colspan="2">');
     expect(html).toContain('class="schedule-subhead-position">岗位</th>');
     expect(html).toContain('class="schedule-subhead-person">人员</th>');
-    expect(html.match(/class="schedule-position-column"/g)).toHaveLength(state.flights.length);
-    expect(html.match(/class="schedule-person-column"/g)).toHaveLength(state.flights.length);
+    expect(html.match(/class="schedule-position-column"/g)).toHaveLength(
+      state.flights.length
+    );
+    expect(html.match(/class="schedule-person-column"/g)).toHaveLength(
+      state.flights.length
+    );
   });
 
   it("renders the selected schedule zoom level", () => {
     const state = createDefaultState();
     state.assignments = generateSchedule(state, "2026-07-18").assignments;
-    const html = renderSchedule(state, "2026-07-18", { field: "totalFatigue", direction: "desc", zoom: 1.5 });
+    const html = renderSchedule(state, "2026-07-18", {
+      field: "totalFatigue",
+      direction: "desc",
+      zoom: 1.5,
+    });
     expect(html).toContain("150%");
     expect(html).toContain("--schedule-column-width:96px");
     expect(html).toContain("--schedule-position-size:16.5px");
@@ -55,7 +67,9 @@ describe("schedule view", () => {
 
   it("shows the four-person duty summary without the monthly rotation details", () => {
     const state = createDefaultState();
-    state.staff.slice(0, 3).forEach((person) => { person.cxPreflightQualified = true; });
+    state.staff.slice(0, 3).forEach((person) => {
+      person.cxPreflightQualified = true;
+    });
     state.assignments = generateSchedule(state, "2026-07-20").assignments;
     const html = renderSchedule(state, "2026-07-20");
     expect(html).toContain("CX航前");
@@ -63,9 +77,13 @@ describe("schedule view", () => {
     expect(html).toContain("备勤人员");
     expect(html).not.toContain("CX航前轮换");
     expect(html).not.toContain("值班与备勤轮换");
-    expect(html).toContain(`本次值班 +${state.settings.dutyFatiguePoints} 疲劳点`);
+    expect(html).toContain(
+      `本次值班 +${state.settings.dutyFatiguePoints} 疲劳点`
+    );
     expect(html).not.toContain("duty-roster-table");
-    expect(html).toMatch(/<section class="schedule-workspace">[\s\S]*?class="[^"]*schedule-board[^"]*"[\s\S]*?class="duty-roster-summary"[\s\S]*?<\/section>/);
+    expect(html).toMatch(
+      /<section class="schedule-workspace">[\s\S]*?class="[^"]*schedule-board[^"]*"[\s\S]*?class="duty-roster-summary"[\s\S]*?<\/section>/
+    );
   });
 
   it("keeps a sole CX-qualified worker in the first duty round", () => {
@@ -84,11 +102,22 @@ describe("schedule view", () => {
   it("keeps monthly rebalancing controls outside the schedule page", () => {
     const state = createDefaultState();
     state.staff = state.staff.filter((person) => person.status === "正常");
-    state.staff.forEach((person) => { person.dutyQualified = true; });
+    state.staff.forEach((person) => {
+      person.dutyQualified = true;
+    });
     const rows = getMonthlyDutyRoster(state, "2026-08-01");
-    const repeated = state.staff.find((person) => rows.some((row) => row.dutyStaffId === person.id))!;
-    const target = rows.find((row) => row.dutyStaffId !== repeated.id && row.cxPreflightStaffId !== repeated.id && !row.standbyStaffIds.includes(repeated.id))!;
-    expect(updateDutyRosterSlot(state, target.date, "duty", repeated.id)).toBeNull();
+    const repeated = state.staff.find((person) =>
+      rows.some((row) => row.dutyStaffId === person.id)
+    )!;
+    const target = rows.find(
+      (row) =>
+        row.dutyStaffId !== repeated.id &&
+        row.cxPreflightStaffId !== repeated.id &&
+        !row.standbyStaffIds.includes(repeated.id)
+    )!;
+    expect(
+      updateDutyRosterSlot(state, target.date, "duty", repeated.id)
+    ).toBeNull();
     state.assignments = generateSchedule(state, "2026-08-01").assignments;
     const html = renderSchedule(state, "2026-08-01");
     expect(html).not.toContain("值班均衡未完成");
@@ -100,22 +129,54 @@ describe("schedule view", () => {
     const state = createDefaultState();
     state.flights = [state.flights[0]!];
     state.assignments = generateSchedule(state, "2026-07-18").assignments;
-    const assignment = state.assignments.find((item) => item.remark === "申报")!;
+    const assignment = state.assignments.find(
+      (item) => item.remark === "申报"
+    )!;
     assignment.manualRemark = "临时调整";
     const html = renderSchedule(state, "2026-07-18");
-    expect(html).toMatch(/<td class="schedule-grid-slot schedule-position-slot">[\s\S]*?<span class="position-remark"[^>]*>申报<\/span>[\s\S]*?<\/td><td class="schedule-grid-slot schedule-person-slot">/);
-    expect(html).toMatch(/<td class="schedule-grid-slot schedule-person-slot">[\s\S]*?class="schedule-name-input"[\s\S]*?class="schedule-manual-remark" value="临时调整"[\s\S]*?<\/td>/);
+    expect(html).toMatch(
+      /<td class="schedule-grid-slot schedule-position-slot">[\s\S]*?<span class="position-remark"[^>]*>申报<\/span>[\s\S]*?<\/td><td class="schedule-grid-slot schedule-person-slot">/
+    );
+    expect(html).toMatch(
+      /<td class="schedule-grid-slot schedule-person-slot">[\s\S]*?class="schedule-name-input"[\s\S]*?class="schedule-manual-remark" value="临时调整"[\s\S]*?<\/td>/
+    );
   });
 
   it("keeps supervisor positions at the top without extra markers", () => {
     const state = createDefaultState();
     state.staff = state.staff.slice(0, 2);
-    state.staff.forEach((person) => { person.dutyQualified = false; });
-    state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+    });
+    state.flights = [
+      {
+        id: "flight",
+        flightNo: "F1",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
     const base = state.positionRules[0]!;
     state.positionRules = [
-      { ...base, id: "supervisor", flightNo: "F1", name: "督导", category: "机动督导", qualifiedStaffIds: [state.staff[0]!.id] },
-      { ...base, id: "counter", flightNo: "F1", name: "超规柜台", category: "常规", qualifiedStaffIds: [] }
+      {
+        ...base,
+        id: "supervisor",
+        flightNo: "F1",
+        name: "督导",
+        category: "机动督导",
+        qualifiedStaffIds: [state.staff[0]!.id],
+      },
+      {
+        ...base,
+        id: "counter",
+        flightNo: "F1",
+        name: "超规柜台",
+        category: "常规",
+        qualifiedStaffIds: [],
+      },
     ];
     state.assignments = generateSchedule(state, "2026-07-18").assignments;
     const html = renderSchedule(state, "2026-07-18");
@@ -124,22 +185,76 @@ describe("schedule view", () => {
     expect(html.indexOf("超规柜台")).toBeLessThan(html.indexOf("引导岗位"));
   });
 
+  it("keeps a stale schedule visible while pausing rule-execution feedback", () => {
+    const state = createDefaultState();
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+    state.schedulePolicyStale = true;
+
+    const html = renderSchedule(state, "2026-07-18");
+
+    expect(html).toContain("排班规则已更新，当前排班尚未按新规则重新生成");
+    expect(html).toContain("航班安排反馈");
+    expect(html).toContain(
+      "当前排班尚未按新规则重新生成；请重新排班后查看规则执行反馈"
+    );
+    expect(html).not.toContain("上一工作日晚班人员跟踪");
+  });
+
   it("limits each guide input list to normal regular workers assigned on that flight", () => {
     const state = createDefaultState();
-    const [upper, lower, outsider] = state.staff.filter((person) => person.status === "正常").slice(0, 3);
+    const [upper, lower, outsider] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 3);
     state.staff = [upper!, lower!, outsider!];
-    state.flights = [{ id: "flight", flightNo: "F1", startTime: "08:00", endTime: "10:00", bookedPassengers: 100, positions: [], remark: "" }];
+    state.flights = [
+      {
+        id: "flight",
+        flightNo: "F1",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
     const base = state.positionRules[0]!;
     state.positionRules = [
-      { ...base, id: "upper", flightNo: "F1", name: "G02", category: "常规", qualifiedStaffIds: [upper!.id] },
-      { ...base, id: "lower", flightNo: "F1", name: "G01", category: "常规", qualifiedStaffIds: [lower!.id] },
-      { ...base, id: "guide", flightNo: "F1", name: "柜台引导", category: "引导", qualifiedStaffIds: [] }
+      {
+        ...base,
+        id: "upper",
+        flightNo: "F1",
+        name: "G02",
+        category: "常规",
+        qualifiedStaffIds: [upper!.id],
+      },
+      {
+        ...base,
+        id: "lower",
+        flightNo: "F1",
+        name: "G01",
+        category: "常规",
+        qualifiedStaffIds: [lower!.id],
+      },
+      {
+        ...base,
+        id: "guide",
+        flightNo: "F1",
+        name: "柜台引导",
+        category: "引导",
+        qualifiedStaffIds: [],
+      },
     ];
     state.assignments = generateSchedule(state, "2026-07-18").assignments;
 
     const html = renderSchedule(state, "2026-07-18");
-    const guideInput = html.match(/<input class="schedule-name-input"[^>]*aria-label="柜台引导人员"[^>]*>/)?.[0] ?? "";
-    const guideList = html.match(/<datalist id="schedule-guide-staff-0">([\s\S]*?)<\/datalist>/)?.[1] ?? "";
+    const guideInput =
+      html.match(
+        /<input class="schedule-name-input"[^>]*aria-label="柜台引导人员"[^>]*>/
+      )?.[0] ?? "";
+    const guideList =
+      html.match(
+        /<datalist id="schedule-guide-staff-0">([\s\S]*?)<\/datalist>/
+      )?.[1] ?? "";
     expect(guideInput).toContain('list="schedule-guide-staff-0"');
     expect(guideList).toContain(`value="${upper!.name}"`);
     expect(guideList).toContain(`value="${lower!.name}"`);
@@ -149,13 +264,74 @@ describe("schedule view", () => {
   it("shows a separate administrative roster only when support mode is enabled", () => {
     const state = createDefaultState();
     state.settings.adminSupportEnabled = true;
-    state.staff.push({ id: "A1", name: "行政一号", staffType: "行政支援", teamLeader: false, cxPreflightQualified: false, dutyQualified: false, nightShift: true, status: "正常", remark: "" });
+    state.staff.push({
+      id: "A1",
+      name: "行政一号",
+      staffType: "行政支援",
+      teamLeader: false,
+      cxPreflightQualified: false,
+      dutyQualified: false,
+      nightShift: true,
+      status: "正常",
+      remark: "",
+    });
     state.assignments = generateSchedule(state, "2026-07-18").assignments;
     const html = renderSchedule(state, "2026-07-18");
     expect(html).toContain("行政支援人员");
     expect(html).toContain("行政一号");
     expect(html).toContain("staff-palette-item is-admin-support");
-    const loadSection = html.slice(html.indexOf('class="workspace-section load-details"'));
+    const loadSection = html.slice(
+      html.indexOf('class="workspace-section load-details"')
+    );
     expect(loadSection).not.toContain("行政一号");
+  });
+
+  it("marks unresolved position rotation in amber with the full reason", () => {
+    const state = createDefaultState();
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+    const assignment = state.assignments.find(
+      (item) => item.status === "assigned"
+    )!;
+    assignment.decisionTrace = [
+      schedulingDecision(
+        "position-rotation",
+        "fallback",
+        "没有安全替代人员，保留岗位完整性"
+      ),
+    ];
+
+    const html = renderSchedule(state, "2026-07-18");
+
+    expect(html).toContain("is-soft-rule-warning");
+    expect(html).toContain("schedule-soft-warning-icon");
+    expect(html).toContain("没有安全替代人员，保留岗位完整性");
+    expect(html).toContain("连续轮岗异常");
+  });
+
+  it("marks a recovery-protection fallback in amber without calling the rotation unresolved", () => {
+    const state = createDefaultState();
+    state.assignments = generateSchedule(state, "2026-07-18").assignments;
+    const assignment = state.assignments.find(
+      (item) => item.status === "assigned"
+    )!;
+    assignment.decisionTrace = [
+      schedulingDecision(
+        "position-rotation",
+        "selected",
+        "已换到更低疲劳普通岗位"
+      ),
+      schedulingDecision(
+        "late-shift-recovery",
+        "fallback",
+        "上一班末班重点岗位人员作为最后兜底接替"
+      ),
+    ];
+
+    const html = renderSchedule(state, "2026-07-18");
+
+    expect(html).toContain("is-soft-rule-warning");
+    expect(html).toContain("上一班末班重点岗位人员作为最后兜底接替");
+    expect(html).toContain("软约束提醒");
+    expect(html).not.toContain('aria-label="连续轮岗异常"');
   });
 });

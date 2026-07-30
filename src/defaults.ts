@@ -1,4 +1,5 @@
 import type { AppState, Flight, PositionRule, Staff } from "./model";
+import { createDefaultScheduleSettings } from "./domain/schedule-settings";
 import { orderPositionRules } from "./utils";
 
 const allRegular = Array.from({ length: 17 }, (_, index) => String(index + 2));
@@ -21,7 +22,7 @@ export const defaultStaff: Staff[] = [
   ["15", "刘燕琼", true, "正常", ""],
   ["16", "罗敏", false, "正常", "年休假"],
   ["17", "任霞", true, "病假", "病假"],
-  ["18", "肖潇", true, "休假", "产假"]
+  ["18", "肖潇", true, "休假", "产假"],
 ].map(([id, name, nightShift, status, remark]) => ({
   id: String(id),
   name: String(name),
@@ -31,7 +32,7 @@ export const defaultStaff: Staff[] = [
   dutyQualified: true,
   nightShift: Boolean(nightShift),
   status: status as Staff["status"],
-  remark: String(remark)
+  remark: String(remark),
 }));
 
 export const defaultFlights: Flight[] = [
@@ -41,8 +42,19 @@ export const defaultFlights: Flight[] = [
     startTime: "08:30",
     endTime: "10:30",
     bookedPassengers: 0,
-    positions: ["督导", "G20", "G19", "G18", "G17", "G16", "G15", "G14", "G13", "G12"],
-    remark: "到岗08:05"
+    positions: [
+      "督导",
+      "G20",
+      "G19",
+      "G18",
+      "G17",
+      "G16",
+      "G15",
+      "G14",
+      "G13",
+      "G12",
+    ],
+    remark: "到岗08:05",
   },
   {
     id: "flight-fd573",
@@ -51,7 +63,7 @@ export const defaultFlights: Flight[] = [
     endTime: "17:25",
     bookedPassengers: 0,
     positions: ["督导/引导", "G10", "G09", "G08", "G07"],
-    remark: "到岗15:05"
+    remark: "到岗15:05",
   },
   {
     id: "flight-cx931",
@@ -59,8 +71,19 @@ export const defaultFlights: Flight[] = [
     startTime: "17:50",
     endTime: "19:50",
     bookedPassengers: 0,
-    positions: ["督导", "G20", "G19", "G18", "G17", "G16", "G15", "G14", "G13", "G12"],
-    remark: "到岗17:25"
+    positions: [
+      "督导",
+      "G20",
+      "G19",
+      "G18",
+      "G17",
+      "G16",
+      "G15",
+      "G14",
+      "G13",
+      "G12",
+    ],
+    remark: "到岗17:25",
   },
   {
     id: "flight-tr121",
@@ -68,18 +91,33 @@ export const defaultFlights: Flight[] = [
     startTime: "21:55",
     endTime: "23:55",
     bookedPassengers: 0,
-    positions: ["督导", "收费/引导", "H02", "H03", "H04", "H05", "H06", "H07", "H08", "H09"],
-    remark: "到岗21:35"
-  }
+    positions: [
+      "督导",
+      "收费/引导",
+      "H02",
+      "H03",
+      "H04",
+      "H05",
+      "H06",
+      "H07",
+      "H08",
+      "H09",
+    ],
+    remark: "到岗21:35",
+  },
 ];
 
 const cxRules = [
-  ["G12", "", allRegular, 2], ["G13", "", allRegular, 2], ["G14", "", allRegular, 2],
-  ["G15", "", allRegular, 2], ["G16", "排查", allRegular, 2.5], ["G17", "申报", allRegular, 3],
+  ["G12", "", allRegular, 2],
+  ["G13", "", allRegular, 2],
+  ["G14", "", allRegular, 2],
+  ["G15", "", allRegular, 2],
+  ["G16", "排查", allRegular, 2.5],
+  ["G17", "申报", allRegular, 3],
   ["G18", "控制", ["2", "7", "12", "13", "14"], 5],
   ["G19", "", ["2", "4", "5", "7", "9", "11", "12", "13", "14", "17"], 2],
   ["G20", "一号", ["2", "4", "5", "7", "9", "12", "13", "14", "16"], 4],
-  ["督导", "", ["1", "4", "11", "12"], 4]
+  ["督导", "", ["1", "4", "11", "12"], 4],
 ] as const;
 
 function positionRule(
@@ -90,7 +128,10 @@ function positionRule(
   fatiguePoints: number,
   options: Partial<Pick<PositionRule, "category" | "manual">> = {}
 ): PositionRule {
-  const normalizedName = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "");
+  const normalizedName = name
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-|-$/g, "");
   return {
     id: `position-${flightNo.toLowerCase()}-${normalizedName || encodeURIComponent(name)}`,
     flightNo,
@@ -101,12 +142,14 @@ function positionRule(
     manual: options.manual ?? false,
     fatiguePoints,
     minPassengers: 0,
-    earlyReleaseMinutes: 0
+    earlyReleaseMinutes: 0,
   };
 }
 
 export const defaultPositionRules: PositionRule[] = [
-  ...cxRules.map(([name, remark, ids, points]) => positionRule("CX937", name, remark, ids, points)),
+  ...cxRules.map(([name, remark, ids, points]) =>
+    positionRule("CX937", name, remark, ids, points)
+  ),
   positionRule("CX937", "柜台引导1", "", [], 2.5, { category: "引导" }),
   positionRule("CX937", "柜台引导2", "", [], 2.5, { category: "引导" }),
   positionRule("CX937", "超规柜台", "", [], 2.5, { manual: true }),
@@ -116,7 +159,15 @@ export const defaultPositionRules: PositionRule[] = [
   positionRule("FD573", "G09", "排查", allRegular, 2.5),
   positionRule("FD573", "G10", "", allRegular, 1),
   positionRule("FD573", "督导/引导", "", ["1", "4", "11", "12"], 3.5),
-  ...cxRules.map(([name, remark, ids, points]) => positionRule("CX931", name, remark, ids, name === "G18" ? 6 : name === "督导" ? 5 : points)),
+  ...cxRules.map(([name, remark, ids, points]) =>
+    positionRule(
+      "CX931",
+      name,
+      remark,
+      ids,
+      name === "G18" ? 6 : name === "督导" ? 5 : points
+    )
+  ),
   positionRule("TR121", "H02", "一号", allRegular, 10),
   positionRule("TR121", "H03", "", allRegular, 6),
   positionRule("TR121", "H04", "申报", allRegular, 7),
@@ -126,7 +177,7 @@ export const defaultPositionRules: PositionRule[] = [
   positionRule("TR121", "H08", "", allRegular, 2),
   positionRule("TR121", "H09", "", allRegular, 2),
   positionRule("TR121", "督导", "", ["1", "3", "4", "10", "11", "12"], 9.5),
-  positionRule("TR121", "收费/引导", "", ["5", "15"], 5)
+  positionRule("TR121", "收费/引导", "", ["5", "15"], 5),
 ];
 
 export function createDefaultState(): AppState {
@@ -134,67 +185,19 @@ export function createDefaultState(): AppState {
     version: 3,
     staff: structuredClone(defaultStaff),
     flights: structuredClone(defaultFlights),
-    templates: defaultFlights.map(({ id, bookedPassengers: _bookedPassengers, ...flight }) => ({
-      ...structuredClone(flight),
-      id: `template-${id}`
-    })),
+    templates: defaultFlights.map(
+      ({ id, bookedPassengers: _bookedPassengers, ...flight }) => ({
+        ...structuredClone(flight),
+        id: `template-${id}`,
+      })
+    ),
     positionRules: orderPositionRules(structuredClone(defaultPositionRules)),
     history: [],
     dutyRosterOverrides: [],
     assignments: [],
     activeScheduleDate: null,
-    settings: {
-      maxDailyHours: 12,
-      historyWindowDays: 7,
-      nightStart: "22:00",
-      nightEnd: "06:00",
-      consecutiveDayPenalty: 5,
-      adminSupportEnabled: false,
-      highLoadProtectionEnabled: true,
-      highLoadFatigueThreshold: 4,
-      highLoadRecoveryMinutes: 360,
-      remarkedPositionHighLoad: true,
-      rollingLoadProtectionEnabled: true,
-      rollingLoadWindowMinutes: 360,
-      rollingLoadMaxFatigue: 8,
-      positionRotationEnabled: true,
-      lateShiftRecoveryEnabled: true,
-      lateShiftStartTime: "20:00",
-      lateShiftLatestWindowMinutes: 180,
-      nextDayLateMaxFatigue: 2,
-      nextWorkdayRecoveryTargets: [
-        { id: "recovery-target-cx937-one", flightNo: "CX937", positionKeyword: "一号", enabled: true },
-        { id: "recovery-target-cx937-control", flightNo: "CX937", positionKeyword: "控制", enabled: true },
-        { id: "recovery-target-ke166-one", flightNo: "KE166", positionKeyword: "一号", enabled: true }
-      ],
-      dutyFatiguePoints: 12,
-      dutyPositionPriorities: [
-        { id: "duty-priority-tr121-h02", flightNo: "TR121", positionKeyword: "H02", enabled: true },
-        { id: "duty-priority-tw616-one", flightNo: "TW616", positionKeyword: "一号", enabled: true }
-      ],
-      mobileSupervisorCoverageRules: [
-        { id: "supervisor-forbid-one", enabled: true, flightNo: "", matchField: "remark", keyword: "一号", mode: "forbid" },
-        { id: "supervisor-forbid-declare", enabled: true, flightNo: "", matchField: "remark", keyword: "申报", mode: "forbid" },
-        { id: "supervisor-forbid-check", enabled: true, flightNo: "", matchField: "remark", keyword: "排查", mode: "forbid" }
-      ],
-      earlyDepartureCutoffTime: "12:00",
-      afternoonRestStartTime: "12:00",
-      afternoonRestEndTime: "18:00",
-      workloadBalanceEnabled: true,
-      maxWorkHoursDifference: 2,
-      maxTodayFatigueDifference: 4,
-      positionTransitionPolicies: [{
-        id: "transition-cx931-tr121-h02",
-        name: "TR121 H02 准备保护",
-        enabled: true,
-        sourceFlightNo: "CX931",
-        sourcePositions: ["督导", "G20", "G19"],
-        targetFlightNo: "TR121",
-        targetPosition: "H02",
-        minimumGapMinutes: 180,
-        mode: "prefer"
-      }]
-    },
-    updatedAt: new Date().toISOString()
+    schedulePolicyStale: false,
+    settings: createDefaultScheduleSettings(),
+    updatedAt: new Date().toISOString(),
   };
 }

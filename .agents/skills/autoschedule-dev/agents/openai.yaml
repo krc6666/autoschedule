@@ -1,0 +1,4 @@
+interface:
+  display_name: "自动排班高质量开发"
+  short_description: "复现、修改并验证机场值机排班规则，防止历史问题复发"
+  default_prompt: "使用 $autoschedule-dev 排查并高质量完成当前自动排班项目开发任务。"

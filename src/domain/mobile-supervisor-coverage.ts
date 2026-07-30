@@ -1,4 +1,5 @@
-import type { AppState, MobileSupervisorCoverageRule } from "../model";
+import type { AppState } from "../model";
+import type { MobileSupervisorCoverageRule } from "../structured-policy-contract";
 
 export interface MobileSupervisorCoverageTarget {
   flightNo: string;
@@ -16,11 +17,20 @@ function normalize(value: string): string {
   return value.trim().toLocaleLowerCase("zh-CN");
 }
 
-function appliesToFlight(rule: MobileSupervisorCoverageRule, flightNo: string): boolean {
-  return !normalize(rule.flightNo) || normalize(rule.flightNo) === normalize(flightNo);
+function appliesToFlight(
+  rule: MobileSupervisorCoverageRule,
+  flightNo: string
+): boolean {
+  return (
+    !normalize(rule.flightNo) ||
+    normalize(rule.flightNo) === normalize(flightNo)
+  );
 }
 
-function matchesTarget(rule: MobileSupervisorCoverageRule, target: MobileSupervisorCoverageTarget): boolean {
+function matchesTarget(
+  rule: MobileSupervisorCoverageRule,
+  target: MobileSupervisorCoverageTarget
+): boolean {
   const keyword = normalize(rule.keyword);
   if (!keyword) return false;
   const value = rule.matchField === "remark" ? target.remark : target.position;
@@ -31,16 +41,33 @@ export function evaluateMobileSupervisorCoverage(
   state: AppState,
   target: MobileSupervisorCoverageTarget
 ): MobileSupervisorCoverageEvaluation {
-  const applicable = state.settings.mobileSupervisorCoverageRules
-    .filter((rule) => rule.enabled && appliesToFlight(rule, target.flightNo) && normalize(rule.keyword));
-  const forbidden = applicable.find((rule) => rule.mode === "forbid" && matchesTarget(rule, target));
+  const applicable = state.settings.mobileSupervisorCoverageRules.filter(
+    (rule) =>
+      rule.enabled &&
+      appliesToFlight(rule, target.flightNo) &&
+      normalize(rule.keyword)
+  );
+  const forbidden = applicable.find(
+    (rule) => rule.mode === "forbid" && matchesTarget(rule, target)
+  );
   if (forbidden) {
     const field = forbidden.matchField === "remark" ? "岗位备注" : "岗位名称";
-    return { allowed: false, reason: `命中禁止规则：${field}包含“${forbidden.keyword}”`, rule: forbidden };
+    return {
+      allowed: false,
+      reason: `命中禁止规则：${field}包含“${forbidden.keyword}”`,
+      rule: forbidden,
+    };
   }
   const allowedRules = applicable.filter((rule) => rule.mode === "allow");
-  if (allowedRules.length && !allowedRules.some((rule) => matchesTarget(rule, target))) {
-    return { allowed: false, reason: "该岗位不在当前航班的允许兼任范围内", rule: null };
+  if (
+    allowedRules.length &&
+    !allowedRules.some((rule) => matchesTarget(rule, target))
+  ) {
+    return {
+      allowed: false,
+      reason: "该岗位不在当前航班的允许兼任范围内",
+      rule: null,
+    };
   }
   return { allowed: true, reason: null, rule: null };
 }

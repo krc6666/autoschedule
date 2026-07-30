@@ -37,24 +37,45 @@
 每次规则调整至少检查受影响的项目：
 
 - 硬约束：状态、人员类型、岗位资质、夜班、时间冲突、每日工时。
-- 特殊锁定：值班早班、值班晚撤、`KE166` 机动督导及绑定兼任柜台。
+- 特殊边界：值班最终保留12点前上午航班且只锁晚撤岗位、`KE166` 独立机动督导及缺员时的兼任组。
 - 岗位完整性：12点前稀缺岗位、跨航班抽调、同航班空缺下沉、行政支援替换。
 - 人员保护：岗位衔接、高负荷、滚动负荷、跨工作日恢复、当日工时与疲劳。
-- 公平轮岗：重点岗位自然月与最近6班频率、普通岗位第三次连续、三人安全重排。
+- 公平轮岗：重点岗位自然月与最近6班频率、普通岗位第三次连续、连续轮岗最多五人参与的最短安全闭环或由空闲合格人员收口的开放式连续腾挪。
 - 人工路径：拖拽、交换、清空、临时岗位、机动督导同步、过期决策记录。
 - 反馈：实际执行、保护突破、无法调整原因、当前事实和历史基准必须一致。
 
 ## 当前排班模块边界
 
-- `scheduler.ts` 只保留 `generateSchedule` 中央管线，按公开阶段串联任务、候选、锁定、完整性修复、轮岗复核和最终输出。
+- `schedule-rule-contract.ts` 单一维护规则 ID、阶段、名称和反馈模式；`scheduler.ts` 只保留 `generateSchedule` 中央管线和最终输出顺序；`schedule-task-assigner.ts` 负责单个任务的候选过滤、选择、值班目标状态和兜底证据，`candidate-priority.ts` 统一构造具名候选事实、公开顺序、逐项比较和决定性规则。新增候选规则不得把事实计算重新写回中央调度器。
 - `schedule-tasks.ts` 负责岗位任务定义和是否自动排班；`schedule-position-rules.ts` 负责岗位显示与有效岗位事实。
-- `assignment-eligibility.ts`、`assignment-timing.ts` 和 `assignment-validation.ts` 分别负责基础候选资格、时段/工时计算和人工改派校验。
+- `assignment-eligibility.ts` 统一返回基础资格、自动落位和人工改派的结构化 violation；`assignment-timing.ts` 只负责时段、工时和提前撤岗计算。自动排班、人工调整、补缺和缺员说明不得各自复制状态、资质、夜班、冲突与工时判断。
 - `duty-assignment.ts` 与 `ke166-assignment.ts` 负责特殊岗位锁定；`candidate-qualification.ts` 负责稀缺资质判断。
 - `schedule-protection.ts`、`schedule-frequency.ts` 和 `schedule-decision-notes.ts` 分别负责保护规则计算、历史频率事实和结构化说明。
 - `workload-accounting.ts` 统一定义哪些当天分配计入工时、疲劳、保护、统计和归档；行政支援岗位及行政支援人员必须在这里统一排除。
 - `assignment-evidence.ts` 统一清除人工调整后已经失效的系统说明和结构化自动决策记录。
 - `schedule-coverage.ts` 负责12点前缺员说明及同航班岗位空缺下沉。
-- `rotation-review-safety.ts` 是轮岗重排的统一安全检查；`position-frequency-review.ts` 和 `position-rotation-review.ts` 分别处理重点岗位频率与连续轮岗，禁止互相复制安全约束。
+- `rotation-review-safety.ts` 是轮岗、恢复重排和分队长补缺的统一计划安全检查；`coverage` 用途允许增加已填岗位但禁止减少，且不附带轮岗频率或恢复均衡专属条件。`position-frequency-review.ts` 和 `position-rotation-review.ts` 分别处理重点岗位频率与连续轮岗，禁止互相复制安全约束。
+- `schedule-pipeline.ts` 只按 `POST_SCHEDULE_REVIEW_ORDER` 串联后置复核；`schedule-progress.ts` 是阶段顺序、百分比和界面提示的单一合同。新增阶段不得在 `scheduler.ts`、页面和测试中各维护一份字符串清单。
+- `schedule-feedback.ts` 只组合反馈；`schedule-feedback-facts.ts` 提供只读事实，`schedule-operational-feedback.ts` 生成人员覆盖、负荷和衔接反馈，`schedule-rule-feedback.ts` 只消费最终事实及结构化决策生成规则反馈。反馈模块不得执行换人或重新排序。
+- `schedule-settings.ts` 统一标量规则默认值和清洗；`structured-policy-contract.ts` 与 `structured-policy-settings.ts` 统一五类结构化规则的数据合同、默认值和清洗；页面保存、本地恢复和 Excel 导入不得各自定义不同边界。
+- `schedule-lifecycle.ts` 统一清空、过期和安装班表；调用方不得再分别手写班表日期、过期标记和 assignments 状态组合。
+- `state-restoration.ts` 负责持久化版本迁移和分区恢复；单个损坏班表不得导致人员、岗位和规则配置整体丢失。
+- `excel.ts` 是工作簿总入口，`excel-rule-settings.ts` 独占规则参数及五类规则表的导入导出，`excel-worksheet.ts` 只提供工作表基础操作。新增规则表不得把解析和导出重新堆回总入口。
+- `policy-actions.ts` 统一所有结构化规则集合的新增、删除和字段更新；`configuration-actions.ts` 不得重新接管岗位衔接、恢复目标或机动督导范围。
+- `schedule-run-controller.ts` 统一后台排班、并发保护和进度生命周期；`workbook-import-controller.ts` 统一普通配置与值班表预览导入。`app.ts` 只接收结果并组织提示、模态框和持久化。
+- 纯类型不得制造领域模块反向依赖；`previous-workday-load-model.ts` 等数据合同必须保持无业务导入，生产模块依赖图不得出现循环。
+
+## 新增规则的最小改动面
+
+新增或修改一条排班规则时，按需要触及以下入口，不得无条件全改：
+
+1. 业务定义和阶段：`schedule-rule-contract.ts`；候选事实、固定顺序和逐项比较进入 `candidate-priority.ts`，每条规则必须有具名字段和明确比较器。
+2. 规则事实或执行：进入对应领域模块；后置复核只由 `schedule-pipeline.ts` 显式调用。
+3. 自动决策证据：统一通过 `assignment-evidence.ts` 写入、替换和读取，禁止直接批量覆盖其他规则的 `decisionTrace`。
+4. 反馈：优先读取结构化决策，只在最终事实核验仍成立时输出；不得复制候选过滤或安全交换算法。
+5. 可编辑参数：标量只在 `schedule-settings.ts` 定义默认值与清洗边界，结构化规则只在 `structured-policy-contract.ts` 和 `structured-policy-settings.ts` 定义；需要 Excel 持久化时再改 `excel-rule-settings.ts`。
+6. 进度：只有新增真实执行阶段时才改 `schedule-progress.ts` 和中央管线；普通规则不得伪造独立阶段。
+7. 测试：先补业务失败测试，再运行语义快照、Excel 往返、状态恢复和完整验证。无关模块不应因一条规则变化而改动。
 
 ## 已发现但未授权修复的风险
 

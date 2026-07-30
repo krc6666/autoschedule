@@ -8,12 +8,21 @@ const navigation: Array<{ id: AppSection; label: string; icon: string }> = [
   { id: "schedule", label: "排班", icon: "calendar2-check" },
   { id: "policy", label: "规则", icon: "diagram-3" },
   { id: "statistics", label: "统计", icon: "bar-chart" },
-  { id: "history", label: "历史", icon: "clock-history" }
+  { id: "history", label: "历史", icon: "clock-history" },
 ];
 
-export function renderShell(state: AppState, active: AppSection, date: string, content: string): string {
-  const assigned = state.assignments.filter((item) => item.status === "assigned").length;
-  const unfilled = state.assignments.filter((item) => item.status === "unfilled").length;
+export function renderShell(
+  state: AppState,
+  active: AppSection,
+  date: string,
+  content: string
+): string {
+  const assigned = state.assignments.filter(
+    (item) => item.status === "assigned"
+  ).length;
+  const unfilled = state.assignments.filter(
+    (item) => item.status === "unfilled"
+  ).length;
   return `
     <header class="app-header border-bottom bg-white sticky-top">
       <div class="container-fluid app-container d-flex align-items-center gap-3 py-2">
@@ -31,10 +40,14 @@ export function renderShell(state: AppState, active: AppSection, date: string, c
     </header>
     <div class="container-fluid app-container app-layout">
       <nav class="app-nav" aria-label="主要导航">
-        ${navigation.map((item) => `
+        ${navigation
+          .map(
+            (item) => `
           <button class="nav-item ${active === item.id ? "active" : ""}" type="button" data-nav="${item.id}" title="${item.label}">
             <i class="bi bi-${item.icon}"></i><span>${item.label}</span>
-          </button>`).join("")}
+          </button>`
+          )
+          .join("")}
         <div class="nav-spacer"></div>
         <button class="nav-item" type="button" data-action="import-workbook" title="导入配置、航班计划或历史排班结果">
           <i class="bi bi-file-earmark-arrow-up"></i><span>导入数据</span>
@@ -55,6 +68,17 @@ export function renderShell(state: AppState, active: AppSection, date: string, c
       </main>
     </div>
     <input class="visually-hidden" id="workbook-input" type="file" accept=".xlsx,.xls">
+    <section class="schedule-progress-panel" id="schedule-progress" role="status" aria-live="polite" hidden>
+      <div class="schedule-progress-heading">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        <strong id="schedule-progress-title">正在排班</strong>
+        <span id="schedule-progress-percent">0%</span>
+      </div>
+      <div class="progress" role="progressbar" aria-label="排班进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress-bar" id="schedule-progress-bar" style="width: 0%"></div>
+      </div>
+      <div class="schedule-progress-detail" id="schedule-progress-detail">正在准备排班数据</div>
+    </section>
     <div class="toast-container position-fixed bottom-0 end-0 p-3">
       <div class="toast align-items-center border-0" id="app-toast" role="status" aria-live="polite" aria-atomic="true">
         <div class="d-flex"><div class="toast-body" id="toast-body"></div><button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="关闭"></button></div>

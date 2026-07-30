@@ -1,0 +1,462 @@
+import { normalizeSupervisorAssignments } from "../domain/schedule-adjustment";
+import { normalizeScheduleSettings } from "../domain/schedule-settings";
+import { removeUnavailableStaffAssignments } from "../domain/schedule-state";
+import type {
+  AppState,
+  Assignment,
+  DutyRosterOverride,
+  Flight,
+  FlightTemplate,
+  HistoryRecord,
+  PositionRule,
+  ScheduleSettings,
+  Staff,
+} from "../model";
+import {
+  SCHEDULING_RULES,
+  type SchedulingDecision,
+  type SchedulingDecisionOutcome,
+  type SchedulingRuleId,
+} from "../schedule-rule-contract";
+import { orderPositionRules } from "../utils";
+
+type PersistedSettings = Partial<ScheduleSettings>;
+type PersistedAppState = Record<string, unknown> & { version: 1 | 2 | 3 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isPersistedState(value: unknown): value is PersistedAppState {
+  if (!isRecord(value)) return false;
+  return value.version === 1 || value.version === 2 || value.version === 3;
+}
+
+function restoredCollection<T>(
+  value: unknown,
+  fallback: T[],
+  restore: (items: unknown[]) => T[]
+): T[] {
+  return Array.isArray(value) ? restore(value) : fallback;
+}
+
+function migrateSettings(
+  parsed: PersistedAppState,
+  fallback: AppState
+): ScheduleSettings {
+  const persistedSettings = isRecord(parsed.settings)
+    ? (parsed.settings as PersistedSettings)
+    : {};
+  const migrated = { ...fallback.settings, ...persistedSettings };
+  Reflect.deleteProperty(migrated, "highLoadTransitionMode");
+  Reflect.deleteProperty(migrated, "rollingLoadMode");
+  Reflect.deleteProperty(migrated, "lateShiftRecoveryMode");
+  Reflect.deleteProperty(migrated, "nextDayLateMaxFatigue");
+  if (parsed.version < 3 && Array.isArray(migrated.dutyPositionPriorities)) {
+    migrated.dutyPositionPriorities = migrated.dutyPositionPriorities.map(
+      (item) =>
+        String(item.flightNo ?? "")
+          .trim()
+          .toUpperCase() === "TR121" &&
+        String(item.positionKeyword ?? "").trim() === "一号"
+          ? { ...item, id: "duty-priority-tr121-h02", positionKeyword: "H02" }
+          : item
+    );
+  }
+  return normalizeScheduleSettings(migrated, fallback.settings);
+}
+
+const STAFF_STATUSES = new Set<Staff["status"]>(["正常", "病假", "休假"]);
+
+function restoreStaff(value: unknown[]): Staff[] {
+  return value.flatMap((item): Staff[] => {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      typeof item.name !== "string" ||
+      typeof item.nightShift !== "boolean" ||
+      !STAFF_STATUSES.has(item.status as Staff["status"]) ||
+      typeof item.remark !== "string"
+    )
+      return [];
+    const staffType = item.staffType === "行政支援" ? "行政支援" : "常规";
+    return [
+      {
+        id: item.id,
+        name: item.name,
+        staffType,
+        teamLeader: staffType === "行政支援" ? false : Boolean(item.teamLeader),
+        cxPreflightQualified:
+          staffType === "行政支援" ? false : Boolean(item.cxPreflightQualified),
+        dutyQualified:
+          staffType === "行政支援" ? false : item.dutyQualified !== false,
+        nightShift: item.nightShift,
+        status: item.status as Staff["status"],
+        remark: item.remark,
+      },
+    ];
+  });
+}
+
+function restoreFlights(value: unknown[]): Flight[] {
+  return value.flatMap((item): Flight[] => {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      typeof item.flightNo !== "string" ||
+      typeof item.startTime !== "string" ||
+      typeof item.endTime !== "string" ||
+      typeof item.bookedPassengers !== "number" ||
+      !Number.isFinite(item.bookedPassengers) ||
+      !Array.isArray(item.positions) ||
+      !item.positions.every((position) => typeof position === "string") ||
+      typeof item.remark !== "string"
+    )
+      return [];
+    return [
+      {
+        id: item.id,
+        flightNo: item.flightNo,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        bookedPassengers: item.bookedPassengers,
+        positions: item.positions,
+        remark: item.remark,
+      },
+    ];
+  });
+}
+
+function restoreTemplates(value: unknown[]): FlightTemplate[] {
+  return value.flatMap((item): FlightTemplate[] => {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      typeof item.flightNo !== "string" ||
+      typeof item.startTime !== "string" ||
+      typeof item.endTime !== "string" ||
+      !Array.isArray(item.positions) ||
+      !item.positions.every((position) => typeof position === "string") ||
+      typeof item.remark !== "string"
+    )
+      return [];
+    return [
+      {
+        id: item.id,
+        flightNo: item.flightNo,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        positions: item.positions,
+        remark: item.remark,
+      },
+    ];
+  });
+}
+
+type PersistedPositionCategory = PositionRule["category"] | "督导" | "督导补位";
+const POSITION_CATEGORIES = new Set<PersistedPositionCategory>([
+  "常规",
+  "引导",
+  "机动督导",
+  "督导补位",
+  "督导",
+  "分流",
+  "行政支援",
+]);
+
+function restorePositionRules(
+  value: unknown[],
+  resetMobileSupervisors: boolean
+): PositionRule[] {
+  const restored = value.flatMap((item): PositionRule[] => {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      typeof item.flightNo !== "string" ||
+      typeof item.name !== "string" ||
+      !POSITION_CATEGORIES.has(item.category as PersistedPositionCategory) ||
+      typeof item.remark !== "string" ||
+      !Array.isArray(item.qualifiedStaffIds) ||
+      !item.qualifiedStaffIds.every((staffId) => typeof staffId === "string") ||
+      typeof item.fatiguePoints !== "number" ||
+      !Number.isFinite(item.fatiguePoints)
+    )
+      return [];
+    const persistedCategory = item.category as PersistedPositionCategory;
+    const category =
+      persistedCategory === "督导补位" ||
+      persistedCategory === "督导" ||
+      (resetMobileSupervisors && persistedCategory === "机动督导")
+        ? ("常规" as const)
+        : persistedCategory;
+    return [
+      {
+        id: item.id,
+        flightNo: item.flightNo,
+        name: item.name,
+        category,
+        remark: item.remark,
+        qualifiedStaffIds: item.qualifiedStaffIds,
+        manual: persistedCategory === "督导补位" ? false : Boolean(item.manual),
+        fatiguePoints: item.fatiguePoints,
+        minPassengers: Number(item.minPassengers) || 0,
+        earlyReleaseMinutes: Number(item.earlyReleaseMinutes) || 0,
+      },
+    ];
+  });
+  return orderPositionRules(restored);
+}
+
+function restoreHistory(value: unknown[]): HistoryRecord[] {
+  return value.flatMap((item): HistoryRecord[] => {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      typeof item.date !== "string" ||
+      typeof item.flightNo !== "string" ||
+      typeof item.position !== "string" ||
+      typeof item.staffId !== "string" ||
+      typeof item.staffName !== "string" ||
+      typeof item.startTime !== "string" ||
+      typeof item.endTime !== "string" ||
+      typeof item.workHours !== "number" ||
+      !Number.isFinite(item.workHours) ||
+      typeof item.fatiguePoints !== "number" ||
+      !Number.isFinite(item.fatiguePoints) ||
+      typeof item.remark !== "string"
+    )
+      return [];
+    return [
+      {
+        id: item.id,
+        date: item.date,
+        flightNo: item.flightNo,
+        position: item.position,
+        staffId: item.staffId,
+        staffName: item.staffName,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        workHours: item.workHours,
+        fatiguePoints: item.fatiguePoints,
+        remark: item.remark,
+      },
+    ];
+  });
+}
+
+const SCHEDULING_DECISION_OUTCOMES = new Set<SchedulingDecisionOutcome>([
+  "selected",
+  "blocked",
+  "fallback",
+  "preserved",
+]);
+const SCHEDULING_RULE_BY_ID = new Map(
+  SCHEDULING_RULES.map((definition) => [definition.id, definition])
+);
+
+function validDecision(value: unknown): value is SchedulingDecision {
+  if (
+    !isRecord(value) ||
+    typeof value.ruleId !== "string" ||
+    typeof value.message !== "string"
+  )
+    return false;
+  const definition = SCHEDULING_RULE_BY_ID.get(
+    value.ruleId as SchedulingRuleId
+  );
+  return Boolean(
+    definition &&
+    value.stage === definition.stage &&
+    SCHEDULING_DECISION_OUTCOMES.has(value.outcome as SchedulingDecisionOutcome)
+  );
+}
+
+const ASSIGNMENT_STATUSES = new Set<Assignment["status"]>([
+  "assigned",
+  "unfilled",
+  "manual",
+]);
+
+function restoredAssignment(value: unknown): Assignment | null {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.flightId !== "string" ||
+    typeof value.flightNo !== "string" ||
+    !(
+      value.positionRuleId === null || typeof value.positionRuleId === "string"
+    ) ||
+    typeof value.position !== "string" ||
+    !(value.staffId === null || typeof value.staffId === "string") ||
+    typeof value.staffName !== "string" ||
+    typeof value.startTime !== "string" ||
+    typeof value.endTime !== "string" ||
+    typeof value.workHours !== "number" ||
+    !Number.isFinite(value.workHours) ||
+    typeof value.fatiguePoints !== "number" ||
+    !Number.isFinite(value.fatiguePoints) ||
+    typeof value.remark !== "string" ||
+    !ASSIGNMENT_STATUSES.has(value.status as Assignment["status"])
+  )
+    return null;
+  const assignment: Assignment = {
+    id: value.id,
+    flightId: value.flightId,
+    flightNo: value.flightNo,
+    positionRuleId: value.positionRuleId,
+    position: value.position,
+    staffId: value.staffId,
+    staffName: value.staffName,
+    startTime: value.startTime,
+    endTime: value.endTime,
+    workHours: value.workHours,
+    fatiguePoints: value.fatiguePoints,
+    remark: value.remark,
+    manualRemark:
+      typeof value.manualRemark === "string" ? value.manualRemark : "",
+    status: value.status as Assignment["status"],
+  };
+  if (Array.isArray(value.systemNotes)) {
+    assignment.systemNotes = value.systemNotes.map(String).filter(Boolean);
+  }
+  if (Array.isArray(value.decisionTrace)) {
+    assignment.decisionTrace = value.decisionTrace.filter(validDecision);
+  }
+  const supervisorSourceAssignmentId =
+    typeof value.supervisorSourceAssignmentId === "string"
+      ? value.supervisorSourceAssignmentId
+      : typeof value.supervisorCoverSourceAssignmentId === "string"
+        ? value.supervisorCoverSourceAssignmentId
+        : undefined;
+  if (supervisorSourceAssignmentId)
+    assignment.supervisorSourceAssignmentId = supervisorSourceAssignmentId;
+  if (value.layoutGroup === "primary" || value.layoutGroup === "bottom")
+    assignment.layoutGroup = value.layoutGroup;
+  if (
+    typeof value.layoutIndex === "number" &&
+    Number.isFinite(value.layoutIndex)
+  )
+    assignment.layoutIndex = value.layoutIndex;
+  return assignment;
+}
+
+function restoreAssignments(next: AppState, value: unknown[]): Assignment[] {
+  const administrativePositions = new Set(
+    next.positionRules
+      .filter((rule) => rule.category === "行政支援")
+      .map((rule) => `${rule.flightNo}\u0000${rule.name.trim()}`)
+  );
+  return value
+    .map(restoredAssignment)
+    .filter((assignment): assignment is Assignment => assignment !== null)
+    .filter((assignment) => {
+      if (assignment.layoutGroup) return true;
+      if (!assignment.positionRuleId) return false;
+      const rule = next.positionRules.find(
+        (item) =>
+          item.id === assignment.positionRuleId &&
+          item.flightNo === assignment.flightNo
+      );
+      if (!rule) return false;
+      if (!next.settings.adminSupportEnabled)
+        return rule.category !== "行政支援";
+      return (
+        rule.category === "行政支援" ||
+        !administrativePositions.has(
+          `${rule.flightNo}\u0000${rule.name.trim()}`
+        )
+      );
+    });
+}
+
+function restoreDutyRosterOverrides(value: unknown[]): DutyRosterOverride[] {
+  return value.flatMap((item): DutyRosterOverride[] => {
+    if (!isRecord(item) || !/^\d{4}-\d{2}-\d{2}$/.test(String(item.date)))
+      return [];
+    const standbyStaffIds = Array.isArray(item.standbyStaffIds)
+      ? item.standbyStaffIds
+      : [];
+    return [
+      {
+        date: String(item.date),
+        cxPreflightStaffId: item.cxPreflightStaffId
+          ? String(item.cxPreflightStaffId)
+          : null,
+        dutyStaffId: item.dutyStaffId ? String(item.dutyStaffId) : null,
+        standbyStaffIds: [
+          standbyStaffIds[0] ? String(standbyStaffIds[0]) : null,
+          standbyStaffIds[1] ? String(standbyStaffIds[1]) : null,
+        ],
+      },
+    ];
+  });
+}
+
+export function restorePersistedState(
+  value: unknown,
+  fallback: AppState
+): AppState | null {
+  if (!isPersistedState(value)) return null;
+  const next: AppState = {
+    version: 3,
+    staff: restoredCollection(value.staff, fallback.staff, restoreStaff),
+    flights: restoredCollection(
+      value.flights,
+      fallback.flights,
+      restoreFlights
+    ),
+    templates: restoredCollection(
+      value.templates,
+      fallback.templates,
+      restoreTemplates
+    ),
+    positionRules: restoredCollection(
+      value.positionRules,
+      fallback.positionRules,
+      (items) => restorePositionRules(items, value.version === 1)
+    ),
+    history: restoredCollection(
+      value.history,
+      fallback.history,
+      restoreHistory
+    ),
+    dutyRosterOverrides: restoredCollection(
+      value.dutyRosterOverrides,
+      fallback.dutyRosterOverrides,
+      restoreDutyRosterOverrides
+    ),
+    assignments: [],
+    activeScheduleDate:
+      value.activeScheduleDate === null ||
+      typeof value.activeScheduleDate === "string"
+        ? value.activeScheduleDate
+        : fallback.activeScheduleDate,
+    schedulePolicyStale:
+      typeof value.schedulePolicyStale === "boolean"
+        ? value.schedulePolicyStale
+        : fallback.schedulePolicyStale,
+    settings: migrateSettings(value, fallback),
+    updatedAt:
+      typeof value.updatedAt === "string"
+        ? value.updatedAt
+        : fallback.updatedAt,
+  };
+  try {
+    const persistedAssignments = Array.isArray(value.assignments)
+      ? value.assignments
+      : fallback.assignments;
+    const hadPersistedAssignments = persistedAssignments.length > 0;
+    next.assignments = restoreAssignments(next, persistedAssignments);
+    removeUnavailableStaffAssignments(next);
+    normalizeSupervisorAssignments(next);
+    if (hadPersistedAssignments && !next.assignments.length) {
+      next.activeScheduleDate = null;
+      next.schedulePolicyStale = false;
+    }
+  } catch {
+    next.assignments = [];
+    next.activeScheduleDate = null;
+    next.schedulePolicyStale = false;
+  }
+  return next;
+}

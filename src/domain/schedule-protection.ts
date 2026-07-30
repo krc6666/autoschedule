@@ -1,34 +1,64 @@
 import type { AppState, Assignment, Flight, Staff } from "../model";
-import { crossDayRecoveryRisk } from "./cross-day-recovery";
+import {
+  crossDayRecoveryRisk,
+  nextWorkdayCutoffProtection,
+  type CrossDayRecoveryFacts,
+} from "./cross-day-recovery";
 import { getDutyRosterForDate } from "./duty-roster";
 import { historyFatigue } from "./fatigue";
 import type { AssignmentTask } from "./schedule-tasks";
-import type { CandidatePriority } from "./scheduling-policy";
 import { timeToMinutes } from "./time";
-import { countedWorkloadAssignments, isCountedWorkloadAssignment } from "./workload-accounting";
+import {
+  countedWorkloadAssignments,
+  isCountedWorkloadAssignment,
+} from "./workload-accounting";
+
+export interface LateShiftRecoveryPriority {
+  protectedMorningTarget: boolean;
+  protectedLatePriorityTarget: boolean;
+}
+
+export interface LateShiftCutoffPriority {
+  disposition: "unprotected" | "before-cutoff" | "after-cutoff";
+  cutoffMinutes: number | null;
+  previousEndMinutes: number | null;
+}
 
 export function totalFatiguePriority(
   person: Staff,
   assignments: Assignment[],
   state: AppState,
-  date: string
+  date: string,
+  dutyStaffId?: string | null
 ): number {
   const prior = historyFatigue(state.history, person.id, date, state.settings);
   const current = countedWorkloadAssignments(state, assignments)
     .filter((assignment) => assignment.staffId === person.id)
     .reduce((sum, assignment) => sum + assignment.fatiguePoints, 0);
-  const dutyFatigue = getDutyRosterForDate(state, date).dutyStaffId === person.id
-    ? state.settings.dutyFatiguePoints
-    : 0;
+  const resolvedDutyStaffId =
+    dutyStaffId === undefined
+      ? getDutyRosterForDate(state, date).dutyStaffId
+      : dutyStaffId;
+  const dutyFatigue =
+    resolvedDutyStaffId === person.id ? state.settings.dutyFatiguePoints : 0;
   return prior + current + dutyFatigue;
 }
 
-export function isHighLoadPosition(fatiguePoints: number, remark: string, state: AppState): boolean {
-  return fatiguePoints >= state.settings.highLoadFatigueThreshold
-    || (state.settings.remarkedPositionHighLoad && Boolean(remark.trim()));
+export function isHighLoadPosition(
+  fatiguePoints: number,
+  remark: string,
+  state: AppState
+): boolean {
+  return (
+    fatiguePoints >= state.settings.highLoadFatigueThreshold ||
+    (state.settings.remarkedPositionHighLoad && Boolean(remark.trim()))
+  );
 }
 
-function recoveryGapMinutes(previous: Pick<Assignment, "startTime" | "endTime">, nextStartTime: string): number {
+function recoveryGapMinutes(
+  previous: Pick<Assignment, "startTime" | "endTime">,
+  nextStartTime: string
+): number {
   const previousStart = timeToMinutes(previous.startTime);
   let previousEnd = timeToMinutes(previous.endTime);
   let nextStart = timeToMinutes(nextStartTime);
@@ -46,16 +76,27 @@ export function hasHighLoadTransition(
   nextRemark: string,
   state: AppState
 ): boolean {
-  if (!state.settings.highLoadProtectionEnabled || !isHighLoadPosition(nextFatiguePoints, nextRemark, state)) return false;
+  if (
+    !state.settings.highLoadProtectionEnabled ||
+    !isHighLoadPosition(nextFatiguePoints, nextRemark, state)
+  )
+    return false;
   return assignments.some((assignment) => {
-    if (assignment.staffId !== staffId
-      || assignment.status !== "assigned"
-      || !isCountedWorkloadAssignment(state, assignment)
-      || !isHighLoadPosition(assignment.fatiguePoints, assignment.remark, state)) return false;
-    const assignmentStartsFirst = timeToMinutes(assignment.startTime) <= timeToMinutes(nextStartTime);
+    if (
+      assignment.staffId !== staffId ||
+      assignment.status !== "assigned" ||
+      !isCountedWorkloadAssignment(state, assignment) ||
+      !isHighLoadPosition(assignment.fatiguePoints, assignment.remark, state)
+    )
+      return false;
+    const assignmentStartsFirst =
+      timeToMinutes(assignment.startTime) <= timeToMinutes(nextStartTime);
     const gap = assignmentStartsFirst
       ? recoveryGapMinutes(assignment, nextStartTime)
-      : recoveryGapMinutes({ startTime: nextStartTime, endTime: nextEndTime }, assignment.startTime);
+      : recoveryGapMinutes(
+          { startTime: nextStartTime, endTime: nextEndTime },
+          assignment.startTime
+        );
     return gap >= 0 && gap <= state.settings.highLoadRecoveryMinutes;
   });
 }
@@ -96,18 +137,36 @@ export function violatedPositionTransitionPolicies(
   const targetFlight = normalizedPolicyValue(targetFlightNo);
   const targetRole = normalizedPolicyValue(targetPosition);
   return state.settings.positionTransitionPolicies
-    .filter((policy) => policy.enabled && policy.mode === mode
-      && normalizedPolicyValue(policy.targetFlightNo) === targetFlight
-      && normalizedPolicyValue(policy.targetPosition) === targetRole)
-    .filter((policy) => assignments.some((assignment) => {
-      if (assignment.staffId !== staffId || assignment.status !== "assigned") return false;
-      if (policy.sourceFlightNo.trim()
-        && normalizedPolicyValue(policy.sourceFlightNo) !== normalizedPolicyValue(assignment.flightNo)) return false;
-      if (policy.sourcePositions.length
-        && !policy.sourcePositions.some((position) => normalizedPolicyValue(position) === normalizedPolicyValue(assignment.position))) return false;
-      const gap = recoveryGapMinutes(assignment, targetStartTime);
-      return gap >= 0 && gap < policy.minimumGapMinutes;
-    }));
+    .filter(
+      (policy) =>
+        policy.enabled &&
+        policy.mode === mode &&
+        normalizedPolicyValue(policy.targetFlightNo) === targetFlight &&
+        normalizedPolicyValue(policy.targetPosition) === targetRole
+    )
+    .filter((policy) =>
+      assignments.some((assignment) => {
+        if (assignment.staffId !== staffId || assignment.status !== "assigned")
+          return false;
+        if (
+          policy.sourceFlightNo.trim() &&
+          normalizedPolicyValue(policy.sourceFlightNo) !==
+            normalizedPolicyValue(assignment.flightNo)
+        )
+          return false;
+        if (
+          policy.sourcePositions.length &&
+          !policy.sourcePositions.some(
+            (position) =>
+              normalizedPolicyValue(position) ===
+              normalizedPolicyValue(assignment.position)
+          )
+        )
+          return false;
+        const gap = recoveryGapMinutes(assignment, targetStartTime);
+        return gap >= 0 && gap < policy.minimumGapMinutes;
+      })
+    );
 }
 
 export function violatedPositionTransitionPoliciesForInsertion(
@@ -120,21 +179,48 @@ export function violatedPositionTransitionPoliciesForInsertion(
   state: AppState,
   mode: "prefer" | "forbid"
 ) {
-  const forward = violatedPositionTransitionPolicies(assignments, staffId, flightNo, position, startTime, state, mode);
+  const forward = violatedPositionTransitionPolicies(
+    assignments,
+    staffId,
+    flightNo,
+    position,
+    startTime,
+    state,
+    mode
+  );
   const sourceFlight = normalizedPolicyValue(flightNo);
   const sourcePosition = normalizedPolicyValue(position);
   const reverse = state.settings.positionTransitionPolicies
     .filter((policy) => policy.enabled && policy.mode === mode)
-    .filter((policy) => (!policy.sourceFlightNo.trim() || normalizedPolicyValue(policy.sourceFlightNo) === sourceFlight)
-      && (!policy.sourcePositions.length
-        || policy.sourcePositions.some((item) => normalizedPolicyValue(item) === sourcePosition)))
-    .filter((policy) => assignments.some((assignment) => assignment.staffId === staffId
-      && assignment.status === "assigned"
-      && normalizedPolicyValue(assignment.flightNo) === normalizedPolicyValue(policy.targetFlightNo)
-      && normalizedPolicyValue(assignment.position) === normalizedPolicyValue(policy.targetPosition)
-      && recoveryGapMinutes({ startTime, endTime }, assignment.startTime) >= 0
-      && recoveryGapMinutes({ startTime, endTime }, assignment.startTime) < policy.minimumGapMinutes));
-  return [...new Map([...forward, ...reverse].map((policy) => [policy.id, policy])).values()];
+    .filter(
+      (policy) =>
+        (!policy.sourceFlightNo.trim() ||
+          normalizedPolicyValue(policy.sourceFlightNo) === sourceFlight) &&
+        (!policy.sourcePositions.length ||
+          policy.sourcePositions.some(
+            (item) => normalizedPolicyValue(item) === sourcePosition
+          ))
+    )
+    .filter((policy) =>
+      assignments.some(
+        (assignment) =>
+          assignment.staffId === staffId &&
+          assignment.status === "assigned" &&
+          normalizedPolicyValue(assignment.flightNo) ===
+            normalizedPolicyValue(policy.targetFlightNo) &&
+          normalizedPolicyValue(assignment.position) ===
+            normalizedPolicyValue(policy.targetPosition) &&
+          recoveryGapMinutes({ startTime, endTime }, assignment.startTime) >=
+            0 &&
+          recoveryGapMinutes({ startTime, endTime }, assignment.startTime) <
+            policy.minimumGapMinutes
+      )
+    );
+  return [
+    ...new Map(
+      [...forward, ...reverse].map((policy) => [policy.id, policy])
+    ).values(),
+  ];
 }
 
 export function positionTransitionInsertionCost(
@@ -164,39 +250,96 @@ export function rollingLoadCost(
   targetRemark: string,
   state: AppState
 ): number {
-  if (!state.settings.rollingLoadProtectionEnabled
-    || !isHighLoadPosition(targetFatiguePoints, targetRemark, state)) return 0;
+  if (
+    !state.settings.rollingLoadProtectionEnabled ||
+    !isHighLoadPosition(targetFatiguePoints, targetRemark, state)
+  )
+    return 0;
   const recentFatigue = assignments
-    .filter((assignment) => assignment.staffId === staffId && assignment.status === "assigned")
+    .filter(
+      (assignment) =>
+        assignment.staffId === staffId && assignment.status === "assigned"
+    )
     .filter((assignment) => isCountedWorkloadAssignment(state, assignment))
     .filter((assignment) => {
       const gap = recoveryGapMinutes(assignment, targetStartTime);
       return gap >= 0 && gap <= state.settings.rollingLoadWindowMinutes;
     })
     .reduce((sum, assignment) => sum + assignment.fatiguePoints, 0);
-  return Math.max(0, recentFatigue + targetFatiguePoints - state.settings.rollingLoadMaxFatigue);
+  return Math.max(
+    0,
+    recentFatigue + targetFatiguePoints - state.settings.rollingLoadMaxFatigue
+  );
 }
 
 export function lateShiftRecoveryRisk(
   state: AppState,
   staffId: string,
-  target: Pick<Flight, "flightNo" | "startTime"> & { position: string; remark: string; fatiguePoints: number },
-  date: string | null
-): { protected: boolean; excess: number; protectedMorningTarget: boolean } {
-  const risk = crossDayRecoveryRisk(state, staffId, target, date);
+  target: Pick<Flight, "flightNo" | "startTime"> & {
+    position: string;
+    remark: string;
+    fatiguePoints: number;
+  },
+  date: string | null,
+  facts?: CrossDayRecoveryFacts
+): {
+  protected: boolean;
+  excess: number;
+  protectedMorningTarget: boolean;
+  protectedLatePriorityTarget: boolean;
+} {
+  const risk = crossDayRecoveryRisk(state, staffId, target, date, facts);
   return {
     protected: risk.protectedWorker,
-    excess: risk.protectedMorningTarget ? Math.max(1, risk.lateFatigueExcess) : risk.lateFatigueExcess,
-    protectedMorningTarget: risk.protectedMorningTarget
+    excess: risk.protectedWorker ? 1 : 0,
+    protectedMorningTarget: risk.protectedMorningTarget,
+    protectedLatePriorityTarget: risk.protectedLatePriorityTarget,
   };
 }
 
 export function lateShiftRecoveryPriority(
   state: AppState,
   staffId: string,
-  target: Pick<Flight, "flightNo" | "startTime"> & { position: string; remark: string; fatiguePoints: number },
-  date: string | null
-): CandidatePriority["lateShiftRecovery"] {
-  const risk = lateShiftRecoveryRisk(state, staffId, target, date);
-  return { protectedWorker: risk.protected, fatigueExcess: risk.excess };
+  target: Pick<Flight, "flightNo" | "startTime"> & {
+    position: string;
+    remark: string;
+    fatiguePoints: number;
+  },
+  date: string | null,
+  facts?: CrossDayRecoveryFacts
+): LateShiftRecoveryPriority {
+  const risk = lateShiftRecoveryRisk(state, staffId, target, date, facts);
+  return {
+    protectedMorningTarget: risk.protectedMorningTarget,
+    protectedLatePriorityTarget: risk.protectedLatePriorityTarget,
+  };
+}
+
+export function lateShiftCutoffPriority(
+  state: AppState,
+  staffId: string,
+  target: Pick<Flight, "startTime">,
+  date: string | null,
+  facts?: CrossDayRecoveryFacts
+): LateShiftCutoffPriority {
+  const protection = nextWorkdayCutoffProtection(state, staffId, date, facts);
+  if (!protection) {
+    return {
+      disposition: "unprotected",
+      cutoffMinutes: null,
+      previousEndMinutes: null,
+    };
+  }
+  const targetStart = timeToMinutes(target.startTime);
+  const nightEnd = timeToMinutes(state.settings.nightEnd);
+  const operationalStart =
+    targetStart < nightEnd ? targetStart + 24 * 60 : targetStart;
+  return {
+    disposition:
+      operationalStart >= protection.cutoffMinutes
+        ? "after-cutoff"
+        : "before-cutoff",
+    cutoffMinutes: protection.cutoffMinutes,
+    previousEndMinutes: protection.previousEndMinutes,
+  };
 }
