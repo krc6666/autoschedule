@@ -41,6 +41,7 @@ export interface ReassignmentOptimizationOptions {
   ): readonly RotationStaffChange[];
   leadingObjectives?: readonly ReassignmentChoiceObjective[];
   validateChanges?(changes: readonly RotationStaffChange[]): readonly string[];
+  maxParticipants?: number;
   timeoutMs?: number;
 }
 

@@ -12,6 +12,30 @@ import type {
 } from "./reassignment-contract";
 import { buildReassignmentProblem } from "./reassignment-model";
 
+function participantLimitReasons(
+  options: ReassignmentOptimizationOptions,
+  changes: readonly { assignmentId: string; staffId: string }[]
+): string[] {
+  if (!options.maxParticipants) return [];
+  const originalStaffByAssignmentId = new Map(
+    options.assignments.flatMap((assignment) =>
+      assignment.staffId ? [[assignment.id, assignment.staffId] as const] : []
+    )
+  );
+  const participants = new Set(
+    changes.flatMap((change) => [
+      originalStaffByAssignmentId.get(change.assignmentId),
+      change.staffId,
+    ])
+  );
+  participants.delete(undefined);
+  const limitLabel =
+    options.maxParticipants === 5 ? "五" : options.maxParticipants;
+  return participants.size > options.maxParticipants
+    ? [`整体重排最多允许${limitLabel}人参与`]
+    : [];
+}
+
 export async function optimizeReassignment(
   options: ReassignmentOptimizationOptions
 ): Promise<ReassignmentOptimizationResult> {
@@ -91,6 +115,7 @@ export async function optimizeReassignment(
       ? [...options.normalizeChanges(decodedChanges)]
       : decodedChanges;
     const reasons = [
+      ...participantLimitReasons(options, changes),
       ...reassignmentSafetyReasons({
         kind: "plan",
         state: options.state,

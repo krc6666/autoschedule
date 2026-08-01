@@ -1,8 +1,8 @@
 import { html } from "lit";
 
 import {
+  BUILT_IN_RULE_REGISTRY,
   builtInRulePreferences,
-  isConfigurableRuleHook,
 } from "../../domain/rules/built-in-rule-registry";
 import type { AppState } from "../../model";
 import {
@@ -61,7 +61,7 @@ export class PolicyRuleLedgerElement extends LightDomElement {
                   </td>
                   <td><strong>${rule.label}</strong></td>
                   <td>
-                    ${isConfigurableRuleHook(rule.id) ? (preferenceById.get(rule.id)?.enabled ? "已启用" : "已停用") : "始终执行"}
+                    ${BUILT_IN_RULE_REGISTRY.definition(rule.id)?.configurable ? (preferenceById.get(rule.id)?.enabled ? "已启用" : "已停用") : "始终执行"}
                   </td>
                   <td>${rule.description}</td>
                 </tr>`

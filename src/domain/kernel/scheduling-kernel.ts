@@ -1,4 +1,3 @@
-import type { PluginManifest } from "../../infrastructure/plugin-protocol";
 import type { AppState, ScheduleResult } from "../../model";
 import { createCandidateRulePlan } from "../rules/candidate-rule-plan";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
@@ -19,7 +18,6 @@ export type { ScheduleProgressStage } from "./schedule-progress";
 export interface GenerateScheduleOptions {
   solver: SolverPort;
   onProgress?: (stage: ScheduleProgressStage, percent: number) => void;
-  plugins?: readonly PluginManifest[];
 }
 
 export async function generateSchedule(
@@ -59,10 +57,7 @@ export async function generateSchedule(
     preferredDutyLateTaskCandidates:
       preparation.preferredDutyLateTaskCandidates,
     lockedAssignmentIds,
-    candidateRulePlan: createCandidateRulePlan(
-      state.settings,
-      options.plugins ?? []
-    ),
+    candidateRulePlan: createCandidateRulePlan(state.settings),
     evaluateEligibility: evaluateAutomaticHardConstraints,
   });
 

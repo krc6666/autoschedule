@@ -85,7 +85,7 @@ export interface SchedulingHook {
   configurable: boolean;
   before: readonly string[];
   after: readonly string[];
-  source: "built-in" | `plugin:${string}`;
+  source: "built-in";
   execute: readonly [SchedulingHookExecutor, ...SchedulingHookExecutor[]];
 }
 

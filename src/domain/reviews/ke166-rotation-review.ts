@@ -284,6 +284,7 @@ export async function reviewKe166GroupRotation(
             )
               ? "候选人不具备机动督导或兼任柜台的完整资质"
               : null,
+          maxParticipants: 5,
           validateChanges: (proposed) => {
             const incoming = new Map(
               proposed.map((change) => [change.assignmentId, change.staffId])

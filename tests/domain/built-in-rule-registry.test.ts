@@ -19,11 +19,10 @@ describe("built-in rule registry", () => {
     ).toBeLessThan(plan.findIndex((hook) => hook.id === "duty-position"));
   });
 
-  it("projects existing settings into hook enablement without disabling mandatory rules", () => {
+  it("projects named business settings into hook enablement without disabling mandatory rules", () => {
     const settings = createDefaultScheduleSettings();
     settings.positionRotationEnabled = false;
     settings.nextDutyRestProtectionEnabled = false;
-    settings.disabledRuleHookIds = ["workload-balance", "staff-eligibility"];
     const plan = BUILT_IN_RULE_REGISTRY.executionPlan(
       builtInRulePreferences(settings)
     );
@@ -32,7 +31,7 @@ describe("built-in rule registry", () => {
     expect(enabled.get("position-rotation")).toBe(false);
     expect(enabled.get("position-frequency")).toBe(false);
     expect(enabled.get("next-duty-rest")).toBe(false);
-    expect(enabled.get("workload-balance")).toBe(false);
+    expect(enabled.get("workload-balance")).toBe(true);
     expect(enabled.get("staff-eligibility")).toBe(true);
     expect(enabled.get("ke166-supervisor")).toBe(true);
   });

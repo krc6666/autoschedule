@@ -265,6 +265,7 @@ async function findSupervisorCounterPlan(
           ? (supervisorOrder.get(left.id) ?? supervisorIds.length) -
             (supervisorOrder.get(right.id) ?? supervisorIds.length)
           : left.id.localeCompare(right.id, undefined, { numeric: true }),
+      maxParticipants: 5,
     });
     if (!result.changes) continue;
     const changes = counterPlacementChanges(state, assignments, result.changes);

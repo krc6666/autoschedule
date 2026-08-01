@@ -52,6 +52,24 @@ describe("schedule page", () => {
     expect(board.overflowX).toBe("auto");
   });
 
+  it("places the duty summary beside the desktop board and above narrow layouts", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "src", "styles.css"),
+      "utf8"
+    );
+    const desktop = styles.match(
+      /\.schedule-workspace\s*\{(?<declarations>[^}]*)\}/
+    )?.groups?.declarations;
+    const narrow = styles.match(
+      /@media \(max-width: 1000px\)[\s\S]*?\.schedule-workspace\s*\{(?<declarations>[^}]*)\}/
+    )?.groups?.declarations;
+
+    expect(desktop).toContain('grid-template-areas: "staff board roster"');
+    expect(narrow).toContain(
+      'grid-template-areas: "roster roster" "staff board"'
+    );
+  });
+
   it("renders the complete toolbar, aligned grid, remarks, duty summary, feedback, and load controls", async () => {
     const state = createDefaultState();
     state.assignments = (
@@ -104,13 +122,18 @@ describe("schedule page", () => {
       element.querySelector('select[aria-label="负荷排序方向"]')
     ).not.toBeNull();
     const workspace = element.querySelector(".schedule-workspace");
-    const mainRow = workspace?.querySelector(":scope > .schedule-main-row");
+    const palette = workspace?.querySelector(
+      ":scope > autoschedule-staff-palette"
+    );
+    const grid = workspace?.querySelector(
+      ":scope > autoschedule-schedule-grid"
+    );
     const roster = workspace?.querySelector(
       ":scope > autoschedule-duty-roster-summary"
     );
-    expect(mainRow?.querySelector("autoschedule-staff-palette")).not.toBeNull();
-    expect(mainRow?.querySelector("autoschedule-schedule-grid")).not.toBeNull();
-    expect(roster?.previousElementSibling).toBe(mainRow);
+    expect(palette).not.toBeNull();
+    expect(grid).not.toBeNull();
+    expect(roster?.previousElementSibling).toBe(grid);
   });
 
   it("preserves stale warnings, zoom projection, administrative staff, and soft-rule evidence", async () => {

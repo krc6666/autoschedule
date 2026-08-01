@@ -281,6 +281,7 @@ export async function findConcurrentSupervisionPlan(options: {
         ...(vacancyIsFilled ? [] : ["目标空缺未被补齐"]),
       ];
     },
+    maxParticipants: 3,
     timeoutMs: 4_000,
   });
   if (!result.changes) return null;

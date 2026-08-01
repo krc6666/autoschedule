@@ -480,7 +480,7 @@ describe("high-fatigue ordinary-position rotation", () => {
     ).toBe(repeatedWorker!.id);
   });
 
-  it("uses every required participant in an open chain longer than the former five-person limit", async () => {
+  it("keeps the original schedule when an open chain requires more than five participants", async () => {
     const {
       state,
       staff: [
@@ -585,23 +585,24 @@ describe("high-fatigue ordinary-position rotation", () => {
       new Set()
     );
 
-    expect(warnings).toEqual([]);
+    expect(warnings.join("\n")).toContain("连续轮岗未落实");
+    expect(warnings.join("\n")).toContain("最多允许五人参与");
     expect(
       assignments.find((item) => item.positionRuleId === target.id)?.staffId
-    ).toBe(firstMover!.id);
+    ).toBe(repeatedWorker!.id);
     expect(
       assignments.find((item) => item.positionRuleId === sourceOne.id)?.staffId
-    ).toBe(secondMover!.id);
+    ).toBe(firstMover!.id);
     expect(
       assignments.find((item) => item.positionRuleId === sourceTwo.id)?.staffId
-    ).toBe(thirdMover!.id);
+    ).toBe(secondMover!.id);
     expect(
       assignments.find((item) => item.positionRuleId === sourceThree.id)
         ?.staffId
-    ).toBe(fourthMover!.id);
+    ).toBe(thirdMover!.id);
     expect(
       assignments.find((item) => item.positionRuleId === sourceFour.id)?.staffId
-    ).toBe(endpointWorker!.id);
+    ).toBe(fourthMover!.id);
     expect(
       assignments.find((item) => item.positionRuleId === early.id)?.staffId
     ).toBe(repeatedWorker!.id);

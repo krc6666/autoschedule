@@ -193,7 +193,6 @@ export const SCHEDULING_RULES = [
 )[];
 
 export type SchedulingRuleId = (typeof SCHEDULING_RULES)[number]["id"];
-export type PluginSchedulingRuleId = `plugin:${string}`;
 export type RuleFeedbackKey = Extract<
   (typeof SCHEDULING_RULES)[number],
   { feedbackMode: "dedicated" }
@@ -214,11 +213,10 @@ export type SchedulingDecisionOutcome =
   "selected" | "blocked" | "fallback" | "preserved";
 
 export interface SchedulingDecision {
-  ruleId: SchedulingRuleId | PluginSchedulingRuleId;
+  ruleId: SchedulingRuleId;
   stage: SchedulingRuleStage;
   outcome: SchedulingDecisionOutcome;
   message: string;
-  ruleLabel?: string;
 }
 
 const RULE_DEFINITION_BY_ID = Object.fromEntries(
@@ -246,14 +244,4 @@ export function schedulingDecision(
 
 export function schedulingRuleLabel(ruleId: SchedulingRuleId): string {
   return schedulingRuleDefinition(ruleId).label;
-}
-
-export function pluginSchedulingDecision(
-  ruleId: PluginSchedulingRuleId,
-  ruleLabel: string,
-  stage: Extract<SchedulingRuleStage, "protection" | "stable-order">,
-  outcome: SchedulingDecisionOutcome,
-  message: string
-): SchedulingDecision {
-  return { ruleId, ruleLabel, stage, outcome, message };
 }

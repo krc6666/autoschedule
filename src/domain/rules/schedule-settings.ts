@@ -3,8 +3,6 @@ import {
   createDefaultStructuredPolicies,
   normalizeStructuredPolicies,
 } from "./structured-policy-settings";
-import { SCHEDULING_RULES } from "./schedule-rule-contract";
-import { isConfigurableRuleHook } from "./built-in-rule-registry";
 
 export type ScalarScheduleSettingKey = Exclude<
   keyof ScheduleSettings,
@@ -14,8 +12,6 @@ export type ScalarScheduleSettingKey = Exclude<
   | "nextWorkdayRecoveryTargets"
   | "lateShiftRecoveryPositionRules"
   | "mobileSupervisorCoverageRules"
-  | "ruleHookOrder"
-  | "disabledRuleHookIds"
 >;
 
 export interface ScheduleSettingDefinition {
@@ -247,8 +243,6 @@ function scalarDefaults(): Omit<
   | "nextWorkdayRecoveryTargets"
   | "lateShiftRecoveryPositionRules"
   | "mobileSupervisorCoverageRules"
-  | "ruleHookOrder"
-  | "disabledRuleHookIds"
 > {
   return Object.fromEntries(
     SCHEDULE_SETTING_DEFINITIONS.map((definition) => [
@@ -262,8 +256,6 @@ export function createDefaultScheduleSettings(): ScheduleSettings {
   return structuredClone({
     ...scalarDefaults(),
     adminSupportEnabled: false,
-    ruleHookOrder: SCHEDULING_RULES.map((rule) => rule.id),
-    disabledRuleHookIds: [],
     ...createDefaultStructuredPolicies(),
   });
 }
@@ -305,25 +297,6 @@ export function normalizeScheduleSettings(
     typeof input.adminSupportEnabled === "boolean"
       ? input.adminSupportEnabled
       : fallback.adminSupportEnabled;
-  const knownRuleIds = new Set<string>(SCHEDULING_RULES.map((rule) => rule.id));
-  const requestedOrder = Array.isArray(input.ruleHookOrder)
-    ? input.ruleHookOrder.filter(
-        (id): id is string => typeof id === "string" && knownRuleIds.has(id)
-      )
-    : fallback.ruleHookOrder;
-  result.ruleHookOrder = [
-    ...new Set([...requestedOrder, ...SCHEDULING_RULES.map((rule) => rule.id)]),
-  ];
-  result.disabledRuleHookIds = Array.isArray(input.disabledRuleHookIds)
-    ? [
-        ...new Set(
-          input.disabledRuleHookIds.filter(
-            (id): id is string =>
-              typeof id === "string" && isConfigurableRuleHook(id)
-          )
-        ),
-      ]
-    : fallback.disabledRuleHookIds;
   Object.assign(result, normalizeStructuredPolicies(input, fallback));
   return result;
 }

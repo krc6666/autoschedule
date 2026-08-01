@@ -194,7 +194,6 @@ export function createDefaultState(): AppState {
     positionRules: orderPositionRules(structuredClone(defaultPositionRules)),
     history: [],
     dutyRosterOverrides: [],
-    pluginConfigurations: [],
     assignments: [],
     activeScheduleDate: null,
     schedulePolicyStale: false,

@@ -8,27 +8,8 @@ import "../../src/ui/components/policy-page";
 import { mountElement } from "./lit-test-helpers";
 
 describe("rules page", () => {
-  it("projects settings, structured rules, executable hooks, and the central ledger", async () => {
+  it("projects settings, structured rules, and the central rule ledger", async () => {
     const state = createDefaultState();
-    state.pluginConfigurations = [
-      {
-        id: "example.plugin",
-        name: "现场扩展规则",
-        fileName: "现场规则.js",
-        apiVersion: 1,
-        enabled: true,
-        order: 0,
-        status: "loaded",
-        rules: [
-          {
-            id: "prefer-one",
-            label: "优先安排一号岗位",
-            stage: "protection",
-            enabled: true,
-          },
-        ],
-      },
-    ];
     const element = await mountElement<
       HTMLElement & { updateComplete: Promise<unknown> }
     >("autoschedule-policy-page", { model: state });
@@ -40,18 +21,13 @@ describe("rules page", () => {
     expect(text).toContain("跨工作日恢复保护");
     expect(text).toContain("下班次值班人员预休");
     expect(text).toContain("机动督导兼任范围");
-    expect(text).toContain("规则启用与优先顺序");
     expect(text).toContain("规则如何执行");
     expect(text).toContain("必须遵守");
     expect(text).toContain("保护与均衡");
-    expect(text).toContain("扩展规则文件");
-    expect(text).toContain("优先安排一号岗位");
+    expect(text).not.toContain("规则启用与优先顺序");
+    expect(text).not.toContain("扩展规则文件");
     expect(element.querySelector('input[type="search"]')).not.toBeNull();
-    expect(
-      element.querySelector(
-        'input[type="file"][accept=".js,application/javascript"]'
-      )
-    ).not.toBeNull();
+    expect(element.querySelector('input[type="file"]')).toBeNull();
     for (const rule of SCHEDULING_RULES) {
       expect(text).toContain(rule.label);
       expect(text).not.toContain(rule.id);
@@ -62,7 +38,6 @@ describe("rules page", () => {
       "hard-constraint",
       "candidate-priority",
       "post-schedule",
-      "prefer-one",
       "protection",
     ].forEach((internalTerm) => expect(text).not.toContain(internalTerm));
   });

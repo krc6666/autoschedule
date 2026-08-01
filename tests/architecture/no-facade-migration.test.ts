@@ -51,6 +51,23 @@ function rawHtmlTemplateCount(source: string, fileName: string): number {
 }
 
 describe("断裂式重建架构门禁", () => {
+  it("领域层不反向依赖基础设施，应用层不直接访问浏览器存储", () => {
+    const violations = sourceFiles().flatMap((file) => {
+      const path = projectPath(file);
+      const source = readFileSync(file, "utf8");
+      if (
+        path.startsWith("src/domain/") &&
+        /from\s+["'][^"']*infrastructure\//.test(source)
+      )
+        return [`${path}: domain -> infrastructure`];
+      if (path.startsWith("src/app/") && /\blocalStorage\b/.test(source))
+        return [`${path}: direct localStorage`];
+      return [];
+    });
+
+    expect(violations).toEqual([]);
+  });
+
   it("不保留字符串 HTML、innerHTML 或手工拼接渲染", () => {
     const renderingFiles = sourceFiles().filter((file) => {
       const path = projectPath(file);

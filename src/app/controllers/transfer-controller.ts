@@ -193,7 +193,7 @@ export class TransferController implements UiCommandController {
       );
       return true;
     }
-    localStorage.setItem("autoschedule.scheduleDate", dialog.date);
+    this.context.preferences.saveScheduleDate(dialog.date);
     this.context.updateView({ dialog: null });
     this.context.updateView({ date: dialog.date });
     this.context.commit(

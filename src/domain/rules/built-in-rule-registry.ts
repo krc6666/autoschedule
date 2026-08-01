@@ -353,40 +353,25 @@ export const BUILT_IN_RULE_REGISTRY = createRuleRegistry(
   BUILT_IN_SCHEDULING_HOOKS
 );
 
+const AUTOMATIC_HARD_CONSTRAINT_EXECUTORS =
+  BUILT_IN_RULE_REGISTRY.executionPlan().flatMap((hook) =>
+    hook.enabled
+      ? hook.execute.filter((executor) => executor.kind === "hard-constraint")
+      : []
+  );
+
 export function evaluateAutomaticHardConstraints(
   context: AutomaticAssignmentEligibilityOptions
 ): AssignmentEligibilityDiagnostic {
-  const violations = BUILT_IN_RULE_REGISTRY.executionPlan()
-    .filter((hook) => hook.enabled)
-    .flatMap((hook) =>
-      hook.execute.flatMap((executor) =>
-        executor.kind === "hard-constraint"
-          ? executor.execute(context).violations
-          : []
-      )
-    );
-  return { eligible: violations.length === 0, violations };
-}
-
-export function isConfigurableRuleHook(id: string): boolean {
-  return BUILT_IN_RULE_REGISTRY.definition(id)?.configurable === true;
-}
-
-export function isReorderableRuleHook(id: string): boolean {
-  const hook = BUILT_IN_RULE_REGISTRY.definition(id);
-  return Boolean(
-    hook?.configurable &&
-    hook.execute.some((executor) => executor.kind === "candidate-priority") &&
-    (hook.stage === "protection" || hook.stage === "stable-order")
+  const violations = AUTOMATIC_HARD_CONSTRAINT_EXECUTORS.flatMap(
+    (executor) => executor.execute(context).violations
   );
+  return { eligible: violations.length === 0, violations };
 }
 
 export function builtInRulePreferences(
   settings: ScheduleSettings
 ): RulePreference[] {
-  const orderById = new Map(
-    settings.ruleHookOrder.map((id, index) => [id, index])
-  );
   return BUILT_IN_SCHEDULING_HOOKS.map((hook, defaultOrder) => {
     const setting =
       CONFIGURABLE_RULE_SETTINGS[
@@ -394,10 +379,8 @@ export function builtInRulePreferences(
       ];
     return {
       id: hook.id,
-      enabled:
-        (setting ? Boolean(settings[setting]) : true) &&
-        !settings.disabledRuleHookIds.includes(hook.id),
-      order: orderById.get(hook.id) ?? defaultOrder,
+      enabled: setting ? Boolean(settings[setting]) : true,
+      order: defaultOrder,
     };
   });
 }

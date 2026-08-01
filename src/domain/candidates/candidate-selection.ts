@@ -16,6 +16,7 @@ import { compareKe166SupervisorRotation } from "../assignments/ke166-assignment"
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import { violatedPositionTransitionPoliciesForInsertion } from "../reviews/schedule-protection";
+import { workloadBalanceLoadSnapshots } from "../reviews/workload-balance";
 
 export interface CandidateSelectionOptions {
   state: AppState;
@@ -74,6 +75,9 @@ export function selectAssignmentCandidate({
   evaluateEligibility,
 }: CandidateSelectionOptions): CandidateSelection {
   const { flight, rule } = task;
+  const workloadBalanceLoads = state.settings.workloadBalanceEnabled
+    ? workloadBalanceLoadSnapshots(state, assignments, date, dutyStaffId)
+    : undefined;
   let candidates = state.staff.filter(
     (person) =>
       evaluateEligibility({
@@ -151,6 +155,7 @@ export function selectAssignmentCandidate({
           isDutyTarget,
           reserveDutyForPendingTarget,
           currentDutyTargetTaskKeys,
+          workloadBalanceLoads,
         },
         person
       ),

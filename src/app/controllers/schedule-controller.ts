@@ -78,7 +78,7 @@ export class ScheduleController implements UiCommandController {
         return true;
       case "set-schedule-zoom": {
         const zoom = Math.min(1.6, Math.max(0.7, command.value));
-        localStorage.setItem("autoschedule.scheduleZoom", String(zoom));
+        this.context.preferences.saveScheduleZoom(zoom);
         this.context.updateView({ zoom });
         return true;
       }
@@ -95,13 +95,9 @@ export class ScheduleController implements UiCommandController {
 
   async generate(date: string): Promise<void> {
     try {
-      const plugins = this.context.pluginSession.manifests(
-        this.context.model().pluginConfigurations
-      );
       const result = await this.context.scheduleRunner.calculate(
         this.context.model(),
-        date,
-        plugins
+        date
       );
       this.context.store.getState().schedule.install(date, result);
       this.context.updateView({ section: "schedule" });
@@ -177,7 +173,7 @@ export class ScheduleController implements UiCommandController {
       return;
     this.context.store.getState().records.replaceHistory(currentDate, records);
     this.context.updateView({ date: nextDate });
-    localStorage.setItem("autoschedule.scheduleDate", nextDate);
+    this.context.preferences.saveScheduleDate(nextDate);
     await this.generate(nextDate);
   }
 

@@ -7,7 +7,6 @@ import type {
   ScheduleWorkerRequest,
   ScheduleWorkerResponse,
 } from "./schedule-worker-protocol";
-import type { PluginManifest } from "./plugin-protocol";
 
 export type ScheduleProgressListener = (
   stage: ScheduleProgressStage,
@@ -17,15 +16,13 @@ export type ScheduleProgressListener = (
 export async function runScheduleInBackground(
   state: AppState,
   date: string,
-  onProgress: ScheduleProgressListener,
-  plugins: readonly PluginManifest[] = []
+  onProgress: ScheduleProgressListener
 ): Promise<ScheduleResult> {
   if (typeof Worker === "undefined") {
     const { defaultHighsSolver } = await import("./solver/highs-solver");
     return generateSchedule(state, date, {
       solver: defaultHighsSolver,
       onProgress,
-      plugins,
     });
   }
 
@@ -52,7 +49,6 @@ export async function runScheduleInBackground(
     worker.postMessage({
       state,
       date,
-      plugins: plugins.map((plugin) => structuredClone(plugin)),
     } satisfies ScheduleWorkerRequest);
   });
 }

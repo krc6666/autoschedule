@@ -5,11 +5,6 @@ import type {
   NextWorkdayRecoveryTarget,
 } from "../domain/rules/structured-policy-contract";
 import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
-import {
-  BUILT_IN_RULE_REGISTRY,
-  isConfigurableRuleHook,
-  isReorderableRuleHook,
-} from "../domain/rules/built-in-rule-registry";
 import { markActiveScheduleStale } from "../domain/kernel/schedule-lifecycle";
 import { createId, normalizeText, splitList } from "../utils";
 
@@ -55,55 +50,6 @@ export function applySchedulePolicy(
 ): boolean {
   state.settings = applyScheduleSettingsPatch(state.settings, input);
   return markActiveScheduleStale(state);
-}
-
-export function setRuleHookEnabled(
-  state: AppState,
-  id: string,
-  enabled: boolean
-): boolean {
-  if (!isConfigurableRuleHook(id)) return false;
-  const disabled = new Set(state.settings.disabledRuleHookIds);
-  if (enabled) disabled.delete(id);
-  else disabled.add(id);
-  const next = [...disabled];
-  if (
-    next.length === state.settings.disabledRuleHookIds.length &&
-    next.every(
-      (value, index) => value === state.settings.disabledRuleHookIds[index]
-    )
-  )
-    return true;
-  state.settings.disabledRuleHookIds = next;
-  markPolicyMutation(state);
-  return true;
-}
-
-export function moveRuleHook(
-  state: AppState,
-  id: string,
-  direction: -1 | 1
-): boolean {
-  if (!isReorderableRuleHook(id)) return false;
-  const definition = BUILT_IN_RULE_REGISTRY.definition(id)!;
-  const order = [...state.settings.ruleHookOrder];
-  const index = order.indexOf(id);
-  if (index < 0) return false;
-  const eligible = order.filter((candidateId) => {
-    const candidate = BUILT_IN_RULE_REGISTRY.definition(candidateId);
-    return (
-      candidate?.stage === definition.stage &&
-      isReorderableRuleHook(candidateId)
-    );
-  });
-  const eligibleIndex = eligible.indexOf(id);
-  const targetId = eligible[eligibleIndex + direction];
-  if (!targetId) return false;
-  const targetIndex = order.indexOf(targetId);
-  [order[index], order[targetIndex]] = [order[targetIndex]!, order[index]!];
-  state.settings.ruleHookOrder = order;
-  markPolicyMutation(state);
-  return true;
 }
 
 export function addDutyPriority(state: AppState): DutyPositionPriority {

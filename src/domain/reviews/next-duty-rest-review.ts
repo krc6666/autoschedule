@@ -115,6 +115,7 @@ export async function reviewNextDutyRest(
       facts,
       primaryCandidateAllowed: (person) =>
         !isNextDutyRestConflict(state, person.id, rule, date, protection),
+      maxParticipants: 3,
     });
     attemptedReasons.push(...result.attemptedReasons);
     if (result.changes) {

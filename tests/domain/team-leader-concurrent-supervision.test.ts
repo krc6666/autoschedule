@@ -220,7 +220,7 @@ describe("team leader concurrent supervision", () => {
     ).toHaveLength(1);
   });
 
-  it("uses an unrestricted qualified chain to fill a vacancy", async () => {
+  it("keeps the vacancy when a qualified chain exceeds three participants", async () => {
     const state = createDefaultState();
     const leader = staff("leader", true);
     const releasedSupervisor = staff("released-supervisor");
@@ -285,13 +285,13 @@ describe("team leader concurrent supervision", () => {
       createScheduleRunFacts(state, "2026-07-29")
     );
 
-    expect(messages).toHaveLength(1);
+    expect(messages).toEqual([]);
     expect(
       state.assignments.find((item) => item.positionRuleId === "vacancy")
-    ).toMatchObject({ staffId: workers[0]!.id, status: "assigned" });
+    ).toMatchObject({ staffId: null, status: "unfilled" });
     expect(
       state.assignments.find((item) => item.positionRuleId === "relay-4")
-    ).toMatchObject({ staffId: releasedSupervisor.id, status: "assigned" });
+    ).toMatchObject({ staffId: workers[3]!.id, status: "assigned" });
     expect(
       state.assignments.filter((item) =>
         ["first-supervisor", "second-supervisor"].includes(
@@ -299,7 +299,7 @@ describe("team leader concurrent supervision", () => {
         )
       )
     ).toEqual([
-      expect.objectContaining({ staffId: leader.id }),
+      expect.objectContaining({ staffId: releasedSupervisor.id }),
       expect.objectContaining({ staffId: leader.id }),
     ]);
   });

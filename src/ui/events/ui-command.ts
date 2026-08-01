@@ -79,24 +79,6 @@ export type UiCommand =
       id: string;
     }
   | { type: "move-duty-priority"; id: string; direction: -1 | 1 }
-  | { type: "set-hook-enabled"; id: string; enabled: boolean }
-  | { type: "move-hook"; id: string; direction: -1 | 1 }
-  | { type: "load-plugin"; file: File }
-  | { type: "set-plugin-enabled"; id: string; enabled: boolean }
-  | {
-      type: "set-plugin-rule-enabled";
-      pluginId: string;
-      ruleId: string;
-      enabled: boolean;
-    }
-  | { type: "move-plugin"; id: string; direction: -1 | 1 }
-  | {
-      type: "move-plugin-rule";
-      pluginId: string;
-      ruleId: string;
-      direction: -1 | 1;
-    }
-  | { type: "remove-plugin"; id: string }
   | { type: "toggle-administrative-mode"; enabled: boolean }
   | {
       type: "assign-staff";

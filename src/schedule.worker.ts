@@ -11,7 +11,6 @@ self.onmessage = async (
   try {
     const result = await generateSchedule(event.data.state, event.data.date, {
       solver: defaultHighsSolver,
-      plugins: event.data.plugins,
       onProgress: (stage, percent) => {
         self.postMessage({
           type: "progress",

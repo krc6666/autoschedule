@@ -19,7 +19,6 @@ import {
   type SchedulingRuleId,
 } from "../domain/rules/schedule-rule-contract";
 import { orderPositionRules } from "../utils";
-import { restorePluginConfigurations } from "./plugin-state";
 
 type PersistedSettings = Partial<ScheduleSettings>;
 type PersistedAppState = Record<string, unknown> & { version: 1 | 2 | 3 };
@@ -265,12 +264,9 @@ function validDecision(value: unknown): value is SchedulingDecision {
   const definition = SCHEDULING_RULE_BY_ID.get(
     value.ruleId as SchedulingRuleId
   );
-  const pluginDecision =
-    value.ruleId.startsWith("plugin:") &&
-    typeof value.ruleLabel === "string" &&
-    (value.stage === "protection" || value.stage === "stable-order");
   return Boolean(
-    (pluginDecision || (definition && value.stage === definition.stage)) &&
+    definition &&
+    value.stage === definition.stage &&
     SCHEDULING_DECISION_OUTCOMES.has(value.outcome as SchedulingDecisionOutcome)
   );
 }
@@ -428,9 +424,6 @@ export function restorePersistedState(
       value.dutyRosterOverrides,
       fallback.dutyRosterOverrides,
       restoreDutyRosterOverrides
-    ),
-    pluginConfigurations: restorePluginConfigurations(
-      value.pluginConfigurations
     ),
     assignments: [],
     activeScheduleDate:

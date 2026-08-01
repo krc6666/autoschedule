@@ -17,8 +17,6 @@ describe("schedule settings module", () => {
       "nextWorkdayRecoveryTargets",
       "lateShiftRecoveryPositionRules",
       "mobileSupervisorCoverageRules",
-      "ruleHookOrder",
-      "disabledRuleHookIds",
     ]);
     const scalarKeys = Object.keys(createDefaultScheduleSettings())
       .filter((key) => !complexKeys.has(key))
@@ -80,26 +78,5 @@ describe("schedule settings module", () => {
     expect(next.dutyFatiguePoints).toBe(6);
     expect(next.positionRotationEnabled).toBe(false);
     expect(next.dutyPositionPriorities).toEqual(current.dutyPositionPriorities);
-  });
-
-  it("normalizes hook order and only keeps configurable disabled hooks", () => {
-    const defaults = createDefaultScheduleSettings();
-    const normalized = normalizeScheduleSettings({
-      ...defaults,
-      ruleHookOrder: ["staff-id", "unknown", "staff-id"],
-      disabledRuleHookIds: [
-        "next-duty-rest",
-        "staff-eligibility",
-        "unknown",
-        "next-duty-rest",
-      ],
-    });
-
-    expect(normalized.ruleHookOrder[0]).toBe("staff-id");
-    expect(normalized.ruleHookOrder).not.toContain("unknown");
-    expect(new Set(normalized.ruleHookOrder).size).toBe(
-      normalized.ruleHookOrder.length
-    );
-    expect(normalized.disabledRuleHookIds).toEqual(["next-duty-rest"]);
   });
 });

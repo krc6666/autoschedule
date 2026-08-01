@@ -187,6 +187,7 @@ export async function reviewLateShiftCutoff(
         ) < originalLatestEnd
           ? []
           : ["整体重排后受保护人员的最终下班时间没有提前"],
+      maxParticipants: 3,
     });
     if (result.changes) {
       applyPlan(state, assignments, result.changes, protectedName);

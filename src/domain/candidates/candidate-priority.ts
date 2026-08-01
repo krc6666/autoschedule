@@ -34,7 +34,10 @@ import {
 import { timeToMinutes } from "../shared/time";
 import { intervalsOverlap } from "../shared/time";
 import { isKe166MobileSupervisor } from "../flights/schedule-tasks";
-import { workloadBalancePriority } from "../reviews/workload-balance";
+import {
+  workloadBalancePriority,
+  type WorkloadBalanceLoadSnapshot,
+} from "../reviews/workload-balance";
 
 export const CANDIDATE_PRIORITY_ORDER = [
   "ke166-supervisor",
@@ -280,6 +283,7 @@ export interface CandidatePriorityContext {
   isDutyTarget: boolean;
   reserveDutyForPendingTarget: boolean;
   currentDutyTargetTaskKeys: ReadonlySet<string>;
+  workloadBalanceLoads?: readonly WorkloadBalanceLoadSnapshot[];
 }
 
 export function buildCandidatePriority(
@@ -301,6 +305,7 @@ export function buildCandidatePriority(
     isDutyTarget,
     reserveDutyForPendingTarget,
     currentDutyTargetTaskKeys,
+    workloadBalanceLoads,
   } = context;
   const { flight, rule, key: taskKey } = task;
   const operationalMinutes = (value: string): number => {
@@ -471,7 +476,8 @@ export function buildCandidatePriority(
       rule.fatiguePoints,
       dutyStaffId,
       date,
-      runFacts.workloadPressure
+      runFacts.workloadPressure,
+      workloadBalanceLoads
     ),
     historicalFatigue: totalFatiguePriority(
       person,

@@ -179,19 +179,19 @@ export function analyzeWorkloadPressure(
   };
 }
 
-interface LoadSnapshot {
+export interface WorkloadBalanceLoadSnapshot {
   id: string;
   todayHours: number;
   rollingHours: number;
   todayFatigue: number;
 }
 
-function snapshots(
+export function workloadBalanceLoadSnapshots(
   state: AppState,
   assignments: Assignment[],
   date: string,
   dutyStaffId: string | null
-): LoadSnapshot[] {
+): WorkloadBalanceLoadSnapshot[] {
   const history = recentHistory(
     state.history,
     date,
@@ -234,7 +234,12 @@ export function evaluateWorkloadBalance(
     knownDutyStaffId === undefined
       ? getDutyRosterForDate(state, date).dutyStaffId
       : knownDutyStaffId;
-  const loads = snapshots(state, assignments, date, dutyStaffId);
+  const loads = workloadBalanceLoadSnapshots(
+    state,
+    assignments,
+    date,
+    dutyStaffId
+  );
   const workHours = loads.map((load) => load.todayHours);
   const rollingHours = loads.map((load) => load.todayHours + load.rollingHours);
   const todayFatigue = loads.map((load) => load.todayFatigue);
@@ -272,10 +277,13 @@ export function workloadBalancePriority(
   targetFatigue: number,
   dutyStaffId: string | null,
   date: string,
-  pressure: WorkloadPressureFacts
+  pressure: WorkloadPressureFacts,
+  knownLoads?: readonly WorkloadBalanceLoadSnapshot[]
 ): WorkloadBalancePriority {
   if (!state.settings.workloadBalanceEnabled) return EMPTY_WORKLOAD_PRIORITY;
-  const loads = snapshots(state, assignments, date, dutyStaffId);
+  const loads =
+    knownLoads ??
+    workloadBalanceLoadSnapshots(state, assignments, date, dutyStaffId);
   const current = loads.find((load) => load.id === person.id);
   if (!current || !loads.length) return EMPTY_WORKLOAD_PRIORITY;
   const configuredHoursTarget = Math.max(

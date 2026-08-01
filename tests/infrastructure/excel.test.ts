@@ -231,14 +231,6 @@ describe("workbook boundary", () => {
         mode: "forbid",
       },
     ];
-    state.settings.disabledRuleHookIds = ["next-duty-rest"];
-    state.settings.ruleHookOrder = [
-      "position-frequency-review",
-      ...state.settings.ruleHookOrder.filter(
-        (id) => id !== "position-frequency-review"
-      ),
-    ];
-
     const workbook = buildConfigWorkbook(state);
     const imported = parseWorkbook(workbook, state.staff);
 
@@ -250,9 +242,9 @@ describe("workbook boundary", () => {
         "次班恢复目标",
         "末班重点岗位",
         "机动督导范围",
-        "规则执行顺序",
       ])
     );
+    expect(workbook.SheetNames).not.toContain("规则执行顺序");
     const { adminSupportEnabled: _adminSupportEnabled, ...exportedSettings } =
       state.settings;
     expect(imported.settings).toEqual(exportedSettings);

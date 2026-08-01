@@ -69,15 +69,13 @@ export class SchedulePageElement extends LightDomElement {
         @pointerup=${this.finishPointerDrag}
         @pointercancel=${this.cancelPointerDrag}
       >
-        <div class="schedule-main-row">
-          <autoschedule-staff-palette
-            .model=${this.model}
-          ></autoschedule-staff-palette>
-          <autoschedule-schedule-grid
-            .model=${this.model}
-            .view=${view}
-          ></autoschedule-schedule-grid>
-        </div>
+        <autoschedule-staff-palette
+          .model=${this.model}
+        ></autoschedule-staff-palette>
+        <autoschedule-schedule-grid
+          .model=${this.model}
+          .view=${view}
+        ></autoschedule-schedule-grid>
         <autoschedule-duty-roster-summary
           .model=${this.model}
           .date=${this.date}

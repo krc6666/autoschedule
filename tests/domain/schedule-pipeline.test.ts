@@ -37,23 +37,17 @@ describe("schedule pipeline contract", () => {
     ).toBe(POST_SCHEDULE_REVIEW_STEPS.length);
   });
 
-  it("projects post reviews from the same enabled and ordered hook plan", () => {
+  it("projects post reviews from the fixed hook order and named settings", () => {
     const settings = createDefaultScheduleSettings();
-    settings.disabledRuleHookIds = ["late-shift-cutoff"];
-    settings.ruleHookOrder = [
-      "position-frequency-review",
-      "next-duty-rest",
-      ...settings.ruleHookOrder.filter(
-        (id) => id !== "position-frequency-review" && id !== "next-duty-rest"
-      ),
-    ];
+    settings.lateShiftRecoveryEnabled = false;
 
     const plan = postScheduleReviewPlan(settings);
 
     expect(plan.map((step) => step.stage)).not.toContain("late-shift-cutoff");
-    expect(
-      plan.findIndex((step) => step.stage === "position-frequency")
-    ).toBeLessThan(plan.findIndex((step) => step.stage === "next-duty-rest"));
+    expect(plan.map((step) => step.stage).slice(0, 2)).toEqual([
+      "next-duty-rest",
+      "position-frequency",
+    ]);
     expect(plan.map((step) => step.stage)).toEqual(
       expect.arrayContaining([
         "ke166-supervisor-finalize",
@@ -65,7 +59,7 @@ describe("schedule pipeline contract", () => {
 
   it("shows only the progress tasks that the enabled hook plan will execute", () => {
     const settings = createDefaultScheduleSettings();
-    settings.disabledRuleHookIds = ["late-shift-cutoff"];
+    settings.lateShiftRecoveryEnabled = false;
 
     const stages = plannedScheduleProgress(settings, [
       { flightNo: "KE166" },

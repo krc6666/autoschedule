@@ -27,14 +27,11 @@ export class ConfigurationController implements UiCommandController {
             this.context.commit("人员状态已更新");
             return true;
           }
+          this.context.commit();
           try {
-            const plugins = this.context.pluginSession.manifests(
-              this.context.model().pluginConfigurations
-            );
             const result = await this.context.scheduleRunner.calculate(
               this.context.model(),
-              activeDate,
-              plugins
+              activeDate
             );
             this.context.store.getState().schedule.install(activeDate, result);
             this.context.commit(

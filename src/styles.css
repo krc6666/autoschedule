@@ -925,17 +925,11 @@ select {
 
 .schedule-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  grid-template-areas: "staff board roster";
+  grid-template-columns: 126px minmax(0, max-content) minmax(220px, 1fr);
+  gap: 6px;
   align-items: start;
   margin-bottom: 8px;
-}
-.schedule-main-row {
-  display: grid;
-  grid-template-areas: "staff board";
-  grid-template-columns: 126px minmax(0, 1fr);
-  gap: 6px;
-  min-width: 0;
 }
 autoschedule-staff-palette,
 autoschedule-schedule-grid,
@@ -943,6 +937,11 @@ autoschedule-duty-roster-summary {
   display: block;
   min-width: 0;
   max-width: 100%;
+}
+autoschedule-duty-roster-summary {
+  grid-area: roster;
+  position: sticky;
+  top: 68px;
 }
 autoschedule-staff-palette {
   grid-area: staff;
@@ -953,10 +952,8 @@ autoschedule-schedule-grid {
 .duty-roster-summary {
   display: grid;
   gap: 8px;
-  width: 100%;
   min-width: 0;
-  padding: 10px 0 2px;
-  border-top: 1px solid var(--as-border);
+  padding: 2px 0;
 }
 .duty-roster-summary-head {
   display: flex;
@@ -2112,6 +2109,13 @@ autoschedule-schedule-grid {
   .supervisor-coverage-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  .schedule-workspace {
+    grid-template-areas: "roster roster" "staff board";
+    grid-template-columns: 126px minmax(0, 1fr);
+  }
+  autoschedule-duty-roster-summary {
+    position: static;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2244,8 +2248,8 @@ autoschedule-schedule-grid {
     flex-direction: column;
     gap: 2px;
   }
-  .schedule-main-row {
-    grid-template-areas: "staff" "board";
+  .schedule-workspace {
+    grid-template-areas: "roster" "staff" "board";
     grid-template-columns: 1fr;
   }
   .duty-roster-cards {

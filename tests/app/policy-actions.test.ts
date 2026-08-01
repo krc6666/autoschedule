@@ -14,8 +14,6 @@ import {
   deleteLateShiftRecoveryPositionRule,
   deleteTransitionPolicy,
   moveDutyPriority,
-  moveRuleHook,
-  setRuleHookEnabled,
   updateDutyPriority,
   updateNextWorkdayRecoveryTarget,
   updateLateShiftRecoveryPositionRule,
@@ -345,30 +343,5 @@ describe("policy actions", () => {
 
     expect(state.schedulePolicyStale).toBe(true);
     expect(state.assignments).toHaveLength(1);
-  });
-});
-
-describe("rule hook policy actions", () => {
-  it("only disables configurable hooks and marks the active schedule stale", () => {
-    const state = createDefaultState();
-    addActiveSchedule(state);
-
-    expect(setRuleHookEnabled(state, "next-duty-rest", false)).toBe(true);
-    expect(state.settings.disabledRuleHookIds).toContain("next-duty-rest");
-    expect(state.schedulePolicyStale).toBe(true);
-    expect(setRuleHookEnabled(state, "staff-eligibility", false)).toBe(false);
-    expect(state.settings.disabledRuleHookIds).not.toContain(
-      "staff-eligibility"
-    );
-  });
-
-  it("moves hooks only inside the same sortable stage", () => {
-    const state = createDefaultState();
-    const initial = [...state.settings.ruleHookOrder];
-
-    expect(moveRuleHook(state, "workload-balance", -1)).toBe(true);
-    expect(state.settings.ruleHookOrder).not.toEqual(initial);
-    expect(moveRuleHook(state, "staff-id", -1)).toBe(false);
-    expect(moveRuleHook(state, "staff-eligibility", 1)).toBe(false);
   });
 });

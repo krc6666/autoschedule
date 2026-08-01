@@ -1245,7 +1245,7 @@ describe("scheduler domain", () => {
     expect(assignment.staffId).not.toBe(frequent!.id);
   });
 
-  it("repairs task-order capture through a safe three-person reassignment path", async () => {
+  it("keeps a frequency-review result when later consecutive rotation has no safe alternative", async () => {
     const state = createDefaultState();
     const [frequent, lessFrequent, releaseWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -1323,39 +1323,50 @@ describe("scheduler domain", () => {
         qualifiedStaffIds: [frequent!.id, lessFrequent!.id, releaseWorker!.id],
       },
     ];
-    state.history = [
-      "2026-10-02",
-      "2026-10-04",
-      "2026-10-06",
-      "2026-10-08",
-    ].flatMap((date, index) => [
-      {
-        id: `frequent-target-${index}`,
-        date,
-        flightNo: "TARGET100",
-        position: "G20",
-        staffId: frequent!.id,
-        staffName: frequent!.name,
-        startTime: "08:30",
-        endTime: "10:30",
-        workHours: 2,
-        fatiguePoints: 1,
-        remark: "",
-      },
-      {
-        id: `release-target-${index}`,
-        date,
-        flightNo: "TARGET100",
-        position: "G20",
-        staffId: releaseWorker!.id,
-        staffName: releaseWorker!.name,
-        startTime: "08:30",
-        endTime: "10:30",
-        workHours: 2,
-        fatiguePoints: 1,
-        remark: "",
-      },
-    ]);
+    state.history = ["2026-10-02", "2026-10-04", "2026-10-06", "2026-10-08"]
+      .flatMap((date, index) => [
+        {
+          id: `frequent-target-${index}`,
+          date,
+          flightNo: "TARGET100",
+          position: "G20",
+          staffId: frequent!.id,
+          staffName: frequent!.name,
+          startTime: "08:30",
+          endTime: "10:30",
+          workHours: 2,
+          fatiguePoints: 1,
+          remark: "",
+        },
+        {
+          id: `release-target-${index}`,
+          date,
+          flightNo: "TARGET100",
+          position: "G20",
+          staffId: releaseWorker!.id,
+          staffName: releaseWorker!.name,
+          startTime: "08:30",
+          endTime: "10:30",
+          workHours: 2,
+          fatiguePoints: 1,
+          remark: "",
+        },
+      ])
+      .concat(
+        ["2026-10-06", "2026-10-08"].map((date, index) => ({
+          id: `release-source-${index}`,
+          date,
+          flightNo: "SOURCE100",
+          position: "S01",
+          staffId: releaseWorker!.id,
+          staffName: releaseWorker!.name,
+          startTime: "08:00",
+          endTime: "10:00",
+          workHours: 2,
+          fatiguePoints: 1,
+          remark: "",
+        }))
+      );
 
     const assignments = (await generateSchedule(state, "2026-10-10"))
       .assignments;
@@ -1379,6 +1390,17 @@ describe("scheduler domain", () => {
         expect.objectContaining({
           ruleId: "position-frequency-review",
           outcome: "selected",
+        }),
+      ])
+    );
+    expect(
+      assignments.find((item) => item.positionRuleId === "source-position")
+        ?.decisionTrace
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "position-rotation",
+          outcome: "fallback",
         }),
       ])
     );

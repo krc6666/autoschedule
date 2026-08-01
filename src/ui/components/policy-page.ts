@@ -2,7 +2,6 @@ import { html } from "lit";
 
 import type { AppState } from "../../model";
 import { LightDomElement } from "./light-dom-element";
-import "./policy-hook-registry";
 import "./policy-rule-ledger";
 import "./policy-settings-form";
 import "./policy-structured-rules";
@@ -42,9 +41,6 @@ export class PolicyPageElement extends LightDomElement {
       <autoschedule-policy-structured-rules
         .model=${this.model}
       ></autoschedule-policy-structured-rules>
-      <autoschedule-policy-hook-registry
-        .model=${this.model}
-      ></autoschedule-policy-hook-registry>
       <autoschedule-policy-rule-ledger
         .model=${this.model}
         .query=${this.query}

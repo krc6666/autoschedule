@@ -139,38 +139,6 @@ describe("state persistence", () => {
     );
   });
 
-  it("restores plugin metadata as requiring an explicit local reload", () => {
-    const state = createDefaultState();
-    state.pluginConfigurations = [
-      {
-        id: "example.plugin",
-        name: "示例插件",
-        fileName: "plugin.js",
-        apiVersion: 1,
-        enabled: true,
-        order: 0,
-        status: "loaded",
-        rules: [
-          {
-            id: "prefer-one",
-            label: "优先一号",
-            stage: "protection",
-            enabled: true,
-          },
-        ],
-      },
-    ];
-
-    const loaded = loadState({ getItem: () => JSON.stringify(state) });
-
-    expect(loaded.pluginConfigurations).toMatchObject([
-      { id: "example.plugin", status: "needs-reload" },
-    ]);
-    expect(JSON.stringify(loaded.pluginConfigurations)).not.toContain(
-      "preferredStaffIds"
-    );
-  });
-
   it("migrates personnel type, administrative mode, and scheduling policy defaults", () => {
     const state = createDefaultState();
     const legacy = JSON.parse(JSON.stringify(state));

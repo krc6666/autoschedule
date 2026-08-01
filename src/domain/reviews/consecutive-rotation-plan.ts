@@ -145,6 +145,7 @@ export async function findConsecutiveRotationPlan({
         ),
       compareCandidates: (_assignment, left, right) =>
         compareStaff(left.id, right.id),
+      maxParticipants: 5,
       ...(allowFatigueRelief
         ? {
             leadingObjectives: [

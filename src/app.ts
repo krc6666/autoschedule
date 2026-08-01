@@ -2,6 +2,7 @@ import { ApplicationCoordinator } from "./app/application-coordinator";
 import { createAutoscheduleStore } from "./app/store/autoschedule-store";
 import type { AutoscheduleAppElement } from "./ui/components/autoschedule-app";
 import "./ui/components/autoschedule-app";
+import { createBrowserPreferences } from "./infrastructure/browser-preferences";
 
 export interface MountedAutoscheduleApp {
   dispose(): void;
@@ -14,6 +15,7 @@ export function mountAutoscheduleApp(
   const element: AutoscheduleAppElement =
     document.createElement("autoschedule-app");
   const coordinator = new ApplicationCoordinator(store, {
+    preferences: createBrowserPreferences(),
     onViewChange: (view) => {
       element.view = view;
     },

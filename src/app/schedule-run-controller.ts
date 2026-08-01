@@ -3,15 +3,13 @@ import {
   runScheduleInBackground,
   type ScheduleProgressListener,
 } from "../infrastructure/schedule-runner";
-import type { PluginManifest } from "../infrastructure/plugin-protocol";
 import type { AppState, ScheduleResult } from "../model";
 
 export interface ScheduleRunControllerDependencies {
   run: (
     state: AppState,
     date: string,
-    onProgress: ScheduleProgressListener,
-    plugins?: readonly PluginManifest[]
+    onProgress: ScheduleProgressListener
   ) => Promise<ScheduleResult>;
   yieldToBrowser: () => Promise<void>;
   start: () => void;
@@ -26,11 +24,7 @@ export class ScheduleRunController {
     private readonly dependencies: ScheduleRunControllerDependencies
   ) {}
 
-  async calculate(
-    state: AppState,
-    date: string,
-    plugins: readonly PluginManifest[] = []
-  ): Promise<ScheduleResult> {
+  async calculate(state: AppState, date: string): Promise<ScheduleResult> {
     if (this.running) throw new Error("排班正在运行，请等待当前任务完成");
     this.running = true;
     this.dependencies.start();
@@ -39,8 +33,7 @@ export class ScheduleRunController {
       const result = await this.dependencies.run(
         state,
         date,
-        this.dependencies.progress,
-        plugins
+        this.dependencies.progress
       );
       this.dependencies.finish("completed");
       return result;

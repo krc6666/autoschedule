@@ -1,6 +1,5 @@
 import type { AppState, Assignment, Staff } from "../../model";
 import {
-  pluginSchedulingDecision,
   schedulingDecision,
   type SchedulingDecision,
   type SchedulingRuleId,
@@ -230,19 +229,11 @@ function appendDecisiveRule(
     return;
   const message = `${selected.name}在“${decisiveCandidateRule.label}”判断中优先于${runnerUp.name}`;
   trace.push(
-    decisiveCandidateRule.source === "built-in"
-      ? schedulingDecision(
-          decisiveCandidateRule.id as SchedulingRuleId,
-          "selected",
-          message
-        )
-      : pluginSchedulingDecision(
-          decisiveCandidateRule.id as `plugin:${string}`,
-          decisiveCandidateRule.label,
-          decisiveCandidateRule.stage as "protection" | "stable-order",
-          "selected",
-          message
-        )
+    schedulingDecision(
+      decisiveCandidateRule.id as SchedulingRuleId,
+      "selected",
+      message
+    )
   );
 }
 

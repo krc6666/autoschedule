@@ -135,6 +135,7 @@ export async function reviewLateShiftRecovery(
           date,
           facts?.crossDayRecovery
         ).excess === 0,
+      maxParticipants: 3,
     });
     attemptedReasons.push(...result.attemptedReasons);
     if (result.changes) {

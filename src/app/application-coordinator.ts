@@ -1,4 +1,3 @@
-import { PluginSession } from "../infrastructure/plugin-session";
 import type { UiCommand } from "../ui/events/ui-command";
 import { ConfigurationController } from "./controllers/configuration-controller";
 import { PolicyController } from "./controllers/policy-controller";
@@ -14,17 +13,21 @@ import { createBrowserScheduleRunController } from "./schedule-run-controller";
 import type { AutoscheduleStore } from "./store/autoschedule-store";
 import { plannedScheduleProgress } from "../domain/kernel/schedule-pipeline";
 import { todayIso } from "../utils";
+import type { ApplicationPreferences } from "./application-preferences";
 
 export interface ApplicationCoordinatorOptions {
+  preferences: ApplicationPreferences;
   confirm?: (message: string) => boolean;
   onViewChange?: (view: ApplicationViewState) => void;
 }
 
-function initialView(): ApplicationViewState {
-  const storedZoom = Number(localStorage.getItem("autoschedule.scheduleZoom"));
+function initialView(
+  preferences: ApplicationPreferences
+): ApplicationViewState {
+  const storedZoom = preferences.loadScheduleZoom();
   return {
     section: "overview",
-    date: localStorage.getItem("autoschedule.scheduleDate") || todayIso(),
+    date: preferences.loadScheduleDate() || todayIso(),
     zoom: Math.min(1.6, Math.max(0.7, storedZoom || 1)),
     loadSortField: "totalFatigue",
     loadSortDirection: "desc",
@@ -41,17 +44,19 @@ function initialView(): ApplicationViewState {
 }
 
 export class ApplicationCoordinator implements ApplicationContext {
-  readonly pluginSession = new PluginSession();
   readonly scheduleRunner;
-  private currentView = initialView();
+  readonly preferences: ApplicationPreferences;
+  private currentView: ApplicationViewState;
   private readonly controllers: UiCommandController[];
   private toastId = 0;
   private progressHideTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     readonly store: AutoscheduleStore,
-    private readonly options: ApplicationCoordinatorOptions = {}
+    private readonly options: ApplicationCoordinatorOptions
   ) {
+    this.preferences = options.preferences;
+    this.currentView = initialView(this.preferences);
     this.scheduleRunner = createBrowserScheduleRunController({
       start: () => {
         if (this.progressHideTimer) clearTimeout(this.progressHideTimer);
@@ -147,7 +152,7 @@ export class ApplicationCoordinator implements ApplicationContext {
         this.updateView({ section: command.section });
         return true;
       case "change-date":
-        localStorage.setItem("autoschedule.scheduleDate", command.date);
+        this.preferences.saveScheduleDate(command.date);
         this.updateView({ date: command.date });
         return true;
       case "close-dialog":

@@ -1,13 +1,13 @@
-import type { PluginSession } from "../infrastructure/plugin-session";
 import type { AppState } from "../model";
 import type { AutoscheduleStore } from "./store/autoschedule-store";
 import type { ScheduleRunController } from "./schedule-run-controller";
 import type { ApplicationViewState } from "./application-view-state";
+import type { ApplicationPreferences } from "./application-preferences";
 
 export interface ApplicationContext {
   readonly store: AutoscheduleStore;
-  readonly pluginSession: PluginSession;
   readonly scheduleRunner: ScheduleRunController;
+  readonly preferences: ApplicationPreferences;
   view(): ApplicationViewState;
   model(): AppState;
   updateView(patch: Partial<ApplicationViewState>): void;

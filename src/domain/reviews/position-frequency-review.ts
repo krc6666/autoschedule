@@ -232,6 +232,7 @@ export async function reviewSamePositionFrequency(
       primaryCandidateAllowed: (person) => lowerFrequencyIds.has(person.id),
       compareCandidates: (_assignment, left, right) =>
         compareStaff(left, right),
+      maxParticipants: 3,
     });
     if (result.changes) {
       applyFrequencyPlan(

@@ -6,7 +6,7 @@ import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver
 import type { Assignment, Flight, PositionRule } from "../../src/model";
 
 describe("KE166 mobile-supervisor counter coverage", () => {
-  it("uses the complete qualified open chain instead of imposing a participant limit", async () => {
+  it("keeps the counters unchanged when supervisor coverage requires more than five participants", async () => {
     const state = createDefaultState();
     const staff = state.staff.slice(0, 7).map((person, index) => ({
       ...person,
@@ -78,9 +78,9 @@ describe("KE166 mobile-supervisor counter coverage", () => {
       "2026-08-01"
     );
 
-    expect(supervisor?.staffId).toBe(staff[1]!.id);
+    expect(supervisor).toBeUndefined();
     expect(assignments.map((assignment) => assignment.staffId)).toEqual(
-      staff.slice(1).map((person) => person.id)
+      staff.slice(0, 6).map((person) => person.id)
     );
     expect(
       new Set(assignments.map((assignment) => assignment.staffId)).size
