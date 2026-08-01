@@ -1,0 +1,299 @@
+import type { AppState, Assignment, Staff } from "../../model";
+import {
+  schedulingDecision,
+  type SchedulingDecision,
+  type SchedulingRuleId,
+} from "../rules/schedule-rule-contract";
+import type { CandidatePriority } from "../candidates/candidate-priority";
+import {
+  firstDifferentCandidateRulePlan,
+  type CandidateRulePlanItem,
+} from "../rules/candidate-rule-plan";
+import {
+  configuredDutyTaskPriority,
+  dutyHardConstraintReason,
+} from "./duty-assignment";
+import { isNextDutyRestConflict } from "../reviews/next-duty-rest";
+import { comparePreviousWorkdayLoad } from "../shared/previous-workday-load";
+import {
+  nextDutyRestOverrideReason,
+  nextWorkdayRecoveryOverrideReason,
+} from "./schedule-decision-notes";
+import {
+  isHighLoadPosition,
+  lateShiftCutoffPriority,
+  lateShiftRecoveryRisk,
+  positionTransitionInsertionCost,
+} from "../reviews/schedule-protection";
+import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
+import {
+  isKe166MobileSupervisor,
+  type AssignmentTask,
+} from "../flights/schedule-tasks";
+
+export interface AssignmentDecisionTraceContext {
+  state: AppState;
+  date: string;
+  assignments: Assignment[];
+  task: AssignmentTask;
+  selected: Staff;
+  runnerUp?: Staff;
+  candidates: readonly Staff[];
+  candidatePriorities: ReadonlyMap<string, CandidatePriority>;
+  candidateRulePlan: readonly CandidateRulePlanItem[];
+  decisiveCandidateRule: CandidateRulePlanItem | null;
+  runFacts: ScheduleRunFacts;
+  dutyStaffId: string | null;
+  isDutyTarget: boolean;
+  hasAssignedDutyLateTask: boolean;
+  finalizingKe166Supervisor: boolean;
+}
+
+function appendReservedAssignmentDecisions(
+  trace: SchedulingDecision[],
+  context: AssignmentDecisionTraceContext
+): void {
+  const {
+    state,
+    task,
+    selected,
+    dutyStaffId,
+    isDutyTarget,
+    hasAssignedDutyLateTask,
+    finalizingKe166Supervisor,
+  } = context;
+  const { flight, rule } = task;
+  if (finalizingKe166Supervisor) {
+    trace.push(
+      schedulingDecision(
+        "ke166-supervisor",
+        "selected",
+        `${selected.name}在柜台排班与重点岗位轮换完成后独立担任${flight.flightNo}/${rule.name}`
+      )
+    );
+  }
+  const configuredPriority = configuredDutyTaskPriority(state, task);
+  if (
+    !dutyStaffId ||
+    configuredPriority < 0 ||
+    !isDutyTarget ||
+    hasAssignedDutyLateTask
+  )
+    return;
+  const hardReason = dutyHardConstraintReason(state, dutyStaffId, task);
+  trace.push(
+    selected.id === dutyStaffId
+      ? schedulingDecision(
+          "duty-position",
+          "selected",
+          `值班人员${selected.name}按优先级第${configuredPriority + 1}项锁定${flight.flightNo}/${rule.name}`
+        )
+      : schedulingDecision(
+          "duty-position",
+          "blocked",
+          hardReason ??
+            `值班人员未通过${flight.flightNo}/${rule.name}的时段、工时或衔接检查`
+        )
+  );
+}
+
+function appendProtectionFallbacks(
+  trace: SchedulingDecision[],
+  context: AssignmentDecisionTraceContext
+): void {
+  const {
+    state,
+    date,
+    assignments,
+    task,
+    selected,
+    dutyStaffId,
+    isDutyTarget,
+    runFacts,
+  } = context;
+  const { flight, rule } = task;
+  const ke166 = isKe166MobileSupervisor(flight, rule);
+  if (
+    selected.id === dutyStaffId &&
+    isDutyTarget &&
+    positionTransitionInsertionCost(
+      assignments,
+      selected.id,
+      task,
+      state,
+      "forbid"
+    ) > 0
+  ) {
+    trace.push(
+      schedulingDecision(
+        "position-transition",
+        "fallback",
+        "值班岗位锁定优先，已突破严格岗位衔接保护"
+      )
+    );
+  }
+  if (
+    isNextDutyRestConflict(
+      state,
+      selected.id,
+      rule,
+      date,
+      runFacts.nextDutyRest
+    )
+  ) {
+    const reason = nextDutyRestOverrideReason(
+      state,
+      assignments,
+      selected,
+      task,
+      dutyStaffId,
+      isDutyTarget,
+      ke166
+    );
+    trace.push(
+      schedulingDecision(
+        "next-duty-rest",
+        "fallback",
+        `下班次值班预休未落实：${selected.name}仍安排在${flight.flightNo}/${rule.name}；${reason}`
+      )
+    );
+  }
+  const recovery = lateShiftRecoveryRisk(
+    state,
+    selected.id,
+    {
+      ...flight,
+      position: rule.name,
+      remark: rule.remark,
+      fatiguePoints: rule.fatiguePoints,
+    },
+    date,
+    runFacts.crossDayRecovery
+  );
+  if (recovery.protectedMorningTarget || recovery.protectedLatePriorityTarget) {
+    const reason = nextWorkdayRecoveryOverrideReason(
+      state,
+      assignments,
+      selected,
+      task,
+      dutyStaffId,
+      isDutyTarget,
+      ke166,
+      recovery.protectedMorningTarget
+    );
+    trace.push(
+      schedulingDecision(
+        "late-shift-recovery",
+        "fallback",
+        `${recovery.protectedMorningTarget ? "跨工作日早班恢复" : "末班重点岗位恢复"}未落实：${selected.name}仍安排在${flight.flightNo}/${rule.name}；${reason}`
+      )
+    );
+  }
+  const cutoff = lateShiftCutoffPriority(
+    state,
+    selected.id,
+    flight,
+    date,
+    runFacts.crossDayRecovery
+  );
+  if (cutoff.disposition !== "after-cutoff") return;
+  const reason = nextWorkdayRecoveryOverrideReason(
+    state,
+    assignments,
+    selected,
+    task,
+    dutyStaffId,
+    isDutyTarget,
+    ke166,
+    false
+  );
+  trace.push(
+    schedulingDecision(
+      "late-shift-cutoff",
+      "fallback",
+      `末班重点岗位次班截止保护未落实：${selected.name}仍安排在${flight.flightNo}/${rule.name}；${reason}`
+    )
+  );
+}
+
+function appendDecisiveRule(
+  trace: SchedulingDecision[],
+  context: AssignmentDecisionTraceContext
+): void {
+  const { selected, runnerUp, decisiveCandidateRule } = context;
+  if (
+    !runnerUp ||
+    !decisiveCandidateRule ||
+    trace.some((decision) => decision.ruleId === decisiveCandidateRule.id)
+  )
+    return;
+  const message = `${selected.name}在“${decisiveCandidateRule.label}”判断中优先于${runnerUp.name}`;
+  trace.push(
+    schedulingDecision(
+      decisiveCandidateRule.id as SchedulingRuleId,
+      "selected",
+      message
+    )
+  );
+}
+
+function appendCrossWorkdayFallback(
+  trace: SchedulingDecision[],
+  context: AssignmentDecisionTraceContext
+): void {
+  const {
+    state,
+    task,
+    selected,
+    candidates,
+    candidatePriorities,
+    candidateRulePlan,
+  } = context;
+  if (!isHighLoadPosition(task.rule.fatiguePoints, task.rule.remark, state))
+    return;
+  const selectedLoad = candidatePriorities.get(
+    selected.id
+  )?.previousWorkdayLoad;
+  const lighter = selectedLoad
+    ? candidates.find((person) => {
+        const profile = candidatePriorities.get(person.id);
+        return (
+          profile &&
+          comparePreviousWorkdayLoad(
+            profile.previousWorkdayLoad,
+            selectedLoad
+          ) < 0
+        );
+      })
+    : undefined;
+  const blockingRule = lighter
+    ? firstDifferentCandidateRulePlan(
+        candidateRulePlan,
+        task,
+        selected,
+        candidatePriorities.get(selected.id)!,
+        lighter,
+        candidatePriorities.get(lighter.id)!
+      )
+    : null;
+  if (!lighter || !blockingRule || blockingRule.id === "cross-workday-load")
+    return;
+  trace.push(
+    schedulingDecision(
+      "cross-workday-load",
+      "fallback",
+      `跨工作班负荷互补未落实：${selected.name}上一班负荷高于${lighter.name}，本班仍承担${task.flight.flightNo}/${task.rule.name}；${blockingRule.label}优先。`
+    )
+  );
+}
+
+export function buildAssignmentDecisionTrace(
+  context: AssignmentDecisionTraceContext
+): SchedulingDecision[] {
+  const trace: SchedulingDecision[] = [];
+  appendReservedAssignmentDecisions(trace, context);
+  appendProtectionFallbacks(trace, context);
+  appendDecisiveRule(trace, context);
+  appendCrossWorkdayFallback(trace, context);
+  return trace;
+}

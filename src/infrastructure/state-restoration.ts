@@ -1,6 +1,6 @@
-import { normalizeSupervisorAssignments } from "../domain/schedule-adjustment";
-import { normalizeScheduleSettings } from "../domain/schedule-settings";
-import { removeUnavailableStaffAssignments } from "../domain/schedule-state";
+import { normalizeSupervisorAssignments } from "../domain/assignments/schedule-adjustment";
+import { normalizeScheduleSettings } from "../domain/rules/schedule-settings";
+import { removeUnavailableStaffAssignments } from "../domain/kernel/schedule-state";
 import type {
   AppState,
   Assignment,
@@ -17,7 +17,7 @@ import {
   type SchedulingDecision,
   type SchedulingDecisionOutcome,
   type SchedulingRuleId,
-} from "../schedule-rule-contract";
+} from "../domain/rules/schedule-rule-contract";
 import { orderPositionRules } from "../utils";
 
 type PersistedSettings = Partial<ScheduleSettings>;

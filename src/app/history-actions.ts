@@ -1,6 +1,6 @@
-import { getDutyRosterForDate } from "../domain/duty-roster";
-import { assignmentUsesUnavailableStaff } from "../domain/schedule-state";
-import { isCountedWorkloadAssignment } from "../domain/workload-accounting";
+import { getDutyRosterForDate } from "../domain/duty-roster/roster";
+import { assignmentUsesUnavailableStaff } from "../domain/kernel/schedule-state";
+import { isCountedWorkloadAssignment } from "../domain/shared/workload-accounting";
 import type { AppState, HistoryRecord } from "../model";
 import { createId, persistedAssignmentRemark } from "../utils";
 

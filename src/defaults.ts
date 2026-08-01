@@ -1,5 +1,5 @@
 import type { AppState, Flight, PositionRule, Staff } from "./model";
-import { createDefaultScheduleSettings } from "./domain/schedule-settings";
+import { createDefaultScheduleSettings } from "./domain/rules/schedule-settings";
 import { orderPositionRules } from "./utils";
 
 const allRegular = Array.from({ length: 17 }, (_, index) => String(index + 2));

@@ -1,11 +1,11 @@
-import type { SchedulingDecision } from "./schedule-rule-contract";
+import type { SchedulingDecision } from "./domain/rules/schedule-rule-contract";
 import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
-} from "./structured-policy-contract";
+} from "./domain/rules/structured-policy-contract";
 
 export type StaffStatus = "正常" | "病假" | "休假";
 export type StaffType = "常规" | "行政支援";

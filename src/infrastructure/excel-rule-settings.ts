@@ -3,8 +3,8 @@ import type * as XLSX from "xlsx-js-style";
 import {
   SCHEDULE_SETTING_DEFINITIONS,
   type ScalarScheduleSettingKey,
-} from "../domain/schedule-settings";
-import { normalizeTime } from "../domain/time";
+} from "../domain/rules/schedule-settings";
+import { normalizeTime } from "../domain/shared/time";
 import type { AppState, ScheduleSettings } from "../model";
 import type {
   DutyPositionPriority,
@@ -12,7 +12,7 @@ import type {
   MobileSupervisorCoverageRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
-} from "../structured-policy-contract";
+} from "../domain/rules/structured-policy-contract";
 import { createId, normalizeText, splitList } from "../utils";
 import {
   append,

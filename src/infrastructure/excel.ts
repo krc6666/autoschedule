@@ -18,7 +18,7 @@ import {
   persistedAssignmentRemark,
   splitList,
 } from "../utils";
-import { durationHours, normalizeTime } from "../domain/time";
+import { durationHours, normalizeTime } from "../domain/shared/time";
 import {
   appendScheduleRuleSheets,
   parseScheduleRuleSettings,

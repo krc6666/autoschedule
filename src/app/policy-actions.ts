@@ -3,9 +3,9 @@ import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   NextWorkdayRecoveryTarget,
-} from "../structured-policy-contract";
-import { applyScheduleSettingsPatch } from "../domain/schedule-settings";
-import { markActiveScheduleStale } from "../domain/schedule-lifecycle";
+} from "../domain/rules/structured-policy-contract";
+import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
+import { markActiveScheduleStale } from "../domain/kernel/schedule-lifecycle";
 import { createId, normalizeText, splitList } from "../utils";
 
 export type PolicyValue = string | number | boolean;

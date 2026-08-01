@@ -1,0 +1,142 @@
+import { Bench } from "tinybench";
+import { describe, expect, it } from "vitest";
+
+import {
+  currentScheduleHistory,
+  replaceHistoryForDate,
+} from "../../src/app/history-actions";
+import { createDefaultState } from "../../src/defaults";
+import type { AppState, ScheduleResult } from "../../src/model";
+import { intervalsOverlap } from "../../src/domain/shared/time";
+import { generateSchedule } from "../helpers/generate-schedule";
+import { createScheduleScaleState } from "./fixtures/schedule-scale";
+
+interface BenchmarkObservation {
+  p50: number;
+  p99: number;
+  samples: number;
+}
+
+function verifySchedule(
+  state: AppState,
+  result: ScheduleResult,
+  expectedPositionCount: number
+): void {
+  expect(result.assignments).toHaveLength(expectedPositionCount);
+  expect(result.unfilledCount).toBe(0);
+  expect(new Set(result.assignments.map((item) => item.id)).size).toBe(
+    expectedPositionCount
+  );
+  for (const person of state.staff) {
+    const assignments = result.assignments.filter(
+      (item) =>
+        item.staffId === person.id &&
+        item.status === "assigned" &&
+        item.workHours > 0
+    );
+    for (let left = 0; left < assignments.length; left += 1) {
+      for (let right = left + 1; right < assignments.length; right += 1) {
+        expect(
+          intervalsOverlap(
+            assignments[left]!.startTime,
+            assignments[left]!.endTime,
+            assignments[right]!.startTime,
+            assignments[right]!.endTime
+          )
+        ).toBe(false);
+      }
+    }
+  }
+}
+
+async function benchmark(
+  name: string,
+  run: () => Promise<void>
+): Promise<BenchmarkObservation> {
+  const bench = new Bench({
+    iterations: 2,
+    time: 0,
+    warmup: true,
+    warmupIterations: 1,
+    warmupTime: 0,
+    retainSamples: true,
+    throws: true,
+  });
+  bench.add(name, run, { async: true });
+  await bench.run();
+  const result = bench.getTask(name)!.result;
+  expect(result.state).toBe("completed");
+  if (result.state !== "completed")
+    throw new Error(`${name} 基准未完成：${result.state}`);
+  return {
+    p50: result.latency.p50,
+    p99: result.latency.p99,
+    samples: result.latency.samplesCount,
+  };
+}
+
+describe("scheduling kernel production benchmarks", () => {
+  it("records median and P99 latency for the default schedule", async () => {
+    const observation = await benchmark("default schedule", async () => {
+      const state = createDefaultState();
+      const result = await generateSchedule(state, "2026-08-01");
+      expect(result.assignments).toHaveLength(state.positionRules.length);
+      expect(new Set(result.assignments.map((item) => item.id)).size).toBe(
+        result.assignments.length
+      );
+    });
+
+    expect(observation.samples).toBeGreaterThanOrEqual(2);
+    expect(observation.p50).toBeLessThan(2_500);
+    expect(observation.p99).toBeLessThan(5_000);
+  }, 30_000);
+
+  it.each([
+    { positions: 96, p50Limit: 2_500, p99Limit: 5_000 },
+    { positions: 300, p50Limit: 10_000, p99Limit: 12_000 },
+  ])(
+    "keeps a $positions-position schedule complete and bounded",
+    async ({ positions, p50Limit, p99Limit }) => {
+      const observation = await benchmark(
+        `${positions} positions`,
+        async () => {
+          const state = createScheduleScaleState(positions);
+          const result = await generateSchedule(state, "2026-08-01");
+          verifySchedule(state, result, positions);
+        }
+      );
+
+      expect(observation.samples).toBeGreaterThanOrEqual(2);
+      expect(observation.p50).toBeLessThan(p50Limit);
+      expect(observation.p99).toBeLessThan(p99Limit);
+    },
+    60_000
+  );
+
+  it("keeps repeated archive-and-reschedule runs bounded", async () => {
+    const dates = [
+      "2026-08-01",
+      "2026-08-03",
+      "2026-08-05",
+      "2026-08-07",
+      "2026-08-09",
+    ];
+    const observation = await benchmark("five workdays", async () => {
+      const state = createDefaultState();
+      for (const date of dates) {
+        const result = await generateSchedule(state, date);
+        state.assignments = result.assignments;
+        state.activeScheduleDate = date;
+        replaceHistoryForDate(state, date, currentScheduleHistory(state, date));
+      }
+      expect(new Set(state.history.map((record) => record.id)).size).toBe(
+        state.history.length
+      );
+      expect(state.history.length).toBeGreaterThan(0);
+    });
+
+    expect(observation.samples).toBeGreaterThanOrEqual(2);
+    expect(observation.p50).toBeLessThan(8_000);
+    expect(observation.p99).toBeLessThan(12_000);
+  }, 60_000);
+});

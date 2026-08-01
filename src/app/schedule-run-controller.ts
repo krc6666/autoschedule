@@ -1,14 +1,9 @@
-import type { ScheduleProgressStage } from "../domain/schedule-progress";
+import type { ScheduleProgressStage } from "../domain/kernel/schedule-progress";
 import {
   runScheduleInBackground,
   type ScheduleProgressListener,
 } from "../infrastructure/schedule-runner";
 import type { AppState, ScheduleResult } from "../model";
-import {
-  hideScheduleProgress,
-  setScheduleControlsDisabled,
-  updateScheduleProgress,
-} from "../ui/schedule-progress";
 
 export interface ScheduleRunControllerDependencies {
   run: (
@@ -19,8 +14,7 @@ export interface ScheduleRunControllerDependencies {
   yieldToBrowser: () => Promise<void>;
   start: () => void;
   progress: (stage: ScheduleProgressStage, percent: number) => void;
-  finish: () => void;
-  hide: () => void;
+  finish: (outcome: "completed" | "failed") => void;
 }
 
 export class ScheduleRunController {
@@ -36,35 +30,35 @@ export class ScheduleRunController {
     this.dependencies.start();
     await this.dependencies.yieldToBrowser();
     try {
-      return await this.dependencies.run(
+      const result = await this.dependencies.run(
         state,
         date,
         this.dependencies.progress
       );
+      this.dependencies.finish("completed");
+      return result;
+    } catch (error) {
+      this.dependencies.finish("failed");
+      throw error;
     } finally {
       this.running = false;
-      this.dependencies.finish();
     }
-  }
-
-  hideProgress(): void {
-    this.dependencies.hide();
   }
 }
 
+export interface BrowserScheduleRunCallbacks {
+  start(): void;
+  progress(stage: ScheduleProgressStage, percent: number): void;
+  finish(outcome: "completed" | "failed"): void;
+}
+
 export function createBrowserScheduleRunController(
-  root: HTMLElement
+  callbacks: BrowserScheduleRunCallbacks
 ): ScheduleRunController {
   return new ScheduleRunController({
     run: runScheduleInBackground,
     yieldToBrowser: () =>
       new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-    start: () => {
-      setScheduleControlsDisabled(root, true);
-      updateScheduleProgress(root, "prepare", 0);
-    },
-    progress: (stage, percent) => updateScheduleProgress(root, stage, percent),
-    finish: () => setScheduleControlsDisabled(root, false),
-    hide: () => hideScheduleProgress(root),
+    ...callbacks,
   });
 }
