@@ -1,7 +1,7 @@
-import { isAuxiliaryCategory } from "../domain/schedule-position-rules";
-import type { FlightPlanReconciliation } from "../domain/flight-plan-reconciliation";
+import { isAuxiliaryCategory } from "../domain/flights/schedule-position-rules";
+import type { FlightPlanReconciliation } from "../domain/flights/flight-plan-reconciliation";
 import type { AppState, Flight, FlightTemplate } from "../model";
-import { clearActiveSchedule } from "../domain/schedule-lifecycle";
+import { clearActiveSchedule } from "../domain/kernel/schedule-lifecycle";
 import {
   createId,
   normalizeText,

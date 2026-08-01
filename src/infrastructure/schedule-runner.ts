@@ -2,24 +2,31 @@ import type { AppState, ScheduleResult } from "../model";
 import {
   generateSchedule,
   type ScheduleProgressStage,
-} from "../domain/scheduler";
+} from "../domain/kernel/scheduling-kernel";
 import type {
   ScheduleWorkerRequest,
   ScheduleWorkerResponse,
 } from "./schedule-worker-protocol";
+import type { PluginManifest } from "./plugin-protocol";
 
 export type ScheduleProgressListener = (
   stage: ScheduleProgressStage,
   percent: number
 ) => void;
 
-export function runScheduleInBackground(
+export async function runScheduleInBackground(
   state: AppState,
   date: string,
-  onProgress: ScheduleProgressListener
+  onProgress: ScheduleProgressListener,
+  plugins: readonly PluginManifest[] = []
 ): Promise<ScheduleResult> {
   if (typeof Worker === "undefined") {
-    return Promise.resolve(generateSchedule(state, date, { onProgress }));
+    const { defaultHighsSolver } = await import("./solver/highs-solver");
+    return generateSchedule(state, date, {
+      solver: defaultHighsSolver,
+      onProgress,
+      plugins,
+    });
   }
 
   return new Promise((resolve, reject) => {
@@ -42,6 +49,10 @@ export function runScheduleInBackground(
       finish();
       reject(new Error(event.message || "排班后台线程运行失败"));
     };
-    worker.postMessage({ state, date } satisfies ScheduleWorkerRequest);
+    worker.postMessage({
+      state,
+      date,
+      plugins: plugins.map((plugin) => structuredClone(plugin)),
+    } satisfies ScheduleWorkerRequest);
   });
 }

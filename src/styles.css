@@ -51,7 +51,8 @@ select {
 }
 
 .app-container {
-  max-width: 1600px;
+  width: 100%;
+  max-width: none;
   margin-inline: auto;
 }
 .app-header {
@@ -510,10 +511,9 @@ select {
 }
 .template-row {
   display: grid;
-  grid-template-columns: 95px minmax(240px, 0.8fr) minmax(240px, 1fr) minmax(
-      160px,
-      0.8fr
-    ) 34px;
+  grid-template-columns:
+    95px minmax(240px, 0.8fr) minmax(240px, 1fr) minmax(160px, 0.8fr)
+    34px;
   align-items: center;
   gap: 8px;
   padding-bottom: 8px;
@@ -781,10 +781,9 @@ select {
 .policy-ledger-table td:first-child {
   width: 58px;
   color: #66717c;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 .policy-ledger-table td:nth-child(2) {
-  width: 100px;
+  width: 230px;
 }
 .policy-ledger-table td:nth-child(3) {
   width: 150px;
@@ -796,7 +795,7 @@ select {
 }
 .policy-search {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 32px;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   max-width: 620px;
@@ -816,10 +815,9 @@ select {
 }
 .duty-priority-row {
   display: grid;
-  grid-template-columns: 30px minmax(120px, 0.7fr) minmax(
-      180px,
-      1.4fr
-    ) 76px 108px;
+  grid-template-columns:
+    30px minmax(120px, 0.7fr) minmax(180px, 1.4fr)
+    76px 108px;
   align-items: end;
   gap: 10px;
   padding: 9px;
@@ -855,10 +853,9 @@ select {
 }
 .supervisor-coverage-row {
   display: grid;
-  grid-template-columns: 72px minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(
-      150px,
-      1.2fr
-    ) minmax(120px, 0.8fr) 34px;
+  grid-template-columns:
+    72px minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(150px, 1.2fr)
+    minmax(120px, 0.8fr) 34px;
   align-items: end;
   gap: 10px;
   padding: 9px;
@@ -928,20 +925,38 @@ select {
 
 .schedule-workspace {
   display: grid;
-  grid-template-areas: "staff board roster";
-  grid-template-columns: 126px minmax(0, max-content) minmax(220px, 1fr);
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   align-items: start;
   margin-bottom: 8px;
 }
+.schedule-main-row {
+  display: grid;
+  grid-template-areas: "staff board";
+  grid-template-columns: 126px minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+autoschedule-staff-palette,
+autoschedule-schedule-grid,
+autoschedule-duty-roster-summary {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+autoschedule-staff-palette {
+  grid-area: staff;
+}
+autoschedule-schedule-grid {
+  grid-area: board;
+}
 .duty-roster-summary {
-  grid-area: roster;
-  position: sticky;
-  top: 68px;
   display: grid;
   gap: 8px;
+  width: 100%;
   min-width: 0;
-  padding: 2px 0;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--as-border);
 }
 .duty-roster-summary-head {
   display: flex;
@@ -977,7 +992,7 @@ select {
 }
 .duty-roster-cards {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 .duty-roster-card {
@@ -1320,12 +1335,13 @@ select {
   font-size: 10px;
 }
 .schedule-board {
-  grid-area: board;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   overflow-x: auto;
 }
 .schedule-grid-table {
-  width: calc(var(--flight-count) * var(--schedule-flight-width));
+  width: 100%;
   min-width: calc(var(--flight-count) * var(--schedule-flight-width));
   table-layout: fixed;
   --bs-table-bg: #fff;
@@ -1818,8 +1834,8 @@ select {
   right: 16px;
   bottom: 82px;
   z-index: 1090;
-  width: min(330px, calc(100vw - 32px));
-  padding: 12px 14px;
+  width: min(350px, calc(100vw - 32px));
+  padding: 14px 16px;
   border: 1px solid #cfd7df;
   border-radius: 6px;
   background: #fff;
@@ -1829,19 +1845,14 @@ select {
   display: none;
 }
 .schedule-progress-heading {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
   color: #27313a;
   font-size: 13px;
 }
-.schedule-progress-heading .spinner-border {
-  width: 14px;
-  height: 14px;
-  color: var(--as-primary);
-}
-.schedule-progress-heading > span:last-child {
+.schedule-progress-heading > span {
   color: #69747e;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -1855,10 +1866,101 @@ select {
   background: var(--as-primary);
   transition: width 0.18s ease;
 }
-.schedule-progress-detail {
-  margin-top: 7px;
-  color: #69747e;
-  font-size: 11px;
+.schedule-progress-tasks {
+  display: grid;
+  gap: 3px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.schedule-progress-task {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 25px;
+  color: #7a858e;
+  font-size: 12px;
+  line-height: 1.35;
+  transition:
+    color 0.18s ease,
+    opacity 0.18s ease;
+}
+.schedule-progress-task > span:last-child {
+  overflow-wrap: anywhere;
+}
+.schedule-progress-marker {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #cfd7df;
+  border-radius: 50%;
+  color: #a4adb5;
+  font-size: 10px;
+}
+.schedule-progress-task.is-completed {
+  color: #87918a;
+  animation: schedule-progress-complete 0.2s ease both;
+}
+.schedule-progress-task.is-completed > span:last-child {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.schedule-progress-task.is-completed .schedule-progress-marker {
+  border-color: #75a992;
+  background: #e7f3eb;
+  color: #237346;
+}
+.schedule-progress-task.is-active {
+  color: #27313a;
+  font-weight: 650;
+  animation: schedule-progress-enter 0.24s ease both;
+}
+.schedule-progress-task.is-active .schedule-progress-marker {
+  border-color: var(--as-primary);
+  color: var(--as-primary);
+  box-shadow: 0 0 0 3px rgba(180, 35, 45, 0.1);
+}
+.schedule-progress-task.is-failed {
+  color: #a61e2b;
+  font-weight: 650;
+  animation: schedule-progress-enter 0.24s ease both;
+}
+.schedule-progress-task.is-failed .schedule-progress-marker {
+  border-color: #b4232d;
+  background: #fbe9eb;
+  color: #b4232d;
+}
+.schedule-progress-task.is-pending {
+  opacity: 0.68;
+}
+@keyframes schedule-progress-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes schedule-progress-complete {
+  from {
+    opacity: 0.65;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .schedule-progress-task,
+  .schedule-progress-panel .progress-bar {
+    animation: none;
+    transition: none;
+  }
 }
 
 .toolbar-band {
@@ -2003,17 +2105,12 @@ select {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .duty-priority-row {
-    grid-template-columns: 30px minmax(110px, 0.7fr) minmax(
-        160px,
-        1.3fr
-      ) 70px 108px;
+    grid-template-columns:
+      30px minmax(110px, 0.7fr) minmax(160px, 1.3fr)
+      70px 108px;
   }
   .supervisor-coverage-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .schedule-workspace {
-    grid-template-areas: "staff board" "staff roster";
-    grid-template-columns: 126px minmax(0, 1fr);
   }
 }
 
@@ -2045,7 +2142,7 @@ select {
     inset: auto 0 0 0;
     z-index: 1040;
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     height: 64px;
     padding: 5px 6px;
     border: 0;
@@ -2053,8 +2150,7 @@ select {
     box-shadow: 0 -3px 14px rgba(31, 35, 40, 0.08);
   }
   .app-nav .nav-spacer,
-  .app-nav [data-action="import-workbook"],
-  .app-nav [data-action="export-config"] {
+  .app-nav .nav-data-action {
     display: none;
   }
   .nav-item {
@@ -2148,8 +2244,11 @@ select {
     flex-direction: column;
     gap: 2px;
   }
-  .schedule-workspace {
-    grid-template-areas: "roster" "staff" "board";
+  .schedule-main-row {
+    grid-template-areas: "staff" "board";
+    grid-template-columns: 1fr;
+  }
+  .duty-roster-cards {
     grid-template-columns: 1fr;
   }
   .duty-roster-groups {

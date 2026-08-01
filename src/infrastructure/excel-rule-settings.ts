@@ -3,16 +3,21 @@ import type * as XLSX from "xlsx-js-style";
 import {
   SCHEDULE_SETTING_DEFINITIONS,
   type ScalarScheduleSettingKey,
-} from "../domain/schedule-settings";
-import { normalizeTime } from "../domain/time";
+} from "../domain/rules/schedule-settings";
+import { normalizeTime } from "../domain/shared/time";
 import type { AppState, ScheduleSettings } from "../model";
+import {
+  SCHEDULING_RULES,
+  SCHEDULING_STAGE_LABELS,
+} from "../domain/rules/schedule-rule-contract";
+import { isConfigurableRuleHook } from "../domain/rules/built-in-rule-registry";
 import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
-} from "../structured-policy-contract";
+} from "../domain/rules/structured-policy-contract";
 import { createId, normalizeText, splitList } from "../utils";
 import {
   append,
@@ -30,12 +35,19 @@ const RULE_SHEET_NAMES = {
   recoveryTargets: "次班恢复目标",
   lateShiftPositions: "末班重点岗位",
   supervisorCoverage: "机动督导范围",
+  hookOrder: "规则执行顺序",
 } as const;
 
 interface ParsedRuleSheet<T> {
   present: boolean;
   value?: T[];
   warnings: string[];
+}
+
+interface ParsedHookOrder {
+  id: string;
+  enabled: boolean;
+  order: number;
 }
 
 export interface ParsedScheduleRuleSettings {
@@ -367,6 +379,50 @@ function parseSupervisorCoverage(
   );
 }
 
+function parseHookOrder(
+  workbook: XLSX.WorkBook
+): ParsedRuleSheet<ParsedHookOrder> {
+  const knownRules = new Map<string, (typeof SCHEDULING_RULES)[number]>(
+    SCHEDULING_RULES.map((rule) => [rule.id, rule])
+  );
+  const parsed = parseRuleSheet(
+    workbook,
+    RULE_SHEET_NAMES.hookOrder,
+    (row, header) => {
+      const id = cell(row, header, ["规则ID", "ID"], 0);
+      const enabled = parseBoolean(cell(row, header, ["启用"], 3));
+      const order = Number(cell(row, header, ["顺序"], 4));
+      const errors = [
+        !knownRules.has(id) ? `未知规则ID“${id || "空白"}”` : "",
+        enabled === undefined ? "启用值必须填写是或否" : "",
+        !Number.isInteger(order) || order < 1
+          ? "顺序必须是大于等于1的整数"
+          : "",
+        enabled === false && knownRules.has(id) && !isConfigurableRuleHook(id)
+          ? "核心规则不可停用"
+          : "",
+      ].filter(Boolean);
+      if (errors.length || enabled === undefined) return { errors };
+      return { errors: [], value: { id, enabled, order } };
+    }
+  );
+  if (!parsed.value) return parsed;
+  const seen = new Set<string>();
+  const duplicate = parsed.value.find((item) => {
+    if (seen.has(item.id)) return true;
+    seen.add(item.id);
+    return false;
+  });
+  if (duplicate)
+    return {
+      present: true,
+      warnings: [
+        `${RULE_SHEET_NAMES.hookOrder}：规则ID“${duplicate.id}”重复，整张表未导入`,
+      ],
+    };
+  return parsed;
+}
+
 export function parseScheduleRuleSettings(
   workbook: XLSX.WorkBook
 ): ParsedScheduleRuleSettings {
@@ -376,20 +432,23 @@ export function parseScheduleRuleSettings(
   const recoveryTargets = parseRecoveryTargets(workbook);
   const lateShiftPositions = parseLateShiftPositions(workbook);
   const supervisorCoverage = parseSupervisorCoverage(workbook);
+  const hookOrder = parseHookOrder(workbook);
   const recognized =
     scalar.present ||
     transitions.present ||
     dutyPriorities.present ||
     recoveryTargets.present ||
     lateShiftPositions.present ||
-    supervisorCoverage.present;
+    supervisorCoverage.present ||
+    hookOrder.present;
   const hasImportableSettings =
     Boolean(scalar.settings && Object.keys(scalar.settings).length) ||
     transitions.value !== undefined ||
     dutyPriorities.value !== undefined ||
     recoveryTargets.value !== undefined ||
     lateShiftPositions.value !== undefined ||
-    supervisorCoverage.value !== undefined;
+    supervisorCoverage.value !== undefined ||
+    hookOrder.value !== undefined;
   const settings: Partial<ScheduleSettings> | undefined = hasImportableSettings
     ? { ...(scalar.settings ?? {}) }
     : undefined;
@@ -403,6 +462,15 @@ export function parseScheduleRuleSettings(
     settings.lateShiftRecoveryPositionRules = lateShiftPositions.value;
   if (settings && supervisorCoverage.value)
     settings.mobileSupervisorCoverageRules = supervisorCoverage.value;
+  if (settings && hookOrder.value) {
+    const orderedHooks = [...hookOrder.value].sort(
+      (left, right) => left.order - right.order
+    );
+    settings.ruleHookOrder = orderedHooks.map((item) => item.id);
+    settings.disabledRuleHookIds = orderedHooks
+      .filter((item) => !item.enabled && isConfigurableRuleHook(item.id))
+      .map((item) => item.id);
+  }
   return {
     settings,
     recognized,
@@ -413,6 +481,7 @@ export function parseScheduleRuleSettings(
       ...recoveryTargets.warnings,
       ...lateShiftPositions.warnings,
       ...supervisorCoverage.warnings,
+      ...hookOrder.warnings,
     ],
   };
 }
@@ -541,5 +610,35 @@ export function appendScheduleRuleSheets(
       ]),
     ],
     [32, 10, 24, 16, 24, 14]
+  );
+  const ruleById = new Map<string, (typeof SCHEDULING_RULES)[number]>(
+    SCHEDULING_RULES.map((rule) => [rule.id, rule])
+  );
+  const orderedRuleIds = [
+    ...new Set([
+      ...state.settings.ruleHookOrder,
+      ...SCHEDULING_RULES.map((rule) => rule.id),
+    ]),
+  ].filter((id) => ruleById.has(id));
+  append(
+    workbook,
+    RULE_SHEET_NAMES.hookOrder,
+    [
+      ["规则ID", "规则名称", "阶段", "启用", "顺序"],
+      ...orderedRuleIds.map((id, index) => {
+        const rule = ruleById.get(id)!;
+        const enabled =
+          !isConfigurableRuleHook(id) ||
+          !state.settings.disabledRuleHookIds.includes(id);
+        return [
+          id,
+          rule.label,
+          SCHEDULING_STAGE_LABELS[rule.stage],
+          enabled ? "是" : "否",
+          index + 1,
+        ];
+      }),
+    ],
+    [38, 36, 22, 10, 10]
   );
 }

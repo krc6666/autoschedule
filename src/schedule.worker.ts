@@ -1,12 +1,17 @@
-import { generateSchedule } from "./domain/scheduler";
+import { generateSchedule } from "./domain/kernel/scheduling-kernel";
 import type {
   ScheduleWorkerRequest,
   ScheduleWorkerResponse,
 } from "./infrastructure/schedule-worker-protocol";
+import { defaultHighsSolver } from "./infrastructure/solver/highs-solver";
 
-self.onmessage = (event: MessageEvent<ScheduleWorkerRequest>): void => {
+self.onmessage = async (
+  event: MessageEvent<ScheduleWorkerRequest>
+): Promise<void> => {
   try {
-    const result = generateSchedule(event.data.state, event.data.date, {
+    const result = await generateSchedule(event.data.state, event.data.date, {
+      solver: defaultHighsSolver,
+      plugins: event.data.plugins,
       onProgress: (stage, percent) => {
         self.postMessage({
           type: "progress",

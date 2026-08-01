@@ -1,0 +1,135 @@
+import { html } from "lit";
+
+import type { AppState } from "../../model";
+import {
+  buildSchedulePageModel,
+  type LoadSortDirection,
+  type LoadSortField,
+} from "../projections/schedule-page-model";
+import { dispatchUiCommand } from "../events/ui-command";
+import { LightDomElement } from "./light-dom-element";
+import "./duty-roster-summary";
+import "./schedule-feedback";
+import "./schedule-grid";
+import "./schedule-toolbar";
+import "./staff-load-table";
+import "./staff-palette";
+
+interface PointerDragSource {
+  staffId: string;
+  assignmentId?: string;
+}
+
+export class SchedulePageElement extends LightDomElement {
+  static override properties = {
+    model: { attribute: false },
+    date: { type: String },
+    zoom: { type: Number },
+    loadSortField: { type: String },
+    loadSortDirection: { type: String },
+  };
+  model!: AppState;
+  date = "";
+  zoom = 1;
+  loadSortField: LoadSortField = "totalFatigue";
+  loadSortDirection: LoadSortDirection = "desc";
+  private pointerSourceValue: PointerDragSource | null = null;
+  private pointerTargetId = "";
+
+  protected override render() {
+    if (!this.model.assignments.length) {
+      return html`<section class="workspace-section empty-workspace">
+        <i class="bi bi-calendar2-plus"></i>
+        <h3>尚未生成排班</h3>
+        <button
+          class="btn btn-primary"
+          type="button"
+          @click=${() => dispatchUiCommand(this, { type: "generate-schedule" })}
+        >
+          <i class="bi bi-stars me-2"></i>生成排班
+        </button>
+      </section>`;
+    }
+    const view = buildSchedulePageModel(this.model, this.date, {
+      field: this.loadSortField,
+      direction: this.loadSortDirection,
+      zoom: this.zoom,
+    });
+    return html`
+      <autoschedule-schedule-toolbar
+        .model=${this.model}
+        .date=${this.date}
+        .zoom=${view.zoom}
+      ></autoschedule-schedule-toolbar>
+      ${this.model.schedulePolicyStale ? html`<div class="alert alert-warning py-2" role="status"><i class="bi bi-exclamation-triangle me-2"></i>排班规则已更新，当前排班尚未按新规则重新生成。</div>` : null}
+      <section
+        class="schedule-workspace"
+        @autoschedule-pointer-drag-start=${this.startPointerDrag}
+        @autoschedule-pointer-drag-target=${this.setPointerTarget}
+        @pointerup=${this.finishPointerDrag}
+        @pointercancel=${this.cancelPointerDrag}
+      >
+        <div class="schedule-main-row">
+          <autoschedule-staff-palette
+            .model=${this.model}
+          ></autoschedule-staff-palette>
+          <autoschedule-schedule-grid
+            .model=${this.model}
+            .view=${view}
+          ></autoschedule-schedule-grid>
+        </div>
+        <autoschedule-duty-roster-summary
+          .model=${this.model}
+          .date=${this.date}
+        ></autoschedule-duty-roster-summary>
+      </section>
+      <autoschedule-schedule-feedback
+        .model=${this.model}
+        .view=${view}
+        .date=${this.date}
+      ></autoschedule-schedule-feedback>
+      <autoschedule-staff-load-table
+        .view=${view}
+        .field=${this.loadSortField}
+        .direction=${this.loadSortDirection}
+      ></autoschedule-staff-load-table>
+    `;
+  }
+
+  private startPointerDrag(event: CustomEvent<PointerDragSource>): void {
+    this.pointerSourceValue = event.detail;
+    this.pointerTargetId = "";
+  }
+
+  private setPointerTarget(event: CustomEvent<{ assignmentId: string }>): void {
+    if (this.pointerSourceValue)
+      this.pointerTargetId = event.detail.assignmentId;
+  }
+
+  private finishPointerDrag(): void {
+    const source = this.pointerSourceValue;
+    const assignmentId = this.pointerTargetId;
+    this.cancelPointerDrag();
+    if (!source || !assignmentId || assignmentId === source.assignmentId)
+      return;
+    dispatchUiCommand(this, {
+      type: "assign-staff",
+      assignmentId,
+      staffId: source.staffId,
+      sourceAssignmentId: source.assignmentId,
+    });
+  }
+
+  private cancelPointerDrag(): void {
+    this.pointerSourceValue = null;
+    this.pointerTargetId = "";
+  }
+}
+
+customElements.define("autoschedule-schedule-page", SchedulePageElement);
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "autoschedule-schedule-page": SchedulePageElement;
+  }
+}

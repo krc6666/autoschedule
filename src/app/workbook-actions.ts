@@ -1,8 +1,8 @@
 import type { WorkbookImport } from "../infrastructure/excel";
 import type { DutyRosterImportPreview } from "../infrastructure/duty-roster-excel";
-import { getDutyRosterForDate } from "../domain/duty-roster";
-import { applyScheduleSettingsPatch } from "../domain/schedule-settings";
-import { clearActiveSchedule } from "../domain/schedule-lifecycle";
+import { getDutyRosterForDate } from "../domain/duty-roster/roster";
+import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
+import { clearActiveSchedule } from "../domain/kernel/schedule-lifecycle";
 import type { AppState } from "../model";
 import { createId, orderPositionRules } from "../utils";
 

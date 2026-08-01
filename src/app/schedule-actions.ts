@@ -1,24 +1,24 @@
-import { canAssignStaff } from "../domain/assignment-eligibility";
+import { canAssignStaff } from "../domain/candidates/assignment-eligibility";
 import {
   applyEarlyReleaseForStaff,
   isDiversionTransfer,
-} from "../domain/assignment-timing";
-import { clearAutomaticAssignmentEvidence } from "../domain/assignment-evidence";
+} from "../domain/assignments/assignment-timing";
+import { clearAutomaticAssignmentEvidence } from "../domain/assignments/assignment-evidence";
 import {
   activeFlightRules,
   isAuxiliaryCategory,
   isGuideAssignment,
-} from "../domain/schedule-position-rules";
+} from "../domain/flights/schedule-position-rules";
 import {
   clearSupervisorLink,
   moveSupervisorWithinFlight,
   normalizeSupervisorAssignments,
-} from "../domain/schedule-adjustment";
-import { refreshPositionRotationEvidence } from "../domain/position-rotation-evidence";
+} from "../domain/assignments/schedule-adjustment";
+import { refreshPositionRotationEvidence } from "../domain/reviews/position-rotation-evidence";
 import {
   isNextWorkdayCutoffConflict,
   nextWorkdayCutoffProtection,
-} from "../domain/cross-day-recovery";
+} from "../domain/reviews/cross-day-recovery";
 import type { AppState, Staff } from "../model";
 import { createId, normalizeText } from "../utils";
 

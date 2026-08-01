@@ -1,11 +1,11 @@
-import type { SchedulingDecision } from "./schedule-rule-contract";
+import type { SchedulingDecision } from "./domain/rules/schedule-rule-contract";
 import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
-} from "./structured-policy-contract";
+} from "./domain/rules/structured-policy-contract";
 
 export type StaffStatus = "正常" | "病假" | "休假";
 export type StaffType = "常规" | "行政支援";
@@ -127,6 +127,26 @@ export interface ScheduleSettings {
   workloadBalanceEnabled: boolean;
   maxWorkHoursDifference: number;
   maxTodayFatigueDifference: number;
+  ruleHookOrder: string[];
+  disabledRuleHookIds: string[];
+}
+
+export interface PluginRuleConfiguration {
+  id: string;
+  label: string;
+  stage: "protection" | "stable-order";
+  enabled: boolean;
+}
+
+export interface SchedulingPluginConfiguration {
+  id: string;
+  name: string;
+  fileName: string;
+  apiVersion: number;
+  enabled: boolean;
+  order: number;
+  status: "loaded" | "needs-reload";
+  rules: PluginRuleConfiguration[];
 }
 
 export interface AppState {
@@ -137,6 +157,7 @@ export interface AppState {
   positionRules: PositionRule[];
   history: HistoryRecord[];
   dutyRosterOverrides: DutyRosterOverride[];
+  pluginConfigurations: SchedulingPluginConfiguration[];
   assignments: Assignment[];
   activeScheduleDate: string | null;
   schedulePolicyStale: boolean;

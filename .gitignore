@@ -14,7 +14,7 @@ Thumbs.db
 # JavaScript and TypeScript
 node_modules/
 dist/
-coverage/
+/coverage/
 *.tsbuildinfo
 .browser-profile/
 

@@ -6,12 +6,16 @@ export default defineConfig({
     target: "es2022",
     sourcemap: true,
     cssCodeSplit: false,
-    chunkSizeWarningLimit: 900
+    chunkSizeWarningLimit: 900,
+  },
+  worker: {
+    format: "es",
   },
   test: {
+    include: ["tests/**/*.test.ts"],
     environment: "node",
     coverage: {
-      reporter: ["text", "html"]
-    }
-  }
+      reporter: ["text", "html"],
+    },
+  },
 });
