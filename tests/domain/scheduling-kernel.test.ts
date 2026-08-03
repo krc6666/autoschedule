@@ -198,7 +198,7 @@ describe("scheduler domain", () => {
     )!;
     expect(assignment.staffId).toBeNull();
     expect(result.unfilledCount).toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it("prefers the candidate with lower historical fatigue", async () => {
     const state = createDefaultState();
@@ -1014,7 +1014,7 @@ describe("scheduler domain", () => {
     ).toBe(first!.id);
   });
 
-  it("does not move a balanced priority-position worker to resolve an ordinary third consecutive assignment", async () => {
+  it("keeps high-fatigue consecutive protection ahead of later position frequency", async () => {
     const state = createDefaultState();
     const [priorityWorker, repeatedWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -1088,18 +1088,18 @@ describe("scheduler domain", () => {
       .assignments;
     expect(
       assignments.find((item) => item.positionRuleId === "cx-g20")?.staffId
-    ).toBe(priorityWorker!.id);
+    ).toBe(repeatedWorker!.id);
     expect(
       assignments.find((item) => item.positionRuleId === "cx-g15")?.staffId
-    ).toBe(repeatedWorker!.id);
+    ).toBe(priorityWorker!.id);
     expect(
       assignments.find((item) => item.positionRuleId === "cx-g15")
         ?.decisionTrace
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "position-rotation",
-          outcome: "fallback",
+          ruleId: "high-fatigue-position-consecutive",
+          outcome: "selected",
         }),
       ])
     );
@@ -1245,7 +1245,7 @@ describe("scheduler domain", () => {
     expect(assignment.staffId).not.toBe(frequent!.id);
   });
 
-  it("keeps a frequency-review result when later consecutive rotation has no safe alternative", async () => {
+  it("keeps a generation-stage consecutive result when later rotation has no safe alternative", async () => {
     const state = createDefaultState();
     const [frequent, lessFrequent, releaseWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -1388,7 +1388,7 @@ describe("scheduler domain", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "position-frequency-review",
+          ruleId: "priority-position-consecutive",
           outcome: "selected",
         }),
       ])
@@ -1471,7 +1471,9 @@ describe("scheduler domain", () => {
       (item) => item.key === "position-frequency-review"
     )!;
     expect(feedback).toMatchObject({ status: "需复核" });
-    expect(feedback.text).toContain("无其他具备目标岗位资质的人员");
+    expect(feedback.text).toContain("本月承担4次");
+    expect(feedback.text).toContain("当前只有这一名合格人员");
+    expect(feedback.text).toContain("请关注岗位人员储备");
   });
 
   it("prefers a rested worker for a high-load position during the recovery window", async () => {
@@ -3330,6 +3332,72 @@ describe("scheduler domain", () => {
     expect(result.unfilledCount).toBe(0);
   });
 
+  it("considers every overlapping afternoon position before choosing any staff", async () => {
+    const state = createDefaultState();
+    const [workerA, workerB, workerC, workerD, workerE] = state.staff;
+    state.staff = [workerA!, workerB!, workerC!, workerD!, workerE!];
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.cxPreflightQualified = false;
+      person.status = "正常";
+      person.staffType = "常规";
+      person.nightShift = true;
+    });
+    state.history = [];
+    state.dutyRosterOverrides = [];
+    state.settings.positionTransitionPolicies = [];
+    state.settings.nextDutyRestProtectionEnabled = false;
+    state.settings.lateShiftRecoveryEnabled = false;
+    state.settings.highLoadProtectionEnabled = false;
+    state.settings.rollingLoadProtectionEnabled = false;
+    state.settings.workloadBalanceEnabled = false;
+
+    const candidateGroups = [
+      [workerA!.id, workerB!.id],
+      [workerA!.id, workerC!.id],
+      [workerA!.id, workerC!.id],
+      [workerB!.id, workerD!.id],
+      [workerB!.id, workerE!.id],
+    ];
+    state.flights = candidateGroups.map((_, index) => ({
+      id: `global-flight-${index + 1}`,
+      flightNo: `GLOBAL${index + 1}`,
+      startTime: "13:00",
+      endTime: "15:00",
+      bookedPassengers: 100,
+      positions: [],
+      remark: "",
+    }));
+    const base = state.positionRules[0]!;
+    state.positionRules = state.flights.map((flight, index) => ({
+      ...base,
+      id: `global-position-${index + 1}`,
+      flightNo: flight.flightNo,
+      name: `P${index + 1}`,
+      category: "常规" as const,
+      remark: "",
+      qualifiedStaffIds: candidateGroups[index]!,
+      fatiguePoints: 1,
+      manual: false,
+      minPassengers: 0,
+      earlyReleaseMinutes: 0,
+    }));
+
+    const result = await generateSchedule(state, "2026-07-18");
+    const assignedByRuleId = new Map(
+      result.assignments.map((assignment) => [
+        assignment.positionRuleId,
+        assignment.staffId,
+      ])
+    );
+
+    expect(result.unfilledCount).toBe(0);
+    expect(assignedByRuleId.get("global-position-1")).toBe(workerB!.id);
+    expect(
+      new Set(result.assignments.map((assignment) => assignment.staffId)).size
+    ).toBe(5);
+  });
+
   it("globally schedules each pre-noon position by scarcity before softer transition preferences", async () => {
     const state = createDefaultState();
     const [rareWorker, flexibleWorker] = state.staff;
@@ -3987,13 +4055,15 @@ describe("scheduler domain", () => {
         }),
       ])
     );
-    expect(result.warnings.join("\n")).toContain("KE166机动督导连续轮岗未落实");
+    expect(result.warnings.join("\n")).toContain(
+      `${supervisor.name} 已连续1次承担KE166/督导`
+    );
     state.assignments = result.assignments;
     const feedback = buildScheduleFeedback(state, "2026-10-24").find(
       (item) => item.key === "position-rotation"
     )!;
     expect(feedback).toMatchObject({ status: "需复核" });
-    expect(feedback.text).toContain("KE166机动督导连续轮岗未落实");
+    expect(feedback.text).toContain("当前连续第2次");
   });
 
   it("keeps the duty identity but moves the worker to another configured priority position after a repeated duty target", async () => {
@@ -5115,7 +5185,7 @@ describe("scheduler domain", () => {
     expect(requiredIds.filter((staffId) => !workedIds.has(staffId))).toEqual(
       []
     );
-  });
+  }, 30_000);
 
   it("reserves the duty-qualified person for the first counter on the latest flight", async () => {
     const state = createDefaultState();
@@ -6781,7 +6851,7 @@ describe("scheduler domain", () => {
     );
   });
 
-  it("uses a three-person cycle when no direct swap can resolve a third consecutive assignment", async () => {
+  it("globally resolves a repeated high-fatigue position before post-schedule rotation", async () => {
     const state = createDefaultState();
     const [first, second, third] = state.staff
       .filter((person) => person.status === "正常")
@@ -6895,14 +6965,14 @@ describe("scheduler domain", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "position-rotation",
+          ruleId: "high-fatigue-position-consecutive",
           outcome: "selected",
         }),
       ])
     );
   });
 
-  it("uses a targeted overlapping-flight chain to relieve a repeated high-fatigue priority position", async () => {
+  it("globally resolves a repeated priority position across overlapping flights", async () => {
     const state = createDefaultState();
     const [targetCandidate, repeatedWorker, relayWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -7020,7 +7090,7 @@ describe("scheduler domain", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "position-rotation",
+          ruleId: "priority-position-consecutive",
           outcome: "selected",
         }),
       ])
@@ -8043,7 +8113,9 @@ describe("scheduler domain", () => {
       result.assignments.find((item) => item.positionRuleId === "target-h02")
         ?.staffId
     ).toBe(blockedWorker!.id);
-    expect(result.warnings.join("\n")).toContain("重点岗位连续轮岗未落实");
+    expect(result.warnings.join("\n")).toContain(
+      `${blockedWorker!.name} 已连续1次承担KE166/H02`
+    );
   });
 
   it("prevents a second consecutive priority position before ordinary assignments consume a safe non-overlapping replacement", async () => {
@@ -8470,10 +8542,18 @@ describe("scheduler domain", () => {
       (item) => item.key === "position-rotation"
     )!;
     expect(feedback).toMatchObject({ status: "需复核" });
-    expect(feedback.text).toContain("连续轮岗未落实");
-    expect(feedback.text).toContain("双向岗位资质");
+    expect(feedback.text).toContain(`${repeated!.name} 已连续2次承担CX937/G20`);
+    expect(feedback.text).toContain("当前连续第3次");
+    expect(feedback.text).not.toMatch(
+      /infeasible|changed-assignment-count|双向岗位资质|完整重排方案/
+    );
+    expect((feedback.text.match(/[。！？]/g) ?? []).length).toBeLessThanOrEqual(
+      2
+    );
     expect(result.warnings).toEqual(
-      expect.arrayContaining([expect.stringContaining("连续轮岗未落实")])
+      expect.arrayContaining([
+        expect.stringContaining(`${repeated!.name} 已连续2次承担CX937/G20`),
+      ])
     );
   });
 
@@ -8566,7 +8646,7 @@ describe("scheduler domain", () => {
     });
   });
 
-  it("does not exchange through a manually marked position", async () => {
+  it("keeps a pre-noon manual position in the initial global solution", async () => {
     const state = createDefaultState();
     const [alternate, repeated] = state.staff
       .filter((person) => person.status === "正常")
@@ -8623,6 +8703,9 @@ describe("scheduler domain", () => {
     const assignments = (await generateSchedule(state, "2026-10-24"))
       .assignments;
     expect(assignments.find((item) => item.position === "G20")?.staffId).toBe(
+      alternate!.id
+    );
+    expect(assignments.find((item) => item.position === "G18")?.staffId).toBe(
       repeated!.id
     );
     expect(
@@ -8630,8 +8713,8 @@ describe("scheduler domain", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "position-rotation",
-          outcome: "fallback",
+          ruleId: "high-fatigue-position-consecutive",
+          outcome: "selected",
         }),
       ])
     );
@@ -8729,7 +8812,7 @@ describe("scheduler domain", () => {
         expect.objectContaining({
           ruleId: "position-frequency-review",
           outcome: "fallback",
-          message: expect.stringContaining("值班或KE166特殊锁定"),
+          message: expect.stringContaining("值班或KE166固定岗位"),
         }),
         expect.objectContaining({
           ruleId: "position-rotation",

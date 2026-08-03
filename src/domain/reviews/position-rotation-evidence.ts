@@ -8,6 +8,7 @@ import {
   appendAssignmentDecision,
   replaceAssignmentDecisions,
 } from "../assignments/assignment-evidence";
+import { assignmentWarningMessage } from "./schedule-warning-message";
 
 function clearPositionRotationDecisions(assignment: Assignment): void {
   replaceAssignmentDecisions(assignment, "position-rotation", []);
@@ -43,7 +44,16 @@ export function refreshPositionRotationEvidence(
         const linkedAssignments = state.assignments.filter(
           (item) => item.supervisorSourceAssignmentId === assignment.id
         );
-        const message = `KE166机动督导连续轮岗未落实：${assignment.staffName}上一工作班已承担${assignment.flightNo}/${assignment.position}，手动调整后的本班仍再次承担；当前人工安排未解除${linkedAssignments.length ? "机动督导及兼任柜台的整组" : "独立机动督导"}连续，请复核或保留并说明。`;
+        const message = assignmentWarningMessage({
+          staffName: assignment.staffName,
+          fact: `已连续${previousRuns}次承担${assignment.flightNo}/${assignment.position}`,
+          reasons: [
+            `人工调整后仍连续承担${linkedAssignments.length ? "机动督导及兼任柜台" : "机动督导"}`,
+          ],
+          decision: "尊重人工安排",
+          result: `保留当前第${previousRuns + 1}次连续安排，请复核`,
+          attempt: "当前为人工安排，系统不会自动换人",
+        });
         for (const target of [assignment, ...linkedAssignments]) {
           appendAssignmentDecision(
             target,
@@ -71,10 +81,14 @@ export function refreshPositionRotationEvidence(
       date
     );
     if (priority ? previousRuns < 1 : previousRuns < 2) continue;
-    const message =
-      priority && previousRuns === 1
-        ? `重点岗位连续轮岗未落实：${assignment.staffName}上一工作班已承担${assignment.flightNo}/${assignment.position}，手动调整后的本班仍再次承担；当前人工安排未解除连续重点岗位，请复核或保留并说明。`
-        : `连续轮岗未落实：${assignment.staffName}此前已连续两个工作班承担${assignment.flightNo}/${assignment.position}，手动调整后的本班仍再次承担；当前人工安排未解除连续岗位。`;
+    const message = assignmentWarningMessage({
+      staffName: assignment.staffName,
+      fact: `已连续${previousRuns}次承担${assignment.flightNo}/${assignment.position}`,
+      reasons: ["人工调整后仍连续承担该岗位"],
+      decision: "尊重人工安排",
+      result: `保留当前第${previousRuns + 1}次连续安排，请复核`,
+      attempt: "当前为人工安排，系统不会自动换人",
+    });
     appendAssignmentDecision(
       assignment,
       schedulingDecision("position-rotation", "fallback", message)

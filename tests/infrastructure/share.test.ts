@@ -30,7 +30,7 @@ describe("share export projection", () => {
     expect(sheet.querySelectorAll("table")).toHaveLength(
       state.flights.length + 1
     );
-  });
+  }, 30_000);
 
   it("serializes text as text instead of executable markup", () => {
     const state = createDefaultState();

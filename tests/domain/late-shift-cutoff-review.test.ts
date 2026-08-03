@@ -160,6 +160,6 @@ describe("late-shift next-workday cutoff review", () => {
       state.staff[0]!.id
     );
     expect(warnings.join(" ")).toContain("扩大工时或疲劳差");
-    expect(warnings.join(" ")).toContain("为保证岗位完整性");
+    expect(warnings.join(" ")).toContain("岗位完整性优先");
   });
 });

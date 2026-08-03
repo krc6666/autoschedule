@@ -585,8 +585,8 @@ describe("high-fatigue ordinary-position rotation", () => {
       new Set()
     );
 
-    expect(warnings.join("\n")).toContain("连续轮岗未落实");
-    expect(warnings.join("\n")).toContain("最多允许五人参与");
+    expect(warnings.join("\n")).toContain("已连续1次承担TEST100/H03");
+    expect(warnings.join("\n")).toContain("需要调整的人员过多");
     expect(
       assignments.find((item) => item.positionRuleId === target.id)?.staffId
     ).toBe(repeatedWorker!.id);
@@ -658,10 +658,10 @@ describe("high-fatigue ordinary-position rotation", () => {
       (item) => item.key === "position-rotation"
     );
 
-    expect(warnings.join("\n")).toContain("高负荷普通岗位连续轮岗未落实");
-    expect(warnings.join("\n")).toContain("没有具备连续腾挪岗位资质的人员");
+    expect(warnings.join("\n")).toContain("已连续1次承担TEST100/H03");
+    expect(warnings.join("\n")).toContain("唯一合格人员");
     expect(feedback).toMatchObject({ level: "attention" });
-    expect(feedback?.text).toContain("高负荷普通岗位连续轮岗未落实");
+    expect(feedback?.text).toContain("当前连续第2次");
     expect(
       assignments.find((item) => item.positionRuleId === frontCounter.id)
         ?.staffId

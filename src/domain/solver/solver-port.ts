@@ -1,5 +1,8 @@
-export interface BinaryDecisionVariable {
+export interface DecisionVariable {
   id: string;
+  type?: "binary" | "continuous";
+  lowerBound?: number;
+  upperBound?: number;
 }
 
 export interface LinearTerm {
@@ -18,13 +21,19 @@ export interface LexicographicObjective {
   id: string;
   direction: "minimize" | "maximize";
   terms: readonly LinearTerm[];
+  solveOnlyWhen?: {
+    objectiveId: string;
+    equals: number;
+    tolerance?: number;
+  };
 }
 
 export interface SolverProblem {
-  variables: readonly BinaryDecisionVariable[];
+  variables: readonly DecisionVariable[];
   constraints: readonly LinearConstraint[];
   objectives: readonly [LexicographicObjective, ...LexicographicObjective[]];
   timeoutMs: number;
+  strategy?: "sequential" | "native-lexicographic";
 }
 
 export type SolverTermination =

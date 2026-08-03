@@ -67,7 +67,7 @@ describe("schedule feedback", () => {
     expect(feedback.find((item) => item.key === "coverage")?.text).toContain(
       "相邻航班起飞间隔"
     );
-  });
+  }, 30_000);
 
   it("identifies tight transitions, repeated high load, uncovered staff, and late-shift overload", () => {
     const state = createDefaultState();

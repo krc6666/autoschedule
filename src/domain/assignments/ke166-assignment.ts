@@ -21,6 +21,7 @@ import {
 } from "../reviews/rotation-review-safety";
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
+import { assignmentWarningMessage } from "../reviews/schedule-warning-message";
 
 interface CounterPlacementPlan {
   target: Assignment;
@@ -495,23 +496,23 @@ export async function assignKe166SupervisorByCounterCoverage(
     ? `KE166机动督导连续轮岗已落实：${replacedIndependentSupervisor.name}上一工作班已承担${flight.flightNo}/${rule.name}，本班改由${regularAssignment.staffName}保留${flight.flightNo}/${regularAssignment.position}并兼任机动督导。`
     : null;
 
-  const repeatedSupervisor =
-    consecutivePositionAssignments(
-      state,
-      regularStaffId,
-      flight.flightNo,
-      rule.name,
-      date
-    ) > 0;
-  const repeatedMessage = repeatedSupervisor
-    ? "KE166机动督导连续轮岗未落实：" +
-      regularAssignment.staffName +
-      "上一工作班已承担" +
-      flight.flightNo +
-      "/" +
-      rule.name +
-      "，本班再次承担；没有其他未连续且满足全部安全约束的机动督导人选，为保证岗位完整性本班异常保留。"
-    : undefined;
+  const repeatedSupervisorRuns = consecutivePositionAssignments(
+    state,
+    regularStaffId,
+    flight.flightNo,
+    rule.name,
+    date
+  );
+  const repeatedMessage =
+    repeatedSupervisorRuns > 0
+      ? assignmentWarningMessage({
+          staffName: regularAssignment.staffName,
+          fact: `已连续${repeatedSupervisorRuns}次承担${flight.flightNo}/${rule.name}`,
+          reasons: ["没有其他未连续且满足全部要求的机动督导人选"],
+          decision: "机动督导岗位完整性优先",
+          result: `保留原安排，当前连续第${repeatedSupervisorRuns + 1}次`,
+        })
+      : undefined;
   const boundCounterRule = assignmentRule(state, regularAssignment);
   const recoveryOverride =
     boundCounterRule &&
@@ -530,7 +531,11 @@ export async function assignKe166SupervisorByCounterCoverage(
       ? schedulingDecision(
           "late-shift-recovery",
           "fallback",
-          `跨工作日恢复未落实：${regularAssignment.staffName}仍安排为${flight.flightNo}/${regularAssignment.position}；KE166机动督导锁定优先`
+          assignmentWarningMessage({
+            staffName: regularAssignment.staffName,
+            fact: `上一班较晚结束，本班仍承担${flight.flightNo}/${regularAssignment.position}`,
+            reasons: ["KE166机动督导锁定优先"],
+          })
         )
       : null;
   const decisionTrace = [
@@ -567,7 +572,11 @@ export async function assignKe166SupervisorByCounterCoverage(
           schedulingDecision(
             "next-duty-rest",
             "fallback",
-            `下班次值班预休未落实：${regularAssignment.staffName}仍安排为${flight.flightNo}/${rule.name}；KE166机动督导锁定优先`
+            assignmentWarningMessage({
+              staffName: regularAssignment.staffName,
+              fact: `下个工作班值班，本班仍承担${flight.flightNo}/${rule.name}`,
+              reasons: ["KE166机动督导锁定优先"],
+            })
           ),
         ]
       : []),
@@ -589,7 +598,6 @@ export async function assignKe166SupervisorByCounterCoverage(
     remark: rule.remark,
     manualRemark: "",
     status: "assigned",
-    ...(repeatedMessage ? { systemNotes: [repeatedMessage] } : {}),
     ...(decisionTrace.length ? { decisionTrace } : {}),
   };
   regularAssignment.decisionTrace = [

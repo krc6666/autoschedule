@@ -108,7 +108,9 @@ export class ScheduleGridElement extends LightDomElement {
     const diversion = rule?.category === "分流";
     const auxiliary = administrative || !rule;
     const warning = assignment.decisionTrace?.find(
-      (decision) => decision.outcome === "fallback"
+      (decision) =>
+        decision.outcome === "fallback" &&
+        decision.ruleId !== "cross-workday-load"
     );
     const stateClasses = [
       assignment.staffName ? "is-assigned" : "is-unfilled",

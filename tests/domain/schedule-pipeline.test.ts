@@ -66,7 +66,7 @@ describe("schedule pipeline contract", () => {
     ]).map((step) => step.stage);
 
     expect(stages).not.toContain("late-shift-cutoff");
-    expect(stages.slice(0, 3)).toEqual(["prepare", "history", "assign"]);
+    expect(stages.slice(0, 3)).toEqual(["prepare", "optimize", "assign"]);
     expect(stages.at(-1)).toBe("complete");
   });
 

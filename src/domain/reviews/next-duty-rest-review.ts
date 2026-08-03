@@ -17,6 +17,7 @@ import {
 } from "./rotation-review-safety";
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
+import { assignmentWarningMessage } from "./schedule-warning-message";
 
 function applyRestPlan(
   state: AppState,
@@ -52,10 +53,11 @@ function restFallback(
   nextWorkdayDate: string,
   reasons: string[]
 ): string {
-  const reason =
-    [...new Set(reasons)].slice(0, 4).join("；") ||
-    "没有满足全部安全约束的整体重排方案";
-  return `下班次值班预休未落实：${primary.staffName}在${nextWorkdayDate}值班，本班仍承担${primary.flightNo}/${primary.position}；已检查同航班及重叠航班整体调换，${reason}；为保证岗位完整性，本班允许突破。`;
+  return assignmentWarningMessage({
+    staffName: primary.staffName,
+    fact: `将在${nextWorkdayDate}值班，本班仍承担${primary.flightNo}/${primary.position}`,
+    reasons,
+  });
 }
 
 export async function reviewNextDutyRest(
@@ -96,7 +98,7 @@ export async function reviewNextDutyRest(
           decision.ruleId === "next-duty-rest" &&
           decision.outcome === "fallback"
       )
-      .map((decision) => decision.message.split("；").slice(1).join("；"))
+      .map((decision) => decision.message)
       .filter(Boolean);
     const rule = assignmentRule(state, primary)!;
     const result = await optimizeReassignment({

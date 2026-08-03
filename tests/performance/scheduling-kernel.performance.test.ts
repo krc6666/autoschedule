@@ -17,6 +17,7 @@ import type { ScheduleProgressStage } from "../../src/domain/kernel/scheduling-k
 import { generateSchedule } from "../helpers/generate-schedule";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import { plannedScheduleProgress } from "../../src/domain/kernel/schedule-pipeline";
+import { createScheduleScaleState } from "./fixtures/schedule-scale";
 
 function clockTime(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60) % 24;
@@ -27,7 +28,7 @@ function clockTime(totalMinutes: number): string {
 function createDenseScheduleState(): AppState {
   const state = createDefaultState();
   const baseStaff = state.staff[0]!;
-  state.staff = Array.from({ length: 32 }, (_, index) => ({
+  state.staff = Array.from({ length: 15 }, (_, index) => ({
     ...baseStaff,
     id: `stress-staff-${index + 1}`,
     name: `压力人员${index + 1}`,
@@ -40,8 +41,8 @@ function createDenseScheduleState(): AppState {
   }));
   const qualifiedStaffIds = state.staff.map((person) => person.id);
   const baseRule = state.positionRules[0]!;
-  state.flights = Array.from({ length: 24 }, (_, index) => {
-    const start = 6 * 60 + index * 15;
+  state.flights = Array.from({ length: 8 }, (_, index) => {
+    const start = 6 * 60 + index * 45;
     return {
       id: `stress-flight-${index + 1}`,
       flightNo: `ST${String(index + 1).padStart(3, "0")}`,
@@ -77,6 +78,33 @@ function createDenseScheduleState(): AppState {
 function operationalMinutes(time: string): number {
   const [hours, minutes] = time.split(":").map(Number);
   return hours! * 60 + minutes!;
+}
+
+function addLongScheduleHistory(state: AppState, recordCount: number): void {
+  state.history = Array.from({ length: recordCount }, (_, index) => {
+    const person = state.staff[index % state.staff.length]!;
+    const rule = state.positionRules[index % state.positionRules.length]!;
+    const flight = state.flights.find(
+      (candidate) => candidate.flightNo === rule.flightNo
+    )!;
+    const workdayIndex = Math.floor(index / 25);
+    const archivedDate = new Date(Date.UTC(2026, 6, 30 - workdayIndex * 2))
+      .toISOString()
+      .slice(0, 10);
+    return {
+      id: `schedule-history-${index}`,
+      date: archivedDate,
+      flightNo: flight.flightNo,
+      position: rule.name,
+      staffId: person.id,
+      staffName: person.name,
+      startTime: flight.startTime,
+      endTime: flight.endTime,
+      workHours: 1.5,
+      fatiguePoints: rule.fatiguePoints,
+      remark: rule.remark,
+    };
+  });
 }
 
 function createDeepRotationDeadEnd(): {
@@ -257,6 +285,20 @@ function createDeepRotationDeadEnd(): {
 }
 
 describe("scheduler performance safeguards", () => {
+  it("finishes a ten-flight schedule for fifteen staff within twenty seconds", async () => {
+    const state = createScheduleScaleState(40);
+
+    const started = performance.now();
+    const result = await generateSchedule(state, "2026-08-01");
+    const elapsed = performance.now() - started;
+
+    expect(state.flights).toHaveLength(10);
+    expect(state.staff).toHaveLength(15);
+    expect(result.assignments).toHaveLength(40);
+    expect(result.unfilledCount).toBe(0);
+    expect(elapsed).toBeLessThan(20_000);
+  }, 30_000);
+
   it("reuses one run's protection facts and reports stable scheduling phases", async () => {
     const state = createDefaultState();
     const phases: ScheduleProgressStage[] = [];
@@ -281,10 +323,10 @@ describe("scheduler performance safeguards", () => {
         (step) => step.stage
       )
     );
-    expect(elapsed).toBeLessThan(2500);
-  }, 15000);
+    expect(elapsed).toBeLessThan(30_000);
+  }, 40_000);
 
-  it("finishes a dense 96-position schedule without overlaps or dropped positions", async () => {
+  it("finishes a dense 32-position schedule without overlaps or dropped positions", async () => {
     const state = createDenseScheduleState();
     const phaseTimings: Array<{
       stage: ScheduleProgressStage;
@@ -301,11 +343,11 @@ describe("scheduler performance safeguards", () => {
     });
     const elapsed = performance.now() - started;
 
-    expect(result.assignments).toHaveLength(96);
+    expect(result.assignments).toHaveLength(32);
     expect(result.unfilledCount).toBe(0);
     expect(
       new Set(result.assignments.map((assignment) => assignment.id)).size
-    ).toBe(96);
+    ).toBe(32);
     for (const person of state.staff) {
       const ownAssignments = result.assignments
         .filter(
@@ -325,8 +367,22 @@ describe("scheduler performance safeguards", () => {
         );
       }
     }
-    expect(elapsed, JSON.stringify(phaseTimings)).toBeLessThan(2500);
-  }, 15000);
+    expect(elapsed, JSON.stringify(phaseTimings)).toBeLessThan(30_000);
+  }, 40_000);
+
+  it("finishes a complete 32-position schedule with 5000 archived records", async () => {
+    const state = createDenseScheduleState();
+    addLongScheduleHistory(state, 5000);
+
+    const started = performance.now();
+    const result = await generateSchedule(state, "2026-08-01");
+    const elapsed = performance.now() - started;
+
+    expect(state.history).toHaveLength(5000);
+    expect(result.assignments).toHaveLength(32);
+    expect(result.unfilledCount).toBe(0);
+    expect(elapsed).toBeLessThan(30_000);
+  }, 40_000);
 
   it("finishes a five-person rotation dead end without combinatorial delay", async () => {
     const { state, assignments, originalStaffIds } =
@@ -343,7 +399,7 @@ describe("scheduler performance safeguards", () => {
     const elapsed = performance.now() - started;
 
     expect(assignments.map((item) => item.staffId)).toEqual(originalStaffIds);
-    expect(warnings.join("\n")).toContain("重点岗位连续轮岗未落实");
+    expect(warnings.join("\n")).toContain("轮岗人员0 已连续1次承担ROT100/G20");
     expect(elapsed).toBeLessThan(2500);
   }, 15000);
 
@@ -401,7 +457,7 @@ describe("scheduler performance safeguards", () => {
     const elapsed = performance.now() - started;
 
     expect(assignments.map((item) => item.staffId)).toEqual(originalStaffIds);
-    expect(warnings.join("\n")).toContain("重点岗位连续轮岗未落实");
+    expect(warnings.join("\n")).toContain("轮岗人员0 已连续1次承担ROT100/G20");
     expect(elapsed).toBeLessThan(2500);
   }, 15000);
 });

@@ -5,8 +5,8 @@ import {
 
 const SCHEDULE_START_PROGRESS = [
   { stage: "prepare", percent: 5, label: "准备航班和岗位" },
-  { stage: "history", percent: 15, label: "读取历史排班与轮值" },
-  { stage: "assign", percent: 30, label: "分配岗位" },
+  { stage: "optimize", percent: 15, label: "整体计算岗位与人员" },
+  { stage: "assign", percent: 30, label: "整理班表和特殊岗位" },
 ] as const;
 
 const POST_SCHEDULE_REVIEW_PROGRESS = POST_SCHEDULE_REVIEW_STEPS.filter(

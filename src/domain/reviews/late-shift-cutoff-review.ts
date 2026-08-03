@@ -17,6 +17,7 @@ import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
 import { timeToMinutes } from "../shared/time";
+import { assignmentWarningMessage } from "./schedule-warning-message";
 
 function operationalEnd(
   assignment: Pick<Assignment, "startTime" | "endTime">
@@ -92,10 +93,12 @@ function fallbackMessage(
   primary: Assignment,
   reasons: readonly string[]
 ): string {
-  const reason =
-    [...new Set(reasons)].slice(0, 4).join("；") ||
-    "没有满足全部安全约束且能提前结束工作的整体重排方案";
-  return `末班重点岗位次班截止保护未落实：${primary.staffName}仍安排在${primary.flightNo}/${primary.position}；${reason}；为保证岗位完整性，本班允许突破。`;
+  return assignmentWarningMessage({
+    staffName: primary.staffName,
+    fact: `上一班较晚结束，本班仍承担${primary.flightNo}/${primary.position}`,
+    reasons,
+    result: "保留原安排，未能提前下班",
+  });
 }
 
 export async function reviewLateShiftCutoff(

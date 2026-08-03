@@ -2,7 +2,12 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { immer } from "zustand/middleware/immer";
 
 import { createDefaultState } from "../../defaults";
-import { clearState, loadState, saveState } from "../../infrastructure/storage";
+import {
+  clearState,
+  loadState,
+  saveState,
+  type StateSaveResult,
+} from "../../infrastructure/storage";
 import type { AppState } from "../../model";
 import {
   createConfigurationCommands,
@@ -26,7 +31,7 @@ export interface AutoscheduleStoreState {
   schedule: ScheduleCommands;
   records: RecordsCommands;
   replaceModel(state: AppState): void;
-  persist(): void;
+  persist(): StateSaveResult;
   reset(): void;
 }
 
@@ -51,7 +56,11 @@ export function createAutoscheduleStore(
         schedule: createScheduleCommands(command),
         records: createRecordsCommands(command),
         replaceModel: (state) => set({ model: structuredClone(state) }),
-        persist: () => set({ model: saveState(get().model) }),
+        persist: () => {
+          const result = saveState(get().model);
+          set({ model: result.state });
+          return result;
+        },
         reset: () => {
           clearState();
           set({ model: createDefaultState() });

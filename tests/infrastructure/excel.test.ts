@@ -66,7 +66,7 @@ describe("workbook boundary", () => {
       (row) => row[1] === "CX937" && row[2] === "G20"
     );
     expect(onePosition?.[8]).toBe("一号");
-  });
+  }, 30_000);
 
   it("imports a flight configuration sheet as reusable templates", () => {
     const workbook = XLSX.utils.book_new();

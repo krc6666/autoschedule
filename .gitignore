@@ -18,6 +18,10 @@ dist/
 *.tsbuildinfo
 .browser-profile/
 
+# The autoschedule HiGHS fork is a checked-in local package.
+!/vendor/highs-ts/dist/
+!/vendor/highs-ts/dist/**
+
 # Local environment
 .env
 .env.*

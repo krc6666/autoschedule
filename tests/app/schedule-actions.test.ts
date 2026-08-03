@@ -279,7 +279,7 @@ describe("人工调整后的规则证据", () => {
         expect.objectContaining({
           ruleId: "position-rotation",
           outcome: "fallback",
-          message: expect.stringContaining("手动调整后的本班仍再次承担"),
+          message: expect.stringContaining("当前为人工安排"),
         }),
       ])
     );
@@ -346,7 +346,7 @@ describe("人工调整后的规则证据", () => {
           expect.objectContaining({
             ruleId: "position-rotation",
             outcome: "fallback",
-            message: expect.stringContaining("KE166机动督导连续轮岗未落实"),
+            message: expect.stringContaining("当前为人工安排"),
           }),
         ])
       );

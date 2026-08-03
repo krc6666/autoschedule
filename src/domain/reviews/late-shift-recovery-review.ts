@@ -14,6 +14,7 @@ import {
 } from "./rotation-review-safety";
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
+import { assignmentWarningMessage } from "./schedule-warning-message";
 
 function applyRecoveryPlan(
   state: AppState,
@@ -47,10 +48,11 @@ function applyRecoveryPlan(
 }
 
 function recoveryFallback(primary: Assignment, reasons: string[]): string {
-  const reason =
-    [...new Set(reasons)].slice(0, 4).join("；") ||
-    "没有满足全部安全约束的整体重排方案";
-  return `跨工作日恢复未落实：${primary.staffName}仍安排在${primary.flightNo}/${primary.position}；已检查同航班及重叠航班整体调换，${reason}；为保证岗位完整性，本班允许突破。`;
+  return assignmentWarningMessage({
+    staffName: primary.staffName,
+    fact: `上一班需要恢复，本班仍承担${primary.flightNo}/${primary.position}`,
+    reasons,
+  });
 }
 
 export async function reviewLateShiftRecovery(
@@ -105,7 +107,7 @@ export async function reviewLateShiftRecovery(
           decision.ruleId === "late-shift-recovery" &&
           decision.outcome === "fallback"
       )
-      .map((decision) => decision.message.split("；").slice(1).join("；"))
+      .map((decision) => decision.message)
       .filter(Boolean);
     const flight = state.flights.find((item) => item.id === primary.flightId)!;
     const result = await optimizeReassignment({

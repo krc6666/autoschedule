@@ -1,17 +1,16 @@
 import type { AppState, ScheduleResult } from "../../model";
-import { createCandidateRulePlan } from "../rules/candidate-rule-plan";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import { finalizeSchedule } from "./schedule-finalizer";
 import { createScheduleLedger } from "./schedule-ledger";
 import { placePassivePosition } from "./schedule-passive-position";
 import { prepareSchedule } from "./schedule-preparation";
+import { optimizeDailySchedule } from "./daily-schedule-optimizer";
 import {
   scheduleProgressPercent,
   type ScheduleProgressStage,
 } from "./schedule-progress";
-import { createScheduleTaskAssigner } from "./schedule-task-assigner";
-import { orderFlightRules, orderPreNoonTasks } from "./schedule-task-order";
 import type { SolverPort } from "../solver/solver-port";
+import { finalizeKe166Supervisors } from "../assignments/ke166-supervisor-finalizer";
 
 export type { ScheduleProgressStage } from "./schedule-progress";
 
@@ -35,71 +34,29 @@ export async function generateSchedule(
     date,
     evaluateAutomaticHardConstraints
   );
-  reportProgress("history", scheduleProgressPercent("history"));
+  reportProgress("optimize", scheduleProgressPercent("optimize"));
 
   const ledger = createScheduleLedger();
-  const warnings: string[] = [];
-  const processedTasks = new Set<string>();
-  const lockedAssignmentIds = new Set<string>();
-  const taskAssigner = createScheduleTaskAssigner({
+  const plan = await optimizeDailySchedule({
     solver: options.solver,
     state,
     date,
-    ledger,
-    warnings,
-    tasks: preparation.tasks,
-    processedTasks,
-    eligibleStaffIds: preparation.eligibleStaffIds,
-    eligibleCounts: preparation.eligibleCounts,
-    runFacts: preparation.runFacts,
-    dutyStaffId: preparation.dutyStaffId,
-    preferredDutyMorningTaskKey: preparation.preferredDutyMorningTaskKey,
-    preferredDutyLateTaskCandidates:
-      preparation.preferredDutyLateTaskCandidates,
-    lockedAssignmentIds,
-    candidateRulePlan: createCandidateRulePlan(state.settings),
-    evaluateEligibility: evaluateAutomaticHardConstraints,
+    preparation,
   });
-
+  let ke166Finalized = false;
   reportProgress("assign", scheduleProgressPercent("assign"));
-  for (const task of orderPreNoonTasks(
-    preparation.tasks,
-    preparation.eligibleCounts,
-    preparation.displayRulesByFlight
-  ))
-    await taskAssigner.schedule(task, true);
-
-  for (const task of preparation.preferredDutyLateTaskCandidates) {
-    if (!taskAssigner.hasProcessedTask(task.key))
-      await taskAssigner.schedule(task, false);
-    if (
-      ledger
-        .snapshot()
-        .some(
-          (assignment) =>
-            assignment.flightId === task.flight.id &&
-            assignment.positionRuleId === task.rule.id &&
-            assignment.staffId === preparation.dutyStaffId
-        )
-    ) {
-      taskAssigner.markAssignedDutyLateTask(task.key);
-      break;
-    }
-  }
-
+  ledger.commit({ type: "replace", assignments: plan.assignments });
+  const warnings = [...plan.warnings];
+  const lockedAssignmentIds = plan.lockedAssignmentIds;
+  const automaticTaskKeys = new Set(preparation.tasks.map((task) => task.key));
   for (const flight of preparation.flights) {
     const displayRules = preparation.displayRulesByFlight.get(flight.id) ?? [];
     const displayIndex = new Map(
       displayRules.map((rule, index) => [rule.id, index])
     );
-    for (const rule of orderFlightRules(
-      flight,
-      displayRules,
-      preparation.eligibleCounts,
-      taskAssigner.dutyTargetTaskKeys
-    )) {
+    for (const rule of displayRules) {
       const taskKey = `${flight.id}:${rule.id}`;
-      if (taskAssigner.hasProcessedTask(taskKey)) continue;
+      if (automaticTaskKeys.has(taskKey)) continue;
       if (
         placePassivePosition({
           state,
@@ -111,7 +68,6 @@ export async function generateSchedule(
         })
       )
         continue;
-      await taskAssigner.schedule({ key: taskKey, flight, rule }, false);
     }
   }
 
@@ -125,8 +81,22 @@ export async function generateSchedule(
     displayRulesByFlight: preparation.displayRulesByFlight,
     lockedAssignmentIds,
     runFacts: preparation.runFacts,
-    finalizeKe166Supervisor: () =>
-      taskAssigner.finalizeDeferredKe166Supervisors(),
+    finalizeKe166Supervisor: async () => {
+      if (ke166Finalized) return;
+      const assignments = ledger
+        .snapshot()
+        .map((assignment) => structuredClone(assignment));
+      await finalizeKe166Supervisors({
+        solver: options.solver,
+        state,
+        date,
+        assignments,
+        preparation,
+        lockedAssignmentIds,
+      });
+      ledger.commit({ type: "replace", assignments });
+      ke166Finalized = true;
+    },
     reportProgress,
   });
   reportProgress("complete", scheduleProgressPercent("complete"));

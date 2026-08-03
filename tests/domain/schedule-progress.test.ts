@@ -28,5 +28,14 @@ describe("schedule progress contract", () => {
         (stage) => !scheduleProgressLabel(stage).startsWith("正在")
       )
     ).toBe(true);
+    expect(SCHEDULE_PROGRESS_STAGES.slice(0, 3)).toEqual([
+      "prepare",
+      "optimize",
+      "assign",
+    ]);
+    expect(scheduleProgressLabel("optimize")).toBe("整体计算岗位与人员");
+    expect(SCHEDULE_PROGRESS_STAGES.map(scheduleProgressLabel)).not.toContain(
+      "读取历史排班与轮值"
+    );
   });
 });

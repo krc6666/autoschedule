@@ -5,14 +5,14 @@ import { projectScheduleProgressTasks } from "../../src/ui/projections/schedule-
 
 const steps: readonly ScheduleProgressStep[] = [
   { stage: "prepare", percent: 5, label: "准备航班和岗位" },
-  { stage: "history", percent: 15, label: "读取历史排班与轮值" },
-  { stage: "assign", percent: 30, label: "分配岗位" },
+  { stage: "optimize", percent: 15, label: "整体计算岗位与人员" },
+  { stage: "assign", percent: 30, label: "整理班表和特殊岗位" },
   { stage: "complete", percent: 100, label: "排班完成" },
 ];
 
 describe("schedule progress task projection", () => {
   it("marks earlier work complete, the real current step active, and later work pending", () => {
-    const tasks = projectScheduleProgressTasks(steps, "history", "running");
+    const tasks = projectScheduleProgressTasks(steps, "optimize", "running");
 
     expect(tasks.map((task) => task.status)).toEqual([
       "completed",

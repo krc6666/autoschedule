@@ -26,6 +26,7 @@ import {
   positionTransitionInsertionCost,
 } from "../reviews/schedule-protection";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
+import { assignmentWarningMessage } from "../reviews/schedule-warning-message";
 import {
   isKe166MobileSupervisor,
   type AssignmentTask,
@@ -128,7 +129,13 @@ function appendProtectionFallbacks(
       schedulingDecision(
         "position-transition",
         "fallback",
-        "值班岗位锁定优先，已突破严格岗位衔接保护"
+        assignmentWarningMessage({
+          staffName: selected.name,
+          fact: `承担${flight.flightNo}/${rule.name}时未满足岗位衔接要求`,
+          reasons: ["值班岗位锁定优先"],
+          decision: "值班安排优先",
+          result: "保留原安排",
+        })
       )
     );
   }
@@ -154,7 +161,11 @@ function appendProtectionFallbacks(
       schedulingDecision(
         "next-duty-rest",
         "fallback",
-        `下班次值班预休未落实：${selected.name}仍安排在${flight.flightNo}/${rule.name}；${reason}`
+        assignmentWarningMessage({
+          staffName: selected.name,
+          fact: `下个工作班值班，本班仍承担${flight.flightNo}/${rule.name}`,
+          reasons: [reason],
+        })
       )
     );
   }
@@ -185,7 +196,11 @@ function appendProtectionFallbacks(
       schedulingDecision(
         "late-shift-recovery",
         "fallback",
-        `${recovery.protectedMorningTarget ? "跨工作日早班恢复" : "末班重点岗位恢复"}未落实：${selected.name}仍安排在${flight.flightNo}/${rule.name}；${reason}`
+        assignmentWarningMessage({
+          staffName: selected.name,
+          fact: `上一班较晚结束，本班仍承担${flight.flightNo}/${rule.name}`,
+          reasons: [reason],
+        })
       )
     );
   }
@@ -211,7 +226,12 @@ function appendProtectionFallbacks(
     schedulingDecision(
       "late-shift-cutoff",
       "fallback",
-      `末班重点岗位次班截止保护未落实：${selected.name}仍安排在${flight.flightNo}/${rule.name}；${reason}`
+      assignmentWarningMessage({
+        staffName: selected.name,
+        fact: `上一班较晚结束，本班仍在截止时间后承担${flight.flightNo}/${rule.name}`,
+        reasons: [reason],
+        result: "保留原安排，未能提前下班",
+      })
     )
   );
 }

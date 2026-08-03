@@ -83,7 +83,7 @@ export function plannedScheduleProgress(
     );
   const stages: ScheduleProgressStage[] = [
     "prepare",
-    "history",
+    "optimize",
     "assign",
     ...mutationStages,
     "complete",

@@ -16,6 +16,7 @@ import {
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
 import { intervalsOverlap } from "../shared/time";
+import { assignmentWarningMessage } from "./schedule-warning-message";
 
 interface Ke166RotationReviewResult {
   warnings: string[];
@@ -124,14 +125,18 @@ function applyRotationPlan(
 function unresolvedMessage(
   primaryRole: Ke166RotationRole,
   repeatedAssignment: Assignment,
+  runs: number,
   reasons: readonly string[]
 ): string {
-  const reason =
-    [...new Set(reasons)].slice(0, 3).join("；") ||
-    "没有可形成整体安全重排的机动督导与常规岗位人员";
-  return primaryRole.mobileSupervisorGroup
-    ? `KE166机动督导连续轮岗未落实：${primaryRole.staffName}上一工作班已承担${repeatedAssignment.flightNo}/${repeatedAssignment.position}，本班再次承担；${reason}；为保证${primaryRole.boundCounterGroup ? "机动督导及兼任柜台" : "机动督导岗位"}完整，本班异常保留。`
-    : `重点岗位连续轮岗未落实：${primaryRole.staffName}上一工作班已承担${repeatedAssignment.flightNo}/${repeatedAssignment.position}，本班再次承担；${reason}；为保证岗位完整性，本班异常保留。`;
+  return assignmentWarningMessage({
+    staffName: primaryRole.staffName,
+    fact: `已连续${runs}次承担${repeatedAssignment.flightNo}/${repeatedAssignment.position}`,
+    reasons,
+    decision: primaryRole.boundCounterGroup
+      ? "机动督导和兼任柜台完整性优先"
+      : "岗位完整性优先",
+    result: `保留原安排，当前连续第${runs + 1}次`,
+  });
 }
 
 export async function reviewKe166GroupRotation(
@@ -231,7 +236,11 @@ export async function reviewKe166GroupRotation(
           left.role.id.localeCompare(right.role.id)
       );
 
-    for (const { role: primaryRole, repeatedAssignment } of repeatedRoles) {
+    for (const {
+      role: primaryRole,
+      repeatedAssignment,
+      runs,
+    } of repeatedRoles) {
       if (
         !repeatedAssignment ||
         primaryRole.assignments.some((assignment) =>
@@ -334,6 +343,7 @@ export async function reviewKe166GroupRotation(
       const message = unresolvedMessage(
         primaryRole,
         repeatedAssignment,
+        runs,
         attemptedReasons
       );
       primaryRole.assignments.forEach((assignment) => {

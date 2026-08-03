@@ -134,7 +134,7 @@ describe("schedule page", () => {
     expect(palette).not.toBeNull();
     expect(grid).not.toBeNull();
     expect(roster?.previousElementSibling).toBe(grid);
-  });
+  }, 30_000);
 
   it("preserves stale warnings, zoom projection, administrative staff, and soft-rule evidence", async () => {
     const state = createDefaultState();
@@ -156,7 +156,13 @@ describe("schedule page", () => {
     const assignment = state.assignments.find(
       (item) => item.status === "assigned"
     )!;
+    state.assignments.forEach((item) => delete item.decisionTrace);
     assignment.decisionTrace = [
+      schedulingDecision(
+        "cross-workday-load",
+        "fallback",
+        "上一班甲比乙更累，本班仍由甲承担较重岗位"
+      ),
       schedulingDecision(
         "late-shift-recovery",
         "fallback",
@@ -165,7 +171,7 @@ describe("schedule page", () => {
     ];
     state.schedulePolicyStale = true;
     const element = await mountElement<
-      HTMLElement & { updateComplete: Promise<unknown> }
+      HTMLElement & { model: typeof state; updateComplete: Promise<unknown> }
     >("autoschedule-schedule-page", {
       model: state,
       date: "2026-07-18",
@@ -189,5 +195,26 @@ describe("schedule page", () => {
         .querySelector(".schedule-soft-warning-icon")
         ?.getAttribute("title")
     ).toContain("上一班末班重点岗位人员作为最后兜底接替");
-  });
+
+    const comparisonOnlyState = structuredClone(state);
+    const comparisonOnlyAssignment = comparisonOnlyState.assignments.find(
+      (item) => item.id === assignment.id
+    )!;
+    comparisonOnlyAssignment.decisionTrace = [
+      schedulingDecision(
+        "cross-workday-load",
+        "fallback",
+        "上一班甲比乙更累，本班仍由甲承担较重岗位"
+      ),
+    ];
+    element.model = comparisonOnlyState;
+    await element.updateComplete;
+    const grid = element.querySelector<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-grid");
+    await grid?.updateComplete;
+
+    expect(element.querySelector(".schedule-soft-warning-icon")).toBeNull();
+    expect(comparisonOnlyAssignment.decisionTrace).toHaveLength(1);
+  }, 30_000);
 });

@@ -22,24 +22,91 @@ import {
 } from "./rotation-review-safety";
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
+import {
+  assessPositionFrequencyAlert,
+  type PositionFrequencyAlertAssessment,
+} from "./position-frequency-alert";
+import { assignmentWarningMessage } from "./schedule-warning-message";
 
 function frequencyProfileText(profile: PositionFrequencyProfile): string {
   return `本月${profile.currentMonthCount}次、最近${POSITION_FREQUENCY_WORKDAY_COUNT}个已归档工作日${profile.recentWorkdayCount}次`;
 }
 
-function frequencyFallback(
+function alertPeriods(assessment: PositionFrequencyAlertAssessment) {
+  return assessment.periods.filter((period) => period.difference >= 2);
+}
+
+function frequencyAlertFact(
   primary: Assignment,
-  profile: PositionFrequencyProfile,
-  reasons: readonly string[]
+  assessment: PositionFrequencyAlertAssessment
 ): string {
-  const reason =
-    [...new Set(reasons)].slice(0, 4).join("；") ||
-    "没有满足全部安全约束的整体重排方案";
-  const message = `同岗高频未调整：${primary.staffName}${frequencyProfileText(profile)}承担${primary.flightNo}/${primary.position}；${reason}；为保证岗位完整性，本班保留原安排。`;
-  replaceAssignmentDecisions(primary, "position-frequency-review", [
-    schedulingDecision("position-frequency-review", "fallback", message),
-  ]);
-  return message;
+  const periods = assessment.soleQualified
+    ? assessment.periods.filter((period) => period.assignedCount >= 3)
+    : alertPeriods(assessment);
+  const counts = periods
+    .map((period) => `${period.label}承担${period.assignedCount}次`)
+    .join("、");
+  const difference = Math.max(...periods.map((period) => period.difference));
+  const comparison = assessment.soleQualified
+    ? "当前只有这一名合格人员"
+    : `合格人员最高与最低最多相差${difference}次`;
+  return `在${primary.flightNo}/${primary.position}${counts}，${comparison}`;
+}
+
+function applyFrequencyAlertEvidence(
+  state: AppState,
+  assignments: Assignment[],
+  date: string,
+  attemptedReasons: ReadonlyMap<string, readonly string[]>
+): string[] {
+  const warnings: string[] = [];
+  for (const assignment of assignments) {
+    const rule = assignmentRule(state, assignment);
+    if (
+      !rule ||
+      !isPriorityRotationPosition(rule) ||
+      assignment.status !== "assigned" ||
+      !assignment.staffId
+    )
+      continue;
+    const assessment = assessPositionFrequencyAlert(state, assignment, date);
+    if (!assessment?.needsAttention) {
+      const existing = assignment.decisionTrace?.filter(
+        (decision) => decision.ruleId === "position-frequency-review"
+      );
+      if (existing?.some((decision) => decision.outcome === "fallback"))
+        replaceAssignmentDecisions(assignment, "position-frequency-review", []);
+      continue;
+    }
+    if (assessment.improving) {
+      const difference = Math.max(
+        ...alertPeriods(assessment).map((period) => period.difference)
+      );
+      const message = `${assignment.staffName} 本班承担${assignment.flightNo}/${assignment.position}，累计最高与最低仍相差${difference}次。本班已安排给低频人员，差距正在改善。`;
+      replaceAssignmentDecisions(assignment, "position-frequency-review", [
+        schedulingDecision("position-frequency-review", "selected", message),
+      ]);
+      continue;
+    }
+    const reasons = assessment.soleQualified
+      ? ["无其他具备目标岗位资质的人员"]
+      : (attemptedReasons.get(assignment.id) ?? [
+          "前序排班安排优先，未能改由最低频人员",
+        ]);
+    const message = assignmentWarningMessage({
+      staffName: assignment.staffName,
+      fact: frequencyAlertFact(assignment, assessment),
+      reasons,
+      result: assessment.soleQualified
+        ? "保留原安排，请关注岗位人员储备"
+        : "保留原安排",
+    });
+    replaceAssignmentDecisions(assignment, "position-frequency-review", [
+      schedulingDecision("position-frequency-review", "fallback", message),
+    ]);
+    warnings.push(message);
+  }
+  return warnings;
 }
 
 function candidateFrequencyOrder(
@@ -128,9 +195,12 @@ export async function reviewSamePositionFrequency(
   facts?: ScheduleRunFacts
 ): Promise<string[]> {
   if (!state.settings.positionRotationEnabled) return [];
+  assignments.forEach((assignment) =>
+    replaceAssignmentDecisions(assignment, "position-frequency-review", [])
+  );
   const frequencyFacts =
     facts?.scheduleFrequency ?? createScheduleFrequencyFacts(state, date);
-  const warnings: string[] = [];
+  const attemptedReasonsByAssignment = new Map<string, readonly string[]>();
   const reviewed = new Set<string>();
   const primaryAssignments = assignments
     .filter(
@@ -195,13 +265,11 @@ export async function reviewSamePositionFrequency(
         ) < 0
     );
     if (!lowerFrequencyConfigured.length) {
-      warnings.push(
-        frequencyFallback(primary, frequency, [
-          configuredOthers.length
-            ? "无其他同岗频率更低且具备目标岗位资质的人员"
-            : "无其他具备目标岗位资质的人员",
-        ])
-      );
+      attemptedReasonsByAssignment.set(primary.id, [
+        configuredOthers.length
+          ? "无其他同岗频率更低且具备目标岗位资质的人员"
+          : "无其他具备目标岗位资质的人员",
+      ]);
       reviewed.add(primary.id);
       continue;
     }
@@ -259,8 +327,13 @@ export async function reviewSamePositionFrequency(
       reasons.push(
         `其他低频人员被值班或KE166特殊锁定：${lockedNames.join("、")}`
       );
-    warnings.push(frequencyFallback(primary, frequency, reasons));
+    attemptedReasonsByAssignment.set(primary.id, reasons);
     reviewed.add(primary.id);
   }
-  return warnings;
+  return applyFrequencyAlertEvidence(
+    state,
+    assignments,
+    date,
+    attemptedReasonsByAssignment
+  );
 }

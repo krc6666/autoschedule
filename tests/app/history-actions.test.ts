@@ -131,10 +131,10 @@ describe("history actions", () => {
 
   it("preserves the priority remark through archive and protects the worker on the next workday", async () => {
     const state = createDefaultState();
-    const [protectedWorker, replacement] = state.staff
+    const selectedStaff = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
-    state.staff = [protectedWorker!, replacement!];
+    state.staff = selectedStaff;
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
@@ -180,9 +180,16 @@ describe("history actions", () => {
     state.assignments = (
       await generateSchedule(state, "2026-08-14")
     ).assignments;
-    expect(
-      state.assignments.find((item) => item.position === "H02")?.staffId
-    ).toBe(protectedWorker!.id);
+    const protectedWorkerId = state.assignments.find(
+      (item) => item.position === "H02"
+    )?.staffId;
+    const protectedWorker = state.staff.find(
+      (person) => person.id === protectedWorkerId
+    )!;
+    const replacement = state.staff.find(
+      (person) => person.id !== protectedWorkerId
+    )!;
+    expect(protectedWorkerId).toBeDefined();
     const archived = currentScheduleHistory(state, "2026-08-14");
     expect(archived.find((record) => record.position === "H02")?.remark).toBe(
       "一号"
@@ -194,16 +201,16 @@ describe("history actions", () => {
     ).assignments;
     expect(
       state.assignments.find((item) => item.position === "H02")?.staffId
-    ).toBe(replacement!.id);
+    ).toBe(replacement.id);
     expect(
       state.assignments.find((item) => item.position === "H06")?.staffId
-    ).toBe(protectedWorker!.id);
+    ).toBe(protectedWorker.id);
     const feedback = buildScheduleFeedback(state, "2026-08-16").find(
       (item) => item.key === "previous-late"
     )!;
     expect(feedback.status).toBe("已执行");
-    expect(feedback.text).toContain(`${protectedWorker!.name} TR 一号`);
-    expect(feedback.text).toContain(`${protectedWorker!.name} 已避开`);
+    expect(feedback.text).toContain(`${protectedWorker.name} TR 一号`);
+    expect(feedback.text).toContain(`${protectedWorker.name} 已避开`);
     expect(feedback.text).not.toContain("TR121/H02");
   });
 

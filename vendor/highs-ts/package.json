@@ -1,0 +1,40 @@
+{
+  "name": "@autoschedule/highs-ts",
+  "version": "1.3.0-autoschedule.1",
+  "private": true,
+  "description": "Project-local HiGHS 1.13.0 WebAssembly adapter with native lexicographic objective support.",
+  "type": "module",
+  "main": "./dist/index.node.cjs",
+  "module": "./dist/index.node.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "import": {
+          "types": "./dist/index.node.d.ts",
+          "default": "./dist/index.node.js"
+        },
+        "require": {
+          "types": "./dist/index.node.d.cts",
+          "default": "./dist/index.node.cjs"
+        }
+      },
+      "browser": {
+        "types": "./dist/index.browser.d.ts",
+        "default": "./dist/index.browser.js"
+      },
+      "default": {
+        "types": "./dist/index.browser.d.ts",
+        "default": "./dist/index.browser.js"
+      }
+    }
+  },
+  "files": [
+    "dist/",
+    "build/highs.js",
+    "build/highs.wasm",
+    "src/",
+    "LICENSE"
+  ],
+  "license": "MIT"
+}

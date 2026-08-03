@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   base: "./",
+  optimizeDeps: {
+    exclude: ["@autoschedule/highs-ts", "@bubblyworld/highs-ts"],
+  },
   build: {
     target: "es2022",
     sourcemap: true,

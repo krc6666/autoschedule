@@ -3,6 +3,43 @@ import { describe, expect, it } from "vitest";
 import { HighsSolver } from "../../src/infrastructure/solver/highs-solver";
 
 describe("HiGHS solver adapter", () => {
+  it("keeps native objectives in strict priority order", async () => {
+    const solver = new HighsSolver();
+    const result = await solver.solve({
+      strategy: "native-lexicographic",
+      variables: [{ id: "a" }, { id: "b" }],
+      constraints: [
+        {
+          id: "choose-one",
+          terms: ["a", "b"].map((variableId) => ({
+            variableId,
+            coefficient: 1,
+          })),
+          lowerBound: 1,
+          upperBound: 1,
+        },
+      ],
+      objectives: [
+        {
+          id: "prefer-a-first",
+          direction: "maximize",
+          terms: [{ variableId: "a", coefficient: 1 }],
+        },
+        {
+          id: "prefer-b-second",
+          direction: "maximize",
+          terms: [{ variableId: "b", coefficient: 1 }],
+        },
+      ],
+      timeoutMs: 5_000,
+    });
+
+    expect(result.termination).toBe("optimal");
+    expect([...result.selectedVariableIds]).toEqual(["a"]);
+    expect(result.objectiveValues.get("prefer-a-first")).toBe(1);
+    expect(result.objectiveValues.get("prefer-b-second")).toBe(0);
+  });
+
   it("locks each earlier objective before optimizing the next objective", async () => {
     const solver = new HighsSolver();
     const result = await solver.solve({
@@ -105,5 +142,196 @@ describe("HiGHS solver adapter", () => {
     expect(result.termination).toBe("optimal");
     expect(result.objectiveValues.get("fatigue")).toBe(2.5);
     expect([...result.selectedVariableIds]).toEqual(["lighter"]);
+  });
+
+  it("supports continuous load variables alongside binary assignments", async () => {
+    const solver = new HighsSolver();
+    const result = await solver.solve({
+      variables: [
+        { id: "assignment" },
+        { id: "load", type: "continuous", lowerBound: 0 },
+      ],
+      constraints: [
+        {
+          id: "assign",
+          terms: [{ variableId: "assignment", coefficient: 1 }],
+          lowerBound: 1,
+          upperBound: 1,
+        },
+        {
+          id: "measure-load",
+          terms: [
+            { variableId: "load", coefficient: 1 },
+            { variableId: "assignment", coefficient: -2.5 },
+          ],
+          lowerBound: 0,
+        },
+      ],
+      objectives: [
+        {
+          id: "minimum-load",
+          direction: "minimize",
+          terms: [{ variableId: "load", coefficient: 1 }],
+        },
+      ],
+      timeoutMs: 5_000,
+    });
+
+    expect(result.termination).toBe("optimal");
+    expect(result.objectiveValues.get("minimum-load")).toBe(2.5);
+    expect(result.selectedVariableIds.has("assignment")).toBe(true);
+    expect(result.selectedVariableIds.has("load")).toBe(false);
+  });
+
+  it("skips a mathematically redundant objective when its prior condition is false", async () => {
+    const solver = new HighsSolver();
+    const result = await solver.solve({
+      variables: [
+        { id: "a" },
+        { id: "b" },
+        {
+          id: "excess",
+          type: "continuous",
+          lowerBound: 1,
+          upperBound: 1,
+        },
+      ],
+      constraints: [
+        {
+          id: "choose-one",
+          terms: ["a", "b"].map((variableId) => ({
+            variableId,
+            coefficient: 1,
+          })),
+          lowerBound: 1,
+          upperBound: 1,
+        },
+      ],
+      objectives: [
+        {
+          id: "excess",
+          direction: "minimize",
+          terms: [{ variableId: "excess", coefficient: 1 }],
+        },
+        {
+          id: "spread",
+          direction: "minimize",
+          terms: [{ variableId: "b", coefficient: 1 }],
+          solveOnlyWhen: { objectiveId: "excess", equals: 0 },
+        },
+        {
+          id: "stable",
+          direction: "minimize",
+          terms: [{ variableId: "a", coefficient: 1 }],
+        },
+      ],
+      timeoutMs: 5_000,
+    });
+
+    expect(result.termination).toBe("optimal");
+    expect([...result.selectedVariableIds]).toEqual(["b"]);
+    expect(result.objectiveValues.get("spread")).toBe(1);
+  });
+
+  it("includes a native conditional objective when its condition is true", async () => {
+    const solver = new HighsSolver();
+    const result = await solver.solve({
+      strategy: "native-lexicographic",
+      variables: [
+        { id: "a" },
+        { id: "b" },
+        {
+          id: "excess",
+          type: "continuous",
+          lowerBound: 0,
+          upperBound: 0,
+        },
+      ],
+      constraints: [
+        {
+          id: "choose-one",
+          terms: ["a", "b"].map((variableId) => ({
+            variableId,
+            coefficient: 1,
+          })),
+          lowerBound: 1,
+          upperBound: 1,
+        },
+      ],
+      objectives: [
+        {
+          id: "excess",
+          direction: "minimize",
+          terms: [{ variableId: "excess", coefficient: 1 }],
+        },
+        {
+          id: "conditional",
+          direction: "minimize",
+          terms: [{ variableId: "b", coefficient: 1 }],
+          solveOnlyWhen: { objectiveId: "excess", equals: 0 },
+        },
+        {
+          id: "stable",
+          direction: "minimize",
+          terms: [{ variableId: "a", coefficient: 1 }],
+        },
+      ],
+      timeoutMs: 5_000,
+    });
+
+    expect(result.termination).toBe("optimal");
+    expect([...result.selectedVariableIds]).toEqual(["a"]);
+    expect(result.objectiveValues.get("conditional")).toBe(0);
+  });
+
+  it("skips a native conditional objective when its condition is false", async () => {
+    const solver = new HighsSolver();
+    const result = await solver.solve({
+      strategy: "native-lexicographic",
+      variables: [
+        { id: "a" },
+        { id: "b" },
+        {
+          id: "excess",
+          type: "continuous",
+          lowerBound: 1,
+          upperBound: 1,
+        },
+      ],
+      constraints: [
+        {
+          id: "choose-one",
+          terms: ["a", "b"].map((variableId) => ({
+            variableId,
+            coefficient: 1,
+          })),
+          lowerBound: 1,
+          upperBound: 1,
+        },
+      ],
+      objectives: [
+        {
+          id: "excess",
+          direction: "minimize",
+          terms: [{ variableId: "excess", coefficient: 1 }],
+        },
+        {
+          id: "conditional",
+          direction: "minimize",
+          terms: [{ variableId: "b", coefficient: 1 }],
+          solveOnlyWhen: { objectiveId: "excess", equals: 0 },
+        },
+        {
+          id: "stable",
+          direction: "minimize",
+          terms: [{ variableId: "a", coefficient: 1 }],
+        },
+      ],
+      timeoutMs: 5_000,
+    });
+
+    expect(result.termination).toBe("optimal");
+    expect([...result.selectedVariableIds]).toEqual(["b"]);
+    expect(result.objectiveValues.get("conditional")).toBe(1);
   });
 });

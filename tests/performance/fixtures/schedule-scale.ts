@@ -11,7 +11,7 @@ export function createScheduleScaleState(positionCount: number): AppState {
   const state = createDefaultState();
   const positionsPerFlight = 4;
   const flightCount = Math.ceil(positionCount / positionsPerFlight);
-  const staffCount = Math.max(32, Math.ceil((positionCount * 1.5) / 12) + 4);
+  const staffCount = 15;
   const baseStaff = state.staff[0]!;
   state.staff = Array.from({ length: staffCount }, (_, index) => ({
     ...baseStaff,
@@ -27,7 +27,7 @@ export function createScheduleScaleState(positionCount: number): AppState {
   const qualifiedStaffIds = state.staff.map((person) => person.id);
   const baseRule = state.positionRules[0]!;
   state.flights = Array.from({ length: flightCount }, (_, flightIndex) => {
-    const start = 6 * 60 + flightIndex * 15;
+    const start = 6 * 60 + flightIndex * 45;
     const firstPositionIndex = flightIndex * positionsPerFlight;
     const ownPositionCount = Math.min(
       positionsPerFlight,

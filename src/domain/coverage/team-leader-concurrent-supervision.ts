@@ -128,9 +128,18 @@ function applyCandidate(
     change.assignment.workHours = change.workHours;
     change.assignment.status = "assigned";
     delete change.assignment.systemNotes;
-    appendAssignmentDecision(change.assignment, decision);
     lockedAssignmentIds.add(change.assignment.id);
   }
+  const affectedAssignments = new Map(
+    [
+      ...candidate.supervisorAssignments,
+      candidate.vacancy,
+      ...candidate.changes.map((change) => change.assignment),
+    ].map((assignment) => [assignment.id, assignment])
+  );
+  affectedAssignments.forEach((assignment) =>
+    appendAssignmentDecision(assignment, decision)
+  );
   return message;
 }
 

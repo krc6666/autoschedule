@@ -14,6 +14,7 @@ import type { AutoscheduleStore } from "./store/autoschedule-store";
 import { plannedScheduleProgress } from "../domain/kernel/schedule-pipeline";
 import { todayIso } from "../utils";
 import type { ApplicationPreferences } from "./application-preferences";
+import { isStorageQuotaExceeded } from "../infrastructure/storage";
 
 export interface ApplicationCoordinatorOptions {
   preferences: ApplicationPreferences;
@@ -123,8 +124,24 @@ export class ApplicationCoordinator implements ApplicationContext {
   }
 
   commit(message?: string): void {
-    this.store.getState().persist();
-    if (message) this.toast(message);
+    try {
+      const result = this.store.getState().persist();
+      if (result.nearCapacity) {
+        this.toast(
+          `${message ? `${message}。` : ""}本地数据已接近浏览器存储上限，请尽快导出配置和历史排班备份。系统不会自动删除历史记录。`,
+          "warning"
+        );
+        return;
+      }
+      if (message) this.toast(message);
+    } catch (error) {
+      this.toast(
+        isStorageQuotaExceeded(error)
+          ? "本次修改暂时只保留在当前页面中，未保存到浏览器：存储空间不足。请尽快导出配置和历史排班备份，再清理不再需要的历史记录。"
+          : "本次修改暂时只保留在当前页面中，未能保存到浏览器。请尽快导出配置和历史排班备份后重试。",
+        "danger"
+      );
+    }
   }
 
   toast(

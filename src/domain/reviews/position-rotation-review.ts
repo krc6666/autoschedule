@@ -32,6 +32,7 @@ import {
   type RotationStaffChange,
 } from "./rotation-review-safety";
 import type { SolverPort } from "../solver/solver-port";
+import { assignmentWarningMessage } from "./schedule-warning-message";
 import { countedWorkloadAssignments } from "../shared/workload-accounting";
 
 type RotationKind = "priority" | "high-fatigue" | "ordinary";
@@ -191,7 +192,12 @@ function applyRotationPlan(
       ? `${originalPrimary.staffName}已连续${runs === 1 ? "一" : "两"}个工作班承担${originalPrimary.flightNo}/${originalPrimary.position}，无法彻底退出晚班时，本班通过${participants}人整体重排换到${reliefAssignment.flightNo}/${reliefAssignment.position}的${reliefAssignment.fatiguePoints}点普通岗位；跨工作日恢复和次班截止仅对这次明确降疲劳改善让步，其余安全约束与岗位完整性验证通过。`
       : `${originalPrimary.staffName}已连续${runs === 1 ? "一" : "两"}个工作班承担${originalPrimary.flightNo}/${originalPrimary.position}，本班已通过${participants}人整体重排解除：${route}；岗位完整性及全部安全约束验证通过。`;
   const recoveryFallbackMessage = protectedReplacementFallback
-    ? `跨工作日恢复保护软约束已让步：${primary.staffName}属于上一工作班末班重点岗位人员；其他不移动受保护人员的安全方案均已穷尽，本班允许其接替${primary.flightNo}/${primary.position}，请复核现场恢复情况。`
+    ? assignmentWarningMessage({
+        staffName: primary.staffName,
+        fact: `属于上一班末班重点岗位人员，本班仍接替${primary.flightNo}/${primary.position}`,
+        reasons: ["其他不移动受保护人员的安全方案均已穷尽"],
+        result: "保留本次调整，请复核恢复情况",
+      })
     : undefined;
   changedAssignments.forEach((assignment) => {
     rebuildAutomaticAssignmentEvidence(assignment, [
@@ -213,17 +219,15 @@ function applyRotationPlan(
 function unresolvedMessage(
   primary: Assignment,
   runs: number,
-  kind: RotationKind,
+  _kind: RotationKind,
   attemptedReasons: readonly string[]
 ): string {
-  const reason =
-    [...new Set(attemptedReasons)].slice(0, 3).join("；") ||
-    "没有满足全部安全约束的整体重排方案";
-  if (kind === "priority" && runs === 1)
-    return `重点岗位连续轮岗未落实：${primary.staffName}上一工作班已承担${primary.flightNo}/${primary.position}，本班再次承担；${reason}；为保证岗位完整性，本班异常保留。`;
-  if (kind === "high-fatigue" && runs === 1)
-    return `高负荷普通岗位连续轮岗未落实：${primary.staffName}上一工作班已承担${primary.flightNo}/${primary.position}，本班再次承担；${reason}；为保证岗位完整性，本班异常保留。`;
-  return `连续轮岗未落实：${primary.staffName}已连续两个工作班承担${primary.flightNo}/${primary.position}；${reason}；为保证岗位完整性，本班异常保留该人员，形成第三次连续安排。`;
+  return assignmentWarningMessage({
+    staffName: primary.staffName,
+    fact: `已连续${runs}次承担${primary.flightNo}/${primary.position}`,
+    reasons: attemptedReasons,
+    result: `保留原安排，当前连续第${runs + 1}次`,
+  });
 }
 
 export async function reviewConsecutivePositionRotation(

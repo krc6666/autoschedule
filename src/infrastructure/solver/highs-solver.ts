@@ -4,6 +4,7 @@ import {
   type RawModel,
   type SolveStatus,
 } from "@bubblyworld/highs-ts";
+import { HiGHS as NativeHiGHS } from "@autoschedule/highs-ts";
 
 import type {
   LexicographicObjective,
@@ -16,6 +17,22 @@ import type {
 interface LockedObjective {
   objective: LexicographicObjective;
   value: number;
+}
+
+const OBJECTIVE_LOCK_TOLERANCE = 1e-7;
+
+function objectiveLockConstraint({
+  objective,
+  value,
+}: LockedObjective): LinearConstraint {
+  const tolerance = OBJECTIVE_LOCK_TOLERANCE * Math.max(1, Math.abs(value));
+  return {
+    id: `lock:${objective.id}`,
+    terms: objective.terms,
+    ...(objective.direction === "minimize"
+      ? { upperBound: value + tolerance }
+      : { lowerBound: value - tolerance }),
+  };
 }
 
 function solverTermination(status: SolveStatus): SolverResult["termination"] {
@@ -34,14 +51,56 @@ function solverTermination(status: SolveStatus): SolverResult["termination"] {
 function objectiveValue(
   objective: LexicographicObjective,
   values: Float64Array,
-  columnById: ReadonlyMap<string, number>
+  columnById: ReadonlyMap<string, number>,
+  integralVariableIds: ReadonlySet<string>
 ): number {
   const value = objective.terms.reduce(
     (total, term) =>
       total + term.coefficient * values[columnById.get(term.variableId)!]!,
     0
   );
+  if (
+    objective.terms.every(
+      (term) =>
+        Number.isInteger(term.coefficient) &&
+        integralVariableIds.has(term.variableId)
+    )
+  )
+    return Math.round(value);
   return Math.abs(value) < 1e-9 ? 0 : Number(value.toPrecision(12));
+}
+
+function shouldSolveObjective(
+  objective: LexicographicObjective,
+  objectiveValues: ReadonlyMap<string, number>
+): boolean {
+  if (!objective.solveOnlyWhen) return true;
+  const priorValue = objectiveValues.get(objective.solveOnlyWhen.objectiveId);
+  if (priorValue === undefined)
+    throw new Error(
+      `条件目标 ${objective.id} 引用了尚未求解的目标 ${objective.solveOnlyWhen.objectiveId}`
+    );
+  return (
+    Math.abs(priorValue - objective.solveOnlyWhen.equals) <=
+    (objective.solveOnlyWhen.tolerance ?? OBJECTIVE_LOCK_TOLERANCE)
+  );
+}
+
+function objectiveCosts(
+  problem: SolverProblem,
+  objective: LexicographicObjective,
+  columnById: ReadonlyMap<string, number>
+): Float64Array {
+  const costs = new Float64Array(problem.variables.length);
+  for (const term of objective.terms) {
+    const column = columnById.get(term.variableId);
+    if (column === undefined)
+      throw new Error(
+        `求解目标 ${objective.id} 引用了未知变量 ${term.variableId}`
+      );
+    costs[column] = costs[column]! + term.coefficient;
+  }
+  return costs;
 }
 
 function rawModel(
@@ -54,12 +113,7 @@ function rawModel(
   );
   const constraints: LinearConstraint[] = [
     ...problem.constraints,
-    ...locks.map(({ objective: locked, value }) => ({
-      id: `lock:${locked.id}`,
-      terms: locked.terms,
-      lowerBound: value,
-      upperBound: value,
-    })),
+    ...locks.map(objectiveLockConstraint),
   ];
   const starts: number[] = [0];
   const indices: number[] = [];
@@ -76,21 +130,22 @@ function rawModel(
     }
     starts.push(indices.length);
   }
-  const costs = new Float64Array(problem.variables.length);
-  for (const term of objective.terms) {
-    const column = columnById.get(term.variableId);
-    if (column === undefined)
-      throw new Error(
-        `求解目标 ${objective.id} 引用了未知变量 ${term.variableId}`
-      );
-    costs[column] = costs[column]! + term.coefficient;
-  }
+  const costs = objectiveCosts(problem, objective, columnById);
   return {
     numCol: problem.variables.length,
     numRow: constraints.length,
     sense: objective.direction,
     colCost: costs,
-    colUpper: new Float64Array(problem.variables.length).fill(1),
+    colLower: Float64Array.from(
+      problem.variables.map((variable) => variable.lowerBound ?? 0)
+    ),
+    colUpper: Float64Array.from(
+      problem.variables.map(
+        (variable) =>
+          variable.upperBound ??
+          (variable.type === "continuous" ? HIGHS_INF : 1)
+      )
+    ),
     rowLower: Float64Array.from(
       constraints.map((constraint) => constraint.lowerBound ?? -HIGHS_INF)
     ),
@@ -103,7 +158,11 @@ function rawModel(
       index: Int32Array.from(indices),
       value: Float64Array.from(coefficients),
     },
-    integrality: new Int32Array(problem.variables.length).fill(1),
+    integrality: Int32Array.from(
+      problem.variables.map((variable) =>
+        variable.type === "continuous" ? 0 : 1
+      )
+    ),
   };
 }
 
@@ -117,6 +176,23 @@ function validateProblem(problem: SolverProblem): void {
     if (ids.has(variable.id))
       throw new Error(`求解变量 ID 重复：${variable.id}`);
     ids.add(variable.id);
+    if (
+      variable.lowerBound !== undefined &&
+      variable.upperBound !== undefined &&
+      variable.lowerBound > variable.upperBound
+    )
+      throw new Error(`求解变量 ${variable.id} 的下限不能大于上限`);
+  }
+  const precedingObjectiveIds = new Set<string>();
+  for (const objective of problem.objectives) {
+    if (
+      objective.solveOnlyWhen &&
+      !precedingObjectiveIds.has(objective.solveOnlyWhen.objectiveId)
+    )
+      throw new Error(
+        `条件目标 ${objective.id} 必须引用排在前面的目标 ${objective.solveOnlyWhen.objectiveId}`
+      );
+    precedingObjectiveIds.add(objective.id);
   }
 }
 
@@ -138,6 +214,8 @@ export class HighsSolver implements SolverPort {
 
   private async solveExclusive(problem: SolverProblem): Promise<SolverResult> {
     validateProblem(problem);
+    if (problem.strategy === "native-lexicographic")
+      return this.solveNativeLexicographic(problem);
     this.instance ??= HiGHS.create();
     const highs = await this.instance;
     const deadline = Date.now() + problem.timeoutMs;
@@ -147,8 +225,14 @@ export class HighsSolver implements SolverPort {
     const columnById = new Map(
       problem.variables.map((variable, index) => [variable.id, index])
     );
+    const integralVariableIds = new Set(
+      problem.variables.flatMap((variable) =>
+        variable.type === "continuous" ? [] : [variable.id]
+      )
+    );
 
     for (const objective of problem.objectives) {
+      if (!shouldSolveObjective(objective, objectiveValues)) continue;
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) {
         return {
@@ -174,16 +258,169 @@ export class HighsSolver implements SolverPort {
         };
       }
       finalValues = highs.getSolutionValues();
-      const value = objectiveValue(objective, finalValues, columnById);
+      const value = objectiveValue(
+        objective,
+        finalValues,
+        columnById,
+        integralVariableIds
+      );
       objectiveValues.set(objective.id, value);
       locks.push({ objective, value });
+    }
+
+    for (const objective of problem.objectives) {
+      if (objectiveValues.has(objective.id)) continue;
+      objectiveValues.set(
+        objective.id,
+        objectiveValue(objective, finalValues, columnById, integralVariableIds)
+      );
     }
 
     return {
       termination: "optimal",
       selectedVariableIds: new Set(
         problem.variables.flatMap((variable, index) =>
-          finalValues[index]! > 0.5 ? [variable.id] : []
+          variable.type !== "continuous" && finalValues[index]! > 0.5
+            ? [variable.id]
+            : []
+        )
+      ),
+      objectiveValues,
+    };
+  }
+
+  private async solveNativeLexicographic(
+    problem: SolverProblem
+  ): Promise<SolverResult> {
+    const deadline = Date.now() + problem.timeoutMs;
+    const locks: LockedObjective[] = [];
+    const objectiveValues = new Map<string, number>();
+    let finalValues: Float64Array = new Float64Array(problem.variables.length);
+    const columnById = new Map(
+      problem.variables.map((variable, index) => [variable.id, index])
+    );
+    const integralVariableIds = new Set(
+      problem.variables.flatMap((variable) =>
+        variable.type === "continuous" ? [] : [variable.id]
+      )
+    );
+    const emptyObjective: LexicographicObjective = {
+      id: "native-lexicographic-base",
+      direction: "minimize",
+      terms: [],
+    };
+
+    const solveBatch = async (
+      objectives: readonly LexicographicObjective[]
+    ): Promise<Pick<SolverResult, "termination" | "diagnostic"> | null> => {
+      if (!objectives.length) return null;
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0)
+        return {
+          termination: "timed-out",
+          diagnostic: `求解目标 ${objectives[0]!.id} 前已达到时间上限`,
+        };
+
+      const highs = await NativeHiGHS.create();
+      let passedObjectives = false;
+      try {
+        highs.setParam("time_limit", remainingMs / 1000);
+        highs.setParam("mip_rel_gap", 0);
+        highs.setParam("random_seed", 0);
+        highs.setParam("output_flag", false);
+        highs.setParam("blend_multi_objectives", false);
+        highs.passModel(rawModel(problem, emptyObjective, locks));
+        highs.passLinearObjectives(
+          objectives.map((objective, index) => ({
+            direction: objective.direction,
+            coefficients: objectiveCosts(problem, objective, columnById),
+            priority: objectives.length - index,
+            absTolerance: 0,
+            relTolerance: 0,
+          }))
+        );
+        passedObjectives = true;
+        const result = await highs.solve();
+        const termination = solverTermination(result.status);
+        if (termination !== "optimal")
+          return {
+            termination,
+            diagnostic: `分层求解从目标 ${objectives[0]!.id} 开始，结束状态：${result.status}`,
+          };
+
+        finalValues = highs.getSolutionValues();
+        for (const objective of objectives) {
+          const value = objectiveValue(
+            objective,
+            finalValues,
+            columnById,
+            integralVariableIds
+          );
+          objectiveValues.set(objective.id, value);
+          locks.push({ objective, value });
+        }
+        return null;
+      } finally {
+        try {
+          if (passedObjectives) highs.clearLinearObjectives();
+        } finally {
+          highs.free();
+        }
+      }
+    };
+
+    let cursor = 0;
+    let pending: LexicographicObjective[] = [];
+    while (cursor < problem.objectives.length) {
+      const objective = problem.objectives[cursor]!;
+      if (!objective.solveOnlyWhen) {
+        pending.push(objective);
+        cursor += 1;
+        continue;
+      }
+      if (!objectiveValues.has(objective.solveOnlyWhen.objectiveId)) {
+        if (!pending.length)
+          throw new Error(
+            `条件目标 ${objective.id} 的前置目标尚未完成分层求解`
+          );
+        const failure = await solveBatch(pending);
+        if (failure)
+          return {
+            ...failure,
+            selectedVariableIds: new Set(),
+            objectiveValues,
+          };
+        pending = [];
+        continue;
+      }
+      if (shouldSolveObjective(objective, objectiveValues))
+        pending.push(objective);
+      cursor += 1;
+    }
+
+    const failure = await solveBatch(pending);
+    if (failure)
+      return {
+        ...failure,
+        selectedVariableIds: new Set(),
+        objectiveValues,
+      };
+
+    for (const objective of problem.objectives) {
+      if (objectiveValues.has(objective.id)) continue;
+      objectiveValues.set(
+        objective.id,
+        objectiveValue(objective, finalValues, columnById, integralVariableIds)
+      );
+    }
+
+    return {
+      termination: "optimal",
+      selectedVariableIds: new Set(
+        problem.variables.flatMap((variable, index) =>
+          variable.type !== "continuous" && finalValues[index]! > 0.5
+            ? [variable.id]
+            : []
         )
       ),
       objectiveValues,

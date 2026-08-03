@@ -1,0 +1,2 @@
+# Preserve the vendored Emscripten output exactly as generated.
+vendor/highs-ts/build/highs.js whitespace=-trailing-space

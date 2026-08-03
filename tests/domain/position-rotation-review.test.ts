@@ -163,7 +163,7 @@ describe("consecutive priority-position rotation review", () => {
 
     expect(priority.staffId).toBe(repeatedWorker.id);
     expect(ordinary.staffId).not.toBe(repeatedWorker.id);
-    expect(warnings.join("\n")).toContain("重点岗位连续轮岗未落实");
+    expect(warnings.join("\n")).toContain("已连续1次承担NIGHT1/G14");
   });
 
   it("does not move a locked ordinary role for late-priority fatigue relief", async () => {
@@ -204,7 +204,7 @@ describe("consecutive priority-position rotation review", () => {
     );
 
     expect(priority.staffId).toBe(repeatedWorker.id);
-    expect(warnings.join("\n")).toContain("下个工作班值班人员");
+    expect(warnings.join("\n")).toContain("下个工作班值班人员需要预休");
   });
 
   it("accepts a lower-fatigue ordinary late role when the repeated worker cannot leave the late shift", async () => {
@@ -1517,9 +1517,7 @@ describe("consecutive priority-position rotation review", () => {
     expect(supervisor.staffId).toBe(repeatedSupervisor!.id);
     expect(boundCounter.staffId).toBe(repeatedSupervisor!.id);
     expect(priorityCounter.staffId).toBe(candidate!.id);
-    expect(warnings.join("\n")).toContain(
-      "候选人不具备机动督导或兼任柜台的完整资质"
-    );
+    expect(warnings.join("\n")).toContain("其他人员资质不匹配");
   });
 
   it("rotates a repeated KE166 priority position through the mobile-supervisor group and a third role", async () => {

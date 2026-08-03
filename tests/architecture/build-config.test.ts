@@ -7,6 +7,13 @@ import type { UserConfig } from "vite";
 import config from "../../vite.config";
 
 describe("生产 Worker 构建合同", () => {
+  it("开发环境直接交给 Vite 处理 HiGHS 的 WebAssembly 文件", () => {
+    const resolved = config as UserConfig;
+
+    expect(resolved.optimizeDeps?.exclude).toContain("@bubblyworld/highs-ts");
+    expect(resolved.optimizeDeps?.exclude).toContain("@autoschedule/highs-ts");
+  });
+
   it("使用支持 HiGHS 代码分包的 ES 模块格式", () => {
     const resolved = config as UserConfig;
 

@@ -74,11 +74,11 @@ describe("application shell", () => {
       progress: {
         outcome: "running",
         visible: true,
-        stage: "history",
+        stage: "optimize",
         percent: 15,
         steps: [
           { stage: "prepare", percent: 5, label: "准备航班和岗位" },
-          { stage: "history", percent: 15, label: "读取历史排班与轮值" },
+          { stage: "optimize", percent: 15, label: "整体计算岗位与人员" },
           { stage: "complete", percent: 100, label: "排班完成" },
         ],
       },
@@ -97,7 +97,7 @@ describe("application shell", () => {
     ).toContain("准备航班和岗位");
     expect(
       element.querySelector(".schedule-progress-task.is-active")?.textContent
-    ).toContain("读取历史排班与轮值");
+    ).toContain("整体计算岗位与人员");
     expect(
       element
         .querySelector('[role="progressbar"]')

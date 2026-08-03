@@ -139,6 +139,37 @@ describe("state persistence", () => {
     );
   });
 
+  it("warns near the local storage limit without deleting history", () => {
+    const state = createDefaultState();
+    state.staff[0]!.remark = "a".repeat(4 * 1024 * 1024);
+    state.history = [
+      {
+        id: "capacity-history",
+        date: "2026-07-20",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: state.staff[0]!.id,
+        staffName: state.staff[0]!.name,
+        startTime: "20:00",
+        endTime: "22:00",
+        workHours: 2,
+        fatiguePoints: 4,
+        remark: "一号",
+      },
+    ];
+    let written = "";
+
+    const result = saveState(state, {
+      setItem: (_key, value) => {
+        written = value;
+      },
+    });
+
+    expect(result.nearCapacity).toBe(true);
+    expect(result.state.history).toHaveLength(1);
+    expect(written).toContain("capacity-history");
+  });
+
   it("migrates personnel type, administrative mode, and scheduling policy defaults", () => {
     const state = createDefaultState();
     const legacy = JSON.parse(JSON.stringify(state));
