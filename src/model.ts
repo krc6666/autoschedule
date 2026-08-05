@@ -17,6 +17,7 @@ export interface Staff {
   teamLeader: boolean;
   cxPreflightQualified: boolean;
   dutyQualified: boolean;
+  standbyQualified: boolean;
   nightShift: boolean;
   status: StaffStatus;
   remark: string;
@@ -111,10 +112,8 @@ export interface ScheduleSettings {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
-  nextDutyRestProtectionEnabled: boolean;
   lateShiftRecoveryEnabled: boolean;
-  lateShiftStartTime: string;
-  lateShiftLatestWindowMinutes: number;
+  lateShiftEndTime: string;
   teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
   lateShiftRecoveryPositionRules: LateShiftRecoveryPositionRule[];
   nextWorkdayRecoveryTargets: NextWorkdayRecoveryTarget[];

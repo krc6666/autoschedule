@@ -2,6 +2,7 @@ import { isAuxiliaryCategory } from "../domain/flights/schedule-position-rules";
 import type { FlightPlanReconciliation } from "../domain/flights/flight-plan-reconciliation";
 import type { AppState, Flight, FlightTemplate } from "../model";
 import { clearActiveSchedule } from "../domain/kernel/schedule-lifecycle";
+import { clearUnqualifiedStandbyOverrides } from "../domain/duty-roster/roster";
 import {
   createId,
   normalizeText,
@@ -13,6 +14,21 @@ import {
 export type ConfigurationValue = string | number | boolean;
 
 const clearSchedule = clearActiveSchedule;
+
+function createFlightFromTemplate(
+  template: FlightTemplate,
+  flightNo = template.flightNo
+): Flight {
+  return {
+    id: createId("flight"),
+    flightNo,
+    startTime: template.startTime,
+    endTime: template.endTime,
+    bookedPassengers: 0,
+    positions: [...template.positions],
+    remark: template.remark,
+  };
+}
 
 export function addFlight(state: AppState): void {
   const flight: Flight = {
@@ -55,11 +71,7 @@ export function deleteTemplate(state: AppState, id: string): void {
 export function addTemplateFlight(state: AppState, id: string): boolean {
   const template = state.templates.find((item) => item.id === id);
   if (!template) return false;
-  state.flights.push({
-    ...structuredClone(template),
-    id: createId("flight"),
-    bookedPassengers: 0,
-  });
+  state.flights.push(createFlightFromTemplate(template));
   clearSchedule(state);
   return true;
 }
@@ -86,12 +98,7 @@ export function addFlightsFromTemplates(
       skipped += 1;
       continue;
     }
-    state.flights.push({
-      ...structuredClone(template),
-      flightNo,
-      id: createId("flight"),
-      bookedPassengers: 0,
-    });
+    state.flights.push(createFlightFromTemplate(template, flightNo));
     existingFlightNumbers.add(flightNo);
     added += 1;
   }
@@ -153,6 +160,7 @@ export function addStaff(state: AppState): void {
     teamLeader: false,
     cxPreflightQualified: false,
     dutyQualified: true,
+    standbyQualified: true,
     nightShift: true,
     status: "正常",
     remark: "",
@@ -170,6 +178,7 @@ export function addAdministrativeStaff(state: AppState): void {
     teamLeader: false,
     cxPreflightQualified: false,
     dutyQualified: false,
+    standbyQualified: false,
     nightShift: true,
     status: "正常",
     remark: "",
@@ -417,9 +426,12 @@ export function updateConfigurationField(
       person.teamLeader = false;
       person.cxPreflightQualified = false;
       person.dutyQualified = false;
+      person.standbyQualified = false;
     }
     if (field === "teamLeader" && person.staffType === "行政支援")
       person.teamLeader = false;
+    if (field === "standbyQualified" || field === "staffType")
+      clearUnqualifiedStandbyOverrides(state);
     clearSchedule(state);
     return "updated";
   }

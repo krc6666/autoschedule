@@ -62,11 +62,13 @@ describe("assignment evidence module", () => {
       schedulingDecision("position-frequency", "selected", "旧人员结论"),
     ];
     rebuildAutomaticAssignmentEvidence(target, [
-      schedulingDecision("next-duty-rest", "selected", "新人员结论"),
+      schedulingDecision("late-shift-recovery", "selected", "新人员结论"),
     ]);
     expect(target.systemNotes).toBeUndefined();
     expect(
-      assignmentDecisions([target], { ruleIds: new Set(["next-duty-rest"]) })
+      assignmentDecisions([target], {
+        ruleIds: new Set(["late-shift-recovery"]),
+      })
     ).toEqual([expect.objectContaining({ message: "新人员结论" })]);
   });
 

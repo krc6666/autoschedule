@@ -30,6 +30,7 @@ export const defaultStaff: Staff[] = [
   teamLeader: String(name) === "刘红",
   cxPreflightQualified: false,
   dutyQualified: true,
+  standbyQualified: true,
   nightShift: Boolean(nightShift),
   status: status as Staff["status"],
   remark: String(remark),

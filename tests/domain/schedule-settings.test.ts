@@ -36,7 +36,7 @@ describe("schedule settings module", () => {
     const input = {
       dutyFatiguePoints: 100,
       highLoadRecoveryMinutes: 1500.4,
-      lateShiftStartTime: "25:00",
+      lateShiftEndTime: "25:00",
       positionTransitionPolicies: [
         {
           id: " transition ",
@@ -55,7 +55,7 @@ describe("schedule settings module", () => {
     expect(normalizeScheduleSettings({ ...defaults, ...input })).toMatchObject({
       dutyFatiguePoints: 50,
       highLoadRecoveryMinutes: 1440,
-      lateShiftStartTime: "20:00",
+      lateShiftEndTime: "23:00",
       positionTransitionPolicies: [
         {
           id: "transition",

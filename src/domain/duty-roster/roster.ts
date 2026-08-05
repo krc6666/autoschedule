@@ -73,6 +73,25 @@ export function dutyQualifiedStaff(state: AppState): Staff[] {
   return rosterEligibleStaff(state).filter((person) => person.dutyQualified);
 }
 
+export function standbyQualifiedStaff(state: AppState): Staff[] {
+  return rosterEligibleStaff(state).filter((person) => person.standbyQualified);
+}
+
+export function clearUnqualifiedStandbyOverrides(state: AppState): void {
+  const qualifiedIds = new Set(
+    state.staff
+      .filter(
+        (person) => person.staffType === "常规" && person.standbyQualified
+      )
+      .map((person) => person.id)
+  );
+  state.dutyRosterOverrides = state.dutyRosterOverrides.filter((override) =>
+    override.standbyStaffIds.every(
+      (staffId) => !staffId || qualifiedIds.has(staffId)
+    )
+  );
+}
+
 function rotateStaff(pool: Staff[], start: number): Staff[] {
   if (!pool.length) return [];
   const offset = ((start % pool.length) + pool.length) % pool.length;
@@ -130,16 +149,16 @@ function assignSingleSlotRounds(
 function assignStandbyRounds(
   dates: string[],
   dutyByDate: Array<string | null>,
-  regular: Staff[],
+  standbyPool: Staff[],
   rotationStart: number
 ): Array<[string | null, string | null]> {
   const standbyByDate: Array<[string | null, string | null]> = dates.map(() => [
     null,
     null,
   ]);
-  const counts = new Map(regular.map((person) => [person.id, 0]));
+  const counts = new Map(standbyPool.map((person) => [person.id, 0]));
   const assignedDates = new Map(
-    regular.map((person) => [person.id, new Set<number>()])
+    standbyPool.map((person) => [person.id, new Set<number>()])
   );
   const remainingSlots = new Set(
     Array.from({ length: dates.length * 2 }, (_, index) => index)
@@ -150,9 +169,10 @@ function assignStandbyRounds(
     remainingSlots.size && round <= dates.length * 2 + 1;
     round += 1
   ) {
-    const candidates = rotateStaff(regular, rotationStart + round - 1).filter(
-      (person) => (counts.get(person.id) ?? 0) < round
-    );
+    const candidates = rotateStaff(
+      standbyPool,
+      rotationStart + round - 1
+    ).filter((person) => (counts.get(person.id) ?? 0) < round);
     const matchedBySlot = new Map<number, string>();
     const tryAssign = (staffId: string, visitedSlots: Set<number>): boolean => {
       for (const slotIndex of remainingSlots) {
@@ -193,16 +213,16 @@ function defaultMonthlyDutyRoster(
   date: string
 ): DutyRosterAssignment[] {
   const dates = monthlyDutyDates(date);
-  const regular = rosterEligibleStaff(state);
   const cxPool = cxPreflightEligibleStaff(state);
   const dutyPool = dutyQualifiedStaff(state);
+  const standbyPool = standbyQualifiedStaff(state);
   const rotationSeed = monthlyRotationSeed(date);
   const dutyRotationStart = dutyPool.length
     ? rotationSeed % dutyPool.length
     : 0;
   const cxRotationStart = cxPool.length ? rotationSeed % cxPool.length : 0;
-  const standbyRotationStart = regular.length
-    ? (rotationSeed * 2) % regular.length
+  const standbyRotationStart = standbyPool.length
+    ? (rotationSeed * 2) % standbyPool.length
     : 0;
   const dutyByDate = assignSingleSlotRounds(
     dates,
@@ -219,7 +239,7 @@ function defaultMonthlyDutyRoster(
   const standbyByDate = assignStandbyRounds(
     dates,
     dutyByDate,
-    regular,
+    standbyPool,
     standbyRotationStart
   );
   return dates.map((item, ordinal) => {
@@ -336,13 +356,13 @@ function resolvedMonthlyDutyRoster(
 }
 
 function validOverride(state: AppState, override: DutyRosterOverride): boolean {
-  const regularIds = new Set(
-    rosterEligibleStaff(state).map((person) => person.id)
-  );
   const cxIds = new Set(
     cxPreflightEligibleStaff(state).map((person) => person.id)
   );
   const dutyIds = new Set(dutyQualifiedStaff(state).map((person) => person.id));
+  const standbyQualifiedIds = new Set(
+    standbyQualifiedStaff(state).map((person) => person.id)
+  );
   if (override.cxPreflightStaffId && !cxIds.has(override.cxPreflightStaffId))
     return false;
   if (override.dutyStaffId && !dutyIds.has(override.dutyStaffId)) return false;
@@ -357,9 +377,7 @@ function validOverride(state: AppState, override: DutyRosterOverride): boolean {
     Boolean(id)
   );
   if (new Set(standbyIds).size !== standbyIds.length) return false;
-  return [override.dutyStaffId, ...override.standbyStaffIds].every(
-    (id) => !id || regularIds.has(id)
-  );
+  return standbyIds.every((id) => standbyQualifiedIds.has(id));
 }
 
 export function getDutyRosterForDate(
@@ -426,6 +444,9 @@ export function updateDutyRosterSlot(
     cxPreflightEligibleStaff(state).map((person) => person.id)
   );
   const dutyIds = new Set(dutyQualifiedStaff(state).map((person) => person.id));
+  const standbyIds = new Set(
+    standbyQualifiedStaff(state).map((person) => person.id)
+  );
   if (slot === "cx-preflight") {
     if (!cxIds.has(staffId)) return "该人员不具备CX航前资质或当前不可用";
     if (current.dutyStaffId === staffId) return "CX航前不能与值班由同一人承担";
@@ -434,6 +455,8 @@ export function updateDutyRosterSlot(
     if (!regularIds.has(staffId)) return "值班和备勤只能选择状态正常的常规人员";
     if (slot === "duty" && !dutyIds.has(staffId))
       return "该人员不具备值班资质或当前不可用";
+    if (slot !== "duty" && !standbyIds.has(staffId))
+      return "该人员不具备备勤资质或当前不可用";
     if (slot === "duty" && staffId === current.cxPreflightStaffId)
       return "值班不能与CX航前由同一人承担";
     const values: [string | null, string | null, string | null] = [
@@ -452,6 +475,8 @@ export function updateDutyRosterSlot(
       return "值班和两名备勤不能重复";
     if (values[0] && !dutyIds.has(values[0]))
       return "调整后值班人员不具备值班资质";
+    if (values.slice(1).some((id) => id && !standbyIds.has(id)))
+      return "调整后备勤人员不具备备勤资质";
     current.dutyStaffId = values[0];
     current.standbyStaffIds = [values[1], values[2]];
   }

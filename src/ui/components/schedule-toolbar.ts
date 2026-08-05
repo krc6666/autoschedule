@@ -9,10 +9,14 @@ export class ScheduleToolbarElement extends LightDomElement {
     model: { attribute: false },
     date: { type: String },
     zoom: { type: Number },
+    previousScheduleDate: { type: String },
+    previousScheduleVisible: { type: Boolean },
   };
   model!: AppState;
   date = "";
   zoom = 1;
+  previousScheduleDate = "";
+  previousScheduleVisible = false;
 
   protected override render() {
     return html`<section class="toolbar-band schedule-toolbar">
@@ -23,6 +27,7 @@ export class ScheduleToolbarElement extends LightDomElement {
         ${this.iconCommand("filetype-html", "导出 HTML", "export-share-html")}
         ${this.iconCommand("file-earmark-image", "导出图片", "export-share-png")}
         ${this.command("archive", "仅归档", "archive-schedule", "btn-outline-secondary")}
+        ${this.previousScheduleCommand()}
         ${this.iconCommand("x-circle", "清空排班", "clear-schedule", "btn-outline-danger")}
       </div>
       <div class="schedule-toolbar-meta">
@@ -42,7 +47,7 @@ export class ScheduleToolbarElement extends LightDomElement {
             class="form-check-input"
             type="checkbox"
             .checked=${this.model.settings.adminSupportEnabled}
-            @change=${(event: Event) => dispatchUiCommand(this, { type: "toggle-administrative-mode", enabled: (event.currentTarget as HTMLInputElement).checked })}
+            @change=${this.toggleAdministrativeMode}
           />
           <span class="form-check-label">是否启用行政支援模式</span>
         </label>
@@ -87,6 +92,24 @@ export class ScheduleToolbarElement extends LightDomElement {
     </button>`;
   }
 
+  private previousScheduleCommand() {
+    const available = Boolean(this.previousScheduleDate);
+    const label = !available
+      ? "暂无上一班记录"
+      : this.previousScheduleVisible
+        ? "收起上一班"
+        : "对比上一班";
+    return html`<button
+      class="btn btn-sm btn-outline-secondary"
+      type="button"
+      title=${available ? `${this.previousScheduleDate} 已归档班表` : "当前日期之前没有已归档班表"}
+      ?disabled=${!available}
+      @click=${this.togglePreviousSchedule}
+    >
+      <i class="bi bi-layout-split me-1"></i>${label}
+    </button>`;
+  }
+
   private zoomButton(
     icon: string,
     label: string,
@@ -103,6 +126,25 @@ export class ScheduleToolbarElement extends LightDomElement {
     >
       <i class="bi bi-${icon}"></i>
     </button>`;
+  }
+
+  private toggleAdministrativeMode(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    const enabled = input.checked;
+    input.checked = this.model.settings.adminSupportEnabled;
+    dispatchUiCommand(this, {
+      type: "toggle-administrative-mode",
+      enabled,
+    });
+  }
+
+  private togglePreviousSchedule(): void {
+    this.dispatchEvent(
+      new Event("autoschedule-toggle-previous-schedule", {
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 }
 

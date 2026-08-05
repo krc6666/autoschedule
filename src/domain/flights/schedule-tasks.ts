@@ -18,7 +18,11 @@ export function mustAutoFillPreNoon(
   flight: Flight,
   rule: PositionRule
 ): boolean {
-  return isPreNoonFlight(flight) && rule.category === "常规";
+  return (
+    isPreNoonFlight(flight) &&
+    rule.category === "常规" &&
+    (rule.minPassengers ?? 0) <= flight.bookedPassengers
+  );
 }
 
 export function isKe166MobileSupervisor(

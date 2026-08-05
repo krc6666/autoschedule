@@ -5,10 +5,6 @@ import {
 } from "../reviews/cross-day-recovery";
 import { getDutyRosterForDate } from "../duty-roster/roster";
 import {
-  nextDutyRestProtection,
-  type NextDutyRestProtection,
-} from "../reviews/next-duty-rest";
-import {
   createPreviousWorkdayLoadFacts,
   type PreviousWorkdayLoadFacts,
 } from "./previous-workday-load";
@@ -20,14 +16,15 @@ import {
   createScheduleFrequencyFacts,
   type ScheduleFrequencyFacts,
 } from "../statistics/schedule-frequency";
+import { historyFatigue } from "../statistics/fatigue";
 
 export interface ScheduleRunFacts {
   currentDutyStaffId: string | null;
-  nextDutyRest: NextDutyRestProtection;
   crossDayRecovery: CrossDayRecoveryFacts;
   previousWorkdayLoad: PreviousWorkdayLoadFacts;
   workloadPressure: WorkloadPressureFacts;
   scheduleFrequency: ScheduleFrequencyFacts;
+  historicalFatigueByStaff: ReadonlyMap<string, number>;
 }
 
 export function createScheduleRunFacts(
@@ -35,12 +32,18 @@ export function createScheduleRunFacts(
   date: string
 ): ScheduleRunFacts {
   const currentDutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;
+  const historicalFatigueByStaff = new Map(
+    state.staff.map((person) => [
+      person.id,
+      historyFatigue(state.history, person.id, date, state.settings),
+    ])
+  );
   return {
     currentDutyStaffId,
-    nextDutyRest: nextDutyRestProtection(state, date),
     crossDayRecovery: createCrossDayRecoveryFacts(state, date),
     previousWorkdayLoad: createPreviousWorkdayLoadFacts(state, date),
     workloadPressure: analyzeWorkloadPressure(state),
     scheduleFrequency: createScheduleFrequencyFacts(state, date),
+    historicalFatigueByStaff,
   };
 }

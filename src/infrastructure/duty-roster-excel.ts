@@ -259,6 +259,12 @@ export function parseDutyRosterWorkbook(
         }
         target.dutyStaffId = person.id;
       } else {
+        if (!person.standbyQualified) {
+          errors.push(
+            `${person.name}不具备备勤资质，不能安排 ${assignment.date} 备勤`
+          );
+          continue;
+        }
         const standby = target.standbyStaffIds.filter(Boolean);
         if (standby.includes(person.id)) {
           errors.push(`${assignment.date}重复安排 ${person.name} 备勤`);

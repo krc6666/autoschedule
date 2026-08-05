@@ -22,8 +22,9 @@ describe("configuration page", () => {
     expect(
       element.querySelector(".config-collapsible")?.hasAttribute("open")
     ).toBe(false);
-    ["是否为分队长", "CX航前资质", "值班资质", "可上夜班"].forEach((label) =>
-      expect(element.querySelector(`[aria-label="${label}"]`)).not.toBeNull()
+    ["是否为分队长", "CX航前资质", "值班资质", "备勤资质", "可上夜班"].forEach(
+      (label) =>
+        expect(element.querySelector(`[aria-label="${label}"]`)).not.toBeNull()
     );
     expect(text).toContain("机动督导");
     expect(text).not.toContain(">督导<");

@@ -154,6 +154,7 @@ export class DutyRosterDetailsElement extends LightDomElement {
             ></span
           ><span>值班差值 <strong>${view.dutyRange.difference}</strong></span
           ><span>备勤差值 <strong>${view.standbyRange.difference}</strong></span
+          ><span>备勤资质 <strong>${view.standbyStaff.length}</strong></span
           ><span>备勤保底 <strong>2 次</strong></span
           ><span
             >每次值班
@@ -199,7 +200,7 @@ export class DutyRosterDetailsElement extends LightDomElement {
             </thead>
             <tbody>
               ${view.monthly.map((row) => {
-                const standby = view.regularStaff.filter(
+                const standby = view.standbyStaff.filter(
                   (person) => person.id !== row.dutyStaffId
                 );
                 const duty = view.dutyStaff.filter(
@@ -269,6 +270,17 @@ export class DutyRosterDetailsElement extends LightDomElement {
   }
 
   private standbyNotice(view: DutyRosterPageModel) {
+    if (view.unfilledStandbyCount)
+      return html`<div class="duty-balance-alert is-attention">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <div>
+          <strong>备勤资质人员不足</strong
+          ><span
+            >本月 ${view.unfilledStandbyCount}
+            个次日备勤未满两人，空缺席位保持未配置。请在人员信息中开启备勤资质，或人工选择其他具备资质的人员。</span
+          >
+        </div>
+      </div>`;
     if (!view.standbyMissing.length) return null;
     return html`<div
       class="duty-balance-alert ${view.standbySeatShortage ? "is-info" : "is-attention"}"
@@ -280,7 +292,7 @@ export class DutyRosterDetailsElement extends LightDomElement {
         <strong
           >${view.standbySeatShortage ? "本月备勤席位不足" : "备勤保底未完成"}</strong
         ><span
-          >${view.standbyMissing.map((item) => `${item.staff.name} ${item.standbyDates.length} 次`).join("、")}。${view.standbySeatShortage ? "值班刚性要求优先，备勤缺额只作说明，不计入违约。" : "每名正常常规人员应至少安排 2 次备勤。"}</span
+          >${view.standbyMissing.map((item) => `${item.staff.name} ${item.standbyDates.length} 次`).join("、")}。${view.standbySeatShortage ? "值班刚性要求优先，备勤缺额只作说明，不计入违约。" : "每名具备备勤资质的正常常规人员应至少安排 2 次备勤。"}</span
         >
       </div>
     </div>`;
@@ -305,6 +317,7 @@ export class DutyRosterDetailsElement extends LightDomElement {
       <td>
         <strong>${item.staff.name}</strong
         >${item.staff.dutyQualified ? null : html`<small class="duty-no-qualification">无值班资质</small>`}
+        ${item.staff.standbyQualified ? null : html`<small class="duty-no-qualification">无备勤资质</small>`}
       </td>
       <td>
         <span class="duty-coverage-badge ${coverage[0]}">${coverage[1]}</span>

@@ -12,7 +12,7 @@ describe("rotation review safety", () => {
       "coverage",
       "frequency",
       "ke166-supervisor",
-      "next-duty-rest",
+      "late-frequency",
       "recovery",
     ]);
     expect(ROTATION_REVIEW_POLICIES.coverage).toMatchObject({
@@ -22,11 +22,14 @@ describe("rotation review safety", () => {
     });
     expect(ROTATION_REVIEW_POLICIES.frequency).toMatchObject({
       frequency: "improve-primary",
-      protectPreviousWorkdayLoad: true,
-      preventStaffWithoutWork: true,
+      protectPreviousWorkdayLoad: false,
+      preventStaffWithoutWork: false,
+      transitionMode: "forbid",
     });
     expect(ROTATION_REVIEW_POLICIES.consecutive).toMatchObject({
       frequency: "preserve-priority",
+      preventStaffWithoutWork: false,
+      transitionMode: "forbid",
     });
   });
 
@@ -83,8 +86,24 @@ describe("rotation review safety", () => {
     };
   }
 
-  it("prevents a frequency reassignment from leaving the original worker with no actual work", () => {
-    const { state, replacementWorker, target } = createFrequencyFixture();
+  it("allows priority-position fairness even when the original worker has no other work", () => {
+    const { state, originalWorker, replacementWorker, target } =
+      createFrequencyFixture();
+    state.history = [
+      {
+        id: "history",
+        date: "2026-07-28",
+        flightNo: "F100",
+        position: "G20",
+        staffId: originalWorker.id,
+        staffName: originalWorker.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 2,
+        remark: "一号",
+      },
+    ];
 
     const reasons = reassignmentSafetyReasons({
       kind: "plan",
@@ -96,7 +115,7 @@ describe("rotation review safety", () => {
       review: "frequency",
     });
 
-    expect(reasons).toContain("重排会使原人员当日无实际岗位");
+    expect(reasons).toEqual([]);
   });
 
   it("accepts a lower-frequency replacement when the original worker keeps another assignment", () => {
@@ -141,5 +160,64 @@ describe("rotation review safety", () => {
     });
 
     expect(reasons).toEqual([]);
+  });
+
+  it("keeps strict position transitions above priority-position fairness", () => {
+    const { state, originalWorker, replacementWorker, target } =
+      createFrequencyFixture();
+    state.history = [
+      {
+        id: "history",
+        date: "2026-07-28",
+        flightNo: "F100",
+        position: "G20",
+        staffId: originalWorker.id,
+        staffName: originalWorker.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 2,
+        remark: "一号",
+      },
+    ];
+    state.settings.positionTransitionPolicies = [
+      {
+        id: "strict-transition",
+        name: "严格衔接",
+        enabled: true,
+        sourceFlightNo: "F000",
+        sourcePositions: ["G10"],
+        targetFlightNo: "F100",
+        targetPosition: "G20",
+        minimumGapMinutes: 90,
+        mode: "forbid",
+      },
+    ];
+    const previous: Assignment = {
+      ...target,
+      id: "previous",
+      flightId: "previous-flight",
+      flightNo: "F000",
+      positionRuleId: null,
+      position: "G10",
+      staffId: replacementWorker.id,
+      staffName: replacementWorker.name,
+      startTime: "06:00",
+      endTime: "07:30",
+      workHours: 1.5,
+      remark: "",
+    };
+
+    const reasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: [target, previous],
+      changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
+      primaryAssignmentId: target.id,
+      date: "2026-07-30",
+      review: "frequency",
+    });
+
+    expect(reasons.some((reason) => reason.includes("衔接"))).toBe(true);
   });
 });

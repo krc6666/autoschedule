@@ -4,6 +4,7 @@ import { ApplicationCoordinator } from "../../src/app/application-coordinator";
 import type { ApplicationPreferences } from "../../src/app/application-preferences";
 import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
 import { createDefaultState } from "../../src/defaults";
+import type { ScheduleResult } from "../../src/model";
 
 const preferences: ApplicationPreferences = {
   loadScheduleDate: () => null,
@@ -64,6 +65,84 @@ describe("application persistence feedback", () => {
     expect(coordinator.view().toast).toMatchObject({
       tone: "danger",
       message: expect.stringContaining("存储空间不足"),
+    });
+  });
+});
+
+describe("application scheduling exclusivity", () => {
+  it("reserves a schedule run before asynchronous command routing", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    state.settings.adminSupportEnabled = false;
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences }
+    );
+    const result: ScheduleResult = {
+      assignments: [],
+      warnings: [],
+      unfilledCount: 0,
+    };
+    let running = false;
+    let finishFirst!: () => void;
+    const calculate = vi.fn(() => {
+      if (running)
+        return Promise.reject(new Error("排班正在运行，请等待当前任务完成"));
+      running = true;
+      return new Promise<ScheduleResult>((resolve) => {
+        finishFirst = () => {
+          running = false;
+          resolve(result);
+        };
+      });
+    });
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: { calculate, isRunning: () => running },
+    });
+
+    const generate = coordinator.handle({ type: "generate-schedule" });
+    const toggle = coordinator.handle({
+      type: "toggle-administrative-mode",
+      enabled: true,
+    });
+
+    await toggle;
+    await vi.waitFor(() => expect(calculate).toHaveBeenCalled());
+    expect(calculate).toHaveBeenCalledTimes(1);
+    expect(coordinator.model().settings.adminSupportEnabled).toBe(false);
+    expect(coordinator.view().toast).toMatchObject({
+      tone: "warning",
+      message: "排班正在计算，请等待当前任务完成",
+    });
+    finishFirst();
+    await generate;
+  });
+
+  it("blocks data-changing commands while a schedule calculation is running", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    state.settings.adminSupportEnabled = false;
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences }
+    );
+    const calculate = vi
+      .fn()
+      .mockRejectedValue(new Error("排班正在运行，请等待当前任务完成"));
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: { calculate, isRunning: () => true },
+    });
+
+    await coordinator.handle({
+      type: "toggle-administrative-mode",
+      enabled: true,
+    });
+
+    expect(coordinator.model().settings.adminSupportEnabled).toBe(false);
+    expect(calculate).not.toHaveBeenCalled();
+    expect(coordinator.view().toast).toMatchObject({
+      tone: "warning",
+      message: "排班正在计算，请等待当前任务完成",
     });
   });
 });

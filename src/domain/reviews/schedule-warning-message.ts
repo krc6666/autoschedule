@@ -27,8 +27,6 @@ function mappedReason(reason: string): string | null {
   if (/工时/.test(normalized)) return "其他人员会超过工时上限";
   if (/值班上午/.test(normalized)) return "值班上午上岗要求优先";
   if (/值班晚撤/.test(normalized)) return "值班晚撤岗位必须保留";
-  if (/下个工作班值班人员/.test(normalized))
-    return "下个工作班值班人员需要预休";
   if (/值班.*KE166|KE166.*值班/.test(normalized))
     return "其他人员承担值班或KE166固定岗位";
   if (/值班/.test(normalized)) return "值班安排必须保留";

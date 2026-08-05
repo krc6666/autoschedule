@@ -127,7 +127,6 @@ function createDeepRotationDeadEnd(): {
   }));
   state.staff = staff;
   state.settings.maxDailyHours = 2;
-  state.settings.nextDutyRestProtectionEnabled = false;
   state.settings.lateShiftRecoveryEnabled = false;
   state.settings.highLoadProtectionEnabled = false;
   state.settings.rollingLoadProtectionEnabled = false;
@@ -383,6 +382,48 @@ describe("scheduler performance safeguards", () => {
     expect(result.unfilledCount).toBe(0);
     expect(elapsed).toBeLessThan(30_000);
   }, 40_000);
+
+  it("survives repeated ten-flight calculations with 5000 records and administrative mode changes", async () => {
+    const state = createScheduleScaleState(40);
+    const regularRule = state.positionRules[0]!;
+    state.positionRules.push({
+      ...regularRule,
+      id: "stress-administrative-replacement",
+      category: "行政支援",
+    });
+    addLongScheduleHistory(state, 5000);
+    const elapsedRuns: number[] = [];
+    const phaseRuns: Array<Record<string, number>> = [];
+
+    for (let run = 0; run < 6; run += 1) {
+      state.settings.adminSupportEnabled = run % 2 === 1;
+      const started = performance.now();
+      let phaseStarted = started;
+      const phaseTimings: Record<string, number> = {};
+      const result = await generateSchedule(state, "2026-08-01", {
+        onProgress: (stage) => {
+          const now = performance.now();
+          phaseTimings[stage] = (phaseTimings[stage] ?? 0) + now - phaseStarted;
+          phaseStarted = now;
+        },
+      });
+      const elapsed = performance.now() - started;
+      elapsedRuns.push(elapsed);
+      phaseRuns.push(phaseTimings);
+
+      expect(result.assignments).toHaveLength(40);
+      expect(result.unfilledCount).toBe(0);
+      expect(new Set(result.assignments.map((item) => item.id)).size).toBe(40);
+      expect(elapsed).toBeLessThan(20_000);
+      state.assignments = result.assignments;
+      state.activeScheduleDate = "2026-08-01";
+    }
+
+    expect(
+      elapsedRuns.reduce((sum, elapsed) => sum + elapsed, 0),
+      JSON.stringify({ elapsedRuns, phaseRuns })
+    ).toBeLessThan(60_000);
+  }, 90_000);
 
   it("finishes a five-person rotation dead end without combinatorial delay", async () => {
     const { state, assignments, originalStaffIds } =

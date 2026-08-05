@@ -15,7 +15,7 @@ import {
   isDutyMorningFlight,
 } from "../assignments/duty-assignment";
 import {
-  isInFinalLateBatch,
+  isLateEndingWork,
   isNextWorkdayCutoffConflict,
   matchesLateShiftRecoveryPosition,
   matchesNextWorkdayRecoveryTarget,
@@ -27,12 +27,7 @@ import {
   countedWorkloadAssignments,
   isCountedWorkloadAssignment,
 } from "../shared/workload-accounting";
-import { assignmentRule } from "../flights/schedule-position-rules";
 import { PRIORITY_ROTATION_POSITION_KEYWORDS } from "../reviews/position-rotation-policy";
-import {
-  isNextDutyRestPriorityPosition,
-  nextDutyRestProtection,
-} from "../reviews/next-duty-rest";
 import {
   assignmentDecisionMessages,
   assignmentDecisions,
@@ -200,7 +195,7 @@ function previousLateFeedback(
       );
       const repeatedLatePriority = own.filter(
         (assignment) =>
-          isInFinalLateBatch(assignment, state.flights, state) &&
+          isLateEndingWork(assignment, state) &&
           matchesLateShiftRecoveryPosition(state, assignment)
       );
       const cutoffConflicts = own.filter((assignment) =>
@@ -278,62 +273,6 @@ function conciseProtectionReason(messages: string[]): string {
   if (text.includes("岗位空缺") || text.includes("岗位完整"))
     return "岗位完整性优先";
   return "无人可安全替代";
-}
-
-function nextDutyRestFeedback(
-  state: AppState,
-  date: string
-): ScheduleFeedbackItem {
-  if (!state.settings.nextDutyRestProtectionEnabled) {
-    return feedbackItem(
-      "rule-execution",
-      "next-duty-rest",
-      "下班次值班预休",
-      "info",
-      "下班次值班人员预休保护已停用。"
-    );
-  }
-  const protection = nextDutyRestProtection(state, date);
-  if (!protection.dutyStaffId) {
-    return feedbackItem(
-      "rule-execution",
-      "next-duty-rest",
-      "下班次值班预休",
-      "info",
-      `${protection.nextWorkdayDate}尚未配置值班人员。`
-    );
-  }
-  const name = staffName(state, protection.dutyStaffId);
-  const conflicts = state.assignments.filter(
-    (assignment) =>
-      assignment.staffId === protection.dutyStaffId &&
-      assignment.status === "assigned" &&
-      assignment.workHours > 0 &&
-      Boolean(
-        assignmentRule(state, assignment) &&
-        isNextDutyRestPriorityPosition(assignmentRule(state, assignment)!)
-      )
-  );
-  if (!conflicts.length) {
-    return feedbackItem(
-      "rule-execution",
-      "next-duty-rest",
-      "下班次值班预休",
-      "ok",
-      `${name}将在${protection.nextWorkdayDate}值班，本班已避开全部重点岗位。`
-    );
-  }
-  const reasons = assignmentDecisionMessages(conflicts, {
-    ruleIds: new Set(["next-duty-rest"]),
-    outcomes: new Set(["fallback"]),
-  });
-  return feedbackItem(
-    "rule-execution",
-    "next-duty-rest",
-    "下班次值班预休",
-    "attention",
-    `${name} 未避开${concisePriorityRoles(conflicts)}（${conciseProtectionReason(reasons)}），将在${protection.nextWorkdayDate}值班。`
-  );
 }
 
 function positionRotationFeedback(state: AppState): ScheduleFeedbackItem {
@@ -467,9 +406,7 @@ function currentLateFeedback(state: AppState): ScheduleFeedbackItem {
         assignment.workHours > 0
     )
     .filter((assignment) => isCountedWorkloadAssignment(state, assignment))
-    .filter((assignment) =>
-      isInFinalLateBatch(assignment, state.flights, state)
-    )
+    .filter((assignment) => isLateEndingWork(assignment, state))
     .filter((assignment) =>
       matchesLateShiftRecoveryPosition(state, assignment)
     );
@@ -589,10 +526,14 @@ function dutyRosterFeedback(
   const cxDifference = monthlyCountDifference(
     cxStats.map((item) => item.cxPreflightDates.length)
   );
-  const standbyDifference = monthlyCountDifference(
-    allMonthlyStats.map((item) => item.standbyDates.length)
+  const standbyStats = allMonthlyStats.filter(
+    (item) => item.staff.standbyQualified
   );
-  const standbyMissing = allMonthlyStats.filter(
+  const standbyIdsForMonth = new Set(standbyStats.map((item) => item.staff.id));
+  const standbyDifference = monthlyCountDifference(
+    standbyStats.map((item) => item.standbyDates.length)
+  );
+  const standbyMissing = standbyStats.filter(
     (item) => item.standbyDates.length < 2
   );
   const standbyCapacity = monthlyRoster.reduce(
@@ -600,11 +541,17 @@ function dutyRosterFeedback(
       sum +
       Math.min(
         2,
-        Math.max(0, allMonthlyStats.length - (item.dutyStaffId ? 1 : 0))
+        Math.max(
+          0,
+          standbyStats.length -
+            (item.dutyStaffId && standbyIdsForMonth.has(item.dutyStaffId)
+              ? 1
+              : 0)
+        )
       ),
     0
   );
-  const standbySeatShortage = standbyCapacity < allMonthlyStats.length * 2;
+  const standbySeatShortage = standbyCapacity < standbyStats.length * 2;
   const monthlyDutyNote =
     (dutyCoverageRequired && monthlyMissing.length) || dutyDifference > 1
       ? ` 月度值班需纠偏：${monthlyStats.map((item) => `${item.staff.name} ${item.dutyDates.length} 次`).join("、")}；值班次数差 ${dutyDifference}。`
@@ -636,13 +583,16 @@ function dutyRosterFeedback(
         roster.dutyStaffId
       )
     ) || new Set(standbyIds).size !== standbyIds.length;
+  const standbyQualificationShortage = roster.standbyStaffIds.some(
+    (staffId) => !staffId
+  );
   if (rosterIds.length < 4 || rosterConflict) {
     return feedbackItem(
       "rule-execution",
       "duty-roster",
       "值班与轮值",
       "attention",
-      `CX航前${cxName}；${dutyDescription}；备勤${standbyDetails}。轮值未完整配置，或值班与其他轮值发生冲突，需要调整；CX航前与备勤允许同人兼任。${morningDutyText}规则无法核验。${dutyRecoveryNote}${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`
+      `CX航前${cxName}；${dutyDescription}；备勤${standbyDetails}。${standbyQualificationShortage ? "备勤资质人员不足，空缺席位保持未配置；" : ""}轮值未完整配置，或值班与其他轮值发生冲突，需要调整；CX航前与备勤允许同人兼任。${morningDutyText}规则无法核验。${dutyRecoveryNote}${monthlyDutyNote}${monthlyBalanceNote}${monthlyCapacityNote}`
     );
   }
   const dutyAssignments = state.assignments.filter(
@@ -783,7 +733,6 @@ const RULE_FEEDBACK_BUILDERS: Readonly<
   "position-frequency-review": (state) =>
     positionFrequencyReviewFeedback(state),
   "position-rotation": (state) => positionRotationFeedback(state),
-  "next-duty-rest": nextDutyRestFeedback,
   "previous-late": previousLateFeedback,
   "current-late": (state) => currentLateFeedback(state),
   "duty-roster": dutyRosterFeedback,

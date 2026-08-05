@@ -191,6 +191,13 @@ select {
   border: 1px solid var(--as-border);
   border-radius: 8px;
 }
+.modal-dialog-scrollable .modal-content-stack {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
 .section-heading {
   display: flex;
   align-items: center;
@@ -921,6 +928,52 @@ select {
 }
 .relaxed-shift-table {
   min-width: 760px;
+}
+
+.late-priority-flight-selector {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 180px);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--as-muted);
+  font-size: 12px;
+}
+.late-priority-statistics-groups {
+  display: grid;
+}
+.late-priority-statistic {
+  padding: 16px 0;
+  border-top: 1px solid var(--as-border);
+}
+.late-priority-statistic:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.late-priority-statistic:last-child {
+  padding-bottom: 0;
+}
+.late-priority-statistic-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.late-priority-statistic-heading h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+.late-priority-statistic-heading span {
+  color: var(--as-muted);
+  font-size: 11px;
+}
+.late-priority-qualification {
+  display: block;
+  margin-top: 2px;
+  color: var(--as-muted);
+  font-size: 10px;
 }
 
 .schedule-workspace {
@@ -1682,6 +1735,38 @@ autoschedule-schedule-grid {
   align-items: center;
   gap: 12px;
 }
+autoschedule-archived-schedule-board,
+autoschedule-previous-schedule-comparison {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+.previous-schedule-comparison {
+  margin-bottom: 12px;
+  border-top: 1px solid var(--as-border);
+  border-bottom: 1px solid var(--as-border);
+  background: #fff;
+}
+.previous-schedule-comparison-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--as-border);
+  background: #f7f8f9;
+}
+.previous-schedule-comparison-heading > div {
+  min-width: 0;
+}
+.previous-schedule-comparison-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.previous-schedule-comparison-heading span {
+  color: var(--as-muted);
+  font-size: 11px;
+}
 .schedule-zoom-control {
   display: flex;
   align-items: center;
@@ -2023,6 +2108,10 @@ autoschedule-schedule-grid {
   gap: 10px;
   margin-top: 14px;
 }
+.history-workspace .section-heading > .d-flex {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .history-day {
   overflow: hidden;
   border: 1px solid var(--as-border);
@@ -2207,6 +2296,12 @@ autoschedule-schedule-grid {
   .section-heading .btn {
     white-space: nowrap;
   }
+  .history-workspace .section-heading {
+    flex-direction: column;
+  }
+  .history-workspace .section-heading > .d-flex {
+    justify-content: flex-start;
+  }
   .toolbar-band {
     align-items: flex-start;
     flex-direction: column;
@@ -2287,6 +2382,13 @@ autoschedule-schedule-grid {
   }
   .position-batch-controls {
     grid-template-columns: 1fr 68px auto;
+    width: 100%;
+  }
+  .late-priority-statistics > .section-heading {
+    flex-direction: column;
+  }
+  .late-priority-flight-selector {
+    grid-template-columns: auto minmax(0, 1fr);
     width: 100%;
   }
 }

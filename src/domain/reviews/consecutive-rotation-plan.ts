@@ -1,5 +1,5 @@
 import type { AppState, Assignment, Staff } from "../../model";
-import { isInFinalLateBatch } from "./cross-day-recovery";
+import { isLateEndingWork } from "./cross-day-recovery";
 import { isPriorityRotationPosition } from "./position-rotation-policy";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import {
@@ -112,8 +112,7 @@ export async function findConsecutiveRotationPlan({
   const deadline = Date.now() + timeoutMs;
   const primaryRule = assignmentRule(state, primary)!;
   const latePriorityReliefApplies =
-    isPriorityRotationPosition(primaryRule) &&
-    isInFinalLateBatch(primary, state.flights, state);
+    isPriorityRotationPosition(primaryRule) && isLateEndingWork(primary, state);
   const run = async (
     allowFatigueRelief: boolean,
     allowProtectedReplacement: boolean

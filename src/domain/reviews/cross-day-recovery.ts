@@ -2,34 +2,13 @@ import type { AppState, Flight, HistoryRecord } from "../../model";
 import type { LateShiftRecoveryPositionRule } from "../rules/structured-policy-contract";
 import { recentArchivedWorkdays } from "../statistics/fatigue";
 import { timeToMinutes } from "../shared/time";
+import { endsAfterLateShiftThreshold } from "./late-priority-policy";
 
-function lateShiftOperationalStart(
-  startTime: string,
-  state: AppState
-): number | null {
-  const start = timeToMinutes(startTime);
-  const cutoff = timeToMinutes(state.settings.lateShiftStartTime);
-  const nightEnd = timeToMinutes(state.settings.nightEnd);
-  if (![start, cutoff, nightEnd].every(Number.isFinite)) return null;
-  if (start >= cutoff) return start;
-  if (start < nightEnd) return start + 24 * 60;
-  return null;
-}
-
-export function isInFinalLateBatch(
-  target: Pick<Flight, "startTime">,
-  items: Array<Pick<Flight, "startTime">>,
+export function isLateEndingWork(
+  target: Pick<Flight, "startTime" | "endTime">,
   state: AppState
 ): boolean {
-  const targetStart = lateShiftOperationalStart(target.startTime, state);
-  const lateStarts = items
-    .map((item) => lateShiftOperationalStart(item.startTime, state))
-    .filter((value): value is number => value !== null);
-  if (targetStart === null || !lateStarts.length) return false;
-  return (
-    Math.max(...lateStarts) - targetStart <=
-    state.settings.lateShiftLatestWindowMinutes
-  );
+  return endsAfterLateShiftThreshold(target, state.settings.lateShiftEndTime);
 }
 
 export interface PreviousWorkdayLateProtection {
@@ -77,7 +56,7 @@ export function previousWorkdayLateProtection(
   const previousWorkday = recentArchivedWorkdays(state.history, date, 1);
   const previousDate = previousWorkday[0]?.date ?? null;
   const finalLateRecords = previousWorkday.filter((record) =>
-    isInFinalLateBatch(record, previousWorkday, state)
+    isLateEndingWork(record, state)
   );
   const protectedRecords = finalLateRecords.filter((record) =>
     matchesLateShiftRecoveryPosition(state, record)
@@ -210,7 +189,7 @@ export function isNextWorkdayCutoffConflict(
 export function crossDayRecoveryRisk(
   state: AppState,
   staffId: string,
-  target: Pick<Flight, "flightNo" | "startTime"> & {
+  target: Pick<Flight, "flightNo" | "startTime" | "endTime"> & {
     position: string;
     remark: string;
     fatiguePoints: number;
@@ -239,7 +218,7 @@ export function crossDayRecoveryRisk(
     target
   );
   const protectedLatePriorityTarget =
-    isInFinalLateBatch(target, state.flights, state) &&
+    isLateEndingWork(target, state) &&
     matchesLateShiftRecoveryPosition(state, target);
   return {
     protectedWorker: protectedMorningTarget || protectedLatePriorityTarget,

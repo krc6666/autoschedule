@@ -114,6 +114,71 @@ describe("monthly duty roster", () => {
     ).toContain("值班资质");
   });
 
+  it("limits automatic and manual standby assignments to qualified staff", () => {
+    const state = createDefaultState();
+    state.staff = state.staff.slice(0, 3);
+    state.staff.forEach((person, index) => {
+      person.dutyQualified = index === 0;
+      person.standbyQualified = index === 1;
+    });
+
+    const rows = getMonthlyDutyRoster(state, "2026-08-01");
+    expect(
+      rows.every((row) =>
+        row.standbyStaffIds.every(
+          (staffId) => !staffId || staffId === state.staff[1]!.id
+        )
+      )
+    ).toBe(true);
+    expect(rows.every((row) => row.standbyStaffIds.includes(null))).toBe(true);
+    expect(
+      updateDutyRosterSlot(
+        state,
+        rows[0]!.date,
+        "standby-0",
+        state.staff[2]!.id
+      )
+    ).toContain("备勤资质");
+  });
+
+  it("drops an override after a standby worker loses qualification", () => {
+    const state = createDefaultState();
+    const automatic = getDutyRosterForDate(state, "2026-08-01");
+    const standbyId = automatic.standbyStaffIds[0]!;
+    state.dutyRosterOverrides = [
+      {
+        date: automatic.date,
+        cxPreflightStaffId: automatic.cxPreflightStaffId,
+        dutyStaffId: automatic.dutyStaffId,
+        standbyStaffIds: [...automatic.standbyStaffIds],
+      },
+    ];
+    state.staff.find((person) => person.id === standbyId)!.standbyQualified =
+      false;
+
+    const resolved = getDutyRosterForDate(state, automatic.date);
+    expect(resolved.adjusted).toBe(false);
+    expect(resolved.standbyStaffIds).not.toContain(standbyId);
+  });
+
+  it("rejects a duty-to-standby swap when the displaced duty worker lacks standby qualification", () => {
+    const state = createDefaultState();
+    const current = getDutyRosterForDate(state, "2026-08-01");
+    const dutyWorker = state.staff.find(
+      (person) => person.id === current.dutyStaffId
+    )!;
+    dutyWorker.standbyQualified = false;
+    const recalculated = getDutyRosterForDate(state, current.date);
+    const standbyWorker = state.staff.find(
+      (person) => person.id === recalculated.standbyStaffIds[0]
+    )!;
+    standbyWorker.dutyQualified = true;
+
+    expect(
+      updateDutyRosterSlot(state, current.date, "duty", standbyWorker.id)
+    ).toContain("调整后备勤人员不具备备勤资质");
+  });
+
   it("finishes the first duty round before assigning a second duty", () => {
     const state = createDefaultState();
     state.staff = state.staff.filter((person) => person.status === "正常");

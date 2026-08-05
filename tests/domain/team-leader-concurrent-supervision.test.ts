@@ -14,6 +14,7 @@ function staff(id: string, teamLeader = false): Staff {
     teamLeader,
     cxPreflightQualified: false,
     dutyQualified: false,
+    standbyQualified: true,
     nightShift: true,
     status: "正常",
     remark: "",
@@ -228,7 +229,6 @@ describe("team leader concurrent supervision", () => {
       staff(`worker-${index + 1}`)
     );
     state.staff = [leader, releasedSupervisor, ...workers];
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;

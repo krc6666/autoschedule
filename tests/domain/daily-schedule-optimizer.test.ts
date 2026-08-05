@@ -145,6 +145,93 @@ describe("daily schedule solver performance model", () => {
     expect(problem.strategy).toBe("native-lexicographic");
   });
 
+  it("does not solve extra objectives for otherwise equivalent staff IDs", async () => {
+    const problem = await captureProblem(
+      modelState([flight("ke166", "KE166", "08:00", "10:00", ["H01"])])
+    );
+
+    expect(
+      problem.objectives.filter((objective) =>
+        objective.id.startsWith("candidate:staff-id")
+      )
+    ).toEqual([]);
+  });
+
+  it("locks late-position fairness in supervisor, number-one, declaration, delivery order", async () => {
+    const state = modelState(
+      [
+        flight("late", "TR121", "21:55", "23:55", [
+          "督导",
+          "H02",
+          "H04",
+          "G14",
+        ]),
+      ],
+      (rule) => ({
+        ...rule,
+        remark:
+          rule.name === "H02"
+            ? "一号"
+            : rule.name === "H04"
+              ? "申报"
+              : rule.name === "G14"
+                ? "送资料"
+                : "",
+      })
+    );
+    const second = {
+      ...state.staff[0]!,
+      id: "second-worker",
+      name: "第二人员",
+    };
+    state.staff.push(second);
+    state.positionRules.forEach((rule) =>
+      rule.qualifiedStaffIds.push(second.id)
+    );
+    state.history = [
+      ["supervisor", state.staff[0]!.id, "督导", ""],
+      ["number-one", second.id, "H02", "一号"],
+      ["declaration", state.staff[0]!.id, "H04", "申报"],
+      ["delivery", second.id, "G14", "送资料"],
+    ].map(([id, staffId, position, remark]) => ({
+      id: id!,
+      date: "2026-08-01",
+      flightNo: "TR121",
+      position: position!,
+      staffId: staffId!,
+      staffName: "测试人员",
+      startTime: "21:55",
+      endTime: "23:55",
+      workHours: 2,
+      fatiguePoints: 5,
+      remark: remark!,
+    }));
+    const problem = await captureProblem(state);
+
+    expect(
+      problem.objectives
+        .map((objective) => objective.id)
+        .filter((id) => id.startsWith("candidate:late-priority-frequency:"))
+    ).toEqual([
+      "candidate:late-priority-frequency:supervisor",
+      "candidate:late-priority-frequency:number-one",
+      "candidate:late-priority-frequency:declaration",
+      "candidate:late-priority-frequency:delivery",
+    ]);
+  });
+
+  it("omits inactive late-position objectives from a daytime model", async () => {
+    const problem = await captureProblem(
+      modelState([flight("day", "AA100", "08:00", "10:00", ["G01"])])
+    );
+
+    expect(
+      problem.objectives.some((objective) =>
+        objective.id.startsWith("candidate:late-priority-frequency:")
+      )
+    ).toBe(false);
+  });
+
   it("linearizes soft combinations by mutually exclusive source flight", async () => {
     const state = modelState([
       flight("source", "SRC100", "06:00", "08:00", ["S1", "S2"]),
@@ -189,5 +276,33 @@ describe("daily schedule solver performance model", () => {
     ).toBe(true);
     expect(combinationConstraints[0]).toMatchObject({ lowerBound: -1 });
     expect(combinationConstraints[0]!.terms).toHaveLength(4);
+  });
+
+  it("omits a scarcity objective that duplicates the pre-noon vacancy objective", async () => {
+    const problem = await captureProblem(
+      modelState([
+        flight("morning", "AA100", "08:00", "10:00", ["G01", "G02"]),
+        flight("afternoon", "BB200", "13:00", "15:00", ["H01"]),
+      ])
+    );
+
+    expect(problem.objectives.map((objective) => objective.id)).not.toContain(
+      "pre-noon-scarcity"
+    );
+  });
+
+  it("keeps a morning priority position ahead of an ordinary position when a vacancy is unavoidable", async () => {
+    const problem = await captureProblem(
+      modelState([
+        flight("morning", "AA100", "08:00", "10:00", ["督导", "G01"]),
+      ])
+    );
+    const objective = problem.objectives.find(
+      (item) => item.id === "pre-noon-priority-vacancies"
+    );
+
+    expect(objective?.terms).toEqual([
+      { variableId: "vacancy:0", coefficient: 1 },
+    ]);
   });
 });

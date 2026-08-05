@@ -28,11 +28,11 @@ const USER_RULE_STAGES: Readonly<
   },
   protection: {
     label: "保护与均衡",
-    summary: "在岗位完整的前提下兼顾预休、恢复、负荷和公平",
+    summary: "在岗位完整的前提下兼顾恢复、负荷和公平",
   },
   "stable-order": {
-    label: "同等条件下选择",
-    summary: "前面条件完全相同时保持稳定、可重复的选择",
+    label: "最后比较",
+    summary: "前面条件相同时，最后比较人员的历史疲劳",
   },
   "post-schedule-review": {
     label: "结果检查",
@@ -54,7 +54,6 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "常规岗位仍有空缺时，才允许符合条件的分队长短时并行督导。",
   "position-transition":
     "严格衔接不符合要求时阻止安排；12 点前无人替代时保留原因供复核。",
-  "next-duty-rest": "下个工作班需要值班的人，本班优先避开重点和晚撤岗位。",
   "late-shift-recovery":
     "上一工作班承担晚间重点岗位的人，本班优先通过整体换位获得恢复。",
   "late-shift-cutoff": "需要恢复的人优先在设定时间前结束本班工作。",
@@ -68,6 +67,8 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
   "staff-coverage": "条件允许时优先让当天还没有实际工时的在岗人员参与。",
   "rolling-load": "优先避开短时间内已经接近疲劳上限的人。",
   "high-load-recovery": "刚完成高负荷岗位的人优先获得恢复时间。",
+  "late-priority-frequency":
+    "实际结束晚于末班界线的重点岗位合并统计，优先安排总次数较少的人。",
   "cross-workday-load":
     "上一工作班较累的人本班尽量轻一些，较轻松的人适当多承担。",
   "position-frequency": "先比较本月重点岗位次数，再比较最近几个工作班的次数。",
@@ -75,7 +76,6 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "班表完成后整体检查重点岗位频率，存在安全方案时进行连续换位。",
   "workload-balance": "航班密集时比较安排后的工时和疲劳差，避免负荷过度集中。",
   "historical-fatigue": "前面条件相同时，优先选择历史疲劳较低的人。",
-  "staff-id": "所有条件完全相同时，按人员配置顺序稳定选择。",
   "position-rotation": "最后按重点、高疲劳普通、低疲劳普通的顺序检查连续轮岗。",
 };
 

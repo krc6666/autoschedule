@@ -6,7 +6,6 @@ import { generateSchedule } from "../helpers/generate-schedule";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 
 function disableUnrelatedProtections(state: AppState): void {
-  state.settings.nextDutyRestProtectionEnabled = false;
   state.settings.lateShiftRecoveryEnabled = false;
   state.settings.highLoadProtectionEnabled = false;
   state.settings.rollingLoadProtectionEnabled = false;
@@ -50,7 +49,6 @@ function latePairScenario(ordinaryFatigue = 4) {
     person.dutyQualified = false;
     person.nightShift = true;
   });
-  state.settings.nextDutyRestProtectionEnabled = false;
   state.settings.highLoadProtectionEnabled = false;
   state.settings.rollingLoadProtectionEnabled = false;
   state.settings.workloadBalanceEnabled = false;
@@ -149,9 +147,15 @@ function latePairScenario(ordinaryFatigue = 4) {
 }
 
 describe("consecutive priority-position rotation review", () => {
-  it("does not treat equal fatigue as a late-priority improvement", async () => {
-    const { state, repeatedWorker, priority, ordinary, assignments } =
-      latePairScenario(5);
+  it("rotates a repeated priority position even when the safe swap has equal fatigue", async () => {
+    const {
+      state,
+      repeatedWorker,
+      replacementWorker,
+      priority,
+      ordinary,
+      assignments,
+    } = latePairScenario(5);
 
     const warnings = await reviewConsecutivePositionRotation(
       defaultHighsSolver,
@@ -161,9 +165,9 @@ describe("consecutive priority-position rotation review", () => {
       new Set()
     );
 
-    expect(priority.staffId).toBe(repeatedWorker.id);
-    expect(ordinary.staffId).not.toBe(repeatedWorker.id);
-    expect(warnings.join("\n")).toContain("已连续1次承担NIGHT1/G14");
+    expect(priority.staffId).toBe(replacementWorker.id);
+    expect(ordinary.staffId).toBe(repeatedWorker.id);
+    expect(warnings).toEqual([]);
   });
 
   it("does not move a locked ordinary role for late-priority fatigue relief", async () => {
@@ -181,32 +185,6 @@ describe("consecutive priority-position rotation review", () => {
     expect(priority.staffId).toBe(repeatedWorker.id);
   });
 
-  it("does not move the next-workday duty worker into the late priority role", async () => {
-    const { state, repeatedWorker, replacementWorker, priority, assignments } =
-      latePairScenario();
-    replacementWorker.dutyQualified = true;
-    state.settings.nextDutyRestProtectionEnabled = true;
-    state.dutyRosterOverrides = [
-      {
-        date: "2026-11-20",
-        cxPreflightStaffId: null,
-        dutyStaffId: replacementWorker.id,
-        standbyStaffIds: [null, null],
-      },
-    ];
-
-    const warnings = await reviewConsecutivePositionRotation(
-      defaultHighsSolver,
-      state,
-      assignments,
-      "2026-11-18",
-      new Set()
-    );
-
-    expect(priority.staffId).toBe(repeatedWorker.id);
-    expect(warnings.join("\n")).toContain("下个工作班值班人员需要预休");
-  });
-
   it("accepts a lower-fatigue ordinary late role when the repeated worker cannot leave the late shift", async () => {
     const state = createDefaultState();
     const [repeatedWorker, replacementWorker] = state.staff
@@ -217,7 +195,6 @@ describe("consecutive priority-position rotation review", () => {
       person.dutyQualified = false;
       person.nightShift = true;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.workloadBalanceEnabled = false;
@@ -339,7 +316,6 @@ describe("consecutive priority-position rotation review", () => {
       person.dutyQualified = false;
       person.nightShift = true;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.workloadBalanceEnabled = false;
@@ -630,7 +606,7 @@ describe("consecutive priority-position rotation review", () => {
     expect(warnings).toEqual([]);
   });
 
-  it("prefers the largest fatigue reduction before the fewest participants", async () => {
+  it("uses the fewest participants once priority-position fairness improves", async () => {
     const state = createDefaultState();
     const [repeatedWorker, secondWorker, thirdWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -640,7 +616,6 @@ describe("consecutive priority-position rotation review", () => {
       person.dutyQualified = false;
       person.nightShift = true;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.workloadBalanceEnabled = false;
@@ -762,13 +737,13 @@ describe("consecutive priority-position rotation review", () => {
 
     expect(assignments.map((item) => item.staffId)).toEqual([
       secondWorker!.id,
-      thirdWorker!.id,
       repeatedWorker!.id,
+      thirdWorker!.id,
     ]);
     expect(warnings).toEqual([]);
   });
 
-  it("uses a previous late-priority worker only as a warned last-resort replacement", async () => {
+  it("lets priority-position fairness use a previously protected replacement", async () => {
     const state = createDefaultState();
     const [repeatedWorker, protectedReplacement] = state.staff
       .filter((person) => person.status === "正常")
@@ -778,7 +753,6 @@ describe("consecutive priority-position rotation review", () => {
       person.dutyQualified = false;
       person.nightShift = true;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.workloadBalanceEnabled = false;
@@ -899,16 +873,12 @@ describe("consecutive priority-position rotation review", () => {
 
     expect(priority.staffId).toBe(protectedReplacement!.id);
     expect(ordinary.staffId).toBe(repeatedWorker!.id);
-    expect(warnings.join("\n")).toContain("恢复保护");
+    expect(warnings).toEqual([]);
     expect(priority.decisionTrace).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           ruleId: "position-rotation",
           outcome: "selected",
-        }),
-        expect.objectContaining({
-          ruleId: "late-shift-recovery",
-          outcome: "fallback",
         }),
       ])
     );
@@ -1030,7 +1000,6 @@ describe("consecutive priority-position rotation review", () => {
       person.dutyQualified = false;
     });
     const priorityRemark = "申报";
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.workloadBalanceEnabled = false;

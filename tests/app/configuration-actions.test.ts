@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { createDefaultState } from "../../src/defaults";
 import {
   applyFlightPlanReconciliation,
+  addAdministrativeStaff,
   addFlightsFromTemplates,
+  addStaff,
   deleteStaff,
   updateConfigurationField,
 } from "../../src/app/configuration-actions";
@@ -11,6 +13,44 @@ import { buildFlightPlanReconciliation } from "../../src/domain/flights/flight-p
 import type { OnlineFlightQueryResult } from "../../src/infrastructure/flight-query";
 
 describe("configuration actions", () => {
+  it("defaults standby qualification by staff type and clears it for administrative support", () => {
+    const state = createDefaultState();
+
+    addStaff(state);
+    expect(state.staff.at(-1)).toMatchObject({
+      staffType: "常规",
+      standbyQualified: true,
+    });
+
+    addAdministrativeStaff(state);
+    expect(state.staff.at(-1)).toMatchObject({
+      staffType: "行政支援",
+      standbyQualified: false,
+    });
+
+    const regular = state.staff[0]!;
+    regular.standbyQualified = true;
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-01",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [regular.id, null],
+      },
+    ];
+    expect(
+      updateConfigurationField(
+        state,
+        "staff",
+        regular.id,
+        "staffType",
+        "行政支援"
+      )
+    ).toBe("updated");
+    expect(regular.standbyQualified).toBe(false);
+    expect(state.dutyRosterOverrides).toEqual([]);
+  });
+
   it("applies a flight template and invalidates the active schedule", () => {
     const state = createDefaultState();
     const flight = state.flights[0]!;

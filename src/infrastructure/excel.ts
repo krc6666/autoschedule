@@ -67,6 +67,11 @@ function parseStaff(workbook: XLSX.WorkBook): Staff[] | undefined {
       normalizeText(cell).includes(candidate)
     )
   );
+  const standbyIndex = header.findIndex((cell) =>
+    ["备勤资质", "备勤人员资质"].some((candidate) =>
+      normalizeText(cell).includes(candidate)
+    )
+  );
   const teamLeaderIndex = header.findIndex((cell) =>
     ["是否为分队长", "分队长"].some((candidate) =>
       normalizeText(cell).includes(candidate)
@@ -105,6 +110,12 @@ function parseStaff(workbook: XLSX.WorkBook): Staff[] | undefined {
           (dutyIndex < 0 ||
             !["否", "无", "false", "0"].includes(
               normalizeText(row[dutyIndex]).toLowerCase()
+            )),
+        standbyQualified:
+          staffType === "常规" &&
+          (standbyIndex < 0 ||
+            !["否", "无", "false", "0"].includes(
+              normalizeText(row[standbyIndex]).toLowerCase()
             )),
         nightShift: !["否", "不可以", "false", "0"].includes(
           normalizeText(row[nightIndex]).toLowerCase()
@@ -378,6 +389,7 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
         "人员类型",
         "CX航前资质",
         "值班资质",
+        "备勤资质",
         "是否为分队长",
       ],
       ...state.staff.map((person) => [
@@ -389,10 +401,11 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
         person.staffType,
         person.cxPreflightQualified ? "是" : "否",
         person.dutyQualified ? "是" : "否",
+        person.standbyQualified ? "是" : "否",
         person.teamLeader ? "是" : "否",
       ]),
     ],
-    [10, 14, 16, 10, 24, 14, 14, 14, 16]
+    [10, 14, 16, 10, 24, 14, 14, 14, 14, 16]
   );
   append(
     workbook,

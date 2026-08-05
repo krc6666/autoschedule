@@ -24,6 +24,10 @@ export class ScheduleRunController {
     private readonly dependencies: ScheduleRunControllerDependencies
   ) {}
 
+  isRunning(): boolean {
+    return this.running;
+  }
+
   async calculate(state: AppState, date: string): Promise<ScheduleResult> {
     if (this.running) throw new Error("排班正在运行，请等待当前任务完成");
     this.running = true;

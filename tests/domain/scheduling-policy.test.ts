@@ -21,6 +21,7 @@ import {
   isHighFatigueOrdinaryRotationPosition,
   isPriorityRotationPosition,
 } from "../../src/domain/reviews/position-rotation-policy";
+import { ROTATION_REVIEW_POLICIES } from "../../src/domain/reviews/reassignment-safety-policy";
 
 const comparisonPlan = createCandidateRulePlan(createDefaultScheduleSettings());
 const comparisonTask = {} as AssignmentTask;
@@ -67,7 +68,6 @@ function priority(
     preferredTransitionViolations: 0,
     scarceQualification: { futureTaskCount: 0, minimumEligibleStaff: null },
     alreadyAssignedToday: false,
-    nextDutyRestConflict: false,
     lateShiftRecovery: {
       protectedMorningTarget: false,
       protectedLatePriorityTarget: false,
@@ -82,6 +82,20 @@ function priority(
     unavoidableLaterTask: false,
     rollingLoadExcess: 0,
     highLoadRecoveryConflict: false,
+    latePriorityFrequency: {
+      applies: false,
+      targetKinds: [],
+      supervisorQualified: false,
+      supervisorRotationDeficit: 0,
+      counts: {
+        supervisor: { currentMonthCount: 0, recentWorkdayCount: 0 },
+        "number-one": { currentMonthCount: 0, recentWorkdayCount: 0 },
+        declaration: { currentMonthCount: 0, recentWorkdayCount: 0 },
+        delivery: { currentMonthCount: 0, recentWorkdayCount: 0 },
+      },
+      totalCurrentMonthCount: 0,
+      totalRecentWorkdayCount: 0,
+    },
     previousWorkdayLoad: {
       fatiguePoints: 0,
       latestEndMinutes: 0,
@@ -99,7 +113,6 @@ function priority(
       todayFatigueSpread: 0,
     },
     historicalFatigue: 0,
-    staffOrder: 0,
     ...overrides,
   };
 }
@@ -171,89 +184,26 @@ describe("scheduling policy contract", () => {
       stage: "reserved-assignment",
       label: "KE166独立督导优先保留与缺员兼任",
     });
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("position-transition")
-    ).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf("next-duty-rest"));
-    expect(CANDIDATE_PRIORITY_ORDER.indexOf("next-duty-rest")).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("late-shift-recovery")
-    );
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("late-shift-recovery")
-    ).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf("late-shift-cutoff"));
-    expect(CANDIDATE_PRIORITY_ORDER.indexOf("late-shift-cutoff")).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("priority-position-consecutive")
-    );
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("priority-position-consecutive")
-    ).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("high-fatigue-position-consecutive")
-    );
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("high-fatigue-position-consecutive")
-    ).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("same-day-late-obligation")
-    );
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("priority-position-consecutive")
-    ).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf("staff-coverage"));
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("priority-position-consecutive")
-    ).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("same-day-late-obligation")
-    );
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("same-day-late-obligation")
-    ).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf("staff-coverage"));
-    expect(CANDIDATE_PRIORITY_ORDER.indexOf("late-shift-cutoff")).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("preferred-position-transition")
-    );
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("position-transition")
-    ).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf("late-shift-recovery"));
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("late-shift-recovery")
-    ).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("preferred-position-transition")
-    );
-    expect(
-      CANDIDATE_PRIORITY_ORDER.indexOf("late-shift-recovery")
-    ).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf("staff-coverage"));
-    expect(CANDIDATE_PRIORITY_ORDER.indexOf("high-load-recovery")).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("position-frequency")
-    );
-    expect(CANDIDATE_PRIORITY_ORDER.indexOf("high-load-recovery")).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("cross-workday-load")
-    );
-    expect(CANDIDATE_PRIORITY_ORDER.indexOf("cross-workday-load")).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("position-frequency")
-    );
-    expect(CANDIDATE_PRIORITY_ORDER.indexOf("position-frequency")).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("workload-balance")
-    );
-  });
-
-  it("prefers a non-protected worker for a priority position before other soft protections", () => {
-    const protectedWorker = priority({
-      nextDutyRestConflict: true,
-      lateShiftRecovery: {
-        protectedMorningTarget: false,
-        protectedLatePriorityTarget: false,
-      },
-    });
-    const availableWorker = priority({
-      nextDutyRestConflict: false,
-      lateShiftRecovery: {
-        protectedMorningTarget: true,
-        protectedLatePriorityTarget: false,
-      },
-    });
-
-    expect(
-      compareCandidatePriority(protectedWorker, availableWorker)
-    ).toBeGreaterThan(0);
-    expect(firstDifferentCandidateRule(protectedWorker, availableWorker)).toBe(
-      "next-duty-rest"
-    );
+    expect(CANDIDATE_PRIORITY_ORDER.slice(3, 7)).toEqual([
+      "position-transition",
+      "late-priority-frequency",
+      "position-frequency",
+      "priority-position-consecutive",
+    ]);
+    for (const softRule of [
+      "late-shift-recovery",
+      "late-shift-cutoff",
+      "preferred-position-transition",
+      "staff-coverage",
+      "rolling-load",
+      "high-load-recovery",
+      "cross-workday-load",
+      "workload-balance",
+    ] as const) {
+      expect(
+        CANDIDATE_PRIORITY_ORDER.indexOf("position-frequency")
+      ).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf(softRule));
+    }
   });
 
   it("uses a protected worker before their cutoff but prefers an unprotected worker after the cutoff", () => {
@@ -285,7 +235,7 @@ describe("scheduling policy contract", () => {
     );
   });
 
-  it("prevents a repeated priority position before staff coverage and frequency balancing", () => {
+  it("finishes the lower-frequency round before considering consecutive repetition", () => {
     const repeated = priority({
       repeatedPriorityPosition: true,
       alreadyAssignedToday: false,
@@ -297,9 +247,9 @@ describe("scheduling policy contract", () => {
       positionFrequency: { currentMonthCount: 5, recentWorkdayCount: 5 },
     });
 
-    expect(compareCandidatePriority(repeated, alternate)).toBeGreaterThan(0);
+    expect(compareCandidatePriority(repeated, alternate)).toBeLessThan(0);
     expect(firstDifferentCandidateRule(repeated, alternate)).toBe(
-      "priority-position-consecutive"
+      "position-frequency"
     );
   });
 
@@ -431,7 +381,7 @@ describe("scheduling policy contract", () => {
     );
   });
 
-  it("uses previous-workday load before monthly position frequency", () => {
+  it("uses monthly position frequency before previous-workday load", () => {
     const heavierPrevious = priority({
       previousWorkdayLoad: {
         fatiguePoints: 10,
@@ -453,9 +403,61 @@ describe("scheduling policy contract", () => {
 
     expect(
       compareCandidatePriority(heavierPrevious, lighterPrevious)
-    ).toBeGreaterThan(0);
+    ).toBeLessThan(0);
     expect(firstDifferentCandidateRule(heavierPrevious, lighterPrevious)).toBe(
-      "cross-workday-load"
+      "position-frequency"
+    );
+  });
+
+  it("uses late priority totals before previous-workday load for late positions", () => {
+    const frequent = priority({
+      latePriorityFrequency: {
+        applies: true,
+        targetKinds: ["number-one"],
+        supervisorQualified: false,
+        supervisorRotationDeficit: 0,
+        counts: {
+          supervisor: { currentMonthCount: 0, recentWorkdayCount: 0 },
+          "number-one": { currentMonthCount: 4, recentWorkdayCount: 4 },
+          declaration: { currentMonthCount: 3, recentWorkdayCount: 3 },
+          delivery: { currentMonthCount: 0, recentWorkdayCount: 0 },
+        },
+        totalCurrentMonthCount: 4,
+        totalRecentWorkdayCount: 4,
+      },
+      previousWorkdayLoad: {
+        fatiguePoints: 0,
+        latestEndMinutes: 0,
+        workHours: 0,
+        priorityPositionCount: 0,
+      },
+    });
+    const underused = priority({
+      latePriorityFrequency: {
+        applies: true,
+        targetKinds: ["number-one"],
+        supervisorQualified: false,
+        supervisorRotationDeficit: 0,
+        counts: {
+          supervisor: { currentMonthCount: 0, recentWorkdayCount: 0 },
+          "number-one": { currentMonthCount: 0, recentWorkdayCount: 0 },
+          declaration: { currentMonthCount: 0, recentWorkdayCount: 0 },
+          delivery: { currentMonthCount: 0, recentWorkdayCount: 0 },
+        },
+        totalCurrentMonthCount: 0,
+        totalRecentWorkdayCount: 0,
+      },
+      previousWorkdayLoad: {
+        fatiguePoints: 20,
+        latestEndMinutes: 1435,
+        workHours: 10,
+        priorityPositionCount: 3,
+      },
+    });
+
+    expect(compareCandidatePriority(frequent, underused)).toBeGreaterThan(0);
+    expect(firstDifferentCandidateRule(frequent, underused)).toBe(
+      "late-priority-frequency"
     );
   });
 
@@ -486,5 +488,11 @@ describe("scheduling policy contract", () => {
     expect(rotation?.stage).toBe("post-schedule-review");
     expect(CANDIDATE_PRIORITY_ORDER).not.toContain("position-frequency-review");
     expect(CANDIDATE_PRIORITY_ORDER).not.toContain("position-rotation");
+    expect(
+      ROTATION_REVIEW_POLICIES.frequency.protectLatePriorityFrequency
+    ).toBe(true);
+    expect(
+      ROTATION_REVIEW_POLICIES.consecutive.protectLatePriorityFrequency
+    ).toBe(true);
   });
 });

@@ -29,9 +29,12 @@ export function totalFatiguePriority(
   assignments: Assignment[],
   state: AppState,
   date: string,
-  dutyStaffId?: string | null
+  dutyStaffId?: string | null,
+  knownHistoricalFatigue?: number
 ): number {
-  const prior = historyFatigue(state.history, person.id, date, state.settings);
+  const prior =
+    knownHistoricalFatigue ??
+    historyFatigue(state.history, person.id, date, state.settings);
   const current = countedWorkloadAssignments(state, assignments)
     .filter((assignment) => assignment.staffId === person.id)
     .reduce((sum, assignment) => sum + assignment.fatiguePoints, 0);
@@ -275,7 +278,7 @@ export function rollingLoadCost(
 export function lateShiftRecoveryRisk(
   state: AppState,
   staffId: string,
-  target: Pick<Flight, "flightNo" | "startTime"> & {
+  target: Pick<Flight, "flightNo" | "startTime" | "endTime"> & {
     position: string;
     remark: string;
     fatiguePoints: number;
@@ -300,7 +303,7 @@ export function lateShiftRecoveryRisk(
 export function lateShiftRecoveryPriority(
   state: AppState,
   staffId: string,
-  target: Pick<Flight, "flightNo" | "startTime"> & {
+  target: Pick<Flight, "flightNo" | "startTime" | "endTime"> & {
     position: string;
     remark: string;
     fatiguePoints: number;

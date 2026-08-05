@@ -162,6 +162,7 @@ describe("cross-day recovery", () => {
       {
         flightNo: "KE166",
         startTime: "08:00",
+        endTime: "10:00",
         position: "H03",
         remark: "",
         fatiguePoints: 2,

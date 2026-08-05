@@ -27,7 +27,6 @@ function prepareState(staffCount: number): {
   state.staff.forEach((person) => {
     person.dutyQualified = false;
   });
-  state.settings.nextDutyRestProtectionEnabled = false;
   state.settings.lateShiftRecoveryEnabled = false;
   state.settings.highLoadProtectionEnabled = false;
   state.settings.rollingLoadProtectionEnabled = false;

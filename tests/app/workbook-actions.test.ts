@@ -84,6 +84,30 @@ describe("workbook actions", () => {
     expect(state.history).toEqual([history]);
   });
 
+  it("removes manual standby overrides invalidated by an imported qualification", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-01",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [person.id, null],
+      },
+    ];
+    const importedStaff = state.staff.map((item) =>
+      item.id === person.id ? { ...item, standbyQualified: false } : item
+    );
+
+    applyWorkbookImport(
+      state,
+      { staff: importedStaff, warnings: [] },
+      "config"
+    );
+
+    expect(state.dutyRosterOverrides).toEqual([]);
+  });
+
   it("merges imported rule settings, preserves omitted settings, and clears the active schedule", () => {
     const state = createDefaultState();
     const originalAdminMode = state.settings.adminSupportEnabled;

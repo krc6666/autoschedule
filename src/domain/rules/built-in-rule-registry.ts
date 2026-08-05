@@ -12,9 +12,9 @@ import {
   CANDIDATE_PRIORITY_ORDER,
   compareDutyPosition,
   compareKe166Reservation,
+  compareLatePriorityFrequency,
   compareLateShiftCutoff,
   compareLateShiftRecovery,
-  compareNextDutyRest,
   compareNumber,
   comparePositionFrequency,
   comparePreferredPositionTransition,
@@ -27,7 +27,7 @@ import {
 } from "../candidates/candidate-priority";
 import { reviewLateShiftCutoff } from "../reviews/late-shift-cutoff-review";
 import { reviewLateShiftRecovery } from "../reviews/late-shift-recovery-review";
-import { reviewNextDutyRest } from "../reviews/next-duty-rest-review";
+import { reviewLatePriorityFrequency } from "../reviews/late-priority-frequency-review";
 import { reviewSamePositionFrequency } from "../reviews/position-frequency-review";
 import { reviewConsecutivePositionRotation } from "../reviews/position-rotation-review";
 import {
@@ -55,13 +55,11 @@ export const CONFIGURABLE_RULE_SETTINGS: Partial<
       | "highLoadProtectionEnabled"
       | "rollingLoadProtectionEnabled"
       | "positionRotationEnabled"
-      | "nextDutyRestProtectionEnabled"
       | "lateShiftRecoveryEnabled"
       | "workloadBalanceEnabled"
     >
   >
 > = {
-  "next-duty-rest": "nextDutyRestProtectionEnabled",
   "late-shift-recovery": "lateShiftRecoveryEnabled",
   "late-shift-cutoff": "lateShiftRecoveryEnabled",
   "priority-position-consecutive": "positionRotationEnabled",
@@ -69,6 +67,7 @@ export const CONFIGURABLE_RULE_SETTINGS: Partial<
   "rolling-load": "rollingLoadProtectionEnabled",
   "high-load-recovery": "highLoadProtectionEnabled",
   "position-frequency": "positionRotationEnabled",
+  "late-priority-frequency": "positionRotationEnabled",
   "position-frequency-review": "positionRotationEnabled",
   "workload-balance": "workloadBalanceEnabled",
   "position-rotation": "positionRotationEnabled",
@@ -113,21 +112,6 @@ function review(
   };
 }
 
-const nextDutyRestReview = async (context: ScheduleMutationContext) => {
-  const assignments = mutableAssignments(context);
-  return {
-    assignments,
-    warnings: await reviewNextDutyRest(
-      context.solver,
-      context.state,
-      assignments,
-      context.date,
-      context.lockedAssignmentIds,
-      context.runFacts
-    ),
-  };
-};
-
 const lateShiftRecoveryReview = async (context: ScheduleMutationContext) => {
   const assignments = mutableAssignments(context);
   return {
@@ -163,6 +147,23 @@ const positionFrequencyReview = async (context: ScheduleMutationContext) => {
   return {
     assignments,
     warnings: await reviewSamePositionFrequency(
+      context.solver,
+      context.state,
+      assignments,
+      context.date,
+      context.lockedAssignmentIds,
+      context.runFacts
+    ),
+  };
+};
+
+const latePriorityFrequencyReview = async (
+  context: ScheduleMutationContext
+) => {
+  const assignments = mutableAssignments(context);
+  return {
+    assignments,
+    warnings: await reviewLatePriorityFrequency(
       context.solver,
       context.state,
       assignments,
@@ -224,7 +225,9 @@ const RULE_EXECUTION: Readonly<
         compactRegularAssignments(
           context.state,
           assignments,
-          context.lockedAssignmentIds
+          context.lockedAssignmentIds,
+          context.date,
+          context.runFacts.scheduleFrequency
         );
         return { assignments, warnings: [] };
       },
@@ -252,10 +255,6 @@ const RULE_EXECUTION: Readonly<
     },
   ],
   "position-transition": [candidate(compareStrictPositionTransition)],
-  "next-duty-rest": [
-    candidate(compareNextDutyRest),
-    review("next-duty-rest", "primary", nextDutyRestReview),
-  ],
   "late-shift-recovery": [
     candidate(compareLateShiftRecovery),
     review("late-shift-recovery", "primary", lateShiftRecoveryReview),
@@ -305,6 +304,15 @@ const RULE_EXECUTION: Readonly<
         Number(right.highLoadRecoveryConflict)
     ),
   ],
+  "late-priority-frequency": [
+    candidate(compareLatePriorityFrequency),
+    review("late-priority-frequency", "primary", latePriorityFrequencyReview),
+    review(
+      "post-ke166-late-priority-frequency-validation",
+      "after-ke166",
+      latePriorityFrequencyReview
+    ),
+  ],
   "cross-workday-load": [candidate(comparePreviousWorkdayLoadPriority)],
   "position-frequency": [candidate(comparePositionFrequency)],
   "position-frequency-review": [
@@ -319,11 +327,6 @@ const RULE_EXECUTION: Readonly<
   "historical-fatigue": [
     candidate((left, right) =>
       compareNumber(left.historicalFatigue, right.historicalFatigue)
-    ),
-  ],
-  "staff-id": [
-    candidate((left, right) =>
-      compareNumber(left.staffOrder, right.staffOrder)
     ),
   ],
   "position-rotation": [

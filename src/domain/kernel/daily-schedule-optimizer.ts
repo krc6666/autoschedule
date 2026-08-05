@@ -8,6 +8,7 @@ import {
 import { diagnoseBaseAssignmentEligibility } from "../candidates/assignment-eligibility";
 import {
   buildCandidatePriority,
+  compareLatePriorityFrequencyForKind,
   type CandidatePriority,
 } from "../candidates/candidate-priority";
 import { preNoonShortageNote } from "../coverage/schedule-coverage";
@@ -44,6 +45,8 @@ import {
   WORKLOAD_BALANCE_MIN_FLIGHTS,
 } from "../reviews/workload-balance";
 import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
+import { LATE_PRIORITY_FREQUENCY_ORDER } from "../reviews/late-priority-policy";
+import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
 
 const DAILY_SCHEDULE_TIMEOUT_MS = 30_000;
 
@@ -66,7 +69,6 @@ interface DailyScheduleProblem {
   vacancyChoices: VacancyChoice[];
   workedVariableIds: Map<string, string>;
   rulePlan: CandidateRulePlanItem[];
-  combinationGroups: ReadonlyMap<string, SoftCombinationGroup>;
 }
 
 interface SoftCombinationGroup {
@@ -83,7 +85,6 @@ interface CombinationModel {
     string,
     { variableId: string; coefficient: number }[]
   >;
-  groups: ReadonlyMap<string, SoftCombinationGroup>;
 }
 
 interface WorkloadModel {
@@ -144,7 +145,15 @@ function staffChoicesForTasks(
     const candidates = state.staff.filter(
       (person) =>
         diagnoseBaseAssignmentEligibility(state, task.flight, task.rule, person)
-          .eligible
+          .eligible &&
+        !exceedsTr121NumberOneAutomaticLimit(
+          state,
+          person.id,
+          task.flight.flightNo,
+          task.rule,
+          date,
+          preparation.runFacts.scheduleFrequency
+        )
     );
     const priorities = new Map(
       candidates.map((person) => [
@@ -410,7 +419,7 @@ function capacityConstraints(
 function combinationModel(
   state: AppState,
   staffChoices: readonly StaffChoice[],
-  enabledGroupKeys: ReadonlySet<string>
+  enabledObjectiveIds: ReadonlySet<string>
 ): CombinationModel {
   const variables: Array<SolverProblem["variables"][number]> = [];
   const constraints: LinearConstraint[] = [];
@@ -562,8 +571,8 @@ function combinationModel(
       );
   }
   const enabledVariableIds = new Set<string>();
-  for (const [groupKey, group] of groups) {
-    if (!enabledGroupKeys.has(groupKey)) continue;
+  for (const group of groups.values()) {
+    if (!enabledObjectiveIds.has(group.objectiveId)) continue;
     const targetIds = [...group.targets.keys()];
     const variableId = variableIdBySignature.get(signatureForGroup(group))!;
     if (enabledVariableIds.has(variableId)) {
@@ -602,7 +611,7 @@ function combinationModel(
     );
     addObjectiveTerm(group.objectiveId, variableId, group.coefficient);
   }
-  return { variables, constraints, objectiveTerms, groups };
+  return { variables, constraints, objectiveTerms };
 }
 
 function withCombinationObjectives(
@@ -880,10 +889,7 @@ function replaceWorkloadObjective(
     (objective) => objective.id !== "candidate:workload-balance"
   );
   const insertionIndex = withoutStatic.findIndex(
-    (objective) =>
-      objective.id === "candidate:historical-fatigue" ||
-      objective.id === "candidate:staff-id" ||
-      objective.id.startsWith("candidate:staff-id:")
+    (objective) => objective.id === "candidate:historical-fatigue"
   );
   const index = insertionIndex < 0 ? withoutStatic.length : insertionIndex;
   return [
@@ -913,69 +919,59 @@ function candidateRuleObjectives(
         },
       ];
     }
-    const rankByChoiceId = new Map<string, number>();
-    for (const task of tasks) {
-      const taskChoices = choices
-        .filter((choice) => choice.task.key === task.key)
-        .sort(
-          (left, right) =>
-            rule.execute({
-              task,
-              left: left.person,
-              leftPriority: left.priority,
-              right: right.person,
-              rightPriority: right.priority,
-            }) ||
-            state.staff.indexOf(left.person) - state.staff.indexOf(right.person)
-        );
-      let rank = 0;
-      taskChoices.forEach((choice, index) => {
-        if (index > 0) {
-          const previous = taskChoices[index - 1]!;
-          if (
-            rule.execute({
-              task,
-              left: previous.person,
-              leftPriority: previous.priority,
-              right: choice.person,
-              rightPriority: choice.priority,
-            }) !== 0
-          )
-            rank += 1;
-        }
-        rankByChoiceId.set(choice.id, rank);
-      });
-    }
-    const objective: LexicographicObjective = {
-      id: `candidate:${rule.id}`,
-      direction: "minimize" as const,
-      terms: choices.flatMap((choice) => {
-        const coefficient = rankByChoiceId.get(choice.id) ?? 0;
-        return coefficient ? [{ variableId: choice.id, coefficient }] : [];
-      }),
-    };
-    if (rule.id !== "staff-id") return [objective];
-    return [
-      objective,
-      ...tasks.flatMap((task, taskIndex) =>
-        /^KE\s*166$/i.test(task.flight.flightNo.trim()) &&
-        !isKe166MobileSupervisor(task.flight, task.rule)
-          ? [
-              {
-                ...objective,
-                id: `${objective.id}:ke166:${taskIndex}`,
-                terms: objective.terms.filter((term) =>
-                  choices.some(
-                    (choice) =>
-                      choice.id === term.variableId &&
-                      choice.task.key === task.key
-                  )
-                ),
-              },
-            ]
-          : []
-      ),
-    ];
+    const variants =
+      rule.id === "late-priority-frequency"
+        ? LATE_PRIORITY_FREQUENCY_ORDER.map((kind) => ({
+            id: `candidate:${rule.id}:${kind}`,
+            execute: (left: StaffChoice, right: StaffChoice) =>
+              compareLatePriorityFrequencyForKind(
+                left.priority,
+                right.priority,
+                kind
+              ),
+          }))
+        : [
+            {
+              id: `candidate:${rule.id}`,
+              execute: (left: StaffChoice, right: StaffChoice) =>
+                rule.execute({
+                  task: left.task,
+                  left: left.person,
+                  leftPriority: left.priority,
+                  right: right.person,
+                  rightPriority: right.priority,
+                }),
+            },
+          ];
+    return variants.map<LexicographicObjective>((variant) => {
+      const rankByChoiceId = new Map<string, number>();
+      for (const task of tasks) {
+        const taskChoices = choices
+          .filter((choice) => choice.task.key === task.key)
+          .sort(
+            (left, right) =>
+              variant.execute(left, right) ||
+              state.staff.indexOf(left.person) -
+                state.staff.indexOf(right.person)
+          );
+        let rank = 0;
+        taskChoices.forEach((choice, index) => {
+          if (index > 0) {
+            const previous = taskChoices[index - 1]!;
+            if (variant.execute(previous, choice) !== 0) rank += 1;
+          }
+          rankByChoiceId.set(choice.id, rank);
+        });
+      }
+      return {
+        id: variant.id,
+        direction: "minimize" as const,
+        terms: choices.flatMap((choice) => {
+          const coefficient = rankByChoiceId.get(choice.id) ?? 0;
+          return coefficient ? [{ variableId: choice.id, coefficient }] : [];
+        }),
+      };
+    });
   });
   const deferredIds = new Set([
     "candidate:scarce-qualification",
@@ -998,12 +994,34 @@ function candidateRuleObjectives(
   ];
 }
 
+function simplifyLexicographicObjectives(
+  objectives: readonly LexicographicObjective[]
+): [LexicographicObjective, ...LexicographicObjective[]] {
+  const simplified = objectives.flatMap((objective) => {
+    const coefficients = new Map<string, number>();
+    for (const term of objective.terms) {
+      coefficients.set(
+        term.variableId,
+        (coefficients.get(term.variableId) ?? 0) + term.coefficient
+      );
+    }
+    const terms = [...coefficients]
+      .filter(([, coefficient]) => coefficient !== 0)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([variableId, coefficient]) => ({ variableId, coefficient }));
+    if (!terms.length) return [];
+    return [{ ...objective, terms }];
+  });
+  const first = simplified[0];
+  if (!first) throw new Error("当天整体排班没有可执行的求解目标");
+  return [first, ...simplified.slice(1)];
+}
+
 function buildDailyScheduleProblem(
   state: AppState,
   date: string,
   preparation: SchedulePreparation,
   scheduledTasks: readonly AssignmentTask[],
-  enabledCombinationGroupKeys: ReadonlySet<string>,
   timeoutMs: number
 ): DailyScheduleProblem {
   const rulePlan = createCandidateRulePlan(state.settings);
@@ -1022,7 +1040,7 @@ function buildDailyScheduleProblem(
   const combinations = combinationModel(
     state,
     staffChoices,
-    enabledCombinationGroupKeys
+    new Set(rulePlan.map((rule) => `candidate:${rule.id}`))
   );
   const duty = dutyModel(preparation, staffChoices);
   const maximumEligibleCount = Math.max(
@@ -1030,6 +1048,19 @@ function buildDailyScheduleProblem(
     ...scheduledTasks.map(
       (task) => preparation.eligibleCounts.get(task.key) ?? 0
     )
+  );
+  const preNoonScarcityTerms = vacancyChoices.map((choice) => ({
+    variableId: choice.id,
+    coefficient: isPreNoonFlight(choice.task.flight)
+      ? maximumEligibleCount -
+        (preparation.eligibleCounts.get(choice.task.key) ?? 0) +
+        1
+      : 0,
+  }));
+  const distinctPreNoonScarcityCoefficients = new Set(
+    preNoonScarcityTerms
+      .map((term) => term.coefficient)
+      .filter((coefficient) => coefficient !== 0)
   );
   const coverageObjectives: LexicographicObjective[] = [
     {
@@ -1048,16 +1079,25 @@ function buildDailyScheduleProblem(
         coefficient: 1,
       })),
     },
+    ...(distinctPreNoonScarcityCoefficients.size > 1
+      ? [
+          {
+            id: "pre-noon-scarcity",
+            direction: "minimize" as const,
+            terms: preNoonScarcityTerms,
+          },
+        ]
+      : []),
     {
-      id: "pre-noon-scarcity",
+      id: "pre-noon-priority-vacancies",
       direction: "minimize",
       terms: vacancyChoices.map((choice) => ({
         variableId: choice.id,
-        coefficient: isPreNoonFlight(choice.task.flight)
-          ? maximumEligibleCount -
-            (preparation.eligibleCounts.get(choice.task.key) ?? 0) +
-            1
-          : 0,
+        coefficient:
+          isPreNoonFlight(choice.task.flight) &&
+          isPriorityRotationPosition(choice.task.rule)
+            ? 1
+            : 0,
       })),
     },
     {
@@ -1090,7 +1130,7 @@ function buildDailyScheduleProblem(
   const remainingCandidateObjectives = candidateObjectives.filter(
     (objective) => objective.id !== "candidate:ke166-supervisor"
   );
-  const objectives = [
+  const objectives = simplifyLexicographicObjectives([
     ...ke166ReservationObjectives,
     ...duty.objectives,
     ...coverageObjectives,
@@ -1098,13 +1138,12 @@ function buildDailyScheduleProblem(
       ? [duty.additionalPriorityObjective]
       : []),
     ...remainingCandidateObjectives,
-  ] as [LexicographicObjective, ...LexicographicObjective[]];
+  ]);
   return {
     staffChoices,
     vacancyChoices,
     workedVariableIds: staffCoverage.workedVariableIds,
     rulePlan,
-    combinationGroups: combinations.groups,
     problem: {
       variables: [
         ...staffChoices.map(({ id }) => ({ id })),
@@ -1327,31 +1366,13 @@ export async function optimizeDailySchedule({
   if (!scheduledTasks.length)
     return { assignments: [], lockedAssignmentIds: new Set(), warnings: [] };
   const deadline = Date.now() + DAILY_SCHEDULE_TIMEOUT_MS;
-  const enabledCombinationGroupKeys = new Set<string>();
-  let dailyProblem = buildDailyScheduleProblem(
+  const dailyProblem = buildDailyScheduleProblem(
     state,
     date,
     preparation,
     scheduledTasks,
-    enabledCombinationGroupKeys,
     DAILY_SCHEDULE_TIMEOUT_MS
   );
-  const applicableObjectiveIds = new Set(
-    dailyProblem.problem.objectives.map((objective) => objective.id)
-  );
-  for (const [key, group] of dailyProblem.combinationGroups) {
-    if (applicableObjectiveIds.has(group.objectiveId))
-      enabledCombinationGroupKeys.add(key);
-  }
-  if (enabledCombinationGroupKeys.size)
-    dailyProblem = buildDailyScheduleProblem(
-      state,
-      date,
-      preparation,
-      scheduledTasks,
-      enabledCombinationGroupKeys,
-      DAILY_SCHEDULE_TIMEOUT_MS
-    );
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) throw new Error("当天整体排班计算超过30秒，请重试");
   const result = await solver.solve({

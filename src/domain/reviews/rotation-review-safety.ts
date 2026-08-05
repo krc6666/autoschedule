@@ -6,6 +6,7 @@ import { assignmentRule } from "../flights/schedule-position-rules";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import { intervalsOverlap } from "../shared/time";
 import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
+import { latePriorityFrequencyRegressionReasons } from "./late-priority-frequency-balance";
 import {
   reassignmentCandidateSafetyReasons,
   reassignmentDynamicSafetyReasons,
@@ -242,6 +243,17 @@ function plannedAssignmentSafetyReasons(
     ) {
       reasons.push("调整会扩大工时或疲劳差");
     }
+  }
+  if (policy.protectLatePriorityFrequency) {
+    reasons.push(
+      ...latePriorityFrequencyRegressionReasons(
+        state,
+        assignments,
+        planned,
+        date,
+        frequencyFacts
+      )
+    );
   }
   return [...new Set(reasons)];
 }

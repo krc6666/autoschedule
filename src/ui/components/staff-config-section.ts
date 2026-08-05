@@ -26,6 +26,8 @@ export class StaffConfigSectionElement extends LightDomElement {
             ${regular.filter((person) => person.teamLeader).length} 人分队长 ·
             ${regular.filter((person) => person.dutyQualified).length}
             人值班资质 ·
+            ${regular.filter((person) => person.standbyQualified).length}
+            人备勤资质 ·
             ${this.model.staff.filter((person) => person.staffType === "行政支援").length}
             人行政支援 ·
             ${this.model.staff.filter((person) => person.status !== "正常").length}
@@ -74,6 +76,7 @@ export class StaffConfigSectionElement extends LightDomElement {
                 <th>分队长</th>
                 <th>CX航前资质</th>
                 <th>值班资质</th>
+                <th>备勤资质</th>
                 <th>夜班</th>
                 <th>状态</th>
                 <th>备注</th>
@@ -103,6 +106,9 @@ export class StaffConfigSectionElement extends LightDomElement {
                     </td>
                     <td>
                       ${configurationToggle(this, "staff", person.id, "dutyQualified", person.dutyQualified, "值班资质", person.staffType === "行政支援")}
+                    </td>
+                    <td>
+                      ${configurationToggle(this, "staff", person.id, "standbyQualified", person.standbyQualified, "备勤资质", person.staffType === "行政支援")}
                     </td>
                     <td>
                       ${configurationToggle(this, "staff", person.id, "nightShift", person.nightShift, "可上夜班")}

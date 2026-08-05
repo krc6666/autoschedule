@@ -31,7 +31,12 @@ export async function runScheduleInBackground(
       new URL("../schedule.worker.ts", import.meta.url),
       { type: "module" }
     );
-    const finish = (): void => worker.terminate();
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      worker.terminate();
+    };
     worker.onmessage = (event: MessageEvent<ScheduleWorkerResponse>): void => {
       const message = event.data;
       if (message.type === "progress") {
@@ -44,11 +49,18 @@ export async function runScheduleInBackground(
     };
     worker.onerror = (event): void => {
       finish();
-      reject(new Error(event.message || "排班后台线程运行失败"));
+      reject(
+        new Error(event.message || "排班后台线程无法启动，请刷新页面后重试")
+      );
     };
-    worker.postMessage({
-      state,
-      date,
-    } satisfies ScheduleWorkerRequest);
+    try {
+      worker.postMessage({
+        state,
+        date,
+      } satisfies ScheduleWorkerRequest);
+    } catch (error) {
+      finish();
+      reject(error);
+    }
   });
 }

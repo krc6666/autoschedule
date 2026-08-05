@@ -9,12 +9,18 @@ import {
   dutyPositionPriority,
   type DutyPositionDisposition,
 } from "../assignments/duty-assignment";
-import { isNextDutyRestConflict } from "../reviews/next-duty-rest";
 import { previousWorkdayLoadForStaff } from "../shared/previous-workday-load";
 import {
   consecutivePositionAssignments,
   positionFrequencyProfileForRule,
 } from "../statistics/schedule-frequency";
+import {
+  compareLatePriorityFrequency as compareLatePriorityFrequencyProfile,
+  compareLatePriorityFrequencyForKind as compareLatePriorityFrequencyProfileForKind,
+  latePriorityFrequencyProfileForRule,
+  type LatePriorityFrequencyProfile,
+} from "../statistics/late-priority-frequency";
+import type { LatePriorityFrequencyKind } from "../reviews/late-priority-policy";
 import {
   hasHighLoadTransition,
   lateShiftCutoffPriority,
@@ -44,10 +50,11 @@ export const CANDIDATE_PRIORITY_ORDER = [
   "duty-position",
   "scarce-qualification",
   "position-transition",
-  "next-duty-rest",
+  "late-priority-frequency",
+  "position-frequency",
+  "priority-position-consecutive",
   "late-shift-recovery",
   "late-shift-cutoff",
-  "priority-position-consecutive",
   "high-fatigue-position-consecutive",
   "same-day-late-obligation",
   "preferred-position-transition",
@@ -55,10 +62,8 @@ export const CANDIDATE_PRIORITY_ORDER = [
   "rolling-load",
   "high-load-recovery",
   "cross-workday-load",
-  "position-frequency",
   "workload-balance",
   "historical-fatigue",
-  "staff-id",
 ] as const satisfies readonly SchedulingRuleId[];
 
 export type CandidatePriorityId = (typeof CANDIDATE_PRIORITY_ORDER)[number];
@@ -70,7 +75,6 @@ export interface CandidatePriority {
   preferredTransitionViolations: number;
   scarceQualification: ScarceQualificationPriority;
   alreadyAssignedToday: boolean;
-  nextDutyRestConflict: boolean;
   lateShiftRecovery: LateShiftRecoveryPriority;
   lateShiftCutoff: LateShiftCutoffPriority;
   repeatedPriorityPosition: boolean;
@@ -78,6 +82,7 @@ export interface CandidatePriority {
   unavoidableLaterTask: boolean;
   rollingLoadExcess: number;
   highLoadRecoveryConflict: boolean;
+  latePriorityFrequency: LatePriorityFrequencyProfile;
   previousWorkdayLoad: import("../shared/previous-workday-load-model").PreviousWorkdayLoad;
   positionFrequency: {
     currentMonthCount: number;
@@ -93,7 +98,6 @@ export interface CandidatePriority {
     todayFatigueSpread: number;
   };
   historicalFatigue: number;
-  staffOrder: number;
 }
 
 export function compareNumber(left: number, right: number): number {
@@ -131,6 +135,16 @@ export function compareLateShiftRecovery(
   left: CandidatePriority,
   right: CandidatePriority
 ): number {
+  if (
+    left.latePriorityFrequency.targetKinds.includes("supervisor") &&
+    right.latePriorityFrequency.targetKinds.includes("supervisor") &&
+    compareLatePriorityFrequencyProfileForKind(
+      left.latePriorityFrequency,
+      right.latePriorityFrequency,
+      "supervisor"
+    ) !== 0
+  )
+    return 0;
   return (
     Number(left.lateShiftRecovery.protectedMorningTarget) -
       Number(right.lateShiftRecovery.protectedMorningTarget) ||
@@ -206,6 +220,28 @@ export function comparePositionFrequency(
   );
 }
 
+export function compareLatePriorityFrequency(
+  left: CandidatePriority,
+  right: CandidatePriority
+): number {
+  return compareLatePriorityFrequencyProfile(
+    left.latePriorityFrequency,
+    right.latePriorityFrequency
+  );
+}
+
+export function compareLatePriorityFrequencyForKind(
+  left: CandidatePriority,
+  right: CandidatePriority,
+  kind: LatePriorityFrequencyKind
+): number {
+  return compareLatePriorityFrequencyProfileForKind(
+    left.latePriorityFrequency,
+    right.latePriorityFrequency,
+    kind
+  );
+}
+
 export function comparePreviousWorkdayLoadPriority(
   left: CandidatePriority,
   right: CandidatePriority
@@ -249,13 +285,6 @@ export function compareStrictPositionTransition(
     left.strictTransitionViolations,
     right.strictTransitionViolations
   );
-}
-
-export function compareNextDutyRest(
-  left: CandidatePriority,
-  right: CandidatePriority
-): number {
-  return Number(left.nextDutyRestConflict) - Number(right.nextDutyRestConflict);
 }
 
 export function comparePreferredPositionTransition(
@@ -375,13 +404,6 @@ export function buildCandidatePriority(
     alreadyAssignedToday: assignments.some(
       (item) => item.staffId === person.id && item.workHours > 0
     ),
-    nextDutyRestConflict: isNextDutyRestConflict(
-      state,
-      person.id,
-      rule,
-      date,
-      runFacts.nextDutyRest
-    ),
     lateShiftRecovery: lateShiftRecoveryPriority(
       state,
       person.id,
@@ -456,6 +478,14 @@ export function buildCandidatePriority(
         rule.remark,
         state
       ),
+    latePriorityFrequency: latePriorityFrequencyProfileForRule(
+      state,
+      person.id,
+      flight,
+      rule,
+      date,
+      runFacts.scheduleFrequency
+    ),
     previousWorkdayLoad: previousWorkdayLoadForStaff(
       runFacts.previousWorkdayLoad,
       person.id
@@ -484,11 +514,8 @@ export function buildCandidatePriority(
       assignments,
       state,
       date,
-      dutyStaffId
-    ),
-    staffOrder: Math.max(
-      0,
-      state.staff.findIndex((item) => item.id === person.id)
+      dutyStaffId,
+      runFacts.historicalFatigueByStaff.get(person.id)
     ),
   };
 }

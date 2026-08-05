@@ -156,6 +156,74 @@ describe("督导机动补位编辑", () => {
 });
 
 describe("人工调整后的规则证据", () => {
+  it("允许人工把已承担两次的人员继续拖到TR121一号", () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => item.status === "正常")!;
+    person.nightShift = true;
+    state.staff = [person];
+    state.activeScheduleDate = "2026-09-21";
+    state.flights = [
+      {
+        id: "tr121",
+        flightNo: "TR121",
+        startTime: "21:55",
+        endTime: "23:55",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const rule = {
+      ...state.positionRules[0]!,
+      id: "tr121-number-one",
+      flightNo: "TR121",
+      name: "H02",
+      remark: "一号",
+      category: "常规" as const,
+      qualifiedStaffIds: [person.id],
+    };
+    state.positionRules = [rule];
+    state.history = ["2026-09-01", "2026-09-03"].map((date, index) => ({
+      id: `number-one-${index}`,
+      date,
+      flightNo: "TR121",
+      position: "H02",
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "21:55",
+      endTime: "23:55",
+      workHours: 2,
+      fatiguePoints: 5,
+      remark: "一号",
+    }));
+    state.assignments = [
+      {
+        id: "target",
+        flightId: "tr121",
+        flightNo: "TR121",
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: null,
+        staffName: "",
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "一号",
+        manualRemark: "",
+        status: "unfilled",
+      },
+    ];
+
+    expect(assignStaff(state, "target", person.id)).toMatchObject({
+      changed: true,
+    });
+    expect(state.assignments[0]).toMatchObject({
+      staffId: person.id,
+      status: "assigned",
+    });
+  });
+
   it("换人后清除目标岗位的旧自动决策，反馈不再展示过期理由", () => {
     const state = createDefaultState();
     const [original, replacement] = state.staff

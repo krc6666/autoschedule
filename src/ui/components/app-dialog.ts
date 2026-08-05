@@ -70,19 +70,23 @@ export class AppDialogElement extends LightDomElement {
     const dialog = this.dialog;
     if (dialog?.kind === "templates")
       return html`<autoschedule-template-picker
+        class="modal-content-stack"
         .model=${this.model}
       ></autoschedule-template-picker>`;
     if (dialog?.kind === "qualification")
       return html`<autoschedule-qualification-dialog
+        class="modal-content-stack"
         .model=${this.model}
         .positionRuleId=${dialog.positionRuleId}
       ></autoschedule-qualification-dialog>`;
     if (dialog?.kind === "flight-query")
       return html`<autoschedule-flight-query-dialog
+        class="modal-content-stack"
         .dialog=${dialog}
       ></autoschedule-flight-query-dialog>`;
     if (dialog?.kind === "duty-roster-import")
       return html`<autoschedule-duty-roster-import-dialog
+        class="modal-content-stack"
         .model=${this.model}
         .preview=${dialog.preview}
       ></autoschedule-duty-roster-import-dialog>`;

@@ -19,7 +19,7 @@ describe("rules page", () => {
     expect(text).not.toContain("排班策略");
     expect(text).toContain("核心保护与公平参数");
     expect(text).toContain("跨工作日恢复保护");
-    expect(text).toContain("下班次值班人员预休");
+    expect(text).not.toContain("下班次值班人员预休");
     expect(text).toContain("机动督导兼任范围");
     expect(text).toContain("规则如何执行");
     expect(text).toContain("必须遵守");

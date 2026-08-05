@@ -73,6 +73,12 @@ export function prepareSchedule(
   const dutyStaffId = runFacts.currentDutyStaffId;
   const preferredDutyMorningTaskKey =
     preferredDutyMorningTask(state, date, tasks, dutyStaffId)?.key ?? null;
+  const preferredDutyLateTaskCandidates = preferredDutyLateTasks(
+    state,
+    date,
+    tasks,
+    dutyStaffId
+  ).filter((task) => task.key !== preferredDutyMorningTaskKey);
   return {
     flights,
     displayRulesByFlight,
@@ -82,11 +88,6 @@ export function prepareSchedule(
     runFacts,
     dutyStaffId,
     preferredDutyMorningTaskKey,
-    preferredDutyLateTaskCandidates: preferredDutyLateTasks(
-      state,
-      date,
-      tasks,
-      dutyStaffId
-    ),
+    preferredDutyLateTaskCandidates,
   };
 }

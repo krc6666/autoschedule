@@ -12,75 +12,275 @@ import { activeFlightPositions } from "../../src/domain/flights/schedule-positio
 import { getDutyRosterForDate } from "../../src/domain/duty-roster/roster";
 import { buildScheduleFeedback } from "../../src/domain/feedback/schedule-feedback";
 
-describe("scheduler domain", () => {
-  it("keeps the next workday duty worker on an ordinary position when a safe priority-position alternative exists", async () => {
+describe("scheduler domain", { timeout: 15_000 }, () => {
+  it("keeps same-flight supervisor counts within one even when the lower-frequency supervisor has recovery protection", async () => {
     const state = createDefaultState();
-    const [protectedWorker, alternate] = state.staff
+    const [underused, frequent] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
-    state.staff = [protectedWorker!, alternate!];
-    protectedWorker!.dutyQualified = true;
-    alternate!.dutyQualified = true;
+    state.staff = [underused!, frequent!];
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
     state.flights = [
       {
-        id: "flight",
-        flightNo: "F100",
-        startTime: "18:00",
-        endTime: "20:00",
+        id: "tr121",
+        flightNo: "TR121",
+        startTime: "21:55",
+        endTime: "23:55",
         bookedPassengers: 100,
         positions: [],
         remark: "",
       },
     ];
-    const base = state.positionRules[0]!;
     state.positionRules = [
       {
-        ...base,
-        id: "priority",
-        flightNo: "F100",
-        name: "G20",
-        category: "常规",
-        remark: "一号",
-        qualifiedStaffIds: [protectedWorker!.id, alternate!.id],
-      },
-      {
-        ...base,
-        id: "ordinary",
-        flightNo: "F100",
-        name: "G19",
-        category: "常规",
+        ...state.positionRules[0]!,
+        id: "tr121-supervisor",
+        flightNo: "TR121",
+        name: "督导",
         remark: "",
-        qualifiedStaffIds: [protectedWorker!.id, alternate!.id],
+        category: "常规",
+        qualifiedStaffIds: [underused!.id, frequent!.id],
+        minPassengers: 0,
       },
     ];
     state.dutyRosterOverrides = [
       {
-        date: "2026-08-14",
+        date: "2026-09-21",
         cxPreflightStaffId: null,
         dutyStaffId: null,
         standbyStaffIds: [null, null],
       },
+    ];
+    state.history = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `frequent-supervisor-${index}`,
+        date: `2026-09-${String(1 + index * 2).padStart(2, "0")}`,
+        flightNo: "TR121",
+        position: "督导",
+        staffId: frequent!.id,
+        staffName: frequent!.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "",
+      })),
       {
-        date: "2026-08-16",
-        cxPreflightStaffId: null,
-        dutyStaffId: protectedWorker!.id,
-        standbyStaffIds: [null, null],
+        id: "underused-previous-late",
+        date: "2026-09-19",
+        flightNo: "OTHER",
+        position: "H04",
+        staffId: underused!.id,
+        staffName: underused!.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "申报",
       },
     ];
 
-    const result = await generateSchedule(state, "2026-08-14");
+    const result = await generateSchedule(state, "2026-09-21");
 
-    expect(
-      result.assignments.find((item) => item.positionRuleId === "priority")
-        ?.staffId
-    ).toBe(alternate!.id);
-    expect(
-      result.assignments.find((item) => item.positionRuleId === "ordinary")
-        ?.staffId
-    ).toBe(protectedWorker!.id);
+    expect(result.assignments[0]?.staffId).toBe(underused!.id);
   });
 
-  it("preserves a priority position when the next workday duty worker is the only qualified person and records the override", async () => {
+  it("leaves TR121 number-one unfilled after every qualified worker reaches two automatic monthly turns", async () => {
+    const state = createDefaultState();
+    const qualified = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = qualified;
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
+    state.flights = [
+      {
+        id: "tr121",
+        flightNo: "TR121",
+        startTime: "21:55",
+        endTime: "23:55",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...state.positionRules[0]!,
+        id: "tr121-number-one",
+        flightNo: "TR121",
+        name: "H02",
+        remark: "一号",
+        category: "常规",
+        qualifiedStaffIds: qualified.map((person) => person.id),
+        minPassengers: 0,
+      },
+      {
+        ...state.positionRules[0]!,
+        id: "tr121-ordinary",
+        flightNo: "TR121",
+        name: "H03",
+        remark: "",
+        category: "常规",
+        qualifiedStaffIds: qualified.map((person) => person.id),
+        minPassengers: 0,
+      },
+    ];
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-09-21",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    state.history = qualified.flatMap((person, personIndex) =>
+      ["2026-09-01", "2026-09-03"].map((date, dateIndex) => ({
+        id: `number-one-${personIndex}-${dateIndex}`,
+        date,
+        flightNo: "TR121",
+        position: "H02",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "一号",
+      }))
+    );
+
+    const result = await generateSchedule(state, "2026-09-21");
+    const numberOne = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "tr121-number-one"
+    );
+
+    expect(numberOne?.status).toBe("unfilled");
+    expect(numberOne?.staffId).toBeNull();
+    expect(
+      result.assignments.find(
+        (assignment) => assignment.positionRuleId === "tr121-ordinary"
+      )
+    ).toMatchObject({ status: "assigned", staffId: expect.any(String) });
+  });
+
+  it("prioritizes a zero-frequency worker within the same flight and late-position category", async () => {
+    const state = createDefaultState();
+    const [underused, frequent] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = [underused!, frequent!];
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+    });
+    state.flights = [
+      {
+        id: "late-flight",
+        flightNo: "LATE100",
+        startTime: "21:55",
+        endTime: "23:55",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...state.positionRules[0]!,
+        id: "late-declaration",
+        flightNo: "LATE100",
+        name: "G20",
+        category: "常规",
+        remark: "申报",
+        qualifiedStaffIds: [underused!.id, frequent!.id],
+        manual: false,
+        fatiguePoints: 5,
+        minPassengers: 0,
+      },
+    ];
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-11",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    state.history = [
+      {
+        id: "frequent-tr-declaration",
+        date: "2026-08-01",
+        flightNo: "LATE100",
+        position: "G20",
+        staffId: frequent!.id,
+        staffName: frequent!.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "申报",
+      },
+      {
+        id: "frequent-tw-delivery",
+        date: "2026-08-03",
+        flightNo: "LATE100",
+        position: "G20",
+        staffId: frequent!.id,
+        staffName: frequent!.name,
+        startTime: "22:10",
+        endTime: "00:10",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "申报",
+      },
+      {
+        id: "underused-heavy-previous-workday",
+        date: "2026-08-09",
+        flightNo: "DAY100",
+        position: "G10",
+        staffId: underused!.id,
+        staffName: underused!.name,
+        startTime: "16:00",
+        endTime: "18:00",
+        workHours: 2,
+        fatiguePoints: 10,
+        remark: "",
+      },
+      {
+        id: "frequent-light-previous-workday",
+        date: "2026-08-09",
+        flightNo: "DAY100",
+        position: "G11",
+        staffId: frequent!.id,
+        staffName: frequent!.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+      },
+    ];
+
+    const assignment = (await generateSchedule(state, "2026-08-11"))
+      .assignments[0]!;
+
+    expect(assignment.staffId).toBe(underused!.id);
+    expect(assignment.decisionTrace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "late-priority-frequency",
+          outcome: "selected",
+        }),
+      ])
+    );
+  });
+
+  it("allows the next workday duty worker to take a priority position", async () => {
     const state = createDefaultState();
     const protectedWorker = state.staff.find(
       (person) => person.status === "正常"
@@ -131,15 +331,6 @@ describe("scheduler domain", () => {
     )!;
 
     expect(assignment.staffId).toBe(protectedWorker.id);
-    expect(assignment.decisionTrace).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          ruleId: "next-duty-rest",
-          outcome: "fallback",
-          message: expect.stringContaining("唯一合格人员"),
-        }),
-      ])
-    );
     expect(result.unfilledCount).toBe(0);
   });
 
@@ -1014,7 +1205,7 @@ describe("scheduler domain", () => {
     ).toBe(first!.id);
   });
 
-  it("keeps high-fatigue consecutive protection ahead of later position frequency", async () => {
+  it("keeps priority-position frequency ahead of ordinary consecutive protection", async () => {
     const state = createDefaultState();
     const [priorityWorker, repeatedWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -1088,21 +1279,10 @@ describe("scheduler domain", () => {
       .assignments;
     expect(
       assignments.find((item) => item.positionRuleId === "cx-g20")?.staffId
-    ).toBe(repeatedWorker!.id);
-    expect(
-      assignments.find((item) => item.positionRuleId === "cx-g15")?.staffId
     ).toBe(priorityWorker!.id);
     expect(
-      assignments.find((item) => item.positionRuleId === "cx-g15")
-        ?.decisionTrace
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          ruleId: "high-fatigue-position-consecutive",
-          outcome: "selected",
-        }),
-      ])
-    );
+      assignments.find((item) => item.positionRuleId === "cx-g15")?.staffId
+    ).toBe(repeatedWorker!.id);
   });
 
   it("uses the current-month total before the recent-six-workday count for long-term same-position fairness", async () => {
@@ -1245,7 +1425,7 @@ describe("scheduler domain", () => {
     expect(assignment.staffId).not.toBe(frequent!.id);
   });
 
-  it("keeps a generation-stage consecutive result when later rotation has no safe alternative", async () => {
+  it("keeps a generation-stage frequency result when later rotation has no safe alternative", async () => {
     const state = createDefaultState();
     const [frequent, lessFrequent, releaseWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -1388,7 +1568,7 @@ describe("scheduler domain", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "priority-position-consecutive",
+          ruleId: "position-frequency",
           outcome: "selected",
         }),
       ])
@@ -2115,8 +2295,7 @@ describe("scheduler domain", () => {
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.positionRotationEnabled = false;
     state.settings.lateShiftRecoveryEnabled = true;
-    state.settings.lateShiftStartTime = "20:00";
-    state.settings.lateShiftLatestWindowMinutes = 180;
+    state.settings.lateShiftEndTime = "23:00";
     expect(
       (await generateSchedule(state, "2026-07-20")).assignments[0]!.staffId
     ).toBe(restedWorker!.id);
@@ -2191,7 +2370,7 @@ describe("scheduler domain", () => {
     ).toBe(protectedWorker!.id);
   });
 
-  it("protects a final-late priority-position worker from a configured next-workday priority position before frequency balancing", async () => {
+  it("keeps priority-position frequency ahead of next-workday recovery", async () => {
     const state = createDefaultState();
     const [protectedWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
@@ -2281,11 +2460,11 @@ describe("scheduler domain", () => {
 
     const target = (await generateSchedule(state, "2026-08-23"))
       .assignments[0]!;
-    expect(target.staffId).toBe(alternate!.id);
+    expect(target.staffId).toBe(protectedWorker!.id);
     expect(target.decisionTrace).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "late-shift-recovery",
+          ruleId: "position-frequency",
           outcome: "selected",
         }),
       ])
@@ -2862,7 +3041,7 @@ describe("scheduler domain", () => {
     expect(canAssignStaff(state, target.id, person.id, source.id)).toBeNull();
   });
 
-  it("keeps pre-noon regular positions visible and fills them below passenger thresholds", async () => {
+  it("keeps pre-noon regular positions visible but unassigned below passenger thresholds", async () => {
     const state = createDefaultState();
     state.flights = [state.flights[0]!];
     state.flights[0]!.positions = ["G12", "G13"];
@@ -2878,7 +3057,7 @@ describe("scheduler domain", () => {
     expect(belowThreshold.map((item) => item.position)).toEqual(["G12", "G13"]);
     expect(
       belowThreshold.find((item) => item.position === "G13")
-    ).toMatchObject({ status: "assigned", staffId: expect.any(String) });
+    ).toMatchObject({ status: "manual", staffId: null });
     state.flights[0]!.bookedPassengers = 30;
     expect(
       (await generateSchedule(state, "2026-07-18")).assignments.find(
@@ -3346,7 +3525,6 @@ describe("scheduler domain", () => {
     state.history = [];
     state.dutyRosterOverrides = [];
     state.settings.positionTransitionPolicies = [];
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -3897,7 +4075,6 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -3986,7 +4163,6 @@ describe("scheduler domain", () => {
     const supervisor = state.staff.find((person) => person.status === "正常")!;
     state.staff = [supervisor];
     supervisor.dutyQualified = false;
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.flights = [
       {
@@ -4074,7 +4250,6 @@ describe("scheduler domain", () => {
     state.staff = [dutyWorker!, alternate!];
     dutyWorker!.dutyQualified = true;
     alternate!.dutyQualified = true;
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -5504,6 +5679,7 @@ describe("scheduler domain", () => {
       person.dutyQualified = true;
       person.cxPreflightQualified = false;
     });
+    state.history = [];
     state.dutyRosterOverrides = [
       {
         date: "2026-08-11",
@@ -5598,7 +5774,6 @@ describe("scheduler domain", () => {
       person.dutyQualified = true;
       person.cxPreflightQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -6006,7 +6181,7 @@ describe("scheduler domain", () => {
     expect(result.assignments[0]!.endTime).toBe("10:00");
   });
 
-  it("auto-fills every regular position before noon even below its passenger threshold or marked manual", async () => {
+  it("applies passenger thresholds before noon while preserving the morning manual override", async () => {
     const state = createDefaultState();
     const person = state.staff[0]!;
     person.dutyQualified = false;
@@ -6036,6 +6211,14 @@ describe("scheduler domain", () => {
       },
     ];
 
+    expect(
+      (await generateSchedule(state, "2026-07-18")).assignments[0]
+    ).toMatchObject({
+      positionRuleId: "morning-manual-threshold",
+      status: "manual",
+      staffId: null,
+    });
+    state.flights[0]!.bookedPassengers = 300;
     expect(
       (await generateSchedule(state, "2026-07-18")).assignments[0]
     ).toMatchObject({
@@ -6434,7 +6617,7 @@ describe("scheduler domain", () => {
     ).not.toBe(duty!.id);
   });
 
-  it("keeps the duty position lock ahead of same-position rotation", async () => {
+  it("uses the next duty target when the first would widen number-one frequency beyond one", async () => {
     const state = createDefaultState();
     const [duty, other] = state.staff
       .filter((person) => person.status === "正常")
@@ -6450,6 +6633,15 @@ describe("scheduler domain", () => {
         positions: [],
         remark: "",
       },
+      {
+        id: "tw",
+        flightNo: "TW616",
+        startTime: "21:45",
+        endTime: "23:45",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
     ];
     const base = state.positionRules[0]!;
     state.positionRules = [
@@ -6461,6 +6653,29 @@ describe("scheduler domain", () => {
         remark: "一号",
         category: "常规",
         qualifiedStaffIds: [duty!.id, other!.id],
+      },
+      {
+        ...base,
+        id: "tw-one",
+        flightNo: "TW616",
+        name: "G20",
+        remark: "一号",
+        category: "常规",
+        qualifiedStaffIds: [duty!.id, other!.id],
+      },
+    ];
+    state.settings.dutyPositionPriorities = [
+      {
+        id: "tr-first",
+        enabled: true,
+        flightNo: "TR121",
+        positionKeyword: "H02",
+      },
+      {
+        id: "tw-second",
+        enabled: true,
+        flightNo: "TW616",
+        positionKeyword: "一号",
       },
     ];
     state.dutyRosterOverrides = [
@@ -6486,12 +6701,15 @@ describe("scheduler domain", () => {
         remark: "一号",
       },
     ];
+    const assignments = (await generateSchedule(state, "2026-07-20"))
+      .assignments;
+
     expect(
-      (await generateSchedule(state, "2026-07-20")).assignments[0]
-    ).toMatchObject({
-      staffId: duty!.id,
-      position: "H02",
-    });
+      assignments.find((assignment) => assignment.positionRuleId === "tr-h02")
+    ).toMatchObject({ staffId: other!.id, position: "H02" });
+    expect(
+      assignments.find((assignment) => assignment.positionRuleId === "tw-one")
+    ).toMatchObject({ staffId: duty!.id, position: "G20" });
   });
 
   it("keeps KE166 ordinary positions available while selecting the lower-frequency priority-position worker", async () => {
@@ -6757,7 +6975,7 @@ describe("scheduler domain", () => {
     ).toBe(alternate!.id);
   });
 
-  it("uses generation-stage consecutive priority-position protection before frequency review", async () => {
+  it("uses generation-stage frequency before consecutive priority-position protection", async () => {
     const state = createDefaultState();
     const [alternate, repeated] = state.staff
       .filter((person) => person.status === "正常")
@@ -6844,7 +7062,7 @@ describe("scheduler domain", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "priority-position-consecutive",
+          ruleId: "position-frequency",
           outcome: "selected",
         }),
       ])
@@ -6981,7 +7199,6 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -7090,7 +7307,7 @@ describe("scheduler domain", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          ruleId: "priority-position-consecutive",
+          ruleId: "position-frequency",
           outcome: "selected",
         }),
       ])
@@ -7461,16 +7678,24 @@ describe("scheduler domain", () => {
       (item) => item.positionRuleId === "ke-h06"
     )!;
 
-    expect(h05).toMatchObject({
-      staffId: previousSupervisor!.id,
-      workHours: 2,
-    });
-    expect(h06).toMatchObject({
-      staffId: alternateSupervisor!.id,
+    expect(supervisor.staffId).toBe(alternateSupervisor!.id);
+    const counters = [h05, h06];
+    expect(new Set(counters.map((assignment) => assignment.staffId))).toEqual(
+      new Set([previousSupervisor!.id, alternateSupervisor!.id])
+    );
+    expect(
+      counters.find(
+        (assignment) => assignment.staffId === previousSupervisor!.id
+      )
+    ).toMatchObject({ workHours: 2 });
+    expect(
+      counters.find(
+        (assignment) => assignment.staffId === alternateSupervisor!.id
+      )
+    ).toMatchObject({
       workHours: 0,
       supervisorSourceAssignmentId: supervisor.id,
     });
-    expect(supervisor.staffId).toBe(alternateSupervisor!.id);
   });
 
   it("prefers a non-repeated KE166 counter supervisor over a repeated idle independent supervisor", async () => {
@@ -7703,7 +7928,6 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -7889,7 +8113,6 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -8045,7 +8268,6 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -8127,7 +8349,6 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -8225,7 +8446,7 @@ describe("scheduler domain", () => {
     expect(result.warnings.join("\n")).not.toContain("重点岗位连续轮岗未落实");
   });
 
-  it("uses previous-workday load recovery before monthly priority-position frequency", async () => {
+  it("uses monthly priority-position frequency before previous-workday load", async () => {
     const state = createDefaultState();
     const [heavierPreviousWorker, lighterPreviousWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -8234,7 +8455,6 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -8315,13 +8535,7 @@ describe("scheduler domain", () => {
       result.assignments.find(
         (item) => item.positionRuleId === "target-control"
       )?.staffId
-    ).toBe(lighterPreviousWorker!.id);
-    state.assignments = result.assignments;
-    const feedback = buildScheduleFeedback(state, "2026-10-24").find(
-      (item) => item.key === "cross-workday-load"
-    )!;
-    expect(feedback).toMatchObject({ status: "已执行" });
-    expect(feedback.text).toContain("跨工作班负荷互补");
+    ).toBe(heavierPreviousWorker!.id);
   });
 
   it("keeps an unavoidable late-flight worker off an earlier priority position when a safe alternate exists", async () => {
@@ -8333,7 +8547,6 @@ describe("scheduler domain", () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
-    state.settings.nextDutyRestProtectionEnabled = false;
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;

@@ -65,5 +65,9 @@ describe("history page", () => {
     expect(element.textContent).toContain("CX937");
     expect(element.textContent).toContain("TR121");
     expect(element.textContent).toContain("甲");
+    expect(
+      element.querySelector('[aria-label="删除这条历史记录"]')
+    ).not.toBeNull();
+    expect(element.textContent).not.toContain("导入上一班图片");
   });
 });

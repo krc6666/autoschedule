@@ -12,7 +12,7 @@ describe("schedule feedback", () => {
       await generateSchedule(state, "2026-07-20")
     ).assignments;
     const feedback = buildScheduleFeedback(state, "2026-07-20");
-    expect(feedback).toHaveLength(12);
+    expect(feedback).toHaveLength(11);
     expect(feedback.map((item) => item.label)).toEqual([
       "人员覆盖",
       "负荷均衡",
@@ -22,7 +22,6 @@ describe("schedule feedback", () => {
       "跨工作班动态平衡",
       "重点岗位频率均衡",
       "连续轮岗复核",
-      "下班次值班预休",
       "上一工作日晚班人员跟踪",
       "本班末班人员预告",
       "值班与轮值",
@@ -408,54 +407,6 @@ describe("schedule feedback", () => {
     expect(
       feedback.find((item) => item.key === "current-late")?.text
     ).toContain("下个工作日需执行恢复保护");
-  });
-
-  it("reports whether the next workday duty worker received a priority position", async () => {
-    const state = createDefaultState();
-    const protectedWorker = state.staff.find(
-      (person) => person.status === "正常"
-    )!;
-    state.dutyRosterOverrides = [
-      {
-        date: "2026-08-16",
-        cxPreflightStaffId: null,
-        dutyStaffId: protectedWorker.id,
-        standbyStaffIds: [null, null],
-      },
-    ];
-    state.flights = [
-      {
-        id: "flight",
-        flightNo: "F100",
-        startTime: "18:00",
-        endTime: "20:00",
-        bookedPassengers: 100,
-        positions: [],
-        remark: "",
-      },
-    ];
-    const base = state.positionRules[0]!;
-    state.positionRules = [
-      {
-        ...base,
-        id: "priority",
-        flightNo: "F100",
-        name: "G20",
-        category: "常规",
-        remark: "一号",
-        qualifiedStaffIds: [protectedWorker.id],
-      },
-    ];
-    state.assignments = (
-      await generateSchedule(state, "2026-08-14")
-    ).assignments;
-
-    const feedback = buildScheduleFeedback(state, "2026-08-14").find(
-      (item) => item.key === "next-duty-rest"
-    )!;
-    expect(feedback.level).toBe("attention");
-    expect(feedback.text).toContain(`${protectedWorker.name} 未避开一号`);
-    expect(feedback.text).toContain("唯一合格人员");
   });
 
   it("reports automatic duty recovery swaps and preserves manual duty conflicts", () => {

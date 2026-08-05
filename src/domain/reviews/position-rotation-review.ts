@@ -98,29 +98,33 @@ function targetStaffOrder(
   return (leftId, rightId) => {
     const leftLoad = loadByStaffId.get(leftId)!;
     const rightLoad = loadByStaffId.get(rightId)!;
+    const frequencyDifference = comparePositionFrequency(
+      samePositionFrequencyProfile(
+        state,
+        leftId,
+        primary.flightNo,
+        primary.position,
+        date,
+        frequencyFacts
+      ),
+      samePositionFrequencyProfile(
+        state,
+        rightId,
+        primary.flightNo,
+        primary.position,
+        date,
+        frequencyFacts
+      )
+    );
+    const previousLoadDifference = comparePreviousWorkdayLoad(
+      previousWorkdayLoadForStaff(previousLoadFacts, leftId),
+      previousWorkdayLoadForStaff(previousLoadFacts, rightId)
+    );
+    const priority = assignmentRule(state, primary);
     return (
-      comparePreviousWorkdayLoad(
-        previousWorkdayLoadForStaff(previousLoadFacts, leftId),
-        previousWorkdayLoadForStaff(previousLoadFacts, rightId)
-      ) ||
-      comparePositionFrequency(
-        samePositionFrequencyProfile(
-          state,
-          leftId,
-          primary.flightNo,
-          primary.position,
-          date,
-          frequencyFacts
-        ),
-        samePositionFrequencyProfile(
-          state,
-          rightId,
-          primary.flightNo,
-          primary.position,
-          date,
-          frequencyFacts
-        )
-      ) ||
+      (priority && isPriorityRotationPosition(priority)
+        ? frequencyDifference || previousLoadDifference
+        : previousLoadDifference || frequencyDifference) ||
       leftLoad.historyFatigue - rightLoad.historyFatigue ||
       leftLoad.todayWorkHours - rightLoad.todayWorkHours ||
       leftLoad.todayFatigue - rightLoad.todayFatigue ||

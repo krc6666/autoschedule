@@ -118,6 +118,7 @@ describe("state persistence", () => {
     state.staff[0]!.teamLeader = true;
     state.staff[0]!.cxPreflightQualified = true;
     state.staff[0]!.dutyQualified = false;
+    state.staff[0]!.standbyQualified = false;
     state.schedulePolicyStale = true;
     state.dutyRosterOverrides = [
       {
@@ -133,6 +134,7 @@ describe("state persistence", () => {
     expect(loadState(storage).staff[0]!.teamLeader).toBe(true);
     expect(loadState(storage).staff[0]!.cxPreflightQualified).toBe(true);
     expect(loadState(storage).staff[0]!.dutyQualified).toBe(false);
+    expect(loadState(storage).staff[0]!.standbyQualified).toBe(false);
     expect(loadState(storage).schedulePolicyStale).toBe(true);
     expect(loadState(storage).dutyRosterOverrides[0]).toEqual(
       state.dutyRosterOverrides[0]
@@ -178,6 +180,7 @@ describe("state persistence", () => {
     delete legacy.staff[0].teamLeader;
     delete legacy.staff[0].cxPreflightQualified;
     delete legacy.staff[0].dutyQualified;
+    delete legacy.staff[0].standbyQualified;
     delete legacy.dutyRosterOverrides;
     delete legacy.settings.adminSupportEnabled;
     delete legacy.settings.highLoadProtectionEnabled;
@@ -189,7 +192,6 @@ describe("state persistence", () => {
     delete legacy.settings.rollingLoadWindowMinutes;
     delete legacy.settings.rollingLoadMaxFatigue;
     delete legacy.settings.positionRotationEnabled;
-    delete legacy.settings.nextDutyRestProtectionEnabled;
     delete legacy.settings.dutyFatiguePoints;
     delete legacy.settings.dutyPositionPriorities;
     delete legacy.settings.mobileSupervisorCoverageRules;
@@ -200,8 +202,7 @@ describe("state persistence", () => {
     delete legacy.settings.maxWorkHoursDifference;
     delete legacy.settings.maxTodayFatigueDifference;
     delete legacy.settings.lateShiftRecoveryEnabled;
-    delete legacy.settings.lateShiftStartTime;
-    delete legacy.settings.lateShiftLatestWindowMinutes;
+    delete legacy.settings.lateShiftEndTime;
     delete legacy.settings.teamLeaderConcurrentSupervisionMaxOverlapMinutes;
     delete legacy.settings.nextDayLateMaxFatigue;
     delete legacy.settings.lateShiftRecoveryPositionRules;
@@ -214,6 +215,7 @@ describe("state persistence", () => {
     expect(loaded.staff[0]?.teamLeader).toBe(false);
     expect(loaded.staff[0]?.cxPreflightQualified).toBe(false);
     expect(loaded.staff[0]?.dutyQualified).toBe(true);
+    expect(loaded.staff[0]?.standbyQualified).toBe(true);
     expect(loaded.dutyRosterOverrides).toEqual([]);
     expect(loaded.settings.adminSupportEnabled).toBe(false);
     expect(loaded.settings.highLoadProtectionEnabled).toBe(true);
@@ -229,7 +231,6 @@ describe("state persistence", () => {
     expect(loaded.settings.rollingLoadMaxFatigue).toBe(8);
     expect(loaded.settings).not.toHaveProperty("rollingLoadMode");
     expect(loaded.settings.positionRotationEnabled).toBe(true);
-    expect(loaded.settings.nextDutyRestProtectionEnabled).toBe(true);
     expect(loaded.settings.dutyFatiguePoints).toBe(12);
     expect(loaded.settings.dutyPositionPriorities).toMatchObject([
       { flightNo: "TR121", positionKeyword: "H02", enabled: true },
@@ -265,8 +266,7 @@ describe("state persistence", () => {
     expect(loaded.settings.maxWorkHoursDifference).toBe(2);
     expect(loaded.settings.maxTodayFatigueDifference).toBe(4);
     expect(loaded.settings.lateShiftRecoveryEnabled).toBe(true);
-    expect(loaded.settings.lateShiftStartTime).toBe("20:00");
-    expect(loaded.settings.lateShiftLatestWindowMinutes).toBe(180);
+    expect(loaded.settings.lateShiftEndTime).toBe("23:00");
     expect(
       loaded.settings.teamLeaderConcurrentSupervisionMaxOverlapMinutes
     ).toBe(30);
@@ -283,6 +283,16 @@ describe("state persistence", () => {
       { flightNo: "", matchField: "remark", keyword: "申报", enabled: true },
       { flightNo: "", matchField: "remark", keyword: "送资料", enabled: true },
     ]);
+  });
+
+  it("keeps administrative support out of standby when old state lacks the field", () => {
+    const legacy = JSON.parse(JSON.stringify(createDefaultState()));
+    legacy.staff[0].staffType = "行政支援";
+    delete legacy.staff[0].standbyQualified;
+
+    const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
+
+    expect(loaded.staff[0]?.standbyQualified).toBe(false);
   });
 
   it("removes rules that use the retired support category", () => {

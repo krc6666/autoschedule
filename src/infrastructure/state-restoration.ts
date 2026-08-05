@@ -90,6 +90,8 @@ function restoreStaff(value: unknown[]): Staff[] {
           staffType === "行政支援" ? false : Boolean(item.cxPreflightQualified),
         dutyQualified:
           staffType === "行政支援" ? false : item.dutyQualified !== false,
+        standbyQualified:
+          staffType === "行政支援" ? false : item.standbyQualified !== false,
         nightShift: item.nightShift,
         status: item.status as Staff["status"],
         remark: item.remark,

@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx-js-style";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
@@ -37,6 +38,7 @@ describe("workbook boundary", () => {
         teamLeader: false,
         cxPreflightQualified: false,
         dutyQualified: true,
+        standbyQualified: true,
         nightShift: false,
         status: "正常",
         remark: "R",
@@ -146,6 +148,7 @@ describe("workbook boundary", () => {
     state.staff[0]!.staffType = "行政支援";
     const imported = parseWorkbook(buildConfigWorkbook(state), state.staff);
     expect(imported.staff?.[0]?.staffType).toBe("行政支援");
+    expect(imported.staff?.[0]?.standbyQualified).toBe(false);
   });
 
   it("round-trips the team-leader personnel flag", () => {
@@ -171,6 +174,32 @@ describe("workbook boundary", () => {
     expect(imported.staff?.[0]?.dutyQualified).toBe(false);
   });
 
+  it("round-trips standby personnel qualifications", () => {
+    const state = createDefaultState();
+    state.staff[0]!.standbyQualified = false;
+    const workbook = buildConfigWorkbook(state);
+    const imported = parseWorkbook(workbook, state.staff);
+    const headers = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["人员信息"]!,
+      { header: 1, raw: false, defval: "" }
+    )[0];
+
+    expect(headers).toContain("备勤资质");
+    expect(imported.staff?.[0]?.standbyQualified).toBe(false);
+  });
+
+  it("ships a downloadable configuration template with standby qualification", () => {
+    const workbook = XLSX.readFile(
+      join(process.cwd(), "public", "template", "排班工具配置模板.xlsx")
+    );
+    const headers = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["人员信息"]!,
+      { header: 1, raw: false, defval: "" }
+    )[0];
+
+    expect(headers).toContain("备勤资质");
+  });
+
   it("round-trips every editable scheduling setting and rule table", () => {
     const state = createDefaultState();
     state.settings.maxDailyHours = 9.5;
@@ -178,8 +207,7 @@ describe("workbook boundary", () => {
     state.settings.nightStart = "21:30";
     state.settings.nightEnd = "05:30";
     state.settings.dutyFatiguePoints = 7.5;
-    state.settings.lateShiftStartTime = "19:30";
-    state.settings.lateShiftLatestWindowMinutes = 150;
+    state.settings.lateShiftEndTime = "23:30";
     state.settings.teamLeaderConcurrentSupervisionMaxOverlapMinutes = 45;
     state.settings.earlyDepartureCutoffTime = "11:45";
     state.settings.positionTransitionPolicies = [

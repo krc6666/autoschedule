@@ -12,10 +12,10 @@ import {
   type ScheduleFrequencyFacts,
 } from "../statistics/schedule-frequency";
 import {
-  isInFinalLateBatch,
+  isLateEndingWork,
   isNextWorkdayCutoffConflict,
 } from "./cross-day-recovery";
-import { isNextDutyRestConflict } from "./next-duty-rest";
+import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
 import {
   isHighFatigueOrdinaryRotationPosition,
   isPriorityRotationPosition,
@@ -30,18 +30,18 @@ import {
 export type RotationReview =
   | "consecutive"
   | "ke166-supervisor"
+  | "late-frequency"
   | "frequency"
   | "recovery"
-  | "next-duty-rest"
   | "coverage";
 
 export interface RotationReviewSafetyPolicy {
-  mandatoryPriorityRotation: "never" | "always" | "priority-primary";
   transitionMode: "prefer" | "forbid";
   assignedCount: "preserve" | "may-increase";
   consecutive: "none" | "improve-primary" | "preserve";
   frequency: "none" | "improve-primary" | "preserve-priority";
   protectPreviousWorkdayLoad: boolean;
+  protectLatePriorityFrequency: boolean;
   preventStaffWithoutWork: boolean;
   protectDutyMorning: boolean;
   protectWorkloadBalance: boolean;
@@ -57,67 +57,67 @@ export const ROTATION_REVIEW_POLICIES: Readonly<
   Record<RotationReview, RotationReviewSafetyPolicy>
 > = {
   consecutive: {
-    mandatoryPriorityRotation: "priority-primary",
-    transitionMode: "prefer",
+    transitionMode: "forbid",
     assignedCount: "preserve",
     consecutive: "improve-primary",
     frequency: "preserve-priority",
     protectPreviousWorkdayLoad: false,
-    preventStaffWithoutWork: true,
+    protectLatePriorityFrequency: true,
+    preventStaffWithoutWork: false,
     protectDutyMorning: true,
     protectWorkloadBalance: false,
   },
   "ke166-supervisor": {
-    mandatoryPriorityRotation: "never",
     transitionMode: "prefer",
     assignedCount: "preserve",
     consecutive: "none",
     frequency: "none",
     protectPreviousWorkdayLoad: false,
+    protectLatePriorityFrequency: false,
     preventStaffWithoutWork: false,
     protectDutyMorning: true,
     protectWorkloadBalance: false,
   },
   frequency: {
-    mandatoryPriorityRotation: "never",
-    transitionMode: "prefer",
+    transitionMode: "forbid",
     assignedCount: "preserve",
     consecutive: "none",
     frequency: "improve-primary",
-    protectPreviousWorkdayLoad: true,
-    preventStaffWithoutWork: true,
+    protectPreviousWorkdayLoad: false,
+    protectLatePriorityFrequency: true,
+    preventStaffWithoutWork: false,
+    protectDutyMorning: true,
+    protectWorkloadBalance: false,
+  },
+  "late-frequency": {
+    transitionMode: "forbid",
+    assignedCount: "preserve",
+    consecutive: "none",
+    frequency: "none",
+    protectPreviousWorkdayLoad: false,
+    protectLatePriorityFrequency: true,
+    preventStaffWithoutWork: false,
     protectDutyMorning: true,
     protectWorkloadBalance: false,
   },
   recovery: {
-    mandatoryPriorityRotation: "never",
     transitionMode: "prefer",
     assignedCount: "preserve",
     consecutive: "none",
     frequency: "preserve-priority",
     protectPreviousWorkdayLoad: false,
+    protectLatePriorityFrequency: true,
     preventStaffWithoutWork: false,
     protectDutyMorning: true,
     protectWorkloadBalance: true,
   },
-  "next-duty-rest": {
-    mandatoryPriorityRotation: "never",
-    transitionMode: "prefer",
-    assignedCount: "preserve",
-    consecutive: "none",
-    frequency: "none",
-    protectPreviousWorkdayLoad: false,
-    preventStaffWithoutWork: false,
-    protectDutyMorning: true,
-    protectWorkloadBalance: false,
-  },
   coverage: {
-    mandatoryPriorityRotation: "never",
     transitionMode: "forbid",
     assignedCount: "may-increase",
     consecutive: "none",
     frequency: "none",
     protectPreviousWorkdayLoad: false,
+    protectLatePriorityFrequency: false,
     preventStaffWithoutWork: false,
     protectDutyMorning: false,
     protectWorkloadBalance: false,
@@ -156,7 +156,7 @@ export function reassignmentCandidateSafetyReasons({
     latePriorityFatigueRelief &&
     primaryAssignment.staffId === latePriorityFatigueRelief.repeatedStaffId &&
     isPriorityRotationPosition(primaryRule) &&
-    isInFinalLateBatch(primaryAssignment, state.flights, state)
+    isLateEndingWork(primaryAssignment, state)
   );
   const recoveryProtectionMayYield = Boolean(
     validLatePriorityRelief &&
@@ -169,20 +169,28 @@ export function reassignmentCandidateSafetyReasons({
         assignment.id === primaryAssignment.id &&
         assignment.staffId !== latePriorityFatigueRelief.repeatedStaffId))
   );
+  const priorityFairnessMayYield = Boolean(
+    (review === "consecutive" ||
+      review === "frequency" ||
+      review === "late-frequency") &&
+    isPriorityRotationPosition(primaryRule)
+  );
   const reasons: string[] = [];
   if (
-    isNextDutyRestConflict(
+    exceedsTr121NumberOneAutomaticLimit(
       state,
       assignment.staffId,
+      assignment.flightNo,
       rule,
       date,
-      facts?.nextDutyRest
+      frequencyFacts
     )
   ) {
-    reasons.push("交换后会让下个工作班值班人员承担重点岗位");
+    reasons.push("该人员本月已承担2次TR121一号");
   }
   if (
     !recoveryProtectionMayYield &&
+    !priorityFairnessMayYield &&
     isNextWorkdayCutoffConflict(
       state,
       assignment.staffId,
@@ -195,12 +203,14 @@ export function reassignmentCandidateSafetyReasons({
   }
   if (
     !recoveryProtectionMayYield &&
+    !priorityFairnessMayYield &&
     lateShiftRecoveryRisk(
       state,
       assignment.staffId,
       {
         flightNo: assignment.flightNo,
         startTime: assignment.startTime,
+        endTime: assignment.endTime,
         position: assignment.position,
         remark: assignment.remark,
         fatiguePoints: assignment.fatiguePoints,
@@ -335,11 +345,6 @@ export function reassignmentDynamicSafetyReasons({
   const primaryRule = assignmentRule(state, primaryAssignment);
   if (!flight || !rule || !primaryRule) return ["交换目标航班或岗位规则不存在"];
   const policy = ROTATION_REVIEW_POLICIES[review];
-  const mandatoryPriorityRotation =
-    policy.mandatoryPriorityRotation === "always" ||
-    (policy.mandatoryPriorityRotation === "priority-primary" &&
-      isPriorityRotationPosition(primaryRule));
-  if (mandatoryPriorityRotation) return [];
   const reasons: string[] = [];
   if (
     positionTransitionInsertionCost(
@@ -356,6 +361,13 @@ export function reassignmentDynamicSafetyReasons({
   ) {
     reasons.push("交换后违反岗位衔接保护");
   }
+  if (
+    (review === "consecutive" ||
+      review === "frequency" ||
+      review === "late-frequency") &&
+    isPriorityRotationPosition(primaryRule)
+  )
+    return reasons;
   if (
     state.settings.highLoadProtectionEnabled &&
     hasHighLoadTransition(

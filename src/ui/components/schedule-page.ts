@@ -6,11 +6,13 @@ import {
   type LoadSortDirection,
   type LoadSortField,
 } from "../projections/schedule-page-model";
+import { buildPreviousArchivedScheduleView } from "../projections/archived-schedule-view";
 import { dispatchUiCommand } from "../events/ui-command";
 import { LightDomElement } from "./light-dom-element";
 import "./duty-roster-summary";
 import "./schedule-feedback";
 import "./schedule-grid";
+import "./previous-schedule-comparison";
 import "./schedule-toolbar";
 import "./staff-load-table";
 import "./staff-palette";
@@ -35,6 +37,7 @@ export class SchedulePageElement extends LightDomElement {
   loadSortDirection: LoadSortDirection = "desc";
   private pointerSourceValue: PointerDragSource | null = null;
   private pointerTargetId = "";
+  private previousScheduleVisible = false;
 
   protected override render() {
     if (!this.model.assignments.length) {
@@ -55,13 +58,27 @@ export class SchedulePageElement extends LightDomElement {
       direction: this.loadSortDirection,
       zoom: this.zoom,
     });
+    const previousSchedule = buildPreviousArchivedScheduleView(
+      this.model,
+      this.date
+    );
     return html`
       <autoschedule-schedule-toolbar
         .model=${this.model}
         .date=${this.date}
         .zoom=${view.zoom}
+        .previousScheduleDate=${previousSchedule?.date ?? ""}
+        .previousScheduleVisible=${this.previousScheduleVisible}
+        @autoschedule-toggle-previous-schedule=${this.togglePreviousSchedule}
       ></autoschedule-schedule-toolbar>
       ${this.model.schedulePolicyStale ? html`<div class="alert alert-warning py-2" role="status"><i class="bi bi-exclamation-triangle me-2"></i>排班规则已更新，当前排班尚未按新规则重新生成。</div>` : null}
+      ${
+        this.previousScheduleVisible && previousSchedule
+          ? html`<autoschedule-previous-schedule-comparison
+              .view=${previousSchedule}
+            ></autoschedule-previous-schedule-comparison>`
+          : null
+      }
       <section
         class="schedule-workspace"
         @autoschedule-pointer-drag-start=${this.startPointerDrag}
@@ -121,6 +138,13 @@ export class SchedulePageElement extends LightDomElement {
   private cancelPointerDrag(): void {
     this.pointerSourceValue = null;
     this.pointerTargetId = "";
+  }
+
+  private togglePreviousSchedule(event: Event): void {
+    event.stopPropagation();
+    if (!buildPreviousArchivedScheduleView(this.model, this.date)) return;
+    this.previousScheduleVisible = !this.previousScheduleVisible;
+    this.requestUpdate();
   }
 }
 

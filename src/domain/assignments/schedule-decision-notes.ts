@@ -67,18 +67,3 @@ export function nextWorkdayRecoveryOverrideReason(
   if (ke166Locked) return "KE166机动督导锁定优先";
   return alternativeStaffReason(state, assignments, selected, task);
 }
-
-export function nextDutyRestOverrideReason(
-  state: AppState,
-  assignments: Assignment[],
-  selected: Staff,
-  task: AssignmentTask,
-  dutyStaffId: string | null,
-  isDutyTarget: boolean,
-  ke166Locked: boolean
-): string {
-  if (selected.id === dutyStaffId && isDutyTarget)
-    return "本班值班岗位锁定优先";
-  if (ke166Locked) return "KE166机动督导锁定优先";
-  return alternativeStaffReason(state, assignments, selected, task);
-}

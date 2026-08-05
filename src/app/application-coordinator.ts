@@ -22,6 +22,29 @@ export interface ApplicationCoordinatorOptions {
   onViewChange?: (view: ApplicationViewState) => void;
 }
 
+const COMMANDS_ALLOWED_DURING_SCHEDULE_RUN = new Set<UiCommand["type"]>([
+  "navigate",
+  "close-dialog",
+  "dismiss-toast",
+  "set-schedule-zoom",
+  "set-load-sort",
+]);
+
+const COMMANDS_THAT_MAY_RUN_SCHEDULE = new Set<UiCommand["type"]>([
+  "generate-schedule",
+  "toggle-administrative-mode",
+  "archive-next-duty-day",
+]);
+
+function mayRunSchedule(command: UiCommand): boolean {
+  return (
+    COMMANDS_THAT_MAY_RUN_SCHEDULE.has(command.type) ||
+    (command.type === "update-configuration" &&
+      command.entity === "staff" &&
+      command.field === "status")
+  );
+}
+
 function initialView(
   preferences: ApplicationPreferences
 ): ApplicationViewState {
@@ -51,6 +74,7 @@ export class ApplicationCoordinator implements ApplicationContext {
   private readonly controllers: UiCommandController[];
   private toastId = 0;
   private progressHideTimer: ReturnType<typeof setTimeout> | undefined;
+  private scheduleCommandPending = false;
 
   constructor(
     readonly store: AutoscheduleStore,
@@ -156,11 +180,24 @@ export class ApplicationCoordinator implements ApplicationContext {
   }
 
   async handle(command: UiCommand): Promise<void> {
-    if (this.handleViewCommand(command)) return;
-    for (const controller of this.controllers) {
-      if (await controller.handle(command)) return;
+    if (
+      (this.scheduleCommandPending || this.scheduleRunner.isRunning()) &&
+      !COMMANDS_ALLOWED_DURING_SCHEDULE_RUN.has(command.type)
+    ) {
+      this.toast("排班正在计算，请等待当前任务完成", "warning");
+      return;
     }
-    throw new Error(`未处理的界面命令：${command.type}`);
+    const reservesSchedule = mayRunSchedule(command);
+    if (reservesSchedule) this.scheduleCommandPending = true;
+    try {
+      if (this.handleViewCommand(command)) return;
+      for (const controller of this.controllers) {
+        if (await controller.handle(command)) return;
+      }
+      throw new Error(`未处理的界面命令：${command.type}`);
+    } finally {
+      if (reservesSchedule) this.scheduleCommandPending = false;
+    }
   }
 
   private handleViewCommand(command: UiCommand): boolean {

@@ -14,10 +14,8 @@ const POLICY_FIELDS: readonly (keyof SchedulePolicyInput)[] = [
   "rollingLoadWindowMinutes",
   "rollingLoadMaxFatigue",
   "positionRotationEnabled",
-  "nextDutyRestProtectionEnabled",
   "lateShiftRecoveryEnabled",
-  "lateShiftStartTime",
-  "lateShiftLatestWindowMinutes",
+  "lateShiftEndTime",
   "teamLeaderConcurrentSupervisionMaxOverlapMinutes",
   "workloadBalanceEnabled",
   "maxWorkHoursDifference",
@@ -63,10 +61,8 @@ export class PolicySettingsFormElement extends LightDomElement {
             ${this.number("rollingLoadWindowMinutes", "滚动窗口（分钟）", 0, 1440, 30)}
             ${this.number("rollingLoadMaxFatigue", "滚动疲劳上限", 0.5, 100, 0.5)}
             ${this.toggle("positionRotationEnabled", "重点岗位频率与轮岗", "重点岗位优先，普通岗位防止连续第三班")}
-            ${this.toggle("nextDutyRestProtectionEnabled", "下班次值班人员预休", "提前避开本班重点岗位")}
             ${this.toggle("lateShiftRecoveryEnabled", "跨工作日恢复保护", "全局开放链优先避免连续晚间重岗位")}
-            ${this.time("lateShiftStartTime", "晚班起点")}
-            ${this.number("lateShiftLatestWindowMinutes", "最后一批范围（分钟）", 0, 720, 30)}
+            ${this.time("lateShiftEndTime", "末班结束界线（晚于）")}
             ${this.number("teamLeaderConcurrentSupervisionMaxOverlapMinutes", "分队长并行督导最大重叠", 0, 720, 5)}
             ${this.toggle("workloadBalanceEnabled", "工时与疲劳均衡", "压力不宽松时启用")}
             ${this.number("maxWorkHoursDifference", "最大工时差", 0, 24, 0.5)}

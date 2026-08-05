@@ -10,12 +10,13 @@ import {
 describe("schedule pipeline contract", () => {
   it("keeps post-schedule reviews in the documented order", () => {
     expect(POST_SCHEDULE_REVIEW_STEPS.map((step) => step.stage)).toEqual([
-      "next-duty-rest",
       "late-shift-recovery",
       "late-shift-cutoff",
+      "late-priority-frequency",
       "position-frequency",
       "position-rotation",
       "ke166-supervisor-finalize",
+      "post-ke166-late-priority-frequency-validation",
       "post-ke166-frequency-validation",
       "post-ke166-rotation-validation",
     ]);
@@ -27,7 +28,7 @@ describe("schedule pipeline contract", () => {
     );
 
     expect(visible.map((step) => step.progress?.percent)).toEqual([
-      55, 65, 75, 85, 92, 96, 98,
+      65, 75, 82, 85, 92, 95, 96, 98,
     ]);
     expect(visible.every((step) => Boolean(step.progress?.label.trim()))).toBe(
       true
@@ -44,13 +45,11 @@ describe("schedule pipeline contract", () => {
     const plan = postScheduleReviewPlan(settings);
 
     expect(plan.map((step) => step.stage)).not.toContain("late-shift-cutoff");
-    expect(plan.map((step) => step.stage).slice(0, 2)).toEqual([
-      "next-duty-rest",
-      "position-frequency",
-    ]);
+    expect(plan.map((step) => step.stage)[0]).toBe("late-priority-frequency");
     expect(plan.map((step) => step.stage)).toEqual(
       expect.arrayContaining([
         "ke166-supervisor-finalize",
+        "post-ke166-late-priority-frequency-validation",
         "post-ke166-frequency-validation",
         "post-ke166-rotation-validation",
       ])
@@ -76,6 +75,9 @@ describe("schedule pipeline contract", () => {
     ]).map((step) => step.stage);
 
     expect(stages).not.toContain("post-ke166-frequency-validation");
+    expect(stages).not.toContain(
+      "post-ke166-late-priority-frequency-validation"
+    );
     expect(stages).not.toContain("post-ke166-rotation-validation");
   });
 });

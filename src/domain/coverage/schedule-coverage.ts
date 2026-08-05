@@ -19,6 +19,9 @@ import { positionTransitionInsertionCost } from "../reviews/schedule-protection"
 import { isPreNoonFlight } from "../flights/schedule-tasks";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import { durationHours } from "../shared/time";
+import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
+import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
+import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
 
 export function preNoonShortageNote(
   state: AppState,
@@ -71,8 +74,21 @@ function canMoveRegularPlacement(
   assignments: Assignment[],
   flight: Flight,
   placement: RegularPlacement,
-  targetRule: PositionRule
+  targetRule: PositionRule,
+  date: string,
+  frequencyFacts: ScheduleFrequencyFacts
 ): boolean {
+  if (
+    exceedsTr121NumberOneAutomaticLimit(
+      state,
+      placement.person.id,
+      flight.flightNo,
+      targetRule,
+      date,
+      frequencyFacts
+    )
+  )
+    return false;
   if (
     !eligibleStaffForRule(state, flight, targetRule).some(
       (person) => person.id === placement.person.id
@@ -213,7 +229,9 @@ function canCoverRegularSlots(
 export function compactRegularAssignments(
   state: AppState,
   assignments: Assignment[],
-  lockedAssignmentIds: ReadonlySet<string>
+  lockedAssignmentIds: ReadonlySet<string>,
+  date: string,
+  frequencyFacts: ScheduleFrequencyFacts
 ): Set<string> {
   const changedFlightIds = new Set<string>();
 
@@ -266,6 +284,11 @@ export function compactRegularAssignments(
       .filter((placement): placement is RegularPlacement => Boolean(placement));
     const canPlace = (placement: RegularPlacement, slot: RegularSlot) => {
       if (
+        isPriorityRotationPosition(placement.sourceRule) &&
+        placement.sourceAssignment.id !== slot.assignment.id
+      )
+        return false;
+      if (
         lockedAssignmentIds.has(placement.sourceAssignment.id) &&
         placement.sourceAssignment.id !== slot.assignment.id
       )
@@ -280,7 +303,9 @@ export function compactRegularAssignments(
         assignments,
         flight,
         placement,
-        slot.rule
+        slot.rule,
+        date,
+        frequencyFacts
       );
     };
     const occupiedSlots: RegularSlot[] = [];

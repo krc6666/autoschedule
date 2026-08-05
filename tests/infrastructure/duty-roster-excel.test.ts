@@ -72,6 +72,30 @@ describe("duty roster workbook boundary", () => {
     expect(preview.canApply).toBe(false);
   });
 
+  it("blocks standby assignments for staff without standby qualification", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    person.standbyQualified = false;
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["姓名", "0701", "0702"],
+        [person.name, "", "备勤"],
+      ]),
+      "值班备勤"
+    );
+
+    const preview = parseDutyRosterWorkbook(
+      workbook,
+      state.staff,
+      "2026-07-01"
+    );
+
+    expect(preview.errors.join("；")).toContain("不具备备勤资质");
+    expect(preview.canApply).toBe(false);
+  });
+
   it("exports a screenshot-like monthly template with workdays and rest days", () => {
     const state = createDefaultState();
     const workbook = buildDutyRosterTemplateWorkbook(state, "2026-07-01");

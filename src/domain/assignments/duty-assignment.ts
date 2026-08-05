@@ -9,6 +9,12 @@ import { getDutyRosterForDate } from "../duty-roster/roster";
 import { isSupervisorPosition } from "../flights/schedule-position-rules";
 import { durationHours, timeToMinutes } from "../shared/time";
 import { consecutivePositionAssignments } from "../statistics/schedule-frequency";
+import {
+  exceedsTr121NumberOneAutomaticLimit,
+  latePriorityFrequencyComparisonValue,
+  latePriorityFrequencyProfileForRule,
+} from "../statistics/late-priority-frequency";
+import { latePriorityFrequencyKinds } from "../reviews/late-priority-policy";
 
 function repeatsPriorityPosition(
   state: AppState,
@@ -107,6 +113,61 @@ function operationalStartMinutes(startTime: string, state: AppState): number {
   return start < nightEnd ? start + 24 * 60 : start;
 }
 
+function preservesLatePriorityFairness(
+  state: AppState,
+  date: string,
+  task: AssignmentTask,
+  dutyStaffId: string
+): boolean {
+  if (
+    exceedsTr121NumberOneAutomaticLimit(
+      state,
+      dutyStaffId,
+      task.flight.flightNo,
+      task.rule,
+      date
+    )
+  )
+    return false;
+  const targetKinds = latePriorityFrequencyKinds(task.rule);
+  if (!targetKinds.length) return true;
+  const profiles = eligibleStaffForRule(state, task.flight, task.rule).map(
+    (person) => ({
+      person,
+      profile: latePriorityFrequencyProfileForRule(
+        state,
+        person.id,
+        task.flight,
+        task.rule,
+        date
+      ),
+    })
+  );
+  const dutyProfile = profiles.find(
+    (item) => item.person.id === dutyStaffId
+  )?.profile;
+  if (!dutyProfile) return false;
+  if (
+    !targetKinds.includes("supervisor") &&
+    dutyProfile.supervisorRotationDeficit > 0
+  )
+    return false;
+  return targetKinds.every((kind) => {
+    const projectedCounts = profiles.map(
+      ({ person, profile }) =>
+        latePriorityFrequencyComparisonValue(
+          profile,
+          kind,
+          "currentMonthCount"
+        ) + Number(person.id === dutyStaffId)
+    );
+    return (
+      !projectedCounts.length ||
+      Math.max(...projectedCounts) - Math.min(...projectedCounts) <= 1
+    );
+  });
+}
+
 export function preferredDutyLateTasks(
   state: AppState,
   date: string,
@@ -128,6 +189,9 @@ export function preferredDutyLateTasks(
       eligibleStaffForRule(state, task.flight, task.rule).some(
         (person) => person.id === dutyStaffId
       )
+    )
+    .filter((task) =>
+      preservesLatePriorityFairness(state, date, task, dutyStaffId)
     );
   const ordered: AssignmentTask[] = [];
   for (const priority of state.settings.dutyPositionPriorities.filter(

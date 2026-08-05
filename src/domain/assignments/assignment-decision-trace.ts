@@ -13,12 +13,8 @@ import {
   configuredDutyTaskPriority,
   dutyHardConstraintReason,
 } from "./duty-assignment";
-import { isNextDutyRestConflict } from "../reviews/next-duty-rest";
 import { comparePreviousWorkdayLoad } from "../shared/previous-workday-load";
-import {
-  nextDutyRestOverrideReason,
-  nextWorkdayRecoveryOverrideReason,
-} from "./schedule-decision-notes";
+import { nextWorkdayRecoveryOverrideReason } from "./schedule-decision-notes";
 import {
   isHighLoadPosition,
   lateShiftCutoffPriority,
@@ -135,36 +131,6 @@ function appendProtectionFallbacks(
           reasons: ["值班岗位锁定优先"],
           decision: "值班安排优先",
           result: "保留原安排",
-        })
-      )
-    );
-  }
-  if (
-    isNextDutyRestConflict(
-      state,
-      selected.id,
-      rule,
-      date,
-      runFacts.nextDutyRest
-    )
-  ) {
-    const reason = nextDutyRestOverrideReason(
-      state,
-      assignments,
-      selected,
-      task,
-      dutyStaffId,
-      isDutyTarget,
-      ke166
-    );
-    trace.push(
-      schedulingDecision(
-        "next-duty-rest",
-        "fallback",
-        assignmentWarningMessage({
-          staffName: selected.name,
-          fact: `下个工作班值班，本班仍承担${flight.flightNo}/${rule.name}`,
-          reasons: [reason],
         })
       )
     );

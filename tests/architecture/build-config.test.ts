@@ -62,4 +62,21 @@ describe("生产 Worker 构建合同", () => {
       "npm run typecheck && npm test && npm run test:performance && npm run build"
     );
   });
+
+  it("不再安装或同步已删除的图片识别资源", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8")
+    ) as {
+      scripts: Record<string, string>;
+      dependencies: Record<string, string>;
+    };
+
+    expect(Object.keys(packageJson.scripts)).not.toContain("sync:ocr-assets");
+    expect(Object.keys(packageJson.dependencies)).not.toContain("tesseract.js");
+    expect(
+      Object.keys(packageJson.dependencies).some((name) =>
+        name.startsWith("@tesseract.js-data/")
+      )
+    ).toBe(false);
+  });
 });

@@ -9,7 +9,6 @@ import {
   isNumberedRegularPosition,
 } from "../flights/schedule-tasks";
 import { durationHours } from "../shared/time";
-import { isNextDutyRestConflict } from "../reviews/next-duty-rest";
 import { consecutivePositionAssignments } from "../statistics/schedule-frequency";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
@@ -144,37 +143,21 @@ function eligibleSupervisorOrder(
               date
             ) > 0
           ) ||
-        Number(
-          isNextDutyRestConflict(
-            state,
-            left.id,
-            rule,
-            date,
-            facts?.nextDutyRest
-          )
-        ) -
-          Number(
-            isNextDutyRestConflict(
-              state,
-              right.id,
-              rule,
-              date,
-              facts?.nextDutyRest
-            )
-          ) ||
         totalFatiguePriority(
           left,
           assignments,
           state,
           date,
-          facts?.currentDutyStaffId
+          facts?.currentDutyStaffId,
+          facts?.historicalFatigueByStaff.get(left.id)
         ) -
           totalFatiguePriority(
             right,
             assignments,
             state,
             date,
-            facts?.currentDutyStaffId
+            facts?.currentDutyStaffId,
+            facts?.historicalFatigueByStaff.get(right.id)
           ) ||
         left.id.localeCompare(right.id, undefined, { numeric: true })
     )
@@ -355,37 +338,21 @@ export async function assignKe166SupervisorByCounterCoverage(
               date
             ) > 0
           ) ||
-        Number(
-          isNextDutyRestConflict(
-            state,
-            leftPerson.id,
-            rule,
-            date,
-            facts?.nextDutyRest
-          )
-        ) -
-          Number(
-            isNextDutyRestConflict(
-              state,
-              rightPerson.id,
-              rule,
-              date,
-              facts?.nextDutyRest
-            )
-          ) ||
         totalFatiguePriority(
           leftPerson,
           assignments,
           state,
           date,
-          facts?.currentDutyStaffId
+          facts?.currentDutyStaffId,
+          facts?.historicalFatigueByStaff.get(leftPerson.id)
         ) -
           totalFatiguePriority(
             rightPerson,
             assignments,
             state,
             date,
-            facts?.currentDutyStaffId
+            facts?.currentDutyStaffId,
+            facts?.historicalFatigueByStaff.get(rightPerson.id)
           ) ||
         leftPerson.id.localeCompare(rightPerson.id, undefined, {
           numeric: true,
@@ -432,30 +399,8 @@ export async function assignKe166SupervisorByCounterCoverage(
       rule.name,
       date
     ) > 0;
-  const currentRestConflict = isNextDutyRestConflict(
-    state,
-    regularAssignment.staffId,
-    rule,
-    date,
-    facts?.nextDutyRest
-  );
-  if (currentRepeated || currentRestConflict) {
-    const excludedSupervisorIds = new Set(
-      state.staff
-        .filter(
-          (person) =>
-            person.id === regularAssignment!.staffId ||
-            (currentRestConflict &&
-              isNextDutyRestConflict(
-                state,
-                person.id,
-                rule,
-                date,
-                facts?.nextDutyRest
-              ))
-        )
-        .map((person) => person.id)
-    );
+  if (currentRepeated) {
+    const excludedSupervisorIds = new Set([regularAssignment.staffId]);
     const plan = await findSupervisorCounterPlan(
       solver,
       state,
@@ -560,25 +505,6 @@ export async function assignKe166SupervisorByCounterCoverage(
       : []),
     ...(repeatedMessage
       ? [schedulingDecision("position-rotation", "fallback", repeatedMessage)]
-      : []),
-    ...(isNextDutyRestConflict(
-      state,
-      regularStaffId,
-      rule,
-      date,
-      facts?.nextDutyRest
-    )
-      ? [
-          schedulingDecision(
-            "next-duty-rest",
-            "fallback",
-            assignmentWarningMessage({
-              staffName: regularAssignment.staffName,
-              fact: `下个工作班值班，本班仍承担${flight.flightNo}/${rule.name}`,
-              reasons: ["KE166机动督导锁定优先"],
-            })
-          ),
-        ]
       : []),
     ...(recoveryOverride ? [recoveryOverride] : []),
   ];

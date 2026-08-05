@@ -18,7 +18,7 @@ export const SCHEDULING_STAGE_LABELS: Readonly<
   "reserved-assignment": "特殊岗位锁定",
   coverage: "岗位完整性",
   protection: "人员保护与公平",
-  "stable-order": "稳定排序",
+  "stable-order": "最后比较",
   "post-schedule-review": "排班后轮岗复核",
 };
 
@@ -68,11 +68,29 @@ export const SCHEDULING_RULES = [
     feedbackMode: "aggregated",
   },
   {
-    id: "next-duty-rest",
+    id: "late-priority-frequency",
     stage: "protection",
-    label: "下班次值班人员预休",
+    label: "末班重点岗位公平轮换",
+    feedbackMode: "aggregated",
+  },
+  {
+    id: "position-frequency",
+    stage: "protection",
+    label: "重点岗位频率均衡",
+    feedbackMode: "aggregated",
+  },
+  {
+    id: "position-frequency-review",
+    stage: "protection",
+    label: "重点岗位频率安全重排",
     feedbackMode: "dedicated",
-    feedbackKey: "next-duty-rest",
+    feedbackKey: "position-frequency-review",
+  },
+  {
+    id: "priority-position-consecutive",
+    stage: "protection",
+    label: "重点岗位连续承担保护",
+    feedbackMode: "aggregated",
   },
   {
     id: "late-shift-recovery",
@@ -87,12 +105,6 @@ export const SCHEDULING_RULES = [
     label: "末班重点岗位次班截止保护",
     feedbackMode: "dedicated",
     feedbackKey: "current-late",
-  },
-  {
-    id: "priority-position-consecutive",
-    stage: "protection",
-    label: "重点岗位连续承担保护",
-    feedbackMode: "aggregated",
   },
   {
     id: "high-fatigue-position-consecutive",
@@ -139,19 +151,6 @@ export const SCHEDULING_RULES = [
     feedbackKey: "cross-workday-load",
   },
   {
-    id: "position-frequency",
-    stage: "protection",
-    label: "重点岗位频率均衡",
-    feedbackMode: "aggregated",
-  },
-  {
-    id: "position-frequency-review",
-    stage: "protection",
-    label: "重点岗位频率安全重排",
-    feedbackMode: "dedicated",
-    feedbackKey: "position-frequency-review",
-  },
-  {
     id: "workload-balance",
     stage: "protection",
     label: "工时与疲劳均衡",
@@ -162,12 +161,6 @@ export const SCHEDULING_RULES = [
     stage: "stable-order",
     label: "历史疲劳",
     feedbackMode: "aggregated",
-  },
-  {
-    id: "staff-id",
-    stage: "stable-order",
-    label: "人员编号",
-    feedbackMode: "decision-only",
   },
   {
     id: "position-rotation",
@@ -204,7 +197,6 @@ export const RULE_FEEDBACK_ORDER = [
   "cross-workday-load",
   "position-frequency-review",
   "position-rotation",
-  "next-duty-rest",
   "previous-late",
   "current-late",
   "duty-roster",

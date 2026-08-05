@@ -13,7 +13,9 @@ export interface ScheduleFrequencyFacts {
   date: string;
   recentConsecutiveWorkdays: readonly string[];
   recentFrequencyRecordIds: ReadonlySet<string>;
+  recentEightWorkdayRecordIds: ReadonlySet<string>;
   recordsByPosition: ReadonlyMap<string, readonly HistoryRecord[]>;
+  recordsByStaffId: ReadonlyMap<string, readonly HistoryRecord[]>;
 }
 
 function positionHistoryKey(
@@ -33,6 +35,7 @@ export function createScheduleFrequencyFacts(
   date: string
 ): ScheduleFrequencyFacts {
   const recordsByPosition = new Map<string, HistoryRecord[]>();
+  const recordsByStaffId = new Map<string, HistoryRecord[]>();
   for (const record of state.history) {
     const key = positionHistoryKey(
       record.staffId,
@@ -42,6 +45,9 @@ export function createScheduleFrequencyFacts(
     const records = recordsByPosition.get(key) ?? [];
     records.push(record);
     recordsByPosition.set(key, records);
+    const staffRecords = recordsByStaffId.get(record.staffId) ?? [];
+    staffRecords.push(record);
+    recordsByStaffId.set(record.staffId, staffRecords);
   }
   return {
     date,
@@ -59,7 +65,11 @@ export function createScheduleFrequencyFacts(
         POSITION_FREQUENCY_WORKDAY_COUNT
       ).map((record) => record.id)
     ),
+    recentEightWorkdayRecordIds: new Set(
+      recentArchivedWorkdays(state.history, date, 8).map((record) => record.id)
+    ),
     recordsByPosition,
+    recordsByStaffId,
   };
 }
 

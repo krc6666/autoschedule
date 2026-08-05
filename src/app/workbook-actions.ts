@@ -1,6 +1,9 @@
 import type { WorkbookImport } from "../infrastructure/excel";
 import type { DutyRosterImportPreview } from "../infrastructure/duty-roster-excel";
-import { getDutyRosterForDate } from "../domain/duty-roster/roster";
+import {
+  clearUnqualifiedStandbyOverrides,
+  getDutyRosterForDate,
+} from "../domain/duty-roster/roster";
 import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
 import { clearActiveSchedule } from "../domain/kernel/schedule-lifecycle";
 import type { AppState } from "../model";
@@ -79,7 +82,10 @@ export function applyWorkbookImport(
 ): AppliedWorkbookImport {
   const importConfig = mode !== "history";
   const importHistory = mode !== "config";
-  if (importConfig && imported.staff?.length) state.staff = imported.staff;
+  if (importConfig && imported.staff?.length) {
+    state.staff = imported.staff;
+    clearUnqualifiedStandbyOverrides(state);
+  }
   if (importConfig && imported.positionRules?.length)
     state.positionRules = orderPositionRules(imported.positionRules);
   if (importConfig && imported.templates?.length)

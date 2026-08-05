@@ -26,10 +26,8 @@ export interface SchedulePolicyInput {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
-  nextDutyRestProtectionEnabled: boolean;
   lateShiftRecoveryEnabled: boolean;
-  lateShiftStartTime: string;
-  lateShiftLatestWindowMinutes: number;
+  lateShiftEndTime: string;
   teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
   workloadBalanceEnabled: boolean;
   maxWorkHoursDifference: number;
