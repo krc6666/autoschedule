@@ -1,0 +1,630 @@
+import type { AppState, Assignment, Staff } from "../../model";
+import { createAssignedPosition } from "../assignments/assignment-factory";
+import { canReleaseForFlight } from "../assignments/assignment-timing";
+import { minimumFlightTransitionViolationBetweenTasks } from "../assignments/minimum-flight-transition";
+import type { CandidatePriority } from "../candidates/candidate-priority";
+import { isConcurrentSupervisor } from "../coverage/team-leader-concurrent-plan";
+import {
+  isPreNoonFlight,
+  type AssignmentTask,
+} from "../flights/schedule-tasks";
+import {
+  LATE_PRIORITY_ALLOWED_DIFFERENCE,
+  LATE_PRIORITY_FREQUENCY_ORDER,
+} from "../reviews/late-priority-policy";
+import {
+  hasHighLoadTransition,
+  isHighLoadPosition,
+  normalizedPolicyValue,
+  rollingLoadCost,
+  violatedPositionTransitionPolicies,
+} from "../reviews/schedule-protection";
+import type {
+  LexicographicObjective,
+  LinearConstraint,
+  SolverProblem,
+} from "../solver/solver-port";
+import { intervalsOverlap } from "../shared/time";
+
+export interface DailyCombinationChoice {
+  id: string;
+  task: AssignmentTask;
+  person: Staff;
+  priority: Pick<CandidatePriority, "dutyPosition" | "latePriorityFrequency">;
+  workHours: number;
+}
+
+export interface DailyCombinationModel {
+  variables: Array<SolverProblem["variables"][number]>;
+  incompatibilityConstraints: LinearConstraint[];
+  constraints: LinearConstraint[];
+  objectiveTerms: ReadonlyMap<
+    string,
+    { variableId: string; coefficient: number }[]
+  >;
+}
+
+interface SoftCombinationGroup {
+  objectiveId: string;
+  targets: Map<string, DailyCombinationChoice>;
+  sources: Map<string, DailyCombinationChoice>;
+  coefficient: number;
+}
+
+interface CombinationTaskPair {
+  sourceTaskKey: string;
+  strictPolicyIds: readonly string[];
+  preferredPolicyIds: readonly string[];
+  highLoadTransition: boolean;
+  rollingExcess: number;
+}
+
+type ChoiceConflictKind = "overlap" | "minimum-transition";
+
+function choiceAssignment(choice: DailyCombinationChoice): Assignment {
+  return createAssignedPosition(
+    choice.task,
+    choice.person,
+    choice.workHours,
+    [],
+    []
+  );
+}
+
+function choiceConflictKind(
+  state: AppState,
+  left: DailyCombinationChoice,
+  right: DailyCombinationChoice
+): ChoiceConflictKind | null {
+  if (
+    minimumFlightTransitionViolationBetweenTasks(
+      state,
+      left.task.flight,
+      left.task.rule,
+      right.task.flight,
+      right.task.rule
+    )
+  )
+    return "minimum-transition";
+  if (
+    !intervalsOverlap(
+      left.task.flight.startTime,
+      left.task.flight.endTime,
+      right.task.flight.startTime,
+      right.task.flight.endTime
+    )
+  )
+    return null;
+  if (
+    isConcurrentSupervisor(left.task.rule, left.task.flight) &&
+    isConcurrentSupervisor(right.task.rule, right.task.flight)
+  )
+    return "overlap";
+  const leftAssignment = choiceAssignment(left);
+  const rightAssignment = choiceAssignment(right);
+  return canReleaseForFlight(leftAssignment, right.task.flight, state) ||
+    canReleaseForFlight(rightAssignment, left.task.flight, state)
+    ? null
+    : "overlap";
+}
+
+function choicesCanShareStaff(
+  state: AppState,
+  left: DailyCombinationChoice,
+  right: DailyCombinationChoice
+): boolean {
+  return choiceConflictKind(state, left, right) === null;
+}
+
+function incompatibilityConstraints(
+  state: AppState,
+  staffChoices: readonly DailyCombinationChoice[]
+): LinearConstraint[] {
+  const constraints: LinearConstraint[] = [];
+  const choicesByStaffId = new Map<string, DailyCombinationChoice[]>();
+  for (const choice of staffChoices) {
+    const own = choicesByStaffId.get(choice.person.id) ?? [];
+    own.push(choice);
+    choicesByStaffId.set(choice.person.id, own);
+  }
+  for (const ownChoices of choicesByStaffId.values()) {
+    const choicesByFlightId = new Map<string, DailyCombinationChoice[]>();
+    for (const choice of ownChoices) {
+      const flightChoices = choicesByFlightId.get(choice.task.flight.id) ?? [];
+      flightChoices.push(choice);
+      choicesByFlightId.set(choice.task.flight.id, flightChoices);
+    }
+    const flightChoiceGroups = [...choicesByFlightId.values()];
+    for (const flightChoices of flightChoiceGroups) {
+      if (flightChoices.length < 2) continue;
+      constraints.push({
+        id: `same-flight:${constraints.length}`,
+        terms: flightChoices.map((choice) => ({
+          variableId: choice.id,
+          coefficient: 1,
+        })),
+        upperBound: 1,
+      });
+    }
+    for (
+      let leftGroupIndex = 0;
+      leftGroupIndex < flightChoiceGroups.length;
+      leftGroupIndex += 1
+    ) {
+      for (
+        let rightGroupIndex = leftGroupIndex + 1;
+        rightGroupIndex < flightChoiceGroups.length;
+        rightGroupIndex += 1
+      ) {
+        const leftChoices = flightChoiceGroups[leftGroupIndex]!;
+        const rightChoices = flightChoiceGroups[rightGroupIndex]!;
+        const incompatiblePairs: Array<
+          readonly [
+            DailyCombinationChoice,
+            DailyCombinationChoice,
+            ChoiceConflictKind,
+          ]
+        > = [];
+        for (const left of leftChoices) {
+          for (const right of rightChoices) {
+            const kind = choiceConflictKind(state, left, right);
+            if (kind) incompatiblePairs.push([left, right, kind]);
+          }
+        }
+        if (!incompatiblePairs.length) continue;
+        if (
+          incompatiblePairs.length ===
+          leftChoices.length * rightChoices.length
+        ) {
+          const kinds = new Set(incompatiblePairs.map((pair) => pair[2]));
+          const kind = kinds.size === 1 ? incompatiblePairs[0]![2] : "overlap";
+          constraints.push({
+            id: `${kind}:${constraints.length}`,
+            terms: [...leftChoices, ...rightChoices].map((choice) => ({
+              variableId: choice.id,
+              coefficient: 1,
+            })),
+            upperBound: 1,
+          });
+          continue;
+        }
+        for (const [left, right, kind] of incompatiblePairs) {
+          constraints.push({
+            id: `${kind}:${constraints.length}`,
+            terms: [left.id, right.id].map((variableId) => ({
+              variableId,
+              coefficient: 1,
+            })),
+            upperBound: 1,
+          });
+        }
+      }
+    }
+  }
+  return constraints;
+}
+
+function combinationTaskPairIndex(
+  state: AppState,
+  staffChoices: readonly DailyCombinationChoice[]
+): ReadonlyMap<string, readonly CombinationTaskPair[]> {
+  const representativeByTaskKey = new Map<string, DailyCombinationChoice>();
+  for (const choice of staffChoices) {
+    if (!representativeByTaskKey.has(choice.task.key))
+      representativeByTaskKey.set(choice.task.key, choice);
+  }
+  const representatives = [...representativeByTaskKey.values()];
+  const pairsByTargetTaskKey = new Map<string, CombinationTaskPair[]>();
+  const transitionModesByTargetTaskKey = new Map<
+    string,
+    ReadonlySet<"forbid" | "prefer">
+  >();
+  for (const target of representatives) {
+    const targetFlight = normalizedPolicyValue(target.task.flight.flightNo);
+    const targetPosition = normalizedPolicyValue(target.task.rule.name);
+    transitionModesByTargetTaskKey.set(
+      target.task.key,
+      new Set(
+        state.settings.positionTransitionPolicies.flatMap((policy) =>
+          policy.enabled &&
+          normalizedPolicyValue(policy.targetFlightNo) === targetFlight &&
+          normalizedPolicyValue(policy.targetPosition) === targetPosition
+            ? [policy.mode]
+            : []
+        )
+      )
+    );
+  }
+
+  for (const target of representatives) {
+    const transitionModes = transitionModesByTargetTaskKey.get(
+      target.task.key
+    )!;
+    const targetIsHighLoad = isHighLoadPosition(
+      target.task.rule.fatiguePoints,
+      target.task.rule.remark,
+      state
+    );
+    const canHaveHighLoadTransition =
+      state.settings.highLoadProtectionEnabled && targetIsHighLoad;
+    const canHaveRollingLoad =
+      state.settings.rollingLoadProtectionEnabled && targetIsHighLoad;
+    if (
+      !transitionModes.size &&
+      !canHaveHighLoadTransition &&
+      !canHaveRollingLoad
+    )
+      continue;
+
+    const targetPairs: CombinationTaskPair[] = [];
+    for (const source of representatives) {
+      const sourceCanParticipate =
+        transitionModes.size > 0 ||
+        canHaveRollingLoad ||
+        (canHaveHighLoadTransition &&
+          isHighLoadPosition(
+            source.task.rule.fatiguePoints,
+            source.task.rule.remark,
+            state
+          ));
+      if (
+        !sourceCanParticipate ||
+        source.task.key === target.task.key ||
+        !choicesCanShareStaff(state, source, target)
+      )
+        continue;
+      const sourceForTarget =
+        source.person.id === target.person.id
+          ? source
+          : { ...source, person: target.person };
+      const sourceAssignment = choiceAssignment(sourceForTarget);
+      const strictPolicyIds = transitionModes.has("forbid")
+        ? violatedPositionTransitionPolicies(
+            [sourceAssignment],
+            target.person.id,
+            target.task.flight.flightNo,
+            target.task.rule.name,
+            target.task.flight.startTime,
+            state,
+            "forbid"
+          ).map((policy) => policy.id)
+        : [];
+      const preferredPolicyIds = transitionModes.has("prefer")
+        ? violatedPositionTransitionPolicies(
+            [sourceAssignment],
+            target.person.id,
+            target.task.flight.flightNo,
+            target.task.rule.name,
+            target.task.flight.startTime,
+            state,
+            "prefer"
+          ).map((policy) => policy.id)
+        : [];
+      const highLoadTransition = canHaveHighLoadTransition
+        ? hasHighLoadTransition(
+            [sourceAssignment],
+            target.person.id,
+            target.task.flight.startTime,
+            target.task.flight.endTime,
+            target.task.rule.fatiguePoints,
+            target.task.rule.remark,
+            state
+          )
+        : false;
+      const rollingExcess = canHaveRollingLoad
+        ? rollingLoadCost(
+            [sourceAssignment],
+            target.person.id,
+            target.task.flight.startTime,
+            target.task.rule.fatiguePoints,
+            target.task.rule.remark,
+            state
+          )
+        : 0;
+      if (
+        !strictPolicyIds.length &&
+        !preferredPolicyIds.length &&
+        !highLoadTransition &&
+        !rollingExcess
+      )
+        continue;
+      targetPairs.push({
+        sourceTaskKey: source.task.key,
+        strictPolicyIds,
+        preferredPolicyIds,
+        highLoadTransition,
+        rollingExcess,
+      });
+    }
+    if (targetPairs.length)
+      pairsByTargetTaskKey.set(target.task.key, targetPairs);
+  }
+  return pairsByTargetTaskKey;
+}
+
+export function buildDailyCombinationModel(
+  state: AppState,
+  staffChoices: readonly DailyCombinationChoice[],
+  enabledObjectiveIds: ReadonlySet<string>
+): DailyCombinationModel {
+  const variables: Array<SolverProblem["variables"][number]> = [];
+  const constraints: LinearConstraint[] = [];
+  const objectiveTerms = new Map<
+    string,
+    { variableId: string; coefficient: number }[]
+  >();
+  const addObjectiveTerm = (
+    objectiveId: string,
+    variableId: string,
+    coefficient: number
+  ): void => {
+    if (!coefficient) return;
+    const terms = objectiveTerms.get(objectiveId) ?? [];
+    terms.push({ variableId, coefficient });
+    objectiveTerms.set(objectiveId, terms);
+  };
+  const choicesByStaffId = new Map<string, DailyCombinationChoice[]>();
+  for (const choice of staffChoices) {
+    const own = choicesByStaffId.get(choice.person.id) ?? [];
+    own.push(choice);
+    choicesByStaffId.set(choice.person.id, own);
+  }
+  const taskPairIndex = combinationTaskPairIndex(state, staffChoices);
+  const groups = new Map<string, SoftCombinationGroup>();
+  const addGroupSource = (
+    key: string,
+    objectiveId: string,
+    target: DailyCombinationChoice,
+    source: DailyCombinationChoice,
+    coefficient: number
+  ): void => {
+    const group = groups.get(key) ?? {
+      objectiveId,
+      targets: new Map<string, DailyCombinationChoice>(),
+      sources: new Map<string, DailyCombinationChoice>(),
+      coefficient,
+    };
+    group.targets.set(target.id, target);
+    group.sources.set(source.id, source);
+    groups.set(key, group);
+  };
+  for (const ownChoices of choicesByStaffId.values()) {
+    const ownChoiceByTaskKey = new Map(
+      ownChoices.map((choice) => [choice.task.key, choice])
+    );
+    for (const target of ownChoices) {
+      for (const pair of taskPairIndex.get(target.task.key) ?? []) {
+        const source = ownChoiceByTaskKey.get(pair.sourceTaskKey);
+        if (!source) continue;
+        for (const policyId of pair.strictPolicyIds) {
+          if (
+            !isPreNoonFlight(target.task.flight) &&
+            target.priority.dutyPosition !== "reserved-target"
+          ) {
+            constraints.push({
+              id: `strict-transition:${constraints.length}`,
+              terms: [target.id, source.id].map((variableId) => ({
+                variableId,
+                coefficient: 1,
+              })),
+              upperBound: 1,
+            });
+          } else {
+            addGroupSource(
+              `forbid:${target.id}:${policyId}`,
+              "candidate:position-transition",
+              target,
+              source,
+              1
+            );
+          }
+        }
+        for (const policyId of pair.preferredPolicyIds) {
+          addGroupSource(
+            `prefer:${target.id}:${policyId}`,
+            "candidate:preferred-position-transition",
+            target,
+            source,
+            1
+          );
+        }
+        if (pair.highLoadTransition) {
+          addGroupSource(
+            `high-load:${target.person.id}:${target.task.flight.startTime}:${target.task.flight.endTime}`,
+            "candidate:high-load-recovery",
+            target,
+            source,
+            1
+          );
+        }
+        if (pair.rollingExcess) {
+          addGroupSource(
+            `rolling:${target.person.id}:${target.task.flight.startTime}:${target.task.rule.fatiguePoints}:${pair.rollingExcess}`,
+            "candidate:rolling-load",
+            target,
+            source,
+            pair.rollingExcess
+          );
+        }
+      }
+    }
+  }
+
+  const aggregateMonthObjective =
+    "candidate:late-priority-aggregate-rotation:current-month";
+  const aggregateRecentObjective =
+    "candidate:late-priority-aggregate-rotation:recent-eight-workdays";
+  for (const ownChoices of choicesByStaffId.values()) {
+    const applicableChoices = ownChoices.filter(
+      (choice) => choice.priority.latePriorityFrequency.applies
+    );
+    for (
+      let leftIndex = 0;
+      leftIndex < applicableChoices.length;
+      leftIndex += 1
+    ) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < applicableChoices.length;
+        rightIndex += 1
+      ) {
+        const left = applicableChoices[leftIndex]!;
+        const right = applicableChoices[rightIndex]!;
+        if (!choicesCanShareStaff(state, left, right)) continue;
+        addGroupSource(
+          `late-aggregate-month:${left.id}:${right.id}`,
+          aggregateMonthObjective,
+          left,
+          right,
+          1
+        );
+        addGroupSource(
+          `late-aggregate-recent:${left.id}:${right.id}`,
+          aggregateRecentObjective,
+          left,
+          right,
+          1
+        );
+      }
+    }
+  }
+
+  const choicesByTaskKey = new Map<string, DailyCombinationChoice[]>();
+  for (const choice of staffChoices) {
+    const taskChoices = choicesByTaskKey.get(choice.task.key) ?? [];
+    taskChoices.push(choice);
+    choicesByTaskKey.set(choice.task.key, taskChoices);
+  }
+  const boundaryObjective =
+    "candidate:late-priority-aggregate-rotation:category-boundary";
+  if (enabledObjectiveIds.has(boundaryObjective)) {
+    for (const [staffId, ownChoices] of choicesByStaffId) {
+      for (const kind of LATE_PRIORITY_FREQUENCY_ORDER) {
+        const applicable = ownChoices.filter(
+          (choice) =>
+            choice.priority.latePriorityFrequency.applies &&
+            choice.priority.latePriorityFrequency.targetKinds.includes(kind)
+        );
+        if (!applicable.length) continue;
+        const baseCount =
+          applicable[0]!.priority.latePriorityFrequency.counts[kind]
+            .currentMonthCount;
+        const taskMinimums = applicable.map((choice) =>
+          Math.min(
+            ...(choicesByTaskKey.get(choice.task.key) ?? [choice])
+              .filter((candidate) =>
+                candidate.priority.latePriorityFrequency.targetKinds.includes(
+                  kind
+                )
+              )
+              .map(
+                (candidate) =>
+                  candidate.priority.latePriorityFrequency.counts[kind]
+                    .currentMonthCount
+              )
+          )
+        );
+        const allowedAdditional = Math.max(
+          0,
+          Math.min(...taskMinimums) +
+            LATE_PRIORITY_ALLOWED_DIFFERENCE[kind] -
+            baseCount
+        );
+        const excessVariableId = `late-category-excess:${staffId}:${kind}`;
+        variables.push({
+          id: excessVariableId,
+          type: "continuous",
+          lowerBound: 0,
+          upperBound: applicable.length,
+        });
+        constraints.push({
+          id: `${excessVariableId}:limit`,
+          terms: [
+            ...applicable.map((choice) => ({
+              variableId: choice.id,
+              coefficient: 1,
+            })),
+            { variableId: excessVariableId, coefficient: -1 },
+          ],
+          upperBound: allowedAdditional,
+        });
+        addObjectiveTerm(boundaryObjective, excessVariableId, 1);
+      }
+    }
+  }
+
+  const signatureForGroup = (group: SoftCombinationGroup): string =>
+    `${[...group.targets.keys()].sort().join(",")}|${[...group.sources.keys()]
+      .sort()
+      .join(",")}`;
+  const variableIdBySignature = new Map<string, string>();
+  for (const group of groups.values()) {
+    const signature = signatureForGroup(group);
+    if (!variableIdBySignature.has(signature))
+      variableIdBySignature.set(
+        signature,
+        `combination:${variableIdBySignature.size}`
+      );
+  }
+  const enabledVariableIds = new Set<string>();
+  for (const group of groups.values()) {
+    if (!enabledObjectiveIds.has(group.objectiveId)) continue;
+    const targetIds = [...group.targets.keys()];
+    const variableId = variableIdBySignature.get(signatureForGroup(group))!;
+    if (enabledVariableIds.has(variableId)) {
+      addObjectiveTerm(group.objectiveId, variableId, group.coefficient);
+      continue;
+    }
+    enabledVariableIds.add(variableId);
+    const sourcesByFlightId = new Map<string, DailyCombinationChoice[]>();
+    for (const source of group.sources.values()) {
+      const ownSources = sourcesByFlightId.get(source.task.flight.id) ?? [];
+      ownSources.push(source);
+      sourcesByFlightId.set(source.task.flight.id, ownSources);
+    }
+    variables.push({
+      id: variableId,
+      type: "continuous",
+      lowerBound: 0,
+      upperBound: 1,
+    });
+    constraints.push(
+      ...[...sourcesByFlightId.values()].map((sourceChoices, index) => ({
+        id: `${variableId}:source-flight:${index}`,
+        terms: [
+          { variableId, coefficient: 1 },
+          ...targetIds.map((targetId) => ({
+            variableId: targetId,
+            coefficient: -1,
+          })),
+          ...sourceChoices.map((source) => ({
+            variableId: source.id,
+            coefficient: -1,
+          })),
+        ],
+        lowerBound: -1,
+      }))
+    );
+    addObjectiveTerm(group.objectiveId, variableId, group.coefficient);
+  }
+
+  return {
+    variables,
+    incompatibilityConstraints: incompatibilityConstraints(state, staffChoices),
+    constraints,
+    objectiveTerms,
+  };
+}
+
+export function withDailyCombinationObjectives(
+  objectives: readonly LexicographicObjective[],
+  combination: DailyCombinationModel
+): LexicographicObjective[] {
+  return objectives.map((objective) => ({
+    ...objective,
+    terms: [
+      ...objective.terms,
+      ...(combination.objectiveTerms.get(objective.id) ?? []),
+    ],
+  }));
+}

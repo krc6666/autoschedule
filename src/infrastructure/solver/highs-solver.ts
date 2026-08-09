@@ -166,6 +166,44 @@ function rawModel(
   };
 }
 
+function rawRows(
+  constraints: readonly LinearConstraint[],
+  columnById: ReadonlyMap<string, number>
+): {
+  lower: Float64Array;
+  upper: Float64Array;
+  start: Int32Array;
+  index: Int32Array;
+  value: Float64Array;
+} {
+  const starts: number[] = [];
+  const indices: number[] = [];
+  const coefficients: number[] = [];
+  for (const constraint of constraints) {
+    starts.push(indices.length);
+    for (const term of constraint.terms) {
+      const column = columnById.get(term.variableId);
+      if (column === undefined)
+        throw new Error(
+          `求解约束 ${constraint.id} 引用了未知变量 ${term.variableId}`
+        );
+      indices.push(column);
+      coefficients.push(term.coefficient);
+    }
+  }
+  return {
+    lower: Float64Array.from(
+      constraints.map((constraint) => constraint.lowerBound ?? -HIGHS_INF)
+    ),
+    upper: Float64Array.from(
+      constraints.map((constraint) => constraint.upperBound ?? HIGHS_INF)
+    ),
+    start: Int32Array.from(starts),
+    index: Int32Array.from(indices),
+    value: Float64Array.from(coefficients),
+  };
+}
+
 function validateProblem(problem: SolverProblem): void {
   if (!problem.variables.length) throw new Error("求解任务没有决策变量");
   if (!Number.isFinite(problem.timeoutMs) || problem.timeoutMs <= 0)
@@ -230,7 +268,6 @@ export class HighsSolver implements SolverPort {
         variable.type === "continuous" ? [] : [variable.id]
       )
     );
-
     for (const objective of problem.objectives) {
       if (!shouldSolveObjective(objective, objectiveValues)) continue;
       const remainingMs = deadline - Date.now();
@@ -310,6 +347,10 @@ export class HighsSolver implements SolverPort {
       terms: [],
     };
 
+    const highs = await NativeHiGHS.create();
+    let modelPassed = false;
+    let loadedLockCount = 0;
+
     const solveBatch = async (
       objectives: readonly LexicographicObjective[]
     ): Promise<Pick<SolverResult, "termination" | "diagnostic"> | null> => {
@@ -321,7 +362,6 @@ export class HighsSolver implements SolverPort {
           diagnostic: `求解目标 ${objectives[0]!.id} 前已达到时间上限`,
         };
 
-      const highs = await NativeHiGHS.create();
       let passedObjectives = false;
       try {
         highs.setParam("time_limit", remainingMs / 1000);
@@ -329,7 +369,19 @@ export class HighsSolver implements SolverPort {
         highs.setParam("random_seed", 0);
         highs.setParam("output_flag", false);
         highs.setParam("blend_multi_objectives", false);
-        highs.passModel(rawModel(problem, emptyObjective, locks));
+        if (!modelPassed) {
+          highs.passModel(rawModel(problem, emptyObjective, []));
+          modelPassed = true;
+        } else {
+          const pendingLocks = locks
+            .slice(loadedLockCount)
+            .map(objectiveLockConstraint);
+          if (pendingLocks.length) {
+            highs.addRows(rawRows(pendingLocks, columnById));
+            loadedLockCount = locks.length;
+          }
+          highs.setSolutionValues(finalValues);
+        }
         highs.passLinearObjectives(
           objectives.map((objective, index) => ({
             direction: objective.direction,
@@ -361,70 +413,74 @@ export class HighsSolver implements SolverPort {
         }
         return null;
       } finally {
-        try {
-          if (passedObjectives) highs.clearLinearObjectives();
-        } finally {
-          highs.free();
-        }
+        if (passedObjectives) highs.clearLinearObjectives();
       }
     };
-
-    let cursor = 0;
-    let pending: LexicographicObjective[] = [];
-    while (cursor < problem.objectives.length) {
-      const objective = problem.objectives[cursor]!;
-      if (!objective.solveOnlyWhen) {
-        pending.push(objective);
+    try {
+      let cursor = 0;
+      let pending: LexicographicObjective[] = [];
+      while (cursor < problem.objectives.length) {
+        const objective = problem.objectives[cursor]!;
+        if (!objective.solveOnlyWhen) {
+          pending.push(objective);
+          cursor += 1;
+          continue;
+        }
+        if (!objectiveValues.has(objective.solveOnlyWhen.objectiveId)) {
+          if (!pending.length)
+            throw new Error(
+              `条件目标 ${objective.id} 的前置目标尚未完成分层求解`
+            );
+          const failure = await solveBatch(pending);
+          if (failure)
+            return {
+              ...failure,
+              selectedVariableIds: new Set(),
+              objectiveValues,
+            };
+          pending = [];
+          continue;
+        }
+        if (shouldSolveObjective(objective, objectiveValues))
+          pending.push(objective);
         cursor += 1;
-        continue;
       }
-      if (!objectiveValues.has(objective.solveOnlyWhen.objectiveId)) {
-        if (!pending.length)
-          throw new Error(
-            `条件目标 ${objective.id} 的前置目标尚未完成分层求解`
-          );
-        const failure = await solveBatch(pending);
-        if (failure)
-          return {
-            ...failure,
-            selectedVariableIds: new Set(),
-            objectiveValues,
-          };
-        pending = [];
-        continue;
-      }
-      if (shouldSolveObjective(objective, objectiveValues))
-        pending.push(objective);
-      cursor += 1;
-    }
 
-    const failure = await solveBatch(pending);
-    if (failure)
+      const failure = await solveBatch(pending);
+      if (failure)
+        return {
+          ...failure,
+          selectedVariableIds: new Set(),
+          objectiveValues,
+        };
+
+      for (const objective of problem.objectives) {
+        if (objectiveValues.has(objective.id)) continue;
+        objectiveValues.set(
+          objective.id,
+          objectiveValue(
+            objective,
+            finalValues,
+            columnById,
+            integralVariableIds
+          )
+        );
+      }
+
       return {
-        ...failure,
-        selectedVariableIds: new Set(),
+        termination: "optimal",
+        selectedVariableIds: new Set(
+          problem.variables.flatMap((variable, index) =>
+            variable.type !== "continuous" && finalValues[index]! > 0.5
+              ? [variable.id]
+              : []
+          )
+        ),
         objectiveValues,
       };
-
-    for (const objective of problem.objectives) {
-      if (objectiveValues.has(objective.id)) continue;
-      objectiveValues.set(
-        objective.id,
-        objectiveValue(objective, finalValues, columnById, integralVariableIds)
-      );
+    } finally {
+      highs.free();
     }
-
-    return {
-      termination: "optimal",
-      selectedVariableIds: new Set(
-        problem.variables.flatMap((variable, index) =>
-          variable.type !== "continuous" && finalValues[index]! > 0.5
-            ? [variable.id]
-            : []
-        )
-      ),
-      objectiveValues,
-    };
   }
 }
 

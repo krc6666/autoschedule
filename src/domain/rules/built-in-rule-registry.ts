@@ -3,7 +3,10 @@ import {
   SCHEDULING_RULES,
   type SchedulingRuleId,
 } from "./schedule-rule-contract";
-import { diagnoseAutomaticAssignmentEligibility } from "../candidates/assignment-eligibility";
+import {
+  diagnoseAutomaticStaffEligibility,
+  diagnoseMinimumFlightTransitionEligibility,
+} from "../candidates/assignment-eligibility";
 import type {
   AssignmentEligibilityDiagnostic,
   AutomaticAssignmentEligibilityOptions,
@@ -12,6 +15,7 @@ import {
   CANDIDATE_PRIORITY_ORDER,
   compareDutyPosition,
   compareKe166Reservation,
+  compareLatePriorityAggregateRotation,
   compareLatePriorityFrequency,
   compareLateShiftCutoff,
   compareLateShiftRecovery,
@@ -67,6 +71,7 @@ export const CONFIGURABLE_RULE_SETTINGS: Partial<
   "rolling-load": "rollingLoadProtectionEnabled",
   "high-load-recovery": "highLoadProtectionEnabled",
   "position-frequency": "positionRotationEnabled",
+  "late-priority-aggregate-rotation": "positionRotationEnabled",
   "late-priority-frequency": "positionRotationEnabled",
   "position-frequency-review": "positionRotationEnabled",
   "workload-balance": "workloadBalanceEnabled",
@@ -198,7 +203,13 @@ const RULE_EXECUTION: Readonly<
   "staff-eligibility": [
     {
       kind: "hard-constraint",
-      execute: diagnoseAutomaticAssignmentEligibility,
+      execute: diagnoseAutomaticStaffEligibility,
+    },
+  ],
+  "minimum-flight-transition": [
+    {
+      kind: "hard-constraint",
+      execute: diagnoseMinimumFlightTransitionEligibility,
     },
   ],
   "ke166-supervisor": [
@@ -254,7 +265,16 @@ const RULE_EXECUTION: Readonly<
       },
     },
   ],
+  "cross-workday-qualification-reservation": [
+    {
+      kind: "daily-model",
+      id: "cross-workday-qualification-reservation",
+    },
+  ],
   "position-transition": [candidate(compareStrictPositionTransition)],
+  "late-priority-aggregate-rotation": [
+    candidate(compareLatePriorityAggregateRotation),
+  ],
   "late-shift-recovery": [
     candidate(compareLateShiftRecovery),
     review("late-shift-recovery", "primary", lateShiftRecoveryReview),
@@ -287,10 +307,12 @@ const RULE_EXECUTION: Readonly<
     candidate(comparePreferredPositionTransition),
   ],
   "staff-coverage": [
-    candidate(
-      (left, right) =>
-        Number(left.alreadyAssignedToday) - Number(right.alreadyAssignedToday)
-    ),
+    {
+      kind: "candidate-priority",
+      execute: ({ left, leftPriority, right, rightPriority }) =>
+        Number(left.teamLeader || leftPriority.alreadyAssignedToday) -
+        Number(right.teamLeader || rightPriority.alreadyAssignedToday),
+    },
   ],
   "rolling-load": [
     candidate((left, right) =>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
 import {
+  addCrossWorkdayQualificationReservation,
   addDutyPriority,
   addLateShiftRecoveryPositionRule,
   addMobileSupervisorCoverageRule,
@@ -9,19 +10,23 @@ import {
   addTransitionPolicy,
   applySchedulePolicy,
   deleteDutyPriority,
+  deleteCrossWorkdayQualificationReservation,
   deleteMobileSupervisorCoverageRule,
   deleteNextWorkdayRecoveryTarget,
   deleteLateShiftRecoveryPositionRule,
   deleteTransitionPolicy,
   moveDutyPriority,
+  moveCrossWorkdayQualificationReservation,
   updateDutyPriority,
   updateNextWorkdayRecoveryTarget,
   updateLateShiftRecoveryPositionRule,
   updatePolicyEntityField,
+  type PolicyFieldUpdateResult,
   type SchedulePolicyInput,
 } from "../../src/app/policy-actions";
 
 const input: SchedulePolicyInput = {
+  minimumRegularTransitionMinutes: 90,
   highLoadProtectionEnabled: true,
   highLoadFatigueThreshold: Number.NaN,
   highLoadRecoveryMinutes: 2000,
@@ -30,6 +35,7 @@ const input: SchedulePolicyInput = {
   rollingLoadWindowMinutes: 360,
   rollingLoadMaxFatigue: 8,
   positionRotationEnabled: true,
+  latePriorityFlightNumbers: [" tr121 ", "TW 616", "TR121"],
   lateShiftRecoveryEnabled: true,
   lateShiftEndTime: "",
   teamLeaderConcurrentSupervisionMaxOverlapMinutes: 1000,
@@ -146,6 +152,53 @@ describe("policy actions", () => {
     ).toBe(false);
   });
 
+  it("maintains ordered cross-workday qualification reservations", () => {
+    const state = createDefaultState();
+    const first = addCrossWorkdayQualificationReservation(state);
+    const second = addCrossWorkdayQualificationReservation(state);
+    expect(
+      updatePolicyEntityField(
+        state,
+        "cross-workday-reservation",
+        second.id,
+        "flightNo",
+        " cx931 "
+      )
+    ).toBe("saved");
+    expect(
+      updatePolicyEntityField(
+        state,
+        "cross-workday-reservation",
+        second.id,
+        "matchField",
+        "remark"
+      )
+    ).toBe("saved");
+    expect(
+      updatePolicyEntityField(
+        state,
+        "cross-workday-reservation",
+        second.id,
+        "minimumStaffCount",
+        2
+      )
+    ).toBe("saved");
+    expect(moveCrossWorkdayQualificationReservation(state, second.id, -1)).toBe(
+      true
+    );
+    expect(
+      state.settings.crossWorkdayQualificationReservations[0]
+    ).toMatchObject({
+      id: second.id,
+      flightNo: "CX931",
+      matchField: "remark",
+      minimumStaffCount: 2,
+    });
+    expect(deleteCrossWorkdayQualificationReservation(state, first.id)).toBe(
+      true
+    );
+  });
+
   it("maintains editable final-late priority position rules through explicit actions", () => {
     const state = createDefaultState();
     const added = addLateShiftRecoveryPositionRule(state);
@@ -226,6 +279,116 @@ describe("policy actions", () => {
     expect(coverage.mode).toBe("allow");
   });
 
+  it("does not mark the schedule stale for unchanged, invalid, or missing updates", () => {
+    const state = createDefaultState();
+    addActiveSchedule(state);
+    const priority = state.settings.dutyPositionPriorities[0]!;
+
+    expect(
+      updateDutyPriority(state, priority.id, "flightNo", priority.flightNo)
+    ).toBe(true);
+    expect(state.schedulePolicyStale).toBe(false);
+    expect(updateDutyPriority(state, priority.id, "unknown", "value")).toBe(
+      false
+    );
+    expect(updateDutyPriority(state, "missing", "enabled", false)).toBe(false);
+    expect(moveDutyPriority(state, priority.id, -1)).toBe(false);
+    expect(deleteDutyPriority(state, "missing")).toBe(false);
+    expect(state.schedulePolicyStale).toBe(false);
+    expect(state.assignments).toHaveLength(1);
+  });
+
+  it.each<
+    [
+      string,
+      (
+        state: ReturnType<typeof createDefaultState>
+      ) => boolean | PolicyFieldUpdateResult,
+    ]
+  >([
+    [
+      "duty priority",
+      (state) => {
+        const item = state.settings.dutyPositionPriorities[0]!;
+        return updateDutyPriority(state, item.id, "enabled", item.enabled);
+      },
+    ],
+    [
+      "recovery target",
+      (state) => {
+        const item = state.settings.nextWorkdayRecoveryTargets[0]!;
+        return updateNextWorkdayRecoveryTarget(
+          state,
+          item.id,
+          "enabled",
+          item.enabled
+        );
+      },
+    ],
+    [
+      "late-shift recovery rule",
+      (state) => {
+        const item = state.settings.lateShiftRecoveryPositionRules[0]!;
+        return updateLateShiftRecoveryPositionRule(
+          state,
+          item.id,
+          "keyword",
+          item.keyword
+        );
+      },
+    ],
+    [
+      "cross-workday reservation",
+      (state) => {
+        const item = addCrossWorkdayQualificationReservation(state);
+        state.schedulePolicyStale = false;
+        return updatePolicyEntityField(
+          state,
+          "cross-workday-reservation",
+          item.id,
+          "minimumStaffCount",
+          item.minimumStaffCount
+        );
+      },
+    ],
+    [
+      "transition policy",
+      (state) => {
+        const item = state.settings.positionTransitionPolicies[0]!;
+        return updatePolicyEntityField(
+          state,
+          "transition-policy",
+          item.id,
+          "mode",
+          item.mode
+        );
+      },
+    ],
+    [
+      "supervisor coverage rule",
+      (state) => {
+        const item = state.settings.mobileSupervisorCoverageRules[0]!;
+        return updatePolicyEntityField(
+          state,
+          "supervisor-coverage",
+          item.id,
+          "mode",
+          item.mode
+        );
+      },
+    ],
+  ])(
+    "keeps the active schedule current after unchanged %s",
+    (_name, update) => {
+      const state = createDefaultState();
+      addActiveSchedule(state);
+
+      expect(update(state)).toBeTruthy();
+      expect(state.schedulePolicyStale).toBe(false);
+      expect(state.assignments).toHaveLength(1);
+    }
+  );
+
   it.each<[string, (state: ReturnType<typeof createDefaultState>) => unknown]>([
     ["add duty priority", (state) => addDutyPriority(state)],
     [
@@ -253,6 +416,10 @@ describe("policy actions", () => {
         ),
     ],
     ["add recovery target", (state) => addNextWorkdayRecoveryTarget(state)],
+    [
+      "add cross-workday reservation",
+      (state) => addCrossWorkdayQualificationReservation(state),
+    ],
     [
       "delete recovery target",
       (state) =>

@@ -15,6 +15,7 @@ import {
   type RotationReview,
 } from "./reassignment-safety-policy";
 import { evaluateWorkloadBalance } from "./workload-balance";
+import { crossWorkdayReservationStatuses } from "./cross-workday-qualification-reservation";
 
 export function isRotationLocked(
   state: AppState,
@@ -254,6 +255,22 @@ function plannedAssignmentSafetyReasons(
         frequencyFacts
       )
     );
+  }
+  const reservationBefore = new Map(
+    crossWorkdayReservationStatuses(state, assignments).map((status) => [
+      status.target.reservation.id,
+      status.shortfall,
+    ])
+  );
+  if (
+    crossWorkdayReservationStatuses(state, planned).some(
+      (status) =>
+        status.shortfall >
+        (reservationBefore.get(status.target.reservation.id) ??
+          status.shortfall)
+    )
+  ) {
+    reasons.push("调整会减少跨工作日资质预留人数");
   }
   return [...new Set(reasons)];
 }

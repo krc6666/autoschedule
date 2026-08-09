@@ -1,4 +1,5 @@
 import type { AppState, Assignment } from "../../model";
+import { minimumFlightTransitionViolationsForInsertion } from "../assignments/minimum-flight-transition";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import {
@@ -346,6 +347,17 @@ export function reassignmentDynamicSafetyReasons({
   if (!flight || !rule || !primaryRule) return ["交换目标航班或岗位规则不存在"];
   const policy = ROTATION_REVIEW_POLICIES[review];
   const reasons: string[] = [];
+  if (
+    minimumFlightTransitionViolationsForInsertion(
+      state,
+      assignments.filter((item) => item.id !== assignment.id),
+      assignment.staffId,
+      flight,
+      rule
+    ).length
+  ) {
+    reasons.push("交换后违反普通岗位最小航班衔接间隔");
+  }
   if (
     positionTransitionInsertionCost(
       assignments,

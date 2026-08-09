@@ -19,9 +19,10 @@ import {
   type SchedulingRuleId,
 } from "../domain/rules/schedule-rule-contract";
 import { orderPositionRules } from "../utils";
+import { latePriorityFlightScopeCandidates } from "../domain/statistics/late-priority-flight-scope";
 
 type PersistedSettings = Partial<ScheduleSettings>;
-type PersistedAppState = Record<string, unknown> & { version: 1 | 2 | 3 };
+type PersistedAppState = Record<string, unknown> & { version: 1 | 2 | 3 | 4 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -29,7 +30,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPersistedState(value: unknown): value is PersistedAppState {
   if (!isRecord(value)) return false;
-  return value.version === 1 || value.version === 2 || value.version === 3;
+  return (
+    value.version === 1 ||
+    value.version === 2 ||
+    value.version === 3 ||
+    value.version === 4
+  );
 }
 
 function restoredCollection<T>(
@@ -42,7 +48,8 @@ function restoredCollection<T>(
 
 function migrateSettings(
   parsed: PersistedAppState,
-  fallback: AppState
+  fallback: AppState,
+  positionRules: readonly PositionRule[]
 ): ScheduleSettings {
   const persistedSettings = isRecord(parsed.settings)
     ? (parsed.settings as PersistedSettings)
@@ -62,6 +69,10 @@ function migrateSettings(
           ? { ...item, id: "duty-priority-tr121-h02", positionKeyword: "H02" }
           : item
     );
+  }
+  if (parsed.version < 4) {
+    migrated.latePriorityFlightNumbers =
+      latePriorityFlightScopeCandidates(positionRules);
   }
   return normalizeScheduleSettings(migrated, fallback.settings);
 }
@@ -399,8 +410,13 @@ export function restorePersistedState(
   fallback: AppState
 ): AppState | null {
   if (!isPersistedState(value)) return null;
+  const positionRules = restoredCollection(
+    value.positionRules,
+    fallback.positionRules,
+    (items) => restorePositionRules(items, value.version === 1)
+  );
   const next: AppState = {
-    version: 3,
+    version: 4,
     staff: restoredCollection(value.staff, fallback.staff, restoreStaff),
     flights: restoredCollection(
       value.flights,
@@ -412,11 +428,7 @@ export function restorePersistedState(
       fallback.templates,
       restoreTemplates
     ),
-    positionRules: restoredCollection(
-      value.positionRules,
-      fallback.positionRules,
-      (items) => restorePositionRules(items, value.version === 1)
-    ),
+    positionRules,
     history: restoredCollection(
       value.history,
       fallback.history,
@@ -437,7 +449,7 @@ export function restorePersistedState(
       typeof value.schedulePolicyStale === "boolean"
         ? value.schedulePolicyStale
         : fallback.schedulePolicyStale,
-    settings: migrateSettings(value, fallback),
+    settings: migrateSettings(value, fallback, positionRules),
     updatedAt:
       typeof value.updatedAt === "string"
         ? value.updatedAt

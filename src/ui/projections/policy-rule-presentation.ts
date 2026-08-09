@@ -43,6 +43,8 @@ const USER_RULE_STAGES: Readonly<
 const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
   "staff-eligibility":
     "人员状态、岗位资质、夜班能力、时间冲突和每日工时都必须符合要求。",
+  "minimum-flight-transition":
+    "同一人员跨航班连续工作时，必须留足规则页设置的准备时间。",
   "ke166-supervisor":
     "先完成柜台与重点岗位，再安排独立督导；只有缺员时才受控兼任。",
   "duty-position": "按值班优先项安排晚撤岗位，并只锁定实际安排的岗位。",
@@ -52,8 +54,12 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "发现中间空缺时把后序岗位安全前移，不减少已经填好的岗位。",
   "team-leader-concurrent-supervision":
     "常规岗位仍有空缺时，才允许符合条件的分队长短时并行督导。",
+  "cross-workday-qualification-reservation":
+    "当天岗位填满后，优先保留下一工作班稀缺岗位所需的合格人员。",
   "position-transition":
     "严格衔接不符合要求时阻止安排；12 点前无人替代时保留原因供复核。",
+  "late-priority-aggregate-rotation":
+    "先避开上一班承担过末班重岗位的人，再平衡本月和最近 8 班的四类合计次数。",
   "late-shift-recovery":
     "上一工作班承担晚间重点岗位的人，本班优先通过整体换位获得恢复。",
   "late-shift-cutoff": "需要恢复的人优先在设定时间前结束本班工作。",
@@ -64,11 +70,12 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "后续晚班只有少数人能做时，尽量不让这些人先承担早班重点岗位。",
   "preferred-position-transition":
     "多人都能胜任时，优先选择岗位衔接更顺畅的人。",
-  "staff-coverage": "条件允许时优先让当天还没有实际工时的在岗人员参与。",
+  "staff-coverage":
+    "条件允许时优先让当天还没有实际工时的普通人员参与；分队长不要求每天上班。",
   "rolling-load": "优先避开短时间内已经接近疲劳上限的人。",
   "high-load-recovery": "刚完成高负荷岗位的人优先获得恢复时间。",
   "late-priority-frequency":
-    "实际结束晚于末班界线的重点岗位合并统计，优先安排总次数较少的人。",
+    "合计负担相同时，再分别平衡督导、一号、申报和送资料。",
   "cross-workday-load":
     "上一工作班较累的人本班尽量轻一些，较轻松的人适当多承担。",
   "position-frequency": "先比较本月重点岗位次数，再比较最近几个工作班的次数。",

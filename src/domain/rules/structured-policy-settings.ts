@@ -1,4 +1,5 @@
 import type {
+  CrossWorkdayQualificationReservation,
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
@@ -10,6 +11,7 @@ import type {
 const CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 const DEFAULT_STRUCTURED_POLICIES: StructuredSchedulePolicies = {
+  crossWorkdayQualificationReservations: [],
   lateShiftRecoveryPositionRules: [
     {
       id: "late-recovery-supervisor",
@@ -248,6 +250,39 @@ function normalizeSupervisorRules(
     });
 }
 
+function normalizeCrossWorkdayReservations(
+  value: unknown,
+  fallback: CrossWorkdayQualificationReservation[]
+): CrossWorkdayQualificationReservation[] {
+  return sourceArray(value, fallback)
+    .filter((item) => item && typeof item === "object")
+    .map((item, index) => {
+      const reservation = item as Partial<CrossWorkdayQualificationReservation>;
+      const minimumStaffCount = Number(reservation.minimumStaffCount);
+      return {
+        id:
+          String(reservation.id ?? "").trim() ||
+          `cross-workday-reservation-${index + 1}`,
+        enabled: reservation.enabled !== false,
+        flightNo: String(reservation.flightNo ?? "")
+          .trim()
+          .toUpperCase(),
+        matchField:
+          reservation.matchField === "position" ? "position" : "remark",
+        keyword: String(reservation.keyword ?? "").trim(),
+        minimumStaffCount: Math.min(
+          50,
+          Math.max(
+            1,
+            Number.isFinite(minimumStaffCount)
+              ? Math.round(minimumStaffCount)
+              : 1
+          )
+        ),
+      };
+    });
+}
+
 export function normalizeStructuredPolicies(
   input: Partial<StructuredSchedulePolicies>,
   fallback = createDefaultStructuredPolicies()
@@ -272,6 +307,10 @@ export function normalizeStructuredPolicies(
     mobileSupervisorCoverageRules: normalizeSupervisorRules(
       input.mobileSupervisorCoverageRules,
       fallback.mobileSupervisorCoverageRules
+    ),
+    crossWorkdayQualificationReservations: normalizeCrossWorkdayReservations(
+      input.crossWorkdayQualificationReservations,
+      fallback.crossWorkdayQualificationReservations
     ),
   };
 }

@@ -64,6 +64,7 @@ export type UiCommand =
       collection:
         | "duty"
         | "recovery-target"
+        | "cross-workday-reservation"
         | "late-position"
         | "supervisor"
         | "transition";
@@ -73,12 +74,14 @@ export type UiCommand =
       collection:
         | "duty"
         | "recovery-target"
+        | "cross-workday-reservation"
         | "late-position"
         | "supervisor"
         | "transition";
       id: string;
     }
   | { type: "move-duty-priority"; id: string; direction: -1 | 1 }
+  | { type: "move-cross-workday-reservation"; id: string; direction: -1 | 1 }
   | { type: "toggle-administrative-mode"; enabled: boolean }
   | {
       type: "assign-staff";

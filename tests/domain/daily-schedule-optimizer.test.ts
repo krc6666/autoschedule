@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
+import { buildDailyScheduleModel } from "../../src/domain/kernel/daily-schedule-model";
 import { optimizeDailySchedule } from "../../src/domain/kernel/daily-schedule-optimizer";
+import { materializeDailySchedulePlan } from "../../src/domain/kernel/daily-schedule-result";
 import { prepareSchedule } from "../../src/domain/kernel/schedule-preparation";
 import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-in-rule-registry";
 import type {
@@ -95,7 +97,64 @@ async function captureProblem(state: AppState): Promise<SolverProblem> {
   return solver.problem!;
 }
 
+describe("daily schedule module interfaces", () => {
+  it("materializes the selected model choice through the result module", () => {
+    const date = "2026-08-03";
+    const state = modelState([
+      flight("only", "AA100", "08:00", "10:00", ["A1"]),
+    ]);
+    const preparation = prepareSchedule(
+      state,
+      date,
+      evaluateAutomaticHardConstraints
+    );
+    const model = buildDailyScheduleModel({
+      state,
+      date,
+      preparation,
+      timeoutMs: 30_000,
+    });
+
+    expect(model).not.toBeNull();
+    const selectedChoice = model!.staffChoices[0]!;
+    const plan = materializeDailySchedulePlan({
+      state,
+      date,
+      preparation,
+      model: model!,
+      selectedVariableIds: new Set([selectedChoice.id]),
+    });
+
+    expect(plan.assignments).toHaveLength(1);
+    expect(plan.assignments[0]).toMatchObject({
+      flightId: selectedChoice.task.flight.id,
+      positionRuleId: selectedChoice.task.rule.id,
+      staffId: selectedChoice.person.id,
+      status: "assigned",
+    });
+    expect(plan.lockedAssignmentIds).toEqual(new Set());
+    expect(plan.warnings).toEqual([]);
+  });
+});
+
 describe("daily schedule conflict constraints", () => {
+  it("adds one hard incompatibility for flight groups below the global transition gap", async () => {
+    const state = modelState([
+      flight("left", "AA100", "08:00", "10:00", ["A1", "A2"]),
+      flight("right", "BB200", "11:29", "13:00", ["B1", "B2"]),
+    ]);
+    state.settings.minimumRegularTransitionMinutes = 90;
+
+    const problem = await captureProblem(state);
+    const constraints = problem.constraints.filter((constraint) =>
+      constraint.id.startsWith("minimum-transition:")
+    );
+
+    expect(constraints).toHaveLength(1);
+    expect(constraints[0]).toMatchObject({ upperBound: 1 });
+    expect(constraints[0]!.terms).toHaveLength(4);
+  });
+
   it("compresses two fully incompatible flight groups into one clique", async () => {
     const problem = await captureProblem(
       modelState([
@@ -121,7 +180,7 @@ describe("daily schedule conflict constraints", () => {
         ],
         (rule) =>
           rule.name === "分流"
-            ? { ...rule, category: "分流", earlyReleaseMinutes: 20 }
+            ? { ...rule, category: "分流", earlyReleaseMinutes: 120 }
             : rule
       )
     );
@@ -137,6 +196,85 @@ describe("daily schedule conflict constraints", () => {
 });
 
 describe("daily schedule solver performance model", () => {
+  it("does not use team leaders to satisfy the daily staff coverage objective", async () => {
+    const state = modelState([
+      flight("only", "AA100", "08:00", "10:00", ["A1"]),
+    ]);
+    const teamLeader = state.staff[0]!;
+    teamLeader.teamLeader = true;
+    const regularWorker = {
+      ...teamLeader,
+      id: "regular-worker",
+      name: "普通人员",
+      teamLeader: false,
+    };
+    state.staff.push(regularWorker);
+    state.positionRules[0]!.qualifiedStaffIds.push(regularWorker.id);
+
+    const problem = await captureProblem(state);
+    const coverage = problem.objectives.find(
+      (objective) => objective.id === "candidate:staff-coverage"
+    );
+
+    expect(coverage?.terms).toEqual([
+      { variableId: `worked:${regularWorker.id}`, coefficient: 1 },
+    ]);
+    expect(problem.variables).not.toContainEqual({
+      id: `worked:${teamLeader.id}`,
+    });
+  });
+
+  it("places cross-workday qualification reservation after vacancies and before late-position fairness", async () => {
+    const state = modelState([
+      flight("late", "LATE100", "21:00", "23:30", ["A1"]),
+    ]);
+    const second = {
+      ...state.staff[0]!,
+      id: "second-worker",
+      name: "第二人员",
+    };
+    state.staff.push(second);
+    state.positionRules[0]!.qualifiedStaffIds.push(second.id);
+    state.positionRules.push({
+      ...state.positionRules[0]!,
+      id: "next-control",
+      flightNo: "NEXT200",
+      name: "控制",
+      remark: "",
+      qualifiedStaffIds: [state.staff[0]!.id],
+    });
+    state.settings.crossWorkdayQualificationReservations = [
+      {
+        id: "reserve-next-control",
+        enabled: true,
+        flightNo: "NEXT200",
+        matchField: "position",
+        keyword: "控制",
+        minimumStaffCount: 1,
+      },
+    ];
+
+    const problem = await captureProblem(state);
+    const objectiveIds = problem.objectives.map((objective) => objective.id);
+    const reservationIndex = objectiveIds.findIndex((id) =>
+      id.startsWith("cross-workday-qualification-reservation:")
+    );
+
+    expect(reservationIndex).toBeGreaterThan(
+      objectiveIds.indexOf("all-vacancies")
+    );
+    const lateFairnessIndex = objectiveIds.findIndex((id) =>
+      id.startsWith("candidate:late-priority-frequency:")
+    );
+    if (lateFairnessIndex >= 0)
+      expect(reservationIndex).toBeLessThan(lateFairnessIndex);
+    expect(
+      problem.variables.some((variable) =>
+        variable.id.startsWith("cross-workday-reserve:")
+      )
+    ).toBe(true);
+  });
+
   it("uses native lexicographic solving for the whole-day model", async () => {
     const problem = await captureProblem(
       modelState([flight("only", "AA100", "08:00", "10:00", ["A1"])])
@@ -188,6 +326,7 @@ describe("daily schedule solver performance model", () => {
     state.positionRules.forEach((rule) =>
       rule.qualifiedStaffIds.push(second.id)
     );
+    state.settings.latePriorityFlightNumbers = ["TR121"];
     state.history = [
       ["supervisor", state.staff[0]!.id, "督导", ""],
       ["number-one", second.id, "H02", "一号"],
@@ -206,18 +345,38 @@ describe("daily schedule solver performance model", () => {
       fatiguePoints: 5,
       remark: remark!,
     }));
+    state.history.push({
+      ...state.history[0]!,
+      id: "latest-number-one",
+      date: "2026-08-02",
+      position: "H02",
+      remark: "一号",
+    });
     const problem = await captureProblem(state);
 
-    expect(
-      problem.objectives
-        .map((objective) => objective.id)
-        .filter((id) => id.startsWith("candidate:late-priority-frequency:"))
-    ).toEqual([
+    const objectiveIds = problem.objectives.map((objective) => objective.id);
+    const aggregateObjectives = objectiveIds.filter((id) =>
+      id.startsWith("candidate:late-priority-aggregate-rotation:")
+    );
+    const categoryObjectives = objectiveIds.filter((id) =>
+      id.startsWith("candidate:late-priority-frequency:")
+    );
+
+    expect(aggregateObjectives).toEqual([
+      "candidate:late-priority-aggregate-rotation:category-boundary",
+      "candidate:late-priority-aggregate-rotation:previous-workday",
+      "candidate:late-priority-aggregate-rotation:current-month",
+      "candidate:late-priority-aggregate-rotation:recent-eight-workdays",
+    ]);
+    expect(categoryObjectives).toEqual([
       "candidate:late-priority-frequency:supervisor",
       "candidate:late-priority-frequency:number-one",
       "candidate:late-priority-frequency:declaration",
       "candidate:late-priority-frequency:delivery",
     ]);
+    expect(objectiveIds.indexOf(aggregateObjectives.at(-1)!)).toBeLessThan(
+      objectiveIds.indexOf(categoryObjectives[0]!)
+    );
   });
 
   it("omits inactive late-position objectives from a daytime model", async () => {
@@ -250,6 +409,7 @@ describe("daily schedule solver performance model", () => {
         mode: "prefer",
       },
     ];
+    state.settings.minimumRegularTransitionMinutes = 0;
 
     const problem = await captureProblem(state);
     const combinationVariables = problem.variables.filter((variable) =>

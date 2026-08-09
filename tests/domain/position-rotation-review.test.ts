@@ -199,6 +199,7 @@ describe("consecutive priority-position rotation review", () => {
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.workloadBalanceEnabled = false;
     state.settings.positionTransitionPolicies = [];
+    state.settings.minimumRegularTransitionMinutes = 0;
     state.settings.lateShiftRecoveryEnabled = true;
     state.settings.lateShiftRecoveryPositionRules = [
       {
@@ -1004,6 +1005,7 @@ describe("consecutive priority-position rotation review", () => {
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.workloadBalanceEnabled = false;
     state.settings.positionTransitionPolicies = [];
+    state.settings.minimumRegularTransitionMinutes = 0;
     state.flights = [
       {
         id: "early",
@@ -1136,6 +1138,7 @@ describe("consecutive priority-position rotation review", () => {
       person.dutyQualified = false;
     });
     disableUnrelatedProtections(state);
+    state.settings.minimumRegularTransitionMinutes = 0;
     state.flights = [
       {
         id: "early",

@@ -37,6 +37,7 @@ describe("statistics page", () => {
       remark: "一号",
     };
     state.history = [record];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
     const element = await mountElement<
       HTMLElement & { updateComplete: Promise<unknown> }
     >("autoschedule-statistics-page", { model: state, date: "2026-07-18" });
@@ -45,15 +46,21 @@ describe("statistics page", () => {
     expect(text).toContain("月度轮值明细");
     expect(text).toContain("月度轻松班次统计");
     expect(text).toContain("末班重点岗位统计");
-    expect(text).toContain("TR121 · 督导");
-    expect(text).toContain("TR121 · 一号");
-    expect(text).toContain("TR121 · 申报");
-    expect(text).toContain("TR121 · 送资料");
-    expect(text).toContain("督导资质");
-    expect(text).toContain("普通资质差值");
+    expect(text).toContain("当前统计航班：TR121");
+    expect(text).toContain("四类合计");
+    expect(text).toContain("督导");
+    expect(text).toContain("一号");
+    expect(text).toContain("申报");
+    expect(text).toContain("送资料");
+    expect(text).toContain("允许差值 1");
+    expect(text).toContain("允许差值 2");
     expect(text).not.toContain("TR121 / H02 月度承担次数");
     expect(text).toContain(person.name);
     expect(text).toContain("07-16");
+    expect(
+      element.querySelector(".late-priority-summary-table")
+    ).not.toBeNull();
+    expect(element.querySelector(".late-priority-count-detail")).not.toBeNull();
     expect(text).toContain("下载值班备勤模板");
     expect(text).toContain("导入值班备勤表");
     expect(
@@ -61,7 +68,7 @@ describe("statistics page", () => {
     ).not.toBeNull();
   });
 
-  it("switches the four late priority statistics together by flight", async () => {
+  it("summarizes all selected late-priority flights in one table", async () => {
     const state = createDefaultState();
     const staffId = state.staff[0]!.id;
     state.flights.push({
@@ -92,48 +99,53 @@ describe("statistics page", () => {
         earlyReleaseMinutes: 0,
       }))
     );
+    state.settings.latePriorityFlightNumbers = ["TR121", "TW616"];
+    state.history = [
+      {
+        id: "tw-delivery",
+        date: "2026-07-16",
+        flightNo: "TW616",
+        position: "T03",
+        staffId,
+        staffName: state.staff[0]!.name,
+        startTime: "22:05",
+        endTime: "23:55",
+        workHours: 1.83,
+        fatiguePoints: 5,
+        remark: "送资料",
+      },
+    ];
 
     const element = await mountElement<
       HTMLElement & { updateComplete: Promise<unknown> }
     >("autoschedule-statistics-page", { model: state, date: "2026-07-18" });
-    const selector = element.querySelector<HTMLSelectElement>(
-      '[aria-label="选择末班重点岗位统计航班"]'
-    )!;
-    expect(selector.value).toBe("TR121");
-
-    selector.value = "TW616";
-    selector.dispatchEvent(new Event("change", { bubbles: true }));
-    await element.updateComplete;
-
     const workspace = element.querySelector(
-      '[data-late-priority-flight="TW616"]'
+      '[data-late-priority-flights="TR121,TW616"]'
     );
-    expect(selector.value).toBe("TW616");
+    const workspaceText = (workspace?.textContent ?? "").replace(/\s+/g, " ");
+
     expect(workspace).not.toBeNull();
     expect(
-      workspace?.querySelectorAll("[data-late-priority-category]")
-    ).toHaveLength(4);
-    expect(workspace?.textContent).toContain("TW616 · 督导");
-    expect(workspace?.textContent).toContain("TW616 · 一号");
-    expect(workspace?.textContent).toContain("TW616 · 申报");
-    expect(workspace?.textContent).toContain("TW616 · 送资料");
+      element.querySelector('[aria-label="选择末班重点岗位统计航班"]')
+    ).toBeNull();
+    expect(
+      workspace?.querySelectorAll(".late-priority-summary-table")
+    ).toHaveLength(1);
+    expect(workspaceText).toContain("当前统计航班：TR121、TW616");
+    expect(workspaceText).toContain("07-16");
+    expect(workspaceText).toContain("TW616 / T03 / 送资料");
   });
 
   it("shows explicit missing configuration and monthly rebalancing states", async () => {
     const missing = createDefaultState();
-    missing.positionRules = missing.positionRules.filter(
-      (item) =>
-        !(
-          item.flightNo === "TR121" &&
-          item.name === "H02" &&
-          item.category === "常规"
-        )
-    );
+    missing.settings.latePriorityFlightNumbers = [];
     const missingElement = await mountElement<
       HTMLElement & { updateComplete: Promise<unknown> }
     >("autoschedule-statistics-page", { model: missing, date: "2026-07-18" });
-    expect(missingElement.textContent).toContain("TR121 · 一号");
-    expect(missingElement.textContent).toContain("尚未配置一号常规岗位");
+    expect(missingElement.textContent).toContain("尚未选择统计航班");
+    expect(
+      missingElement.querySelector(".late-priority-summary-table")
+    ).toBeNull();
 
     const adjusted = createDefaultState();
     adjusted.staff = adjusted.staff.filter(

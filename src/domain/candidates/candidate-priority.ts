@@ -15,6 +15,8 @@ import {
   positionFrequencyProfileForRule,
 } from "../statistics/schedule-frequency";
 import {
+  compareLatePriorityAggregate as compareLatePriorityAggregateProfile,
+  compareLatePriorityCategoryBoundary as compareLatePriorityCategoryBoundaryProfile,
   compareLatePriorityFrequency as compareLatePriorityFrequencyProfile,
   compareLatePriorityFrequencyForKind as compareLatePriorityFrequencyProfileForKind,
   latePriorityFrequencyProfileForRule,
@@ -50,6 +52,7 @@ export const CANDIDATE_PRIORITY_ORDER = [
   "duty-position",
   "scarce-qualification",
   "position-transition",
+  "late-priority-aggregate-rotation",
   "late-priority-frequency",
   "position-frequency",
   "priority-position-consecutive",
@@ -227,6 +230,62 @@ export function compareLatePriorityFrequency(
   return compareLatePriorityFrequencyProfile(
     left.latePriorityFrequency,
     right.latePriorityFrequency
+  );
+}
+
+export function compareLatePriorityAggregateRotation(
+  left: CandidatePriority,
+  right: CandidatePriority
+): number {
+  return (
+    compareLatePriorityCategoryBoundaryProfile(
+      left.latePriorityFrequency,
+      right.latePriorityFrequency
+    ) ||
+    compareLatePriorityAggregateProfile(
+      left.latePriorityFrequency,
+      right.latePriorityFrequency
+    )
+  );
+}
+
+export function compareLatePriorityCategoryBoundary(
+  left: CandidatePriority,
+  right: CandidatePriority
+): number {
+  return compareLatePriorityCategoryBoundaryProfile(
+    left.latePriorityFrequency,
+    right.latePriorityFrequency
+  );
+}
+
+export function compareLatePriorityPreviousWorkday(
+  left: CandidatePriority,
+  right: CandidatePriority
+): number {
+  return (
+    Number(left.latePriorityFrequency.previousWorkdayAssigned) -
+    Number(right.latePriorityFrequency.previousWorkdayAssigned)
+  );
+}
+
+export function compareLatePriorityAggregateCurrentMonth(
+  left: CandidatePriority,
+  right: CandidatePriority
+): number {
+  return (
+    left.latePriorityFrequency.totalCurrentMonthCount -
+    right.latePriorityFrequency.totalCurrentMonthCount
+  );
+}
+
+export function compareLatePriorityAggregateRecentWorkdays(
+  left: CandidatePriority,
+  right: CandidatePriority
+): number {
+  return (
+    left.latePriorityFrequency.totalRecentWorkdayCount -
+    right.latePriorityFrequency.totalRecentWorkdayCount
   );
 }
 

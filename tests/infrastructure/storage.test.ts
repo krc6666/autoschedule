@@ -10,11 +10,27 @@ import {
 describe("state persistence", () => {
   it("falls back to valid defaults for corrupt persisted data", () => {
     const state = loadState({ getItem: () => "not-json" });
-    expect(state.version).toBe(3);
+    expect(state.version).toBe(4);
     expect(state.staff.length).toBeGreaterThan(0);
     expect(
       state.positionRules.some((rule) => rule.category === "机动督导")
     ).toBe(false);
+  });
+
+  it("initializes the selected late-priority flight scope once and preserves an intentional empty scope", () => {
+    const legacy = JSON.parse(JSON.stringify(createDefaultState()));
+    legacy.version = 3;
+    delete legacy.settings.latePriorityFlightNumbers;
+
+    const migrated = loadState({ getItem: () => JSON.stringify(legacy) });
+    expect(migrated.settings.latePriorityFlightNumbers).toEqual(
+      expect.arrayContaining(["CX937", "FD573", "CX931", "TR121"])
+    );
+
+    const current = JSON.parse(JSON.stringify(migrated));
+    current.settings.latePriorityFlightNumbers = [];
+    const restored = loadState({ getItem: () => JSON.stringify(current) });
+    expect(restored.settings.latePriorityFlightNumbers).toEqual([]);
   });
 
   it("preserves valid configuration when only persisted assignments are malformed", () => {
@@ -90,7 +106,7 @@ describe("state persistence", () => {
 
     const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
 
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(4);
     expect(
       loaded.positionRules.some((rule) => rule.category === "机动督导")
     ).toBe(false);
@@ -187,6 +203,7 @@ describe("state persistence", () => {
     delete legacy.settings.highLoadFatigueThreshold;
     delete legacy.settings.highLoadRecoveryMinutes;
     delete legacy.settings.remarkedPositionHighLoad;
+    delete legacy.settings.minimumRegularTransitionMinutes;
     delete legacy.settings.positionTransitionPolicies;
     delete legacy.settings.rollingLoadProtectionEnabled;
     delete legacy.settings.rollingLoadWindowMinutes;
@@ -195,6 +212,7 @@ describe("state persistence", () => {
     delete legacy.settings.dutyFatiguePoints;
     delete legacy.settings.dutyPositionPriorities;
     delete legacy.settings.mobileSupervisorCoverageRules;
+    delete legacy.settings.crossWorkdayQualificationReservations;
     delete legacy.settings.earlyDepartureCutoffTime;
     delete legacy.settings.afternoonRestStartTime;
     delete legacy.settings.afternoonRestEndTime;
@@ -222,6 +240,8 @@ describe("state persistence", () => {
     expect(loaded.settings.highLoadFatigueThreshold).toBe(4);
     expect(loaded.settings.highLoadRecoveryMinutes).toBe(360);
     expect(loaded.settings.remarkedPositionHighLoad).toBe(true);
+    expect(loaded.settings.minimumRegularTransitionMinutes).toBe(90);
+    expect(loaded.settings.crossWorkdayQualificationReservations).toEqual([]);
     expect(loaded.settings).not.toHaveProperty("highLoadTransitionMode");
     expect(loaded.settings.positionTransitionPolicies).toMatchObject([
       { targetFlightNo: "TR121", targetPosition: "H02" },

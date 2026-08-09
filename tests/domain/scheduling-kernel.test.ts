@@ -13,6 +13,174 @@ import { getDutyRosterForDate } from "../../src/domain/duty-roster/roster";
 import { buildScheduleFeedback } from "../../src/domain/feedback/schedule-feedback";
 
 describe("scheduler domain", { timeout: 15_000 }, () => {
+  it("shares compatible late-priority work instead of concentrating it on one person", async () => {
+    const state = createDefaultState();
+    const qualified = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = qualified;
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
+    state.flights = [
+      {
+        id: "early",
+        flightNo: "EARLY100",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "late-declaration",
+        flightNo: "LATE100",
+        startTime: "20:00",
+        endTime: "23:05",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "late-delivery",
+        flightNo: "LATE200",
+        startTime: "23:05",
+        endTime: "23:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      ...["E01", "E02"].map((name) => ({
+        ...base,
+        id: `early-${name}`,
+        flightNo: "EARLY100",
+        name,
+        remark: "",
+        category: "常规" as const,
+        qualifiedStaffIds: qualified.map((person) => person.id),
+        minPassengers: 0,
+        fatiguePoints: 0,
+      })),
+      {
+        ...base,
+        id: "late-declaration-rule",
+        flightNo: "LATE100",
+        name: "H04",
+        remark: "申报",
+        category: "常规",
+        qualifiedStaffIds: qualified.map((person) => person.id),
+        minPassengers: 0,
+        fatiguePoints: 1,
+      },
+      {
+        ...base,
+        id: "late-delivery-rule",
+        flightNo: "LATE200",
+        name: "H05",
+        remark: "送资料",
+        category: "常规",
+        qualifiedStaffIds: qualified.map((person) => person.id),
+        minPassengers: 0,
+        fatiguePoints: 1,
+      },
+    ];
+    state.settings.latePriorityFlightNumbers = ["LATE100", "LATE200"];
+    state.settings.minimumRegularTransitionMinutes = 0;
+    state.settings.workloadBalanceEnabled = false;
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-18",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-08-18");
+    const lateStaffIds = result.assignments
+      .filter((assignment) => assignment.flightNo.startsWith("LATE"))
+      .map((assignment) => assignment.staffId);
+
+    expect(result.unfilledCount).toBe(0);
+    expect(new Set(lateStaffIds).size).toBe(2);
+  });
+
+  it("keeps compatible late-priority positions filled when only one person qualifies", async () => {
+    const state = createDefaultState();
+    const only = state.staff.find((person) => person.status === "正常")!;
+    only.dutyQualified = false;
+    only.nightShift = true;
+    state.staff = [only];
+    state.flights = [
+      {
+        id: "late-declaration",
+        flightNo: "LATE100",
+        startTime: "21:00",
+        endTime: "23:05",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "late-delivery",
+        flightNo: "LATE200",
+        startTime: "23:05",
+        endTime: "23:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "late-declaration-rule",
+        flightNo: "LATE100",
+        name: "H04",
+        remark: "申报",
+        category: "常规",
+        qualifiedStaffIds: [only.id],
+        minPassengers: 0,
+        fatiguePoints: 1,
+      },
+      {
+        ...base,
+        id: "late-delivery-rule",
+        flightNo: "LATE200",
+        name: "H05",
+        remark: "送资料",
+        category: "常规",
+        qualifiedStaffIds: [only.id],
+        minPassengers: 0,
+        fatiguePoints: 1,
+      },
+    ];
+    state.settings.latePriorityFlightNumbers = ["LATE100", "LATE200"];
+    state.settings.minimumRegularTransitionMinutes = 0;
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-18",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-08-18");
+
+    expect(result.unfilledCount).toBe(0);
+    expect(
+      result.assignments
+        .filter((assignment) => assignment.flightNo.startsWith("LATE"))
+        .map((assignment) => assignment.staffId)
+    ).toEqual([only.id, only.id]);
+  });
+
   it("keeps same-flight supervisor counts within one even when the lower-frequency supervisor has recovery protection", async () => {
     const state = createDefaultState();
     const [underused, frequent] = state.staff
@@ -211,6 +379,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         standbyStaffIds: [null, null],
       },
     ];
+    state.settings.latePriorityFlightNumbers = ["LATE100"];
     state.history = [
       {
         id: "frequent-tr-declaration",
@@ -1120,6 +1289,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     state.staff = [first!, second!];
     state.staff.forEach((person) => {
       person.dutyQualified = false;
+      person.teamLeader = false;
     });
     state.flights = [
       {
@@ -1427,6 +1597,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("keeps a generation-stage frequency result when later rotation has no safe alternative", async () => {
     const state = createDefaultState();
+    state.settings.minimumRegularTransitionMinutes = 0;
     const [frequent, lessFrequent, releaseWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -1658,6 +1829,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("prefers a rested worker for a high-load position during the recovery window", async () => {
     const state = createDefaultState();
+    state.settings.minimumRegularTransitionMinutes = 0;
     const [first, second] = state.staff;
     state.staff = [first!, second!];
     state.staff.forEach((person) => {
@@ -1758,6 +1930,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("fills a high-load position when every candidate is still in the protection window", async () => {
     const state = createDefaultState();
+    state.settings.minimumRegularTransitionMinutes = 0;
     const [first, second] = state.staff;
     state.staff = [first!, second!];
     state.flights = [
@@ -1956,6 +2129,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("protects a worker when projected fatigue exceeds the rolling-window limit", async () => {
     const state = createDefaultState();
+    state.settings.minimumRegularTransitionMinutes = 0;
     const [first, second] = state.staff;
     state.staff = [first!, second!];
     state.staff.forEach((person) => {
@@ -2062,6 +2236,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     state.staff = [first!, second!];
     state.staff.forEach((person) => {
       person.dutyQualified = false;
+      person.teamLeader = false;
     });
     state.flights = [
       {
@@ -2177,6 +2352,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("fills a rolling-load protected position when no unprotected candidate exists", async () => {
     const state = createDefaultState();
+    state.settings.minimumRegularTransitionMinutes = 0;
     const person = state.staff[0]!;
     state.staff = [person];
     person.dutyQualified = false;
@@ -2238,6 +2414,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     state.staff = [protectedWorker!, restedWorker!];
     state.staff.forEach((person) => {
       person.dutyQualified = false;
+      person.teamLeader = false;
     });
     state.flights = [
       {
@@ -3578,6 +3755,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("globally schedules each pre-noon position by scarcity before softer transition preferences", async () => {
     const state = createDefaultState();
+    state.settings.minimumRegularTransitionMinutes = 0;
     const [rareWorker, flexibleWorker] = state.staff;
     state.staff = [rareWorker!, flexibleWorker!];
     state.staff.forEach((person) => {
@@ -3794,62 +3972,6 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     });
   });
 
-  it("does not change regular supervisor selection when a worker is marked as team leader", async () => {
-    const scheduleSupervisor = async (teamLeaderId?: string) => {
-      const state = createDefaultState();
-      state.staff = state.staff.slice(0, 2);
-      state.staff.forEach((person) => {
-        person.teamLeader = person.id === teamLeaderId;
-        person.dutyQualified = false;
-      });
-      state.flights = [
-        {
-          id: "flight",
-          flightNo: "F1",
-          startTime: "13:00",
-          endTime: "15:00",
-          bookedPassengers: 100,
-          positions: [],
-          remark: "",
-        },
-        {
-          id: "later",
-          flightNo: "F2",
-          startTime: "16:00",
-          endTime: "18:00",
-          bookedPassengers: 100,
-          positions: [],
-          remark: "",
-        },
-      ];
-      const base = state.positionRules[0]!;
-      state.positionRules = [
-        {
-          ...base,
-          id: "supervisor",
-          flightNo: "F1",
-          name: "督导",
-          category: "常规",
-          qualifiedStaffIds: state.staff.map((person) => person.id),
-        },
-        {
-          ...base,
-          id: "later-counter",
-          flightNo: "F2",
-          name: "G01",
-          category: "常规",
-          qualifiedStaffIds: state.staff.map((person) => person.id),
-        },
-      ];
-      return (await generateSchedule(state, "2026-07-18")).assignments.find(
-        (item) => item.positionRuleId === "supervisor"
-      )!.staffId;
-    };
-
-    const baselineStaffId = await scheduleSupervisor();
-    expect(await scheduleSupervisor(baselineStaffId!)).toBe(baselineStaffId);
-  });
-
   it("assigns a marked team leader to a supervisor position when that worker is the only qualified candidate", async () => {
     const state = createDefaultState();
     const teamLeader = state.staff[0]!;
@@ -3887,7 +4009,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     });
   });
 
-  it("does not deprioritize a team leader for an ordinary counter", async () => {
+  it("uses an equally qualified regular worker before pulling a free team leader into an ordinary counter", async () => {
     const state = createDefaultState();
     const [teamLeader, regular] = state.staff;
     state.staff = [teamLeader!, regular!];
@@ -3922,7 +4044,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     const result = await generateSchedule(state, "2026-07-18");
 
     expect(result.assignments[0]).toMatchObject({
-      staffId: teamLeader!.id,
+      staffId: regular!.id,
       status: "assigned",
     });
   });
@@ -4002,6 +4124,9 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       .filter((person) => person.status === "正常")
       .slice(0, 2);
     state.staff = [protectedWorker!, alternate!];
+    state.staff.forEach((person) => {
+      person.teamLeader = false;
+    });
     state.flights = [
       {
         id: "ke166",
@@ -4074,6 +4199,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     state.staff = [repeatedSupervisor!, alternate!];
     state.staff.forEach((person) => {
       person.dutyQualified = false;
+      person.teamLeader = false;
     });
     state.settings.lateShiftRecoveryEnabled = false;
     state.settings.highLoadProtectionEnabled = false;
@@ -5975,6 +6101,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("keeps every feasible position filled even when fatigue balance cannot meet both targets", async () => {
     const state = createDefaultState();
+    state.settings.minimumRegularTransitionMinutes = 0;
     state.staff = state.staff.slice(0, 2);
     state.staff.forEach((person) => {
       person.dutyQualified = false;
@@ -6073,7 +6200,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     ).toBe("3");
   });
 
-  it("allows an afternoon diversion position to release early for the next flight", async () => {
+  it("allows an afternoon diversion when early release leaves the required transition gap", async () => {
     const state = createDefaultState();
     state.staff = [state.staff.find((person) => person.id === "2")!];
     state.flights = [
@@ -6089,8 +6216,8 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       {
         id: "f2",
         flightNo: "F2",
-        startTime: "16:30",
-        endTime: "18:30",
+        startTime: "17:30",
+        endTime: "19:30",
         bookedPassengers: 0,
         positions: ["P2"],
         remark: "",
@@ -6120,8 +6247,8 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     const result = await generateSchedule(state, "2026-07-18");
     expect(result.assignments.map((item) => item.staffId)).toEqual(["2", "2"]);
     expect(result.assignments[0]).toMatchObject({
-      endTime: "16:30",
-      workHours: 1.5,
+      endTime: "17:00",
+      workHours: 1,
     });
   });
 
@@ -7698,7 +7825,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     });
   });
 
-  it("prefers a non-repeated KE166 counter supervisor over a repeated idle independent supervisor", async () => {
+  it("lets a repeated free team leader rest when a KE166 counter can safely cover supervision", async () => {
     const state = createDefaultState();
     const [repeatedSupervisor, counterSupervisor] = state.staff
       .filter((person) => person.status === "正常")
@@ -7707,21 +7834,14 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     state.staff.forEach((person) => {
       person.dutyQualified = false;
     });
+    repeatedSupervisor!.teamLeader = true;
+    counterSupervisor!.teamLeader = false;
     state.flights = [
       {
         id: "ke",
         flightNo: "KE166",
         startTime: "08:30",
         endTime: "10:30",
-        bookedPassengers: 100,
-        positions: [],
-        remark: "",
-      },
-      {
-        id: "later",
-        flightNo: "LATER1",
-        startTime: "13:00",
-        endTime: "15:00",
         bookedPassengers: 100,
         positions: [],
         remark: "",
@@ -7747,15 +7867,6 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         qualifiedStaffIds: [counterSupervisor!.id],
         fatiguePoints: 2,
       },
-      {
-        ...base,
-        id: "later-position",
-        flightNo: "LATER1",
-        name: "P01",
-        category: "常规",
-        qualifiedStaffIds: [repeatedSupervisor!.id],
-        fatiguePoints: 1,
-      },
     ];
     state.history = [
       {
@@ -7780,17 +7891,17 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     const h06 = result.assignments.find(
       (item) => item.positionRuleId === "ke-h06"
     )!;
-    const later = result.assignments.find(
-      (item) => item.positionRuleId === "later-position"
-    )!;
-
     expect(supervisor.staffId).toBe(counterSupervisor!.id);
     expect(h06).toMatchObject({
       staffId: counterSupervisor!.id,
       workHours: 0,
       supervisorSourceAssignmentId: supervisor.id,
     });
-    expect(later.staffId).toBe(repeatedSupervisor!.id);
+    expect(
+      result.assignments.some(
+        (assignment) => assignment.staffId === repeatedSupervisor!.id
+      )
+    ).toBe(false);
     expect(result.warnings.join("\n")).not.toContain(
       "KE166机动督导连续轮岗未落实"
     );
@@ -8773,6 +8884,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   it("blocks a strict transition after noon while prefer mode remains a fallback preference", async () => {
     const buildState = (mode: "prefer" | "forbid") => {
       const state = createDefaultState();
+      state.settings.minimumRegularTransitionMinutes = 0;
       const person = state.staff.find((item) => item.status === "正常")!;
       person.dutyQualified = false;
       state.staff = [person];

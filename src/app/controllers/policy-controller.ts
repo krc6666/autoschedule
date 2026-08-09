@@ -31,6 +31,8 @@ export class PolicyController implements UiCommandController {
         if (command.collection === "duty") policy.addDutyPriority();
         else if (command.collection === "recovery-target")
           policy.addRecoveryTarget();
+        else if (command.collection === "cross-workday-reservation")
+          policy.addCrossWorkdayReservation();
         else if (command.collection === "late-position")
           policy.addLateShiftPosition();
         else if (command.collection === "supervisor")
@@ -43,6 +45,10 @@ export class PolicyController implements UiCommandController {
       case "move-duty-priority":
         if (policy.moveDutyPriority(command.id, command.direction))
           this.context.commit("值班岗位优先顺序已调整");
+        return true;
+      case "move-cross-workday-reservation":
+        if (policy.moveCrossWorkdayReservation(command.id, command.direction))
+          this.context.commit("跨工作日资质预留顺序已调整");
         return true;
       default:
         return false;
@@ -63,11 +69,13 @@ export class PolicyController implements UiCommandController {
         ? policy.deleteDutyPriority(id)
         : collection === "recovery-target"
           ? policy.deleteRecoveryTarget(id)
-          : collection === "late-position"
-            ? policy.deleteLateShiftPosition(id)
-            : collection === "supervisor"
-              ? policy.deleteSupervisorCoverage(id)
-              : policy.deleteTransition(id);
+          : collection === "cross-workday-reservation"
+            ? policy.deleteCrossWorkdayReservation(id)
+            : collection === "late-position"
+              ? policy.deleteLateShiftPosition(id)
+              : collection === "supervisor"
+                ? policy.deleteSupervisorCoverage(id)
+                : policy.deleteTransition(id);
     if (deleted) this.context.commit("规则配置已删除");
     return true;
   }

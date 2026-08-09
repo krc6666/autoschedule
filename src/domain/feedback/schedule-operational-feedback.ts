@@ -52,7 +52,10 @@ function flightDensityEvidence(state: AppState): string {
 
 function coverageFeedback(state: AppState, date: string): ScheduleFeedbackItem {
   const workers = state.staff.filter(
-    (person) => person.staffType === "常规" && person.status === "正常"
+    (person) =>
+      person.staffType === "常规" &&
+      person.status === "正常" &&
+      !person.teamLeader
   );
   const loads = buildStaffLoads(
     workers,
@@ -108,7 +111,7 @@ function coverageFeedback(state: AppState, date: string): ScheduleFeedbackItem {
     "coverage",
     "人员覆盖",
     "ok",
-    `${density}；${workers.length} 名正常常规人员均有实际工时，常规岗位无待补位。`
+    `${density}；${workers.length} 名需要覆盖的正常常规人员均有实际工时，常规岗位无待补位。`
   );
 }
 
@@ -197,6 +200,18 @@ function connectionFeedback(state: AppState): ScheduleFeedbackItem {
       "航班衔接",
       "attention",
       `${personName(overlap)}的 ${route(overlap)} 时间重叠，无法正常衔接。`
+    );
+  const minimumGapViolation = connections.find(
+    (connection) =>
+      connection.gap < state.settings.minimumRegularTransitionMinutes
+  );
+  if (minimumGapViolation)
+    return feedbackItem(
+      "flight-staff",
+      "connections",
+      "航班衔接",
+      "attention",
+      `${personName(minimumGapViolation)}的 ${route(minimumGapViolation)} 间隔只有 ${minimumGapViolation.gap} 分钟，少于要求的 ${state.settings.minimumRegularTransitionMinutes} 分钟。${matchesTransitionPolicy(state, minimumGapViolation) ? "同时未达到已配置的岗位衔接要求。" : ""}`
     );
   if (policyViolation)
     return feedbackItem(

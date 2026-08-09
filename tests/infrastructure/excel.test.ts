@@ -188,7 +188,7 @@ describe("workbook boundary", () => {
     expect(imported.staff?.[0]?.standbyQualified).toBe(false);
   });
 
-  it("ships a downloadable configuration template with standby qualification", () => {
+  it("ships a downloadable configuration template with current qualification and rule fields", () => {
     const workbook = XLSX.readFile(
       join(process.cwd(), "public", "template", "排班工具配置模板.xlsx")
     );
@@ -198,6 +198,17 @@ describe("workbook boundary", () => {
     )[0];
 
     expect(headers).toContain("备勤资质");
+    expect(workbook.SheetNames).toContain("跨工作日资质预留");
+    expect(workbook.SheetNames).toContain("末班重点航班范围");
+    const settingCodes = XLSX.utils
+      .sheet_to_json<unknown[]>(workbook.Sheets["规则参数"]!, {
+        header: 1,
+        raw: false,
+        defval: "",
+      })
+      .slice(1)
+      .map((row) => row[0]);
+    expect(settingCodes).toContain("minimumRegularTransitionMinutes");
   });
 
   it("round-trips every editable scheduling setting and rule table", () => {
@@ -209,6 +220,7 @@ describe("workbook boundary", () => {
     state.settings.dutyFatiguePoints = 7.5;
     state.settings.lateShiftEndTime = "23:30";
     state.settings.teamLeaderConcurrentSupervisionMaxOverlapMinutes = 45;
+    state.settings.minimumRegularTransitionMinutes = 90;
     state.settings.earlyDepartureCutoffTime = "11:45";
     state.settings.positionTransitionPolicies = [
       {
@@ -259,6 +271,17 @@ describe("workbook boundary", () => {
         mode: "forbid",
       },
     ];
+    state.settings.crossWorkdayQualificationReservations = [
+      {
+        id: "reservation-export",
+        enabled: true,
+        flightNo: "CX931",
+        matchField: "remark",
+        keyword: "控制",
+        minimumStaffCount: 1,
+      },
+    ];
+    state.settings.latePriorityFlightNumbers = ["TR121", "TW616"];
     const workbook = buildConfigWorkbook(state);
     const imported = parseWorkbook(workbook, state.staff);
 
@@ -270,6 +293,8 @@ describe("workbook boundary", () => {
         "次班恢复目标",
         "末班重点岗位",
         "机动督导范围",
+        "跨工作日资质预留",
+        "末班重点航班范围",
       ])
     );
     expect(workbook.SheetNames).not.toContain("规则执行顺序");

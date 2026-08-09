@@ -10,6 +10,316 @@ import {
 } from "../../src/domain/candidates/assignment-eligibility";
 
 describe("assignment eligibility diagnostics", () => {
+  it("uses the same hard facts for automatic and manual decisions", () => {
+    const state = createDefaultState();
+    const person: Staff = {
+      ...state.staff[0]!,
+      id: "worker",
+      name: "测试人员",
+      status: "正常",
+      staffType: "常规",
+      nightShift: true,
+    };
+    const flight = {
+      ...state.flights[0]!,
+      id: "target-flight",
+      flightNo: "TARGET",
+      startTime: "10:00",
+      endTime: "12:00",
+    };
+    const rule = {
+      ...state.positionRules[0]!,
+      id: "target-rule",
+      flightNo: flight.flightNo,
+      name: "G01",
+      qualifiedStaffIds: [person.id],
+    };
+    const target: Assignment = {
+      id: "target-assignment",
+      flightId: flight.id,
+      flightNo: flight.flightNo,
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId: null,
+      staffName: "",
+      startTime: flight.startTime,
+      endTime: flight.endTime,
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "unfilled",
+    };
+    state.staff = [person];
+    state.flights = [flight];
+    state.positionRules = [rule];
+    state.assignments = [target];
+    state.settings.minimumRegularTransitionMinutes = 0;
+
+    const automaticCode = (assignments: Assignment[] = []) =>
+      diagnoseAutomaticAssignmentEligibility({
+        state,
+        assignments,
+        flight,
+        rule,
+        person,
+        workHours: target.workHours,
+      }).violations[0]?.code;
+    const manualCode = () =>
+      diagnoseManualAssignmentEligibility(state, target.id, person.id)
+        .violations[0]?.code;
+
+    person.status = "病假";
+    expect([automaticCode(), manualCode()]).toEqual([
+      "staff-unavailable",
+      "staff-unavailable",
+    ]);
+
+    person.status = "正常";
+    rule.qualifiedStaffIds = [];
+    expect([automaticCode(), manualCode()]).toEqual([
+      "position-qualification",
+      "position-qualification",
+    ]);
+
+    rule.qualifiedStaffIds = [person.id];
+    person.nightShift = false;
+    flight.startTime = target.startTime = "22:00";
+    flight.endTime = target.endTime = "23:00";
+    expect([automaticCode(), manualCode()]).toEqual([
+      "night-shift",
+      "night-shift",
+    ]);
+
+    person.nightShift = true;
+    flight.startTime = target.startTime = "10:00";
+    flight.endTime = target.endTime = "12:00";
+    const conflict: Assignment = {
+      ...target,
+      id: "conflict",
+      flightId: "other-flight",
+      flightNo: "OTHER",
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "11:00",
+      endTime: "13:00",
+      status: "assigned",
+    };
+    state.assignments = [target, conflict];
+    expect([automaticCode([conflict]), manualCode()]).toEqual([
+      "time-conflict",
+      "time-conflict",
+    ]);
+
+    const longWork: Assignment = {
+      ...conflict,
+      id: "long-work",
+      startTime: "02:00",
+      endTime: "09:00",
+      workHours: 7,
+    };
+    state.assignments = [target, longWork];
+    state.settings.maxDailyHours = 8;
+    expect([automaticCode([longWork]), manualCode()]).toEqual([
+      "daily-hours",
+      "daily-hours",
+    ]);
+  });
+
+  it("enforces the global minimum flight transition for automatic and manual assignments", () => {
+    const state = createDefaultState();
+    const person = {
+      ...state.staff[0]!,
+      id: "worker",
+      name: "测试人员",
+      status: "正常" as const,
+      staffType: "常规" as const,
+      nightShift: true,
+    };
+    const sourceFlight = {
+      ...state.flights[0]!,
+      id: "source-flight",
+      flightNo: "AA100",
+      startTime: "08:00",
+      endTime: "10:00",
+    };
+    const targetFlight = {
+      ...state.flights[0]!,
+      id: "target-flight",
+      flightNo: "BB200",
+      startTime: "11:29",
+      endTime: "12:29",
+    };
+    const sourceRule = {
+      ...state.positionRules[0]!,
+      id: "source-rule",
+      flightNo: sourceFlight.flightNo,
+      name: "G01",
+      category: "常规" as const,
+      qualifiedStaffIds: [person.id],
+      earlyReleaseMinutes: 0,
+    };
+    const targetRule = {
+      ...sourceRule,
+      id: "target-rule",
+      flightNo: targetFlight.flightNo,
+      name: "H01",
+    };
+    const sourceAssignment: Assignment = {
+      id: "source-assignment",
+      flightId: sourceFlight.id,
+      flightNo: sourceFlight.flightNo,
+      positionRuleId: sourceRule.id,
+      position: sourceRule.name,
+      staffId: person.id,
+      staffName: person.name,
+      startTime: sourceFlight.startTime,
+      endTime: sourceFlight.endTime,
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const targetAssignment: Assignment = {
+      ...sourceAssignment,
+      id: "target-assignment",
+      flightId: targetFlight.id,
+      flightNo: targetFlight.flightNo,
+      positionRuleId: targetRule.id,
+      position: targetRule.name,
+      staffId: null,
+      staffName: "",
+      startTime: targetFlight.startTime,
+      endTime: targetFlight.endTime,
+      workHours: 1,
+      status: "unfilled",
+    };
+    state.staff = [person];
+    state.flights = [sourceFlight, targetFlight];
+    state.positionRules = [sourceRule, targetRule];
+    state.assignments = [sourceAssignment, targetAssignment];
+    state.settings.minimumRegularTransitionMinutes = 90;
+
+    expect(
+      diagnoseAutomaticAssignmentEligibility({
+        state,
+        assignments: [sourceAssignment],
+        flight: targetFlight,
+        rule: targetRule,
+        person,
+      }).violations[0]
+    ).toMatchObject({
+      code: "minimum-flight-transition",
+      message: "测试人员与上一航班间隔只有 89 分钟，少于要求的 90 分钟。",
+    });
+    expect(
+      diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
+        .violations[0]
+    ).toMatchObject({ code: "minimum-flight-transition" });
+
+    targetFlight.startTime = "11:30";
+    targetFlight.endTime = "12:30";
+    targetAssignment.startTime = targetFlight.startTime;
+    targetAssignment.endTime = targetFlight.endTime;
+    expect(
+      diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
+        .eligible
+    ).toBe(true);
+  });
+
+  it("uses configured early release when checking a diversion transition", () => {
+    const state = createDefaultState();
+    const person = {
+      ...state.staff[0]!,
+      id: "worker",
+      name: "测试人员",
+      status: "正常" as const,
+      staffType: "常规" as const,
+      nightShift: true,
+    };
+    const sourceFlight = {
+      ...state.flights[0]!,
+      id: "source-flight",
+      flightNo: "AA100",
+      startTime: "13:00",
+      endTime: "15:00",
+    };
+    const targetFlight = {
+      ...state.flights[0]!,
+      id: "target-flight",
+      flightNo: "BB200",
+      startTime: "15:59",
+      endTime: "16:59",
+    };
+    const sourceRule = {
+      ...state.positionRules[0]!,
+      id: "source-rule",
+      flightNo: sourceFlight.flightNo,
+      name: "分流",
+      category: "分流" as const,
+      qualifiedStaffIds: [person.id],
+      earlyReleaseMinutes: 30,
+    };
+    const targetRule = {
+      ...sourceRule,
+      id: "target-rule",
+      flightNo: targetFlight.flightNo,
+      name: "H01",
+      category: "常规" as const,
+      earlyReleaseMinutes: 0,
+    };
+    const sourceAssignment: Assignment = {
+      id: "source-assignment",
+      flightId: sourceFlight.id,
+      flightNo: sourceFlight.flightNo,
+      positionRuleId: sourceRule.id,
+      position: sourceRule.name,
+      staffId: person.id,
+      staffName: person.name,
+      startTime: sourceFlight.startTime,
+      endTime: sourceFlight.endTime,
+      workHours: 1.5,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const targetAssignment: Assignment = {
+      ...sourceAssignment,
+      id: "target-assignment",
+      flightId: targetFlight.id,
+      flightNo: targetFlight.flightNo,
+      positionRuleId: targetRule.id,
+      position: targetRule.name,
+      staffId: null,
+      staffName: "",
+      startTime: targetFlight.startTime,
+      endTime: targetFlight.endTime,
+      workHours: 1,
+      status: "unfilled",
+    };
+    state.staff = [person];
+    state.flights = [sourceFlight, targetFlight];
+    state.positionRules = [sourceRule, targetRule];
+    state.assignments = [sourceAssignment, targetAssignment];
+    state.settings.minimumRegularTransitionMinutes = 90;
+
+    expect(
+      diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
+        .violations[0]
+    ).toMatchObject({ code: "minimum-flight-transition" });
+
+    targetFlight.startTime = "16:00";
+    targetFlight.endTime = "17:00";
+    targetAssignment.startTime = targetFlight.startTime;
+    targetAssignment.endTime = targetFlight.endTime;
+    expect(
+      diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
+        .eligible
+    ).toBe(true);
+  });
+
   it("uses one staged diagnosis for filtering and shortage evidence", () => {
     const state = createDefaultState();
     const flight = state.flights.find((item) => item.flightNo === "TR121")!;
@@ -117,7 +427,7 @@ describe("assignment eligibility diagnostics", () => {
     ).toEqual([]);
   });
 
-  it("keeps manual administrative fallback based on the target's preceding transition only", () => {
+  it("allows administrative fallback when the only regular worker fails the hard flight transition", () => {
     const state = createDefaultState();
     const regular = {
       ...state.staff[0]!,
@@ -224,6 +534,6 @@ describe("assignment eligibility diagnostics", () => {
         targetAssignment.id,
         administrative.id
       ).violations[0]?.code
-    ).toBe("regular-staff-priority");
+    ).toBeUndefined();
   });
 });

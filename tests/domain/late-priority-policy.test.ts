@@ -4,9 +4,68 @@ import {
   endsAfterLateShiftThreshold,
   isDeclarationOrDeliveryPosition,
   isLatePriorityPosition,
+  LATE_PRIORITY_ALLOWED_DIFFERENCE,
+  LATE_PRIORITY_FREQUENCY_ORDER,
+  LATE_PRIORITY_KIND_DEFINITIONS,
+  latePriorityFrequencyKinds,
+  latePriorityKindLabel,
+  latePriorityMonthlyLabel,
+  normalizeLatePriorityFlightNumber,
+  normalizeLatePriorityPositionReference,
 } from "../../src/domain/reviews/late-priority-policy";
 
 describe("late priority position policy", () => {
+  it("provides one canonical definition for order, labels, keywords and allowed differences", () => {
+    expect(LATE_PRIORITY_KIND_DEFINITIONS).toEqual([
+      {
+        kind: "supervisor",
+        label: "督导",
+        keyword: "督导",
+        allowedDifference: 1,
+      },
+      {
+        kind: "number-one",
+        label: "一号",
+        keyword: "一号",
+        allowedDifference: 1,
+      },
+      {
+        kind: "declaration",
+        label: "申报",
+        keyword: "申报",
+        allowedDifference: 2,
+      },
+      {
+        kind: "delivery",
+        label: "送资料",
+        keyword: "送资料",
+        allowedDifference: 2,
+      },
+    ]);
+    expect(LATE_PRIORITY_FREQUENCY_ORDER).toEqual([
+      "supervisor",
+      "number-one",
+      "declaration",
+      "delivery",
+    ]);
+    expect(LATE_PRIORITY_ALLOWED_DIFFERENCE).toEqual({
+      supervisor: 1,
+      "number-one": 1,
+      declaration: 2,
+      delivery: 2,
+    });
+    expect(latePriorityKindLabel("delivery")).toBe("送资料");
+    expect(latePriorityMonthlyLabel("number-one")).toBe("本月跨航班一号");
+    expect(
+      latePriorityFrequencyKinds({ name: "督导", remark: "申报、送资料" })
+    ).toEqual(["supervisor", "declaration", "delivery"]);
+  });
+
+  it("normalizes late-priority flight and position references consistently", () => {
+    expect(normalizeLatePriorityFlightNumber(" tr 121 ")).toBe("TR121");
+    expect(normalizeLatePriorityPositionReference(" h 02 ")).toBe("H02");
+  });
+
   it.each([
     ["21:00", "23:00", false],
     ["21:00", "23:01", true],

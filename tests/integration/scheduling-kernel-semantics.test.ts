@@ -87,7 +87,7 @@ describe("scheduler semantic quality", { timeout: 15_000 }, () => {
       {
         "maximumFatigue": 12,
         "maximumHours": 6,
-        "minimumFatigue": 6,
+        "minimumFatigue": 4.5,
         "minimumHours": 2,
         "totalFatigue": 125.5,
         "totalHours": 70,

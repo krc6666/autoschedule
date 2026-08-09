@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
 import type { AppState, ScheduleResult } from "../../src/model";
+import { operationalAssignmentInterval } from "../../src/domain/assignments/minimum-flight-transition";
 import { intervalsOverlap } from "../../src/domain/shared/time";
 import { generateSchedule } from "../helpers/generate-schedule";
 import { createScheduleScaleState } from "./fixtures/schedule-scale";
@@ -41,6 +42,14 @@ function verifySchedule(
           )
         ).toBe(false);
       }
+    }
+    const intervals = assignments
+      .map((assignment) => operationalAssignmentInterval(state, assignment))
+      .sort((left, right) => left.start - right.start);
+    for (let index = 1; index < intervals.length; index += 1) {
+      expect(
+        intervals[index]!.start - intervals[index - 1]!.end
+      ).toBeGreaterThanOrEqual(state.settings.minimumRegularTransitionMinutes);
     }
   }
 }

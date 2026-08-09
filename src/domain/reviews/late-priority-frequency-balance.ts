@@ -2,6 +2,7 @@ import type { AppState, Assignment, Staff } from "../../model";
 import { eligibleStaffForRule } from "../candidates/assignment-eligibility";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import {
+  compareLatePriorityAggregate,
   compareLatePriorityFrequencyForKind,
   isLatePriorityAssignment,
   latePriorityFrequencyComparisonValue,
@@ -10,7 +11,9 @@ import {
 } from "../statistics/late-priority-frequency";
 import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
 import {
+  latePriorityKindLabel,
   latePriorityFrequencyKinds,
+  LATE_PRIORITY_ALLOWED_DIFFERENCE,
   LATE_PRIORITY_FREQUENCY_ORDER,
   type LatePriorityFrequencyKind,
 } from "./late-priority-policy";
@@ -31,12 +34,13 @@ export interface LatePriorityBalanceAssessment {
   needsAttention: boolean;
 }
 
-const KIND_LABEL: Readonly<Record<LatePriorityFrequencyKind, string>> = {
-  supervisor: "督导",
-  "number-one": "一号",
-  declaration: "申报",
-  delivery: "送资料",
-};
+export interface LatePriorityAggregateAssessment {
+  eligibleStaff: readonly Staff[];
+  preferredStaffIds: ReadonlySet<string>;
+  assignedProfile: LatePriorityFrequencyProfile;
+  previousWorkdayAssigned: boolean;
+  needsAttention: boolean;
+}
 
 function projectedAssignments(
   assignments: readonly Assignment[],
@@ -85,7 +89,7 @@ function period(
   labelPrefix: string
 ): LatePriorityBalancePeriod {
   return {
-    label: `${labelPrefix}同航班${KIND_LABEL[kind]}`,
+    label: `${labelPrefix}跨航班${latePriorityKindLabel(kind)}`,
     assignedCount: latePriorityFrequencyComparisonValue(
       assigned,
       kind,
@@ -133,14 +137,13 @@ export function assessLatePriorityFrequencyBalance(
   );
   if (!assigned || !currentProfiles.length || !beforeProfiles.length)
     return null;
-  const lowest = [...beforeProfiles].sort((left, right) =>
-    compareLatePriorityFrequencyForKind(left.profile, right.profile, kind)
-  )[0]!.profile;
+  const minimumCount = Math.min(
+    ...beforeProfiles.map((item) => item.profile.counts[kind].currentMonthCount)
+  );
   const lowestStaffIds = new Set(
     beforeProfiles
       .filter(
-        (item) =>
-          compareLatePriorityFrequencyForKind(item.profile, lowest, kind) === 0
+        (item) => item.profile.counts[kind].currentMonthCount === minimumCount
       )
       .map((item) => item.person.id)
   );
@@ -167,7 +170,57 @@ export function assessLatePriorityFrequencyBalance(
     periods,
     maximumDifference,
     needsAttention:
-      maximumDifference >= 2 && !lowestStaffIds.has(assignment.staffId),
+      maximumDifference > LATE_PRIORITY_ALLOWED_DIFFERENCE[kind] &&
+      !lowestStaffIds.has(assignment.staffId),
+  };
+}
+
+export function assessLatePriorityAggregateBalance(
+  state: AppState,
+  assignment: Assignment,
+  assignments: readonly Assignment[],
+  date: string,
+  facts?: ScheduleFrequencyFacts
+): LatePriorityAggregateAssessment | null {
+  if (!assignment.staffId || !isLatePriorityAssignment(state, assignment))
+    return null;
+  const currentProfiles = eligibleProfiles(
+    state,
+    assignment,
+    assignments,
+    date,
+    facts
+  );
+  const beforeProfiles = eligibleProfiles(
+    state,
+    assignment,
+    assignments.filter((item) => item.id !== assignment.id),
+    date,
+    facts
+  );
+  const assigned = currentProfiles.find(
+    (item) => item.person.id === assignment.staffId
+  );
+  const assignedBefore = beforeProfiles.find(
+    (item) => item.person.id === assignment.staffId
+  );
+  if (!assigned || !assignedBefore || !beforeProfiles.length) return null;
+  const preferred = [...beforeProfiles].sort((left, right) =>
+    compareLatePriorityAggregate(left.profile, right.profile)
+  )[0]!.profile;
+  const preferredStaffIds = new Set(
+    beforeProfiles
+      .filter(
+        (item) => compareLatePriorityAggregate(item.profile, preferred) === 0
+      )
+      .map((item) => item.person.id)
+  );
+  return {
+    eligibleStaff: beforeProfiles.map((item) => item.person),
+    preferredStaffIds,
+    assignedProfile: assigned.profile,
+    previousWorkdayAssigned: assignedBefore.profile.previousWorkdayAssigned,
+    needsAttention: !preferredStaffIds.has(assignment.staffId),
   };
 }
 
@@ -202,6 +255,68 @@ export function compareProjectedLatePriorityCandidates(
       kind
     ) || left.id.localeCompare(right.id, undefined, { numeric: true })
   );
+}
+
+export function compareProjectedLatePriorityAggregateCandidates(
+  state: AppState,
+  assignments: readonly Assignment[],
+  assignment: Assignment,
+  left: Staff,
+  right: Staff,
+  date: string,
+  facts?: ScheduleFrequencyFacts
+): number {
+  return (
+    compareLatePriorityAggregate(
+      latePriorityFrequencyProfileWithSchedule(
+        state,
+        left.id,
+        assignment,
+        projectedAssignments(assignments, assignment.id, left),
+        date,
+        facts
+      ),
+      latePriorityFrequencyProfileWithSchedule(
+        state,
+        right.id,
+        assignment,
+        projectedAssignments(assignments, assignment.id, right),
+        date,
+        facts
+      )
+    ) || left.id.localeCompare(right.id, undefined, { numeric: true })
+  );
+}
+
+function aggregateQualityVector(
+  state: AppState,
+  assignments: readonly Assignment[],
+  date: string,
+  facts?: ScheduleFrequencyFacts
+): number[] {
+  const profiles = assignments.flatMap((assignment) =>
+    assignment.staffId && isLatePriorityAssignment(state, assignment)
+      ? [
+          latePriorityFrequencyProfileWithSchedule(
+            state,
+            assignment.staffId,
+            assignment,
+            assignments,
+            date,
+            facts
+          ),
+        ]
+      : []
+  );
+  const monthly = profiles.map((profile) => profile.totalCurrentMonthCount);
+  const recent = profiles.map((profile) => profile.totalRecentWorkdayCount);
+  return [
+    profiles.filter((profile) => profile.previousWorkdayAssigned).length,
+    Math.max(0, ...monthly),
+    monthly.reduce((sum, count) => sum + count * count, 0),
+    Math.max(0, ...recent),
+    recent.reduce((sum, count) => sum + count * count, 0),
+  ];
 }
 
 function assignmentSpreads(
@@ -268,6 +383,14 @@ export function latePriorityFrequencyRegressionReasons(
   date: string,
   facts?: ScheduleFrequencyFacts
 ): string[] {
+  if (
+    worsensFrequencyPriority(
+      aggregateQualityVector(state, before, date, facts),
+      aggregateQualityVector(state, after, date, facts)
+    )
+  ) {
+    return ["调整会增加末班重点岗位连续承担或扩大四类合计负担"];
+  }
   const originals = before
     .filter((assignment) => isLatePriorityAssignment(state, assignment))
     .sort((left, right) => {

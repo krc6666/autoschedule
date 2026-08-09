@@ -220,4 +220,89 @@ describe("rotation review safety", () => {
 
     expect(reasons.some((reason) => reason.includes("衔接"))).toBe(true);
   });
+
+  it("does not let a post-schedule reassignment bypass the global transition gap", () => {
+    const { state, replacementWorker, target } = createFrequencyFixture();
+    state.settings.positionTransitionPolicies = [];
+    state.settings.minimumRegularTransitionMinutes = 90;
+    const previous: Assignment = {
+      ...target,
+      id: "previous",
+      flightId: "previous-flight",
+      flightNo: "F000",
+      positionRuleId: null,
+      position: "G10",
+      staffId: replacementWorker.id,
+      staffName: replacementWorker.name,
+      startTime: "06:00",
+      endTime: "07:00",
+      workHours: 1,
+      remark: "",
+    };
+
+    const reasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: [target, previous],
+      changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
+      primaryAssignmentId: target.id,
+      date: "2026-07-30",
+      review: "frequency",
+    });
+
+    expect(reasons.some((reason) => reason.includes("最小航班衔接间隔"))).toBe(
+      true
+    );
+  });
+
+  it("does not let a lower-priority review consume an established reservation", () => {
+    const { state, originalWorker, replacementWorker, target } =
+      createFrequencyFixture();
+    state.flights[0]!.startTime = "21:00";
+    state.flights[0]!.endTime = "23:30";
+    target.startTime = "21:00";
+    target.endTime = "23:30";
+    state.positionRules.push({
+      ...state.positionRules[0]!,
+      id: "next-control",
+      flightNo: "NEXT200",
+      name: "控制",
+      remark: "",
+      qualifiedStaffIds: [replacementWorker.id],
+    });
+    state.templates = [
+      {
+        id: "next-template",
+        flightNo: "NEXT200",
+        startTime: "08:00",
+        endTime: "10:00",
+        positions: ["控制"],
+        remark: "",
+      },
+    ];
+    state.settings.crossWorkdayQualificationReservations = [
+      {
+        id: "reserve-control",
+        enabled: true,
+        flightNo: "NEXT200",
+        matchField: "position",
+        keyword: "控制",
+        minimumStaffCount: 1,
+      },
+    ];
+    target.staffId = originalWorker.id;
+    target.staffName = originalWorker.name;
+
+    const reasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: [target],
+      changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
+      primaryAssignmentId: target.id,
+      date: "2026-07-30",
+      review: "frequency",
+    });
+
+    expect(reasons).toContain("调整会减少跨工作日资质预留人数");
+  });
 });

@@ -17,6 +17,7 @@ import type { ScheduleProgressStage } from "../../src/domain/kernel/scheduling-k
 import { generateSchedule } from "../helpers/generate-schedule";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import { plannedScheduleProgress } from "../../src/domain/kernel/schedule-pipeline";
+import { applyStaffStatusChange } from "../../src/domain/kernel/schedule-state";
 import { createScheduleScaleState } from "./fixtures/schedule-scale";
 
 function clockTime(totalMinutes: number): string {
@@ -42,7 +43,7 @@ function createDenseScheduleState(): AppState {
   const qualifiedStaffIds = state.staff.map((person) => person.id);
   const baseRule = state.positionRules[0]!;
   state.flights = Array.from({ length: 8 }, (_, index) => {
-    const start = 6 * 60 + index * 45;
+    const start = 6 * 60 + index * 60;
     return {
       id: `stress-flight-${index + 1}`,
       flightNo: `ST${String(index + 1).padStart(3, "0")}`,
@@ -298,6 +299,33 @@ describe("scheduler performance safeguards", () => {
     expect(elapsed).toBeLessThan(20_000);
   }, 30_000);
 
+  it("recalculates ten flights after one assigned person changes to sick leave", async () => {
+    const state = createScheduleScaleState(40);
+    const date = "2026-08-01";
+    const original = await generateSchedule(state, date);
+    state.assignments = original.assignments;
+    state.activeScheduleDate = date;
+    const unavailable = state.staff.find((person) =>
+      state.assignments.some((assignment) => assignment.staffId === person.id)
+    )!;
+    applyStaffStatusChange(state, unavailable.id, "病假");
+
+    const started = performance.now();
+    const result = await generateSchedule(state, date);
+    const elapsed = performance.now() - started;
+
+    expect(state.flights).toHaveLength(10);
+    expect(state.staff).toHaveLength(15);
+    expect(result.assignments).toHaveLength(40);
+    expect(result.unfilledCount).toBe(0);
+    expect(
+      result.assignments.some(
+        (assignment) => assignment.staffId === unavailable.id
+      )
+    ).toBe(false);
+    expect(elapsed).toBeLessThan(20_000);
+  }, 45_000);
+
   it("reuses one run's protection facts and reports stable scheduling phases", async () => {
     const state = createDefaultState();
     const phases: ScheduleProgressStage[] = [];
@@ -360,9 +388,10 @@ describe("scheduler performance safeguards", () => {
         );
       for (let index = 1; index < ownAssignments.length; index += 1) {
         expect(
-          operationalMinutes(ownAssignments[index - 1]!.endTime)
-        ).toBeLessThanOrEqual(
-          operationalMinutes(ownAssignments[index]!.startTime)
+          operationalMinutes(ownAssignments[index]!.startTime) -
+            operationalMinutes(ownAssignments[index - 1]!.endTime)
+        ).toBeGreaterThanOrEqual(
+          state.settings.minimumRegularTransitionMinutes
         );
       }
     }

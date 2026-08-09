@@ -6,23 +6,19 @@ import type {
   Staff,
 } from "../../model";
 import {
-  canReleaseForFlight,
-  projectedAssignedHours,
-  staffConflicts,
-} from "../assignments/assignment-timing";
-import {
-  assignmentRule,
-  isReusableAssignment,
-} from "../flights/schedule-position-rules";
+  minimumFlightTransitionMessage,
+  minimumFlightTransitionViolationsForInsertion,
+} from "../assignments/minimum-flight-transition";
+import { assignmentRule } from "../flights/schedule-position-rules";
 import {
   positionTransitionCost,
   positionTransitionInsertionCost,
 } from "../reviews/schedule-protection";
 import {
-  durationHours,
-  intervalsOverlap,
-  isNightInterval,
-} from "../shared/time";
+  assignmentConflictFacts,
+  assignmentHoursFacts,
+  staffAssignmentFacts,
+} from "./assignment-eligibility-facts";
 
 export type AssignmentEligibilityViolationCode =
   | "missing-target"
@@ -34,6 +30,7 @@ export type AssignmentEligibilityViolationCode =
   | "guide-source"
   | "time-conflict"
   | "daily-hours"
+  | "minimum-flight-transition"
   | "position-transition"
   | "regular-staff-priority";
 
@@ -85,68 +82,28 @@ function success(): AssignmentEligibilityDiagnostic {
   return { eligible: true, violations: [] };
 }
 
-function isNightAssignment(
-  state: AppState,
-  flight: Pick<Flight, "startTime" | "endTime">
-): boolean {
-  return isNightInterval(
-    flight.startTime,
-    flight.endTime,
-    state.settings.nightStart,
-    state.settings.nightEnd
-  );
-}
-
 export function diagnoseBaseAssignmentEligibility(
   state: AppState,
   flight: Pick<Flight, "startTime" | "endTime">,
   rule: PositionRule,
   person: Staff
 ): AssignmentEligibilityDiagnostic {
-  if (person.status !== "正常")
+  const facts = staffAssignmentFacts(state, flight, rule, person);
+  if (!facts.available)
     return violation(
       "staff-unavailable",
       `${person.name} 当前状态为${person.status}`
     );
-  if (person.staffType !== "常规")
+  if (!facts.regularStaff)
     return violation("staff-type", `${person.name} 不是常规人员`);
-  if (!rule.qualifiedStaffIds.includes(person.id))
+  if (!facts.positionQualified)
     return violation(
       "position-qualification",
       `${person.name} 不具备该岗位资质`
     );
-  if (isNightAssignment(state, flight) && !person.nightShift)
+  if (!facts.nightCapable)
     return violation("night-shift", `${person.name} 不具备夜班能力`);
   return success();
-}
-
-function automaticConflicts(
-  options: AutomaticAssignmentEligibilityOptions
-): Assignment[] {
-  const {
-    state,
-    assignments,
-    flight,
-    person,
-    ignoreSameFlightReusable = false,
-  } = options;
-  if (!ignoreSameFlightReusable)
-    return staffConflicts(assignments, person.id, flight);
-  return assignments
-    .filter((assignment) => assignment.staffId === person.id)
-    .filter(
-      (assignment) =>
-        assignment.flightId !== flight.id ||
-        !isReusableAssignment(state, assignment)
-    )
-    .filter((assignment) =>
-      intervalsOverlap(
-        assignment.startTime,
-        assignment.endTime,
-        flight.startTime,
-        flight.endTime
-      )
-    );
 }
 
 type PositionTransitionCheck = "target-only" | "insertion";
@@ -177,26 +134,27 @@ function automaticPositionTransitionCost(
   );
 }
 
-function diagnoseAutomaticAssignmentEligibilityWithTransitionCheck(
+function diagnoseAutomaticStaffEligibilityWithTransitionCheck(
   options: AutomaticAssignmentEligibilityOptions,
   transitionCheck: PositionTransitionCheck
 ): AssignmentEligibilityDiagnostic {
   const { state, assignments, flight, rule, person, transitionMode } = options;
   const base = diagnoseBaseAssignmentEligibility(state, flight, rule, person);
   if (!base.eligible) return base;
-  if (
-    automaticConflicts(options).some(
-      (assignment) => !canReleaseForFlight(assignment, flight, state)
-    )
-  ) {
+  const factOptions = {
+    state,
+    assignments,
+    flight,
+    person,
+    workHours: options.workHours,
+    sameFlightConflict: options.ignoreSameFlightReusable
+      ? ("allow-reusable" as const)
+      : ("block" as const),
+  };
+  if (assignmentConflictFacts(factOptions).blockingConflicts.length) {
     return violation("time-conflict", `${person.name} 在该时段已有排班`);
   }
-  const workHours =
-    options.workHours ?? durationHours(flight.startTime, flight.endTime);
-  if (
-    projectedAssignedHours(assignments, person.id, flight, state) + workHours >
-    state.settings.maxDailyHours
-  ) {
+  if (!assignmentHoursFacts(factOptions).withinDailyHours) {
     return violation(
       "daily-hours",
       `${person.name} 将超过每日 ${state.settings.maxDailyHours} 小时上限`
@@ -212,6 +170,53 @@ function diagnoseAutomaticAssignmentEligibilityWithTransitionCheck(
     );
   }
   return success();
+}
+
+export function diagnoseAutomaticStaffEligibility(
+  options: AutomaticAssignmentEligibilityOptions
+): AssignmentEligibilityDiagnostic {
+  return diagnoseAutomaticStaffEligibilityWithTransitionCheck(
+    options,
+    "insertion"
+  );
+}
+
+export function diagnoseMinimumFlightTransitionEligibility(
+  options: AutomaticAssignmentEligibilityOptions
+): AssignmentEligibilityDiagnostic {
+  const violation = minimumFlightTransitionViolationsForInsertion(
+    options.state,
+    options.assignments,
+    options.person.id,
+    options.flight,
+    options.rule
+  )[0];
+  return violation
+    ? {
+        eligible: false,
+        violations: [
+          {
+            code: "minimum-flight-transition",
+            message: minimumFlightTransitionMessage(
+              options.person.name,
+              violation
+            ),
+          },
+        ],
+      }
+    : success();
+}
+
+function diagnoseAutomaticAssignmentEligibilityWithTransitionCheck(
+  options: AutomaticAssignmentEligibilityOptions,
+  transitionCheck: PositionTransitionCheck
+): AssignmentEligibilityDiagnostic {
+  const staffEligibility = diagnoseAutomaticStaffEligibilityWithTransitionCheck(
+    options,
+    transitionCheck
+  );
+  if (!staffEligibility.eligible) return staffEligibility;
+  return diagnoseMinimumFlightTransitionEligibility(options);
 }
 
 export function diagnoseAutomaticAssignmentEligibility(
@@ -230,31 +235,46 @@ export function analyzeAutomaticEligibilityPool({
   rule,
   excludedStaffIds = new Set(),
 }: AutomaticEligibilityPoolOptions): AutomaticEligibilityPool {
+  const staffFacts = new Map(
+    state.staff.map((person) => [
+      person.id,
+      staffAssignmentFacts(state, flight, rule, person),
+    ])
+  );
   const configured = state.staff.filter(
     (person) =>
       !excludedStaffIds.has(person.id) &&
-      person.staffType === "常规" &&
-      rule.qualifiedStaffIds.includes(person.id)
+      staffFacts.get(person.id)?.regularStaff &&
+      staffFacts.get(person.id)?.positionQualified
   );
-  const available = configured.filter((person) => person.status === "正常");
+  const available = configured.filter(
+    (person) => staffFacts.get(person.id)?.available
+  );
   const nightCapable = available.filter(
-    (person) => !isNightAssignment(state, flight) || person.nightShift
+    (person) => staffFacts.get(person.id)?.nightCapable
   );
-  const conflictFree = nightCapable.filter((person) =>
-    automaticConflicts({
-      state,
-      assignments,
-      flight,
-      rule,
-      person,
-    }).every((assignment) => canReleaseForFlight(assignment, flight, state))
+  const conflictFacts = new Map(
+    nightCapable.map((person) => [
+      person.id,
+      assignmentConflictFacts({
+        state,
+        assignments,
+        flight,
+        person,
+      }),
+    ])
   );
-  const workHours = durationHours(flight.startTime, flight.endTime);
+  const conflictFree = nightCapable.filter(
+    (person) => !conflictFacts.get(person.id)?.blockingConflicts.length
+  );
+  const hoursFacts = new Map(
+    conflictFree.map((person) => [
+      person.id,
+      assignmentHoursFacts({ state, assignments, flight, person }),
+    ])
+  );
   const withinHours = conflictFree.filter(
-    (person) =>
-      projectedAssignedHours(assignments, person.id, flight, state) +
-        workHours <=
-      state.settings.maxDailyHours
+    (person) => hoursFacts.get(person.id)?.withinDailyHours
   );
   return { configured, available, nightCapable, conflictFree, withinHours };
 }
@@ -280,20 +300,41 @@ export function diagnoseManualAssignmentEligibility(
   const person = state.staff.find((item) => item.id === staffId);
   if (!assignment || !person)
     return violation("missing-target", "人员或岗位不存在");
-  if (person.status !== "正常")
+  const rule = assignmentRule(state, assignment);
+  const flight = state.flights.find(
+    (item) => item.id === assignment.flightId
+  ) ?? {
+    id: assignment.flightId,
+    flightNo: assignment.flightNo,
+    startTime: assignment.startTime,
+    endTime: assignment.endTime,
+    bookedPassengers: 0,
+    positions: [assignment.position],
+    remark: "",
+  };
+  const factRule = rule ?? {
+    id: assignment.positionRuleId ?? assignment.id,
+    flightNo: assignment.flightNo,
+    name: assignment.position,
+    category: "常规" as const,
+    remark: assignment.remark,
+    qualifiedStaffIds: [staffId],
+    manual: true,
+    fatiguePoints: assignment.fatiguePoints,
+    minPassengers: 0,
+    earlyReleaseMinutes: 0,
+  };
+  const staffFacts = staffAssignmentFacts(state, flight, factRule, person);
+  if (!staffFacts.available)
     return violation(
       "staff-unavailable",
       `${person.name} 当前状态为${person.status}`
     );
-  const rule = assignmentRule(state, assignment);
   const administrativeStaff = person.staffType === "行政支援";
   if (administrativeStaff && !state.settings.adminSupportEnabled) {
     return violation("admin-support-disabled", "行政支援模式尚未启用");
   }
-  if (
-    administrativeStaff &&
-    (!rule || !rule.qualifiedStaffIds.includes(person.id))
-  ) {
+  if (administrativeStaff && (!rule || !staffFacts.positionQualified)) {
     return violation(
       "position-qualification",
       `${person.name} 不具备该岗位资质`
@@ -303,7 +344,7 @@ export function diagnoseManualAssignmentEligibility(
     rule &&
     rule.category !== "引导" &&
     !rule.manual &&
-    !rule.qualifiedStaffIds.includes(person.id)
+    !staffFacts.positionQualified
   ) {
     return violation(
       "position-qualification",
@@ -311,14 +352,10 @@ export function diagnoseManualAssignmentEligibility(
     );
   }
   if (administrativeStaff && rule) {
-    const flight = state.flights.find(
-      (item) => item.id === assignment.flightId
-    );
     const otherAssignments = state.assignments.filter(
       (item) => item.id !== assignmentId
     );
     const regularAvailable = Boolean(
-      flight &&
       state.staff.some(
         (regular) =>
           diagnoseAutomaticAssignmentEligibilityWithTransitionCheck(
@@ -343,7 +380,7 @@ export function diagnoseManualAssignmentEligibility(
       );
     }
   }
-  if (isNightAssignment(state, assignment) && !person.nightShift) {
+  if (!staffFacts.nightCapable) {
     return violation("night-shift", `${person.name} 不可上夜班`);
   }
   const reuse = rule?.category === "引导";
@@ -365,34 +402,36 @@ export function diagnoseManualAssignmentEligibility(
     if (!source)
       return violation("guide-source", `${person.name} 未在该航班承担常规岗位`);
   }
-  const conflicts = reuse
-    ? others.filter((item) => item.flightId !== assignment.flightId)
-    : others.filter(
-        (item) =>
-          item.flightId !== assignment.flightId ||
-          !isReusableAssignment(state, item)
-      );
-  if (
-    conflicts.some(
-      (item) =>
-        intervalsOverlap(
-          item.startTime,
-          item.endTime,
-          assignment.startTime,
-          assignment.endTime
-        ) && !canReleaseForFlight(item, assignment, state)
-    )
-  ) {
+  const factOptions = {
+    state,
+    assignments: others,
+    flight,
+    person,
+    workHours: assignment.workHours,
+    sameFlightConflict: reuse
+      ? ("allow-all" as const)
+      : ("allow-reusable" as const),
+  };
+  if (assignmentConflictFacts(factOptions).blockingConflicts.length) {
     return violation("time-conflict", `${person.name} 在该时段已有排班`);
   }
-  if (
-    projectedAssignedHours(others, staffId, assignment, state) +
-      assignment.workHours >
-    state.settings.maxDailyHours
-  ) {
+  if (!assignmentHoursFacts(factOptions).withinDailyHours) {
     return violation(
       "daily-hours",
       `${person.name} 将超过每日 ${state.settings.maxDailyHours} 小时上限`
+    );
+  }
+  const minimumTransition = minimumFlightTransitionViolationsForInsertion(
+    state,
+    others,
+    staffId,
+    flight,
+    factRule
+  )[0];
+  if (minimumTransition) {
+    return violation(
+      "minimum-flight-transition",
+      minimumFlightTransitionMessage(person.name, minimumTransition)
     );
   }
   if (

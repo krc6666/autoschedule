@@ -30,6 +30,12 @@ export const SCHEDULING_RULES = [
     feedbackMode: "aggregated",
   },
   {
+    id: "minimum-flight-transition",
+    stage: "hard-constraint",
+    label: "普通岗位最小航班衔接间隔",
+    feedbackMode: "aggregated",
+  },
+  {
     id: "ke166-supervisor",
     stage: "reserved-assignment",
     label: "KE166独立督导优先保留与缺员兼任",
@@ -62,15 +68,28 @@ export const SCHEDULING_RULES = [
     feedbackMode: "aggregated",
   },
   {
+    id: "cross-workday-qualification-reservation",
+    stage: "protection",
+    label: "跨工作日资质预留",
+    feedbackMode: "dedicated",
+    feedbackKey: "cross-workday-qualification-reservation",
+  },
+  {
     id: "position-transition",
     stage: "protection",
     label: "严格岗位衔接",
     feedbackMode: "aggregated",
   },
   {
+    id: "late-priority-aggregate-rotation",
+    stage: "protection",
+    label: "末班重点岗位合计轮换保护",
+    feedbackMode: "aggregated",
+  },
+  {
     id: "late-priority-frequency",
     stage: "protection",
-    label: "末班重点岗位公平轮换",
+    label: "末班重点岗位分类公平",
     feedbackMode: "aggregated",
   },
   {
@@ -193,6 +212,7 @@ export type RuleFeedbackKey = Extract<
 
 export const RULE_FEEDBACK_ORDER = [
   "morning-priority",
+  "cross-workday-qualification-reservation",
   "high-load",
   "cross-workday-load",
   "position-frequency-review",

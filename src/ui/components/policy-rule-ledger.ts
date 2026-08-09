@@ -1,4 +1,4 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 
 import {
   BUILT_IN_RULE_REGISTRY,
@@ -9,6 +9,7 @@ import {
   USER_RULE_FLOW,
   USER_SCHEDULING_RULES,
 } from "../projections/policy-rule-presentation";
+import { matchesPolicySearch } from "../projections/policy-search";
 import { LightDomElement } from "./light-dom-element";
 
 export class PolicyRuleLedgerElement extends LightDomElement {
@@ -20,18 +21,27 @@ export class PolicyRuleLedgerElement extends LightDomElement {
   query = "";
 
   protected override render() {
-    const query = this.query.trim().toLocaleLowerCase("zh-CN");
     const flow = USER_RULE_FLOW.map((stage) => stage.label).join(" → ");
-    const rows = USER_SCHEDULING_RULES.filter(
-      (rule) =>
-        !query ||
-        `${rule.id} ${rule.label} ${rule.stage.label} ${rule.description}`
-          .toLocaleLowerCase("zh-CN")
-          .includes(query)
-    );
     const preferenceById = new Map(
       builtInRulePreferences(this.model.settings).map((item) => [item.id, item])
     );
+    const status = (ruleId: (typeof USER_SCHEDULING_RULES)[number]["id"]) =>
+      BUILT_IN_RULE_REGISTRY.definition(ruleId)?.configurable
+        ? preferenceById.get(ruleId)?.enabled
+          ? "已启用"
+          : "已停用"
+        : "始终执行";
+    const rows = USER_SCHEDULING_RULES.filter((rule) =>
+      matchesPolicySearch(
+        this.query,
+        rule.label,
+        rule.stage.label,
+        rule.stage.summary,
+        rule.description,
+        status(rule.id)
+      )
+    );
+    if (this.query.trim() && !rows.length) return nothing;
     return html`<details class="policy-rule-card policy-ledger" open>
       <summary>
         <span><strong>规则如何执行</strong><small>${flow}</small></span
@@ -60,9 +70,7 @@ export class PolicyRuleLedgerElement extends LightDomElement {
                     >
                   </td>
                   <td><strong>${rule.label}</strong></td>
-                  <td>
-                    ${BUILT_IN_RULE_REGISTRY.definition(rule.id)?.configurable ? (preferenceById.get(rule.id)?.enabled ? "已启用" : "已停用") : "始终执行"}
-                  </td>
+                  <td>${status(rule.id)}</td>
                   <td>${rule.description}</td>
                 </tr>`
             )}

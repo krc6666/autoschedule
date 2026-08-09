@@ -1,26 +1,129 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 
 import type { AppState } from "../../model";
 import { dispatchUiCommand, inputValue } from "../events/ui-command";
+import {
+  matchesPolicySearch,
+  normalizePolicySearchQuery,
+} from "../projections/policy-search";
 import { LightDomElement } from "./light-dom-element";
 
 type Collection =
-  "duty" | "recovery-target" | "late-position" | "supervisor" | "transition";
+  | "duty"
+  | "recovery-target"
+  | "cross-workday-reservation"
+  | "late-position"
+  | "supervisor"
+  | "transition";
 
 export class PolicyStructuredRulesElement extends LightDomElement {
-  static override properties = { model: { attribute: false } };
+  static override properties = {
+    model: { attribute: false },
+    query: { type: String },
+  };
   model!: AppState;
+  query = "";
 
   protected override render() {
     return html`
-      ${this.dutyPriorities()} ${this.recoveryRules()} ${this.supervisorRules()}
+      ${this.dutyPriorities()} ${this.crossWorkdayReservations()}
+      ${this.recoveryRules()} ${this.supervisorRules()}
       ${this.transitionRules()}
     `;
   }
 
+  private crossWorkdayReservations() {
+    const items = this.model.settings.crossWorkdayQualificationReservations;
+    if (
+      !matchesPolicySearch(
+        this.query,
+        "跨工作日资质预留",
+        "从上到下依次保留",
+        "新增预留目标",
+        "启用",
+        "下一工作班航班",
+        "匹配位置",
+        "岗位名称",
+        "岗位备注",
+        "岗位关键词",
+        "至少保留人数",
+        items.map((item) => [
+          item.flightNo,
+          item.keyword,
+          item.minimumStaffCount,
+        ])
+      )
+    ) {
+      return nothing;
+    }
+    return html`<details
+      class="policy-rule-card"
+      ?open=${Boolean(normalizePolicySearchQuery(this.query))}
+    >
+      <summary>
+        <span
+          ><strong>跨工作日资质预留</strong
+          ><small
+            >${items.filter((item) => item.enabled).length} 条启用 ·
+            从上到下依次保留</small
+          ></span
+        ><i class="bi bi-chevron-down"></i>
+      </summary>
+      <div class="policy-rule-content">
+        <div class="d-flex justify-content-end mb-2">
+          ${this.addButton("cross-workday-reservation", "新增预留目标")}
+        </div>
+        <div class="supervisor-coverage-list">
+          ${items.map(
+            (item, index) =>
+              html`<div class="supervisor-coverage-row">
+                ${this.toggle("cross-workday-reservation", item.id, "enabled", item.enabled, "启用")}
+                ${this.field("cross-workday-reservation", item.id, "flightNo", item.flightNo, "下一工作班航班")}
+                ${this.select(
+                "cross-workday-reservation",
+                item.id,
+                "matchField",
+                item.matchField,
+                "匹配位置",
+                [
+                  ["position", "岗位名称"],
+                  ["remark", "岗位备注"],
+                ]
+              )}
+                ${this.field("cross-workday-reservation", item.id, "keyword", item.keyword, "岗位关键词")}
+                ${this.field("cross-workday-reservation", item.id, "minimumStaffCount", item.minimumStaffCount, "至少保留人数", "", "number")}
+                <div class="d-flex gap-1">
+                  ${this.moveReservation(item.id, -1, index === 0)}
+                  ${this.moveReservation(item.id, 1, index === items.length - 1)}
+                  ${this.deleteButton("cross-workday-reservation", item.id)}
+                </div>
+              </div>`
+          )}
+        </div>
+      </div>
+    </details>`;
+  }
+
   private dutyPriorities() {
     const items = this.model.settings.dutyPositionPriorities;
-    return html`<details class="policy-rule-card">
+    if (
+      !matchesPolicySearch(
+        this.query,
+        "值班任务规则",
+        "按顺序逐项尝试",
+        "新增优先项",
+        "航班号",
+        "岗位或备注关键词",
+        "启用",
+        items.map((item) => [item.flightNo, item.positionKeyword])
+      )
+    ) {
+      return nothing;
+    }
+    return html`<details
+      class="policy-rule-card"
+      ?open=${Boolean(normalizePolicySearchQuery(this.query))}
+    >
       <summary>
         <span
           ><strong>值班任务规则</strong
@@ -54,7 +157,39 @@ export class PolicyStructuredRulesElement extends LightDomElement {
 
   private recoveryRules() {
     const settings = this.model.settings;
-    return html`<details class="policy-rule-card">
+    if (
+      !matchesPolicySearch(
+        this.query,
+        "跨工作日恢复目标",
+        "末班重点岗位",
+        "新增规则",
+        "适用航班",
+        "匹配位置",
+        "岗位名称",
+        "岗位备注",
+        "关键词",
+        "次班截止时间",
+        "次班早班避让目标",
+        "新增目标",
+        "目标航班",
+        "岗位或备注关键词",
+        settings.lateShiftRecoveryPositionRules.map((rule) => [
+          rule.flightNo,
+          rule.keyword,
+          rule.nextWorkdayCutoffTime,
+        ]),
+        settings.nextWorkdayRecoveryTargets.map((target) => [
+          target.flightNo,
+          target.positionKeyword,
+        ])
+      )
+    ) {
+      return nothing;
+    }
+    return html`<details
+      class="policy-rule-card"
+      ?open=${Boolean(normalizePolicySearchQuery(this.query))}
+    >
       <summary>
         <span
           ><strong>跨工作日恢复目标</strong
@@ -115,7 +250,30 @@ export class PolicyStructuredRulesElement extends LightDomElement {
 
   private supervisorRules() {
     const items = this.model.settings.mobileSupervisorCoverageRules;
-    return html`<details class="policy-rule-card">
+    if (
+      !matchesPolicySearch(
+        this.query,
+        "机动督导兼任范围",
+        "自动排班与人工拖拽共用",
+        "禁止优先",
+        "新增规则",
+        "适用航班",
+        "匹配位置",
+        "岗位名称",
+        "岗位备注",
+        "关键词",
+        "处理方式",
+        "禁止兼任",
+        "允许兼任",
+        items.map((item) => [item.flightNo, item.keyword])
+      )
+    ) {
+      return nothing;
+    }
+    return html`<details
+      class="policy-rule-card"
+      ?open=${Boolean(normalizePolicySearchQuery(this.query))}
+    >
       <summary>
         <span
           ><strong>机动督导兼任范围</strong
@@ -165,7 +323,37 @@ export class PolicyStructuredRulesElement extends LightDomElement {
 
   private transitionRules() {
     const items = this.model.settings.positionTransitionPolicies;
-    return html`<details class="policy-rule-card">
+    if (
+      !matchesPolicySearch(
+        this.query,
+        "岗位衔接间隔规则",
+        "新增衔接规则",
+        "规则名称",
+        "启用规则",
+        "前序航班",
+        "前序晚撤岗位",
+        "目标航班",
+        "目标岗位",
+        "最小间隔（分钟）",
+        "执行强度",
+        "优先避开",
+        "严格限制",
+        items.map((item) => [
+          item.name,
+          item.sourceFlightNo,
+          item.sourcePositions,
+          item.targetFlightNo,
+          item.targetPosition,
+          item.minimumGapMinutes,
+        ])
+      )
+    ) {
+      return nothing;
+    }
+    return html`<details
+      class="policy-rule-card"
+      ?open=${Boolean(normalizePolicySearchQuery(this.query))}
+    >
       <summary>
         <span
           ><strong>岗位衔接间隔规则</strong
@@ -294,6 +482,23 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       title=${direction < 0 ? "提高优先级" : "降低优先级"}
       ?disabled=${disabled}
       @click=${() => dispatchUiCommand(this, { type: "move-duty-priority", id, direction })}
+    >
+      <i class="bi bi-arrow-${direction < 0 ? "up" : "down"}"></i>
+    </button>`;
+  }
+
+  private moveReservation(id: string, direction: -1 | 1, disabled: boolean) {
+    return html`<button
+      class="btn btn-sm icon-btn"
+      type="button"
+      title=${direction < 0 ? "提高优先级" : "降低优先级"}
+      ?disabled=${disabled}
+      @click=${() =>
+        dispatchUiCommand(this, {
+          type: "move-cross-workday-reservation",
+          id,
+          direction,
+        })}
     >
       <i class="bi bi-arrow-${direction < 0 ? "up" : "down"}"></i>
     </button>`;

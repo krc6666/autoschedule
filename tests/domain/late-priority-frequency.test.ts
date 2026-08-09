@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { createDefaultState } from "../../src/defaults";
 import { createScheduleFrequencyFacts } from "../../src/domain/statistics/schedule-frequency";
 import {
+  compareLatePriorityAggregate,
   compareLatePriorityFrequency,
+  compareLatePriorityFrequencyForKind,
   latePriorityFrequencyProfileForRule,
 } from "../../src/domain/statistics/late-priority-frequency";
 import type { HistoryRecord, PositionRule } from "../../src/model";
@@ -50,10 +52,102 @@ function rule(name: string, remark: string): PositionRule {
 }
 
 describe("late priority frequency statistics", () => {
+  it("avoids someone who carried any selected late-priority role on the previous workday before comparing aggregate totals", () => {
+    const state = createDefaultState();
+    const [previousWorker, historicallyBusierWorker] = state.staff.slice(0, 2);
+    const declarationRule = rule("H04", "申报");
+    declarationRule.qualifiedStaffIds = [
+      previousWorker!.id,
+      historicallyBusierWorker!.id,
+    ];
+    state.positionRules = [
+      declarationRule,
+      { ...rule("H05", "送资料"), flightNo: "TR121" },
+      { ...rule("督导", ""), flightNo: "TW616" },
+    ];
+    state.settings.latePriorityFlightNumbers = ["TARGET", "TR121", "TW616"];
+    state.history = [
+      record(
+        "previous-delivery",
+        previousWorker!.id,
+        "TR121",
+        "H05",
+        "送资料",
+        "21:55",
+        "23:55"
+      ),
+      {
+        ...record(
+          "older-supervisor-1",
+          historicallyBusierWorker!.id,
+          "TW616",
+          "督导",
+          "",
+          "21:55",
+          "23:55"
+        ),
+        date: "2026-08-12",
+      },
+      {
+        ...record(
+          "older-supervisor-2",
+          historicallyBusierWorker!.id,
+          "TW616",
+          "督导",
+          "",
+          "21:55",
+          "23:55"
+        ),
+        date: "2026-08-14",
+      },
+      record(
+        "outside-scope",
+        historicallyBusierWorker!.id,
+        "AK100",
+        "H04",
+        "申报",
+        "21:55",
+        "23:55"
+      ),
+    ];
+    const facts = createScheduleFrequencyFacts(state, DATE);
+    const flight = { startTime: "21:55", endTime: "23:55" };
+    const previousProfile = latePriorityFrequencyProfileForRule(
+      state,
+      previousWorker!.id,
+      flight,
+      declarationRule,
+      DATE,
+      facts
+    );
+    const historicallyBusierProfile = latePriorityFrequencyProfileForRule(
+      state,
+      historicallyBusierWorker!.id,
+      flight,
+      declarationRule,
+      DATE,
+      facts
+    );
+
+    expect(previousProfile.previousWorkdayAssigned).toBe(true);
+    expect(previousProfile.totalCurrentMonthCount).toBe(1);
+    expect(historicallyBusierProfile.previousWorkdayAssigned).toBe(false);
+    expect(historicallyBusierProfile.totalCurrentMonthCount).toBe(2);
+    expect(
+      compareLatePriorityAggregate(previousProfile, historicallyBusierProfile)
+    ).toBeGreaterThan(0);
+  });
+
   it("keeps supervisor, number-one, declaration and delivery as separate same-flight counts", () => {
     const state = createDefaultState();
     const person = state.staff[0]!;
     state.settings.lateShiftEndTime = "23:00";
+    state.settings.latePriorityFlightNumbers = ["TARGET"];
+    state.positionRules.push(
+      { ...rule("H02", "一号"), qualifiedStaffIds: [person.id] },
+      { ...rule("H04", "申报"), qualifiedStaffIds: [person.id] },
+      { ...rule("G14", "送资料"), qualifiedStaffIds: [person.id] }
+    );
     state.history = [
       record(
         "fd-declare",
@@ -109,8 +203,15 @@ describe("late priority frequency statistics", () => {
     ).toEqual({
       applies: true,
       targetKinds: ["declaration"],
+      previousWorkdayAssigned: true,
       supervisorQualified: false,
       supervisorRotationDeficit: 0,
+      categoryBoundaryExcess: {
+        supervisor: 0,
+        "number-one": 0,
+        declaration: 0,
+        delivery: 0,
+      },
       counts: {
         supervisor: { currentMonthCount: 0, recentWorkdayCount: 0 },
         "number-one": { currentMonthCount: 1, recentWorkdayCount: 1 },
@@ -133,8 +234,15 @@ describe("late priority frequency statistics", () => {
     ).toEqual({
       applies: true,
       targetKinds: ["number-one"],
+      previousWorkdayAssigned: true,
       supervisorQualified: false,
       supervisorRotationDeficit: 0,
+      categoryBoundaryExcess: {
+        supervisor: 0,
+        "number-one": 0,
+        declaration: 0,
+        delivery: 0,
+      },
       counts: {
         supervisor: { currentMonthCount: 0, recentWorkdayCount: 0 },
         "number-one": { currentMonthCount: 1, recentWorkdayCount: 1 },
@@ -262,6 +370,68 @@ describe("late priority frequency statistics", () => {
     expect(
       compareLatePriorityFrequency(supervisorProfile, ordinaryProfile)
     ).toBe(0);
+  });
+
+  it("uses the current category count after aggregate totals are tied", () => {
+    const state = createDefaultState();
+    const [lowerDeclaration, higherDeclaration] = state.staff.slice(0, 2);
+    const declarationRule = rule("H04", "申报");
+    declarationRule.flightNo = "TR121";
+    declarationRule.qualifiedStaffIds = [
+      lowerDeclaration!.id,
+      higherDeclaration!.id,
+    ];
+    const deliveryRule = rule("H05", "送资料");
+    deliveryRule.flightNo = "TW616";
+    deliveryRule.qualifiedStaffIds = [
+      lowerDeclaration!.id,
+      higherDeclaration!.id,
+    ];
+    state.positionRules = [declarationRule, deliveryRule];
+    state.settings.latePriorityFlightNumbers = ["TR121", "TW616"];
+    state.history = [
+      record(
+        "lower-delivery",
+        lowerDeclaration!.id,
+        "TW616",
+        "H05",
+        "送资料",
+        "21:55",
+        "23:55"
+      ),
+      record(
+        "higher-declaration",
+        higherDeclaration!.id,
+        "TR121",
+        "H04",
+        "申报",
+        "21:55",
+        "23:55"
+      ),
+    ];
+    const facts = createScheduleFrequencyFacts(state, DATE);
+    const flight = { startTime: "21:55", endTime: "23:55" };
+    const lower = latePriorityFrequencyProfileForRule(
+      state,
+      lowerDeclaration!.id,
+      flight,
+      declarationRule,
+      DATE,
+      facts
+    );
+    const higher = latePriorityFrequencyProfileForRule(
+      state,
+      higherDeclaration!.id,
+      flight,
+      declarationRule,
+      DATE,
+      facts
+    );
+
+    expect(compareLatePriorityAggregate(lower, higher)).toBe(0);
+    expect(
+      compareLatePriorityFrequencyForKind(lower, higher, "declaration")
+    ).toBeLessThan(0);
   });
 
   it("reserves the lower-frequency supervisor for supervision before declaration", () => {

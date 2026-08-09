@@ -17,6 +17,10 @@ import type { ScheduleProgressStage } from "./schedule-progress";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import { isPreNoonFlight } from "../flights/schedule-tasks";
 import type { SolverPort } from "../solver/solver-port";
+import {
+  crossWorkdayReservationStatuses,
+  crossWorkdayReservationWarning,
+} from "../reviews/cross-workday-qualification-reservation";
 
 export interface ScheduleFinalizerOptions {
   solver: SolverPort;
@@ -86,7 +90,15 @@ function rebuildWarnings(
       `${assignment.flightNo} / ${assignment.position} ${category === "引导" ? "没有可复用的常规岗位人员" : "无可用人员"}`,
     ];
   });
-  return [...new Set([...warnings, ...postReviewWarnings])];
+  const reservationWarnings = crossWorkdayReservationStatuses(
+    state,
+    assignments
+  )
+    .filter((status) => status.shortfall > 0)
+    .map(crossWorkdayReservationWarning);
+  return [
+    ...new Set([...warnings, ...reservationWarnings, ...postReviewWarnings]),
+  ];
 }
 
 function sortAssignments(

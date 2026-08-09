@@ -22,6 +22,10 @@ import {
   previousWorkdayLateProtection,
 } from "../reviews/cross-day-recovery";
 import { isHighLoadPosition } from "../reviews/schedule-protection";
+import {
+  crossWorkdayReservationStatuses,
+  crossWorkdayReservationWarning,
+} from "../reviews/cross-workday-qualification-reservation";
 import { isPreNoonFlight } from "../flights/schedule-tasks";
 import {
   countedWorkloadAssignments,
@@ -133,6 +137,43 @@ function highLoadFeedback(state: AppState): ScheduleFeedbackItem {
     "连续高负荷",
     "ok",
     `${highLoadAssignments.length} 个高负荷岗位均未由同一人员在 ${state.settings.highLoadRecoveryMinutes} 分钟恢复期内连续承担。`
+  );
+}
+
+function crossWorkdayQualificationReservationFeedback(
+  state: AppState
+): ScheduleFeedbackItem {
+  const statuses = crossWorkdayReservationStatuses(state);
+  if (!statuses.length) {
+    return feedbackItem(
+      "rule-execution",
+      "cross-workday-qualification-reservation",
+      "跨工作日资质预留",
+      "info",
+      "尚未配置跨工作日资质预留目标。"
+    );
+  }
+  const shortfalls = statuses.filter((status) => status.shortfall > 0);
+  if (shortfalls.length) {
+    return feedbackItem(
+      "rule-execution",
+      "cross-workday-qualification-reservation",
+      "跨工作日资质预留",
+      "attention",
+      shortfalls.map(crossWorkdayReservationWarning).join("；")
+    );
+  }
+  return feedbackItem(
+    "rule-execution",
+    "cross-workday-qualification-reservation",
+    "跨工作日资质预留",
+    "ok",
+    statuses
+      .map(
+        (status) =>
+          `${status.target.reservation.flightNo}/${status.target.reservation.keyword}已保留 ${status.preservedStaffIds.length} 名合格人员`
+      )
+      .join("；")
   );
 }
 
@@ -728,6 +769,8 @@ const RULE_FEEDBACK_BUILDERS: Readonly<
   Record<RuleFeedbackKey, RuleFeedbackBuilder>
 > = {
   "morning-priority": (state) => morningPriorityFeedback(state),
+  "cross-workday-qualification-reservation": (state) =>
+    crossWorkdayQualificationReservationFeedback(state),
   "high-load": (state) => highLoadFeedback(state),
   "cross-workday-load": crossWorkdayLoadFeedback,
   "position-frequency-review": (state) =>

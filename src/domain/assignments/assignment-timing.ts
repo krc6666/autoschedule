@@ -25,7 +25,7 @@ export function canReleaseForFlight(
 }
 
 export function staffConflicts(
-  assignments: Assignment[],
+  assignments: readonly Assignment[],
   staffId: string,
   flight: Pick<Flight, "startTime" | "endTime">
 ): Assignment[] {
@@ -42,7 +42,7 @@ export function staffConflicts(
 }
 
 export function projectedAssignedHours(
-  assignments: Assignment[],
+  assignments: readonly Assignment[],
   staffId: string,
   flight: Pick<Flight, "startTime" | "endTime">,
   state: AppState

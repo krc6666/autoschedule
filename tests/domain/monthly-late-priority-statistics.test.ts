@@ -70,7 +70,32 @@ function history(
 }
 
 describe("monthly late priority statistics", () => {
-  it("lists selectable late flights and keeps each flight separate", () => {
+  it("combines selected flights into one staff table and keeps flight details", () => {
+    const state = createDefaultState();
+    const trRule = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "送资料"
+    )!;
+    const staffId = trRule.qualifiedStaffIds[0]!;
+    addLateFlight(state, "TW616", staffId);
+    state.settings.latePriorityFlightNumbers = ["TR121", "TW616"];
+    state.history = [
+      history("tr-delivery", "TR121", trRule.name, trRule.remark, staffId),
+      history("tw-delivery", "TW616", "T03", "送资料", staffId),
+      history("outside", "AK100", "A01", "送资料", staffId),
+    ];
+
+    const statistics = buildMonthlyLatePriorityStatistics(state, DATE);
+    const row = statistics.rows.find((item) => item.staff.id === staffId)!;
+
+    expect(statistics.flightNumbers).toEqual(["TR121", "TW616"]);
+    expect(row.totalCount).toBe(2);
+    expect(row.categories.送资料.details).toEqual([
+      expect.objectContaining({ flightNo: "TR121", date: "2026-08-10" }),
+      expect.objectContaining({ flightNo: "TW616", date: "2026-08-10" }),
+    ]);
+  });
+
+  it("keeps zero-count qualified workers while excluding sick, administrative and unqualified workers", () => {
     const state = createDefaultState();
     const trRule = state.positionRules.find(
       (rule) => rule.flightNo === "TR121" && rule.name === "H02"
@@ -92,6 +117,7 @@ describe("monthly late priority statistics", () => {
       (person) => !trRule.qualifiedStaffIds.includes(person.id)
     )!.id;
     addLateFlight(state, "TW616", twStaffId);
+    state.settings.latePriorityFlightNumbers = ["TR121", "TW616"];
     state.history = [
       history("tr-one", "TR121", "H02", "一号", trStaffId),
       history("tw-one", "TW616", "T01", "一号", twStaffId),
@@ -102,16 +128,25 @@ describe("monthly late priority statistics", () => {
       "TW616",
     ]);
 
-    const tr = buildMonthlyLatePriorityStatistics(state, DATE, "TR121", "一号");
-    const tw = buildMonthlyLatePriorityStatistics(state, DATE, "TW616", "一号");
+    const statistics = buildMonthlyLatePriorityStatistics(state, DATE);
 
-    expect(tr.rows.map((row) => [row.staff.id, row.dates])).toEqual([
-      [trZeroStaffId, []],
-      [trStaffId, ["2026-08-10"]],
-    ]);
-    expect(tw.rows.map((row) => [row.staff.id, row.dates])).toEqual([
-      [twStaffId, ["2026-08-10"]],
-    ]);
+    expect(
+      statistics.rows
+        .filter((row) => row.categories.一号.qualified)
+        .map((row) => [row.staff.id, row.categories.一号.details.length])
+    ).toEqual(
+      expect.arrayContaining([
+        [trZeroStaffId, 0],
+        [trStaffId, 1],
+        [twStaffId, 1],
+      ])
+    );
+    expect(statistics.rows.some((row) => row.staff.id === sickStaffId)).toBe(
+      false
+    );
+    expect(statistics.rows.some((row) => row.staff.id === adminStaffId)).toBe(
+      false
+    );
   });
 
   it("uses the four labels and only counts qualified normal regular staff", () => {
@@ -137,6 +172,7 @@ describe("monthly late priority statistics", () => {
     Object.values(rules).forEach((rule) => {
       rule.qualifiedStaffIds = [qualifiedId];
     });
+    state.settings.latePriorityFlightNumbers = ["TR121"];
     state.history = [
       history("one", "TR121", rules.一号.name, rules.一号.remark, qualifiedId),
       history(
@@ -178,17 +214,13 @@ describe("monthly late priority statistics", () => {
       ),
     ];
 
-    for (const category of ["督导", "一号", "申报", "送资料"] as const) {
-      const statistics = buildMonthlyLatePriorityStatistics(
-        state,
-        DATE,
-        "TR121",
-        category
-      );
-      expect(statistics.rows).toHaveLength(1);
-      expect(statistics.rows[0]?.staff.id).toBe(qualifiedId);
-      expect(statistics.rows[0]?.dates).toEqual(["2026-08-10"]);
-    }
+    const statistics = buildMonthlyLatePriorityStatistics(state, DATE);
+    expect(statistics.rows).toHaveLength(1);
+    expect(statistics.rows[0]?.staff.id).toBe(qualifiedId);
+    for (const category of ["督导", "一号", "申报", "送资料"] as const)
+      expect(statistics.rows[0]?.categories[category].details).toEqual([
+        expect.objectContaining({ date: "2026-08-10" }),
+      ]);
   });
 
   it("lets a combined declaration and delivery role enter both categories", () => {
@@ -199,6 +231,7 @@ describe("monthly late priority statistics", () => {
     combinedRule.remark = "申报/送资料";
     const staffId = combinedRule.qualifiedStaffIds[0]!;
     combinedRule.qualifiedStaffIds = [staffId];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
     state.activeScheduleDate = DATE;
     state.assignments = [
       {
@@ -220,16 +253,15 @@ describe("monthly late priority statistics", () => {
       },
     ];
 
-    for (const category of ["申报", "送资料"] as const) {
-      expect(
-        buildMonthlyLatePriorityStatistics(
-          state,
-          DATE,
-          "TR121",
-          category
-        ).rows.find((row) => row.staff.id === staffId)?.dates
-      ).toEqual([DATE]);
-    }
+    const statistics = buildMonthlyLatePriorityStatistics(state, DATE);
+    const row = statistics.rows.find((item) => item.staff.id === staffId)!;
+    expect(row.categories.申报.details).toEqual([
+      expect.objectContaining({ date: DATE }),
+    ]);
+    expect(row.categories.送资料.details).toEqual([
+      expect.objectContaining({ date: DATE }),
+    ]);
+    expect(row.totalCount).toBe(2);
   });
 
   it("uses the current final schedule instead of same-day history", () => {
@@ -240,6 +272,7 @@ describe("monthly late priority statistics", () => {
     const archivedStaffId = rule.qualifiedStaffIds[0]!;
     const currentStaffId = rule.qualifiedStaffIds[1]!;
     rule.qualifiedStaffIds = [archivedStaffId, currentStaffId];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
     state.history = [
       history(
         "old-day",
@@ -279,17 +312,16 @@ describe("monthly late priority statistics", () => {
       },
     ];
 
-    const statistics = buildMonthlyLatePriorityStatistics(
-      state,
-      DATE,
-      "TR121",
-      "一号"
-    );
+    const statistics = buildMonthlyLatePriorityStatistics(state, DATE);
     expect(
-      statistics.rows.find((row) => row.staff.id === archivedStaffId)?.dates
+      statistics.rows
+        .find((row) => row.staff.id === archivedStaffId)
+        ?.categories.一号.details.map((item) => item.date)
     ).toEqual(["2026-08-16"]);
     expect(
-      statistics.rows.find((row) => row.staff.id === currentStaffId)?.dates
+      statistics.rows
+        .find((row) => row.staff.id === currentStaffId)
+        ?.categories.一号.details.map((item) => item.date)
     ).toEqual([DATE]);
   });
 
@@ -313,6 +345,7 @@ describe("monthly late priority statistics", () => {
       .map((person) => person.id);
     supervisorRule.qualifiedStaffIds = [supervisorId];
     declarationRule.qualifiedStaffIds = [supervisorId, ...ordinaryIds];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
     state.history = [
       history(
         "ordinary-once",
@@ -340,17 +373,17 @@ describe("monthly late priority statistics", () => {
       ),
     ];
 
-    const statistics = buildMonthlyLatePriorityStatistics(
-      state,
-      DATE,
-      "TR121",
-      "申报"
-    );
+    const statistics = buildMonthlyLatePriorityStatistics(state, DATE);
 
-    expect(statistics.range).toEqual({ min: 1, max: 2, difference: 1 });
+    expect(statistics.ranges.申报).toEqual({
+      min: 0,
+      max: 2,
+      difference: 2,
+      allowedDifference: 2,
+    });
     expect(
-      statistics.rows.find((row) => row.staff.id === supervisorId)
-        ?.supervisorQualified
+      statistics.rows.find((row) => row.staff.id === supervisorId)?.categories
+        .申报.qualified
     ).toBe(true);
   });
 });

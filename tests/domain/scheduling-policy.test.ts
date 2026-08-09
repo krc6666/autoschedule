@@ -85,8 +85,15 @@ function priority(
     latePriorityFrequency: {
       applies: false,
       targetKinds: [],
+      previousWorkdayAssigned: false,
       supervisorQualified: false,
       supervisorRotationDeficit: 0,
+      categoryBoundaryExcess: {
+        supervisor: 0,
+        "number-one": 0,
+        declaration: 0,
+        delivery: 0,
+      },
       counts: {
         supervisor: { currentMonthCount: 0, recentWorkdayCount: 0 },
         "number-one": { currentMonthCount: 0, recentWorkdayCount: 0 },
@@ -184,8 +191,9 @@ describe("scheduling policy contract", () => {
       stage: "reserved-assignment",
       label: "KE166独立督导优先保留与缺员兼任",
     });
-    expect(CANDIDATE_PRIORITY_ORDER.slice(3, 7)).toEqual([
+    expect(CANDIDATE_PRIORITY_ORDER.slice(3, 8)).toEqual([
       "position-transition",
+      "late-priority-aggregate-rotation",
       "late-priority-frequency",
       "position-frequency",
       "priority-position-consecutive",
@@ -414,8 +422,15 @@ describe("scheduling policy contract", () => {
       latePriorityFrequency: {
         applies: true,
         targetKinds: ["number-one"],
+        previousWorkdayAssigned: false,
         supervisorQualified: false,
         supervisorRotationDeficit: 0,
+        categoryBoundaryExcess: {
+          supervisor: 0,
+          "number-one": 1,
+          declaration: 0,
+          delivery: 0,
+        },
         counts: {
           supervisor: { currentMonthCount: 0, recentWorkdayCount: 0 },
           "number-one": { currentMonthCount: 4, recentWorkdayCount: 4 },
@@ -436,8 +451,15 @@ describe("scheduling policy contract", () => {
       latePriorityFrequency: {
         applies: true,
         targetKinds: ["number-one"],
+        previousWorkdayAssigned: false,
         supervisorQualified: false,
         supervisorRotationDeficit: 0,
+        categoryBoundaryExcess: {
+          supervisor: 0,
+          "number-one": 0,
+          declaration: 0,
+          delivery: 0,
+        },
         counts: {
           supervisor: { currentMonthCount: 0, recentWorkdayCount: 0 },
           "number-one": { currentMonthCount: 0, recentWorkdayCount: 0 },
@@ -457,7 +479,7 @@ describe("scheduling policy contract", () => {
 
     expect(compareCandidatePriority(frequent, underused)).toBeGreaterThan(0);
     expect(firstDifferentCandidateRule(frequent, underused)).toBe(
-      "late-priority-frequency"
+      "late-priority-aggregate-rotation"
     );
   });
 

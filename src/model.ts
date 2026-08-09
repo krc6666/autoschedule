@@ -1,5 +1,6 @@
 import type { SchedulingDecision } from "./domain/rules/schedule-rule-contract";
 import type {
+  CrossWorkdayQualificationReservation,
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
@@ -107,11 +108,13 @@ export interface ScheduleSettings {
   highLoadFatigueThreshold: number;
   highLoadRecoveryMinutes: number;
   remarkedPositionHighLoad: boolean;
+  minimumRegularTransitionMinutes: number;
   positionTransitionPolicies: PositionTransitionPolicy[];
   rollingLoadProtectionEnabled: boolean;
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
+  latePriorityFlightNumbers: string[];
   lateShiftRecoveryEnabled: boolean;
   lateShiftEndTime: string;
   teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
@@ -120,6 +123,7 @@ export interface ScheduleSettings {
   dutyFatiguePoints: number;
   dutyPositionPriorities: DutyPositionPriority[];
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
+  crossWorkdayQualificationReservations: CrossWorkdayQualificationReservation[];
   earlyDepartureCutoffTime: string;
   afternoonRestStartTime: string;
   afternoonRestEndTime: string;
@@ -129,7 +133,7 @@ export interface ScheduleSettings {
 }
 
 export interface AppState {
-  version: 3;
+  version: 4;
   staff: Staff[];
   flights: Flight[];
   templates: FlightTemplate[];

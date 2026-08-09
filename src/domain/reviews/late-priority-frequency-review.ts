@@ -7,7 +7,9 @@ import type { SolverPort } from "../solver/solver-port";
 import { createScheduleFrequencyFacts } from "../statistics/schedule-frequency";
 import type { LatePriorityFrequencyProfile } from "../statistics/late-priority-frequency";
 import {
+  assessLatePriorityAggregateBalance,
   assessLatePriorityFrequencyBalance,
+  compareProjectedLatePriorityAggregateCandidates,
   compareProjectedLatePriorityCandidates,
   latePriorityFrequencyRegressionReasons,
 } from "./late-priority-frequency-balance";
@@ -19,6 +21,9 @@ import {
 import { assignmentWarningMessage } from "./schedule-warning-message";
 import {
   latePriorityFrequencyKinds,
+  latePriorityKindLabel,
+  latePriorityMonthlyLabel,
+  LATE_PRIORITY_ALLOWED_DIFFERENCE,
   LATE_PRIORITY_FREQUENCY_ORDER,
   type LatePriorityFrequencyKind,
 } from "./late-priority-policy";
@@ -60,22 +65,13 @@ function monthlyTargetCount(
   return profile.counts[kind].currentMonthCount;
 }
 
-function monthlyTargetLabel(kind: LatePriorityFrequencyKind): string {
-  const label: Readonly<Record<LatePriorityFrequencyKind, string>> = {
-    supervisor: "本月同航班督导",
-    "number-one": "本月同航班一号",
-    declaration: "本月同航班申报",
-    delivery: "本月同航班送资料",
-  };
-  return label[kind];
-}
-
 function lowestFrequencyReason(kind: LatePriorityFrequencyKind): string {
-  return `没有其他同航班${monthlyTargetLabel(kind).replace("本月同航班", "")}次数更低的合格人员`;
+  return `没有其他${latePriorityKindLabel(kind)}次数更低的合格人员`;
 }
 
 function warningFact(
   assignment: Assignment,
+  kind: LatePriorityFrequencyKind,
   periods: readonly {
     label: string;
     assignedCount: number;
@@ -83,7 +79,9 @@ function warningFact(
   }[]
 ): string {
   const relevant = periods
-    .filter((period) => period.difference >= 2)
+    .filter(
+      (period) => period.difference > LATE_PRIORITY_ALLOWED_DIFFERENCE[kind]
+    )
     .map(
       (period) =>
         `${period.label}承担${period.assignedCount}次、最高与最低相差${period.difference}次`
@@ -101,11 +99,179 @@ export async function reviewLatePriorityFrequency(
   facts?: ScheduleRunFacts
 ): Promise<string[]> {
   if (!state.settings.positionRotationEnabled) return [];
-  assignments.forEach((assignment) =>
-    replaceAssignmentDecisions(assignment, "late-priority-frequency", [])
-  );
+  assignments.forEach((assignment) => {
+    replaceAssignmentDecisions(
+      assignment,
+      "late-priority-aggregate-rotation",
+      []
+    );
+    replaceAssignmentDecisions(assignment, "late-priority-frequency", []);
+  });
   const frequencyFacts =
     facts?.scheduleFrequency ?? createScheduleFrequencyFacts(state, date);
+  const warnings: string[] = [];
+  const aggregateWarningAssignmentIds = new Set<string>();
+  const aggregateAttemptedReasons = new Map<string, readonly string[]>();
+  const aggregateTargets = assignments
+    .filter(
+      (assignment) => !isRotationLocked(state, assignment, lockedAssignmentIds)
+    )
+    .map((assignment) => ({
+      assignment,
+      assessment: assessLatePriorityAggregateBalance(
+        state,
+        assignment,
+        assignments,
+        date,
+        frequencyFacts
+      ),
+    }))
+    .filter((item) => item.assessment?.needsAttention)
+    .sort(
+      (left, right) =>
+        Number(right.assessment!.previousWorkdayAssigned) -
+          Number(left.assessment!.previousWorkdayAssigned) ||
+        right.assessment!.assignedProfile.totalCurrentMonthCount -
+          left.assessment!.assignedProfile.totalCurrentMonthCount ||
+        left.assignment.startTime.localeCompare(right.assignment.startTime) ||
+        left.assignment.id.localeCompare(right.assignment.id)
+    );
+
+  for (const target of aggregateTargets) {
+    const primary = assignments.find(
+      (assignment) => assignment.id === target.assignment.id
+    );
+    if (!primary?.staffId) continue;
+    const assessment = assessLatePriorityAggregateBalance(
+      state,
+      primary,
+      assignments,
+      date,
+      frequencyFacts
+    );
+    if (!assessment?.needsAttention) continue;
+    const candidateIds = new Set(
+      [...assessment.preferredStaffIds].filter(
+        (staffId) => staffId !== primary.staffId
+      )
+    );
+    if (!candidateIds.size) {
+      aggregateAttemptedReasons.set(primary.id, [
+        "其他合格人员的上一班或合计负担没有更轻",
+      ]);
+      continue;
+    }
+    const originalName = primary.staffName;
+    const originalPrevious = assessment.previousWorkdayAssigned;
+    const originalTotal = assessment.assignedProfile.totalCurrentMonthCount;
+    const result = await optimizeReassignment({
+      solver,
+      state,
+      assignments,
+      primary,
+      movableAssignments: rotationCandidateAssignments(
+        assignments,
+        primary,
+        state,
+        lockedAssignmentIds
+      ),
+      date,
+      review: "late-frequency",
+      facts,
+      frequencyFacts,
+      primaryCandidateAllowed: (person) => candidateIds.has(person.id),
+      primaryCandidateRejectionReason: () =>
+        "该人员上一班已承担末班重点岗位或四类合计负担更高",
+      compareCandidates: (assignment, left, right) =>
+        compareProjectedLatePriorityAggregateCandidates(
+          state,
+          assignments,
+          assignment,
+          left,
+          right,
+          date,
+          frequencyFacts
+        ),
+      validateChanges: (changes) => {
+        const personById = new Map(
+          state.staff.map((person) => [person.id, person])
+        );
+        const planned = assignments.map((assignment) => {
+          const change = changes.find(
+            (item) => item.assignmentId === assignment.id
+          );
+          const person = change ? personById.get(change.staffId) : undefined;
+          return person
+            ? { ...assignment, staffId: person.id, staffName: person.name }
+            : assignment;
+        });
+        return latePriorityFrequencyRegressionReasons(
+          state,
+          assignments,
+          planned,
+          date,
+          frequencyFacts
+        );
+      },
+      maxParticipants: 5,
+    });
+    if (!result.changes) {
+      aggregateAttemptedReasons.set(primary.id, result.attemptedReasons);
+      continue;
+    }
+    const changed = applyChanges(state, assignments, result.changes);
+    const message = originalPrevious
+      ? `${originalName}上一工作班已承担末班重点岗位，本班${primary.flightNo}/${primary.position}已改由${primary.staffName}承担，避免连续重活。`
+      : `${originalName}本月四类末班重点岗位合计已承担${originalTotal}次，本班${primary.flightNo}/${primary.position}已改由${primary.staffName}承担，合计负担更均衡。`;
+    changed.forEach((assignment) =>
+      replaceAssignmentDecisions(
+        assignment,
+        "late-priority-aggregate-rotation",
+        [
+          schedulingDecision(
+            "late-priority-aggregate-rotation",
+            "selected",
+            message
+          ),
+        ]
+      )
+    );
+  }
+
+  for (const assignment of assignments) {
+    const assessment = assessLatePriorityAggregateBalance(
+      state,
+      assignment,
+      assignments,
+      date,
+      frequencyFacts
+    );
+    if (
+      !assessment?.needsAttention ||
+      !assessment.previousWorkdayAssigned ||
+      !assignment.staffId
+    )
+      continue;
+    const message = assignmentWarningMessage({
+      staffName: assignment.staffName,
+      fact: `上一工作班已承担末班重点岗位，本班再次承担${assignment.flightNo}/${assignment.position}`,
+      reasons: aggregateAttemptedReasons.get(assignment.id) ?? [
+        "其他合格人员均不能安全替代",
+      ],
+      decision: "岗位完整性优先",
+      result: "保留原安排，本班形成连续承担",
+    });
+    replaceAssignmentDecisions(assignment, "late-priority-aggregate-rotation", [
+      schedulingDecision(
+        "late-priority-aggregate-rotation",
+        "fallback",
+        message
+      ),
+    ]);
+    warnings.push(message);
+    aggregateWarningAssignmentIds.add(assignment.id);
+  }
+
   const attemptedReasons = new Map<string, readonly string[]>();
   const reviewed = new Set<string>();
   const primaryTargets = assignments
@@ -173,7 +339,7 @@ export async function reviewLatePriorityFrequency(
       assessment.assignedProfile,
       assessment.kind
     );
-    const countLabel = monthlyTargetLabel(assessment.kind);
+    const countLabel = latePriorityMonthlyLabel(assessment.kind);
     const result = await optimizeReassignment({
       solver,
       state,
@@ -192,8 +358,8 @@ export async function reviewLatePriorityFrequency(
       primaryCandidateAllowed: (person) => candidateIds.has(person.id),
       primaryCandidateRejectionReason: () =>
         assessment.kind === "supervisor"
-          ? "该人员不是当前同航班督导次数最低的合格人员"
-          : `该人员不是当前同航班${monthlyTargetLabel(assessment.kind).replace("本月同航班", "")}次数最低的合格人员`,
+          ? "该人员不是当前督导次数最低的合格人员"
+          : `该人员不是当前${latePriorityKindLabel(assessment.kind)}次数最低的合格人员`,
       compareCandidates: (assignment, left, right) =>
         compareProjectedLatePriorityCandidates(
           state,
@@ -268,7 +434,6 @@ export async function reviewLatePriorityFrequency(
     result.changes.forEach((change) => reviewed.add(change.assignmentId));
   }
 
-  const warnings: string[] = [];
   for (const assignment of assignments) {
     const rule = assignmentRule(state, assignment);
     const assessment = rule
@@ -302,7 +467,7 @@ export async function reviewLatePriorityFrequency(
         assessment.lowestStaffIds.has(assignment.staffId) &&
         assessment.maximumDifference > 0
       ) {
-        const countLabel = monthlyTargetLabel(assessment.kind);
+        const countLabel = latePriorityMonthlyLabel(assessment.kind);
         const message = `${assignment.staffName}本班承担${assignment.flightNo}/${assignment.position}，${countLabel}累计${monthlyTargetCount(assessment.assignedProfile, assessment.kind)}次，属于当前最低频人员；本班按长期轮换安排。`;
         replaceAssignmentDecisions(assignment, "late-priority-frequency", [
           schedulingDecision("late-priority-frequency", "selected", message),
@@ -310,9 +475,10 @@ export async function reviewLatePriorityFrequency(
       }
       continue;
     }
+    if (aggregateWarningAssignmentIds.has(assignment.id)) continue;
     const message = assignmentWarningMessage({
       staffName: assignment.staffName,
-      fact: warningFact(assignment, assessment.periods),
+      fact: warningFact(assignment, assessment.kind, assessment.periods),
       reasons: attemptedReasons.get(assignment.id) ?? [
         "前序排班安排优先，未能改由最低频人员",
       ],

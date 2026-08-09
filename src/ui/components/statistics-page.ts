@@ -4,6 +4,7 @@ import {
   buildMonthlyLatePriorityStatistics,
   LATE_PRIORITY_STATISTICS_CATEGORIES,
   latePriorityStatisticsFlightNumbers,
+  type LatePriorityStatisticsDetail,
   type LatePriorityStatisticsCategory,
 } from "../../domain/statistics/monthly-late-priority-statistics";
 import { buildMonthlyRelaxedShiftStatistics } from "../../domain/statistics/relaxed-shift-statistics";
@@ -15,11 +16,9 @@ export class StatisticsPageElement extends LightDomElement {
   static override properties = {
     model: { attribute: false },
     date: { type: String },
-    selectedLatePriorityFlight: { state: true },
   };
   model!: AppState;
   date = "";
-  private selectedLatePriorityFlight = "";
 
   protected override render() {
     return html`
@@ -107,136 +106,137 @@ export class StatisticsPageElement extends LightDomElement {
 
   private latePriorityStatistics() {
     const flightNumbers = latePriorityStatisticsFlightNumbers(this.model);
-    const selectedFlight = flightNumbers.includes(
-      this.selectedLatePriorityFlight
-    )
-      ? this.selectedLatePriorityFlight
-      : (flightNumbers[0] ?? "");
+    const statistics = buildMonthlyLatePriorityStatistics(
+      this.model,
+      this.date
+    );
     return html`<section
       class="workspace-section late-priority-statistics"
-      data-late-priority-flight=${selectedFlight}
+      data-late-priority-flights=${flightNumbers.join(",")}
     >
       <div class="section-heading">
         <div>
           <h3>末班重点岗位统计</h3>
           <span
-            >${this.date.slice(0, 7)} · 实际结束晚于
-            ${this.model.settings.lateShiftEndTime} · 仅统计对应资质人员</span
+            >${statistics.month} ·
+            当前统计航班：${flightNumbers.join("、") || "尚未选择"} ·
+            实际结束晚于 ${this.model.settings.lateShiftEndTime}</span
           >
         </div>
-        ${
-          flightNumbers.length
-            ? html`<label class="late-priority-flight-selector">
-                <span>查看航班</span>
-                <select
-                  class="form-select form-select-sm"
-                  aria-label="选择末班重点岗位统计航班"
-                  .value=${selectedFlight}
-                  @change=${(event: Event) => {
-                    this.selectedLatePriorityFlight = (
-                      event.currentTarget as HTMLSelectElement
-                    ).value;
-                  }}
-                >
-                  ${flightNumbers.map(
-                    (flightNo) =>
-                      html`<option .value=${flightNo}>${flightNo}</option>`
-                  )}
-                </select>
-              </label>`
-            : null
-        }
       </div>
       ${
-        selectedFlight
-          ? html`<div class="late-priority-statistics-groups">
-              ${LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) =>
-                this.latePriorityCategoryStatistics(selectedFlight, category)
-              )}
-            </div>`
+        flightNumbers.length
+          ? statistics.rows.length
+            ? html`${this.latePriorityRangeSummary(statistics.ranges)}
+                <div class="table-responsive">
+                  <table
+                    class="table table-sm align-middle data-table late-priority-summary-table"
+                  >
+                    <thead>
+                      <tr>
+                        <th>人员</th>
+                        <th>四类合计</th>
+                        ${LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => html`<th>${category}</th>`)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${statistics.rows.map(
+                        (row) =>
+                          html`<tr>
+                            <td><strong>${row.staff.name}</strong></td>
+                            <td>
+                              ${this.latePriorityDetailCell(
+                            row.totalCount,
+                            LATE_PRIORITY_STATISTICS_CATEGORIES.flatMap(
+                              (category) =>
+                                row.categories[category].details.map(
+                                  (detail) => ({ ...detail, category })
+                                )
+                            )
+                          )}
+                            </td>
+                            ${LATE_PRIORITY_STATISTICS_CATEGORIES.map(
+                            (category) => {
+                              const own = row.categories[category];
+                              return html`<td>
+                                ${
+                                  own.qualified
+                                    ? this.latePriorityDetailCell(
+                                        own.details.length,
+                                        own.details.map((detail) => ({
+                                          ...detail,
+                                          category,
+                                        }))
+                                      )
+                                    : html`<span class="text-body-secondary"
+                                        >-</span
+                                      >`
+                                }
+                              </td>`;
+                            }
+                          )}
+                          </tr>`
+                      )}
+                    </tbody>
+                  </table>
+                </div>`
+            : html`<div class="empty-workspace compact-empty">
+                <i class="bi bi-bar-chart"></i>
+                <p>当前范围没有正常常规资质人员</p>
+              </div>`
           : html`<div class="empty-workspace compact-empty">
               <i class="bi bi-bar-chart"></i>
-              <p>当前没有实际结束晚于界线的重点岗位航班</p>
+              <p>尚未选择统计航班，请先到规则页勾选</p>
             </div>`
       }
     </section>`;
   }
 
-  private latePriorityCategoryStatistics(
-    flightNo: string,
-    category: LatePriorityStatisticsCategory
-  ) {
-    const statistics = buildMonthlyLatePriorityStatistics(
-      this.model,
-      this.date,
-      flightNo,
-      category
-    );
-    const emptyMessage = !statistics.configured
-      ? `尚未配置${category}常规岗位`
-      : !statistics.rows.length
-        ? `${category}尚未配置正常常规资质人员`
-        : "";
-    const separatesSupervisorRelief =
-      (category === "申报" || category === "送资料") &&
-      statistics.rows.some((row) => row.supervisorQualified) &&
-      statistics.rows.some((row) => !row.supervisorQualified);
-    return html`<section
-      class="late-priority-statistic"
-      data-late-priority-category=${category}
-    >
-      <div class="late-priority-statistic-heading">
-        <h4>${flightNo} · ${category}</h4>
-        <span>本月承担次数</span>
-      </div>
-      ${
-        emptyMessage
-          ? html`<div class="empty-workspace compact-empty">
-              <i class="bi bi-bar-chart"></i>
-              <p>${emptyMessage}</p>
-            </div>`
-          : html`<div class="duty-balance-summary">
-                <span>资质人员 <strong>${statistics.rows.length}</strong></span
-                ><span
-                  >${separatesSupervisorRelief ? "普通资质最高 / 最低" : "最高 / 最低"}
-                  <strong
-                    >${statistics.range.max} / ${statistics.range.min}</strong
-                  ></span
-                ><span
-                  >${separatesSupervisorRelief ? "普通资质差值" : "差值"}
-                  <strong>${statistics.range.difference}</strong></span
-                >
-              </div>
-              <div class="table-responsive">
-                <table
-                  class="table table-sm align-middle data-table monthly-position-table"
-                >
-                  <thead>
-                    <tr>
-                      <th>资质人员</th>
-                      <th>本月次数</th>
-                      <th>承担日期</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${statistics.rows.map(
-                      (row) =>
-                        html`<tr>
-                          <td>
-                            <strong>${row.staff.name}</strong>
-                            ${row.supervisorQualified && (category === "申报" || category === "送资料") ? html`<small class="late-priority-qualification">督导资质</small>` : null}
-                          </td>
-                          <td>${row.dates.length}</td>
-                          <td>
-                            ${row.dates.map((item) => item.slice(5)).join("、") || "-"}
-                          </td>
-                        </tr>`
-                    )}
-                  </tbody>
-                </table>
-              </div>`
+  private latePriorityRangeSummary(
+    ranges: Record<
+      LatePriorityStatisticsCategory,
+      {
+        min: number;
+        max: number;
+        difference: number;
+        allowedDifference: number;
       }
-    </section>`;
+    >
+  ) {
+    return html`<div class="duty-balance-summary late-priority-range-summary">
+      ${LATE_PRIORITY_STATISTICS_CATEGORIES.map(
+        (category) =>
+          html`<span
+            >${category}最高 / 最低
+            <strong>${ranges[category].max} / ${ranges[category].min}</strong>
+            <small>允许差值 ${ranges[category].allowedDifference}</small></span
+          >`
+      )}
+    </div>`;
+  }
+
+  private latePriorityDetailCell(
+    count: number,
+    details: readonly (LatePriorityStatisticsDetail & {
+      category: LatePriorityStatisticsCategory;
+    })[]
+  ) {
+    return html`<details class="late-priority-count-detail">
+      <summary title="查看航班和日期">${count}</summary>
+      <div>
+        ${
+          details.length
+            ? details.map(
+                (detail) =>
+                  html`<span
+                    ><strong>${detail.date.slice(5)}</strong> ${detail.flightNo}
+                    / ${detail.position} / ${detail.category}</span
+                  >`
+              )
+            : html`<span class="text-body-secondary">本月暂无记录</span>`
+        }
+      </div>
+    </details>`;
   }
 }
 

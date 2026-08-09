@@ -42,12 +42,22 @@ export interface MobileSupervisorCoverageRule {
   mode: "allow" | "forbid";
 }
 
+export interface CrossWorkdayQualificationReservation {
+  id: string;
+  enabled: boolean;
+  flightNo: string;
+  matchField: "position" | "remark";
+  keyword: string;
+  minimumStaffCount: number;
+}
+
 export interface StructuredSchedulePolicies {
   positionTransitionPolicies: PositionTransitionPolicy[];
   dutyPositionPriorities: DutyPositionPriority[];
   nextWorkdayRecoveryTargets: NextWorkdayRecoveryTarget[];
   lateShiftRecoveryPositionRules: LateShiftRecoveryPositionRule[];
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
+  crossWorkdayQualificationReservations: CrossWorkdayQualificationReservation[];
 }
 
 export const STRUCTURED_POLICY_KEYS = [
@@ -56,4 +66,5 @@ export const STRUCTURED_POLICY_KEYS = [
   "nextWorkdayRecoveryTargets",
   "lateShiftRecoveryPositionRules",
   "mobileSupervisorCoverageRules",
+  "crossWorkdayQualificationReservations",
 ] as const satisfies readonly (keyof StructuredSchedulePolicies)[];

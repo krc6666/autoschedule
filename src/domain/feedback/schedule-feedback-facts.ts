@@ -1,5 +1,6 @@
 import type { AppState, Assignment } from "../../model";
 import { timeToMinutes } from "../shared/time";
+import { operationalAssignmentInterval } from "../assignments/minimum-flight-transition";
 
 export interface TimedAssignment {
   assignment: Assignment;
@@ -50,7 +51,10 @@ export function timedAssignments(state: AppState): TimedAssignment[] {
 }
 
 export function staffConnections(state: AppState): AssignmentConnection[] {
-  const timed = timedAssignments(state);
+  const timed = timedAssignments(state).map((item) => ({
+    ...item,
+    end: operationalAssignmentInterval(state, item.assignment).end,
+  }));
   const staffIds = [
     ...new Set(
       timed

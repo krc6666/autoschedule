@@ -77,6 +77,7 @@
 - 任务命中 skill 的 `description` 时，必须先读取对应 `SKILL.md` 再行动。
 - owner 明确要求计划时使用 `.agents/skills/plan/SKILL.md`，并维护根目录 `plan.md`。
 - 修改实现、测试、事实文档或运行配置时使用 `.agents/skills/autoschedule-dev/SKILL.md`。
+- owner 点名架构改进，或任务涉及性能模型膨胀、模块耦合、职责拆分、测试接口和深模块设计时，允许并应当使用 `.agents/skills/improve-codebase-architecture/SKILL.md`；它必须与 `autoschedule-dev` 和 `codebase-design` 的约束共同执行，不得借架构重构改变 `spec.md` 业务规则、规则优先级或验收标准。
 - 业务专属 skill 只在真实业务需要时新增，不把临时任务或产品事实硬编码进通用 skill。
 
 ## 计划规则

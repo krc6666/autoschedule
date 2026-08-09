@@ -281,6 +281,7 @@ describe("history actions", () => {
     state.staff = [protectedWorker!, replacement!];
     state.staff.forEach((person) => {
       person.dutyQualified = false;
+      person.teamLeader = false;
     });
     const base = state.positionRules[0]!;
     const qualifiedStaffIds = state.staff.map((person) => person.id);

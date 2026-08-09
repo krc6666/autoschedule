@@ -6,18 +6,35 @@ import { generateSchedule } from "../helpers/generate-schedule";
 import { buildScheduleFeedback } from "../../src/domain/feedback/schedule-feedback";
 
 describe("schedule feedback", () => {
+  it("does not warn when a free team leader has no assigned work", () => {
+    const state = createDefaultState();
+    const [teamLeader, regularWorker] = state.staff;
+    state.staff = [teamLeader!, regularWorker!];
+    teamLeader!.teamLeader = true;
+    regularWorker!.teamLeader = false;
+    state.flights = [];
+    state.assignments = [];
+
+    const feedback = buildScheduleFeedback(state, "2026-07-20");
+    const coverage = feedback.find((item) => item.key === "coverage");
+
+    expect(coverage?.text).not.toContain(teamLeader!.name);
+    expect(coverage?.text).toContain(regularWorker!.name);
+  });
+
   it("returns concise evidence-based items including duty arrangements and a missing history baseline", async () => {
     const state = createDefaultState();
     state.assignments = (
       await generateSchedule(state, "2026-07-20")
     ).assignments;
     const feedback = buildScheduleFeedback(state, "2026-07-20");
-    expect(feedback).toHaveLength(11);
+    expect(feedback).toHaveLength(12);
     expect(feedback.map((item) => item.label)).toEqual([
       "人员覆盖",
       "负荷均衡",
       "航班衔接",
       "12点前岗位完整性",
+      "跨工作日资质预留",
       "连续高负荷",
       "跨工作班动态平衡",
       "重点岗位频率均衡",

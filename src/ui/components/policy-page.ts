@@ -26,7 +26,7 @@ export class PolicyPageElement extends LightDomElement {
           ><input
             class="form-control form-control-sm"
             type="search"
-            placeholder="搜索规则名称、处理环节或说明"
+            placeholder="搜索规则名称、说明、参数或配置内容"
             .value=${this.query}
             @input=${(event: Event) => {
               this.query = (event.currentTarget as HTMLInputElement).value;
@@ -37,9 +37,11 @@ export class PolicyPageElement extends LightDomElement {
       </div>
       <autoschedule-policy-settings
         .model=${this.model}
+        .query=${this.query}
       ></autoschedule-policy-settings>
       <autoschedule-policy-structured-rules
         .model=${this.model}
+        .query=${this.query}
       ></autoschedule-policy-structured-rules>
       <autoschedule-policy-rule-ledger
         .model=${this.model}

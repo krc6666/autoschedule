@@ -60,6 +60,11 @@ export interface CandidatePriorityExecutor {
   execute(context: CandidateComparisonContext): number;
 }
 
+export interface DailyModelExecutor {
+  kind: "daily-model";
+  id: "cross-workday-qualification-reservation";
+}
+
 export interface ScheduleMutationExecutor {
   kind: "coverage" | "post-schedule";
   id: string;
@@ -75,7 +80,10 @@ export interface ScheduleMutationExecutor {
 }
 
 export type SchedulingHookExecutor =
-  HardConstraintExecutor | CandidatePriorityExecutor | ScheduleMutationExecutor;
+  | HardConstraintExecutor
+  | CandidatePriorityExecutor
+  | DailyModelExecutor
+  | ScheduleMutationExecutor;
 
 export interface SchedulingHook {
   id: string;

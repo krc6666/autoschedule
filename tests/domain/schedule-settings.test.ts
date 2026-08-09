@@ -17,6 +17,8 @@ describe("schedule settings module", () => {
       "nextWorkdayRecoveryTargets",
       "lateShiftRecoveryPositionRules",
       "mobileSupervisorCoverageRules",
+      "crossWorkdayQualificationReservations",
+      "latePriorityFlightNumbers",
     ]);
     const scalarKeys = Object.keys(createDefaultScheduleSettings())
       .filter((key) => !complexKeys.has(key))
@@ -29,6 +31,15 @@ describe("schedule settings module", () => {
         (definition) => definition.key === "dutyFatiguePoints"
       )
     ).toMatchObject({ defaultValue: 12, min: 0, max: 50 });
+    expect(
+      SCHEDULE_SETTING_DEFINITIONS.find(
+        (definition) => definition.key === "minimumRegularTransitionMinutes"
+      )
+    ).toMatchObject({ defaultValue: 90, min: 0, max: 1440 });
+    expect(createDefaultScheduleSettings()).toMatchObject({
+      minimumRegularTransitionMinutes: 90,
+      crossWorkdayQualificationReservations: [],
+    });
   });
 
   it("normalizes the same values for every settings adapter", () => {
@@ -37,6 +48,17 @@ describe("schedule settings module", () => {
       dutyFatiguePoints: 100,
       highLoadRecoveryMinutes: 1500.4,
       lateShiftEndTime: "25:00",
+      minimumRegularTransitionMinutes: 2000,
+      crossWorkdayQualificationReservations: [
+        {
+          id: " reserve ",
+          enabled: true,
+          flightNo: " cx931 ",
+          matchField: "position",
+          keyword: " 控制 ",
+          minimumStaffCount: 100,
+        },
+      ],
       positionTransitionPolicies: [
         {
           id: " transition ",
@@ -56,6 +78,17 @@ describe("schedule settings module", () => {
       dutyFatiguePoints: 50,
       highLoadRecoveryMinutes: 1440,
       lateShiftEndTime: "23:00",
+      minimumRegularTransitionMinutes: 1440,
+      crossWorkdayQualificationReservations: [
+        {
+          id: "reserve",
+          enabled: true,
+          flightNo: "CX931",
+          matchField: "position",
+          keyword: "控制",
+          minimumStaffCount: 50,
+        },
+      ],
       positionTransitionPolicies: [
         {
           id: "transition",

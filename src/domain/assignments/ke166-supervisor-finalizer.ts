@@ -81,7 +81,7 @@ export async function finalizeKe166Supervisors({
       evaluateEligibility: evaluateAutomaticHardConstraints,
     });
     let { selected } = selection;
-    const repeatedIndependentSupervisor = Boolean(
+    const repeatedIndependentSupervisorCanBeReleased = Boolean(
       selected &&
       consecutivePositionAssignments(
         state,
@@ -90,14 +90,15 @@ export async function finalizeKe166Supervisors({
         task.rule.name,
         date
       ) > 0 &&
-      assignments.some(
-        (assignment) =>
-          assignment.staffId === selected!.id &&
-          assignment.status === "assigned" &&
-          assignment.workHours > 0
-      )
+      (selected.teamLeader ||
+        assignments.some(
+          (assignment) =>
+            assignment.staffId === selected!.id &&
+            assignment.status === "assigned" &&
+            assignment.workHours > 0
+        ))
     );
-    if (repeatedIndependentSupervisor) {
+    if (repeatedIndependentSupervisorCanBeReleased) {
       const reused = await assignKe166SupervisorByCounterCoverage(
         solver,
         state,

@@ -3,6 +3,7 @@ import {
   createDefaultStructuredPolicies,
   normalizeStructuredPolicies,
 } from "./structured-policy-settings";
+import { normalizeLatePriorityFlightNumbers } from "../statistics/late-priority-flight-scope";
 
 export type ScalarScheduleSettingKey = Exclude<
   keyof ScheduleSettings,
@@ -12,6 +13,8 @@ export type ScalarScheduleSettingKey = Exclude<
   | "nextWorkdayRecoveryTargets"
   | "lateShiftRecoveryPositionRules"
   | "mobileSupervisorCoverageRules"
+  | "crossWorkdayQualificationReservations"
+  | "latePriorityFlightNumbers"
 >;
 
 export interface ScheduleSettingDefinition {
@@ -101,6 +104,16 @@ export const SCHEDULE_SETTING_DEFINITIONS: readonly ScheduleSettingDefinition[] 
       type: "boolean",
       description: "有岗位备注时纳入高负荷保护",
       defaultValue: true,
+    },
+    {
+      key: "minimumRegularTransitionMinutes",
+      label: "普通岗位最小衔接间隔",
+      type: "number",
+      description: "同一人员跨航班连续工作的最小准备时间",
+      defaultValue: 90,
+      min: 0,
+      max: 1440,
+      integer: true,
     },
     {
       key: "rollingLoadProtectionEnabled",
@@ -226,6 +239,8 @@ function scalarDefaults(): Omit<
   | "nextWorkdayRecoveryTargets"
   | "lateShiftRecoveryPositionRules"
   | "mobileSupervisorCoverageRules"
+  | "crossWorkdayQualificationReservations"
+  | "latePriorityFlightNumbers"
 > {
   return Object.fromEntries(
     SCHEDULE_SETTING_DEFINITIONS.map((definition) => [
@@ -239,6 +254,7 @@ export function createDefaultScheduleSettings(): ScheduleSettings {
   return structuredClone({
     ...scalarDefaults(),
     adminSupportEnabled: false,
+    latePriorityFlightNumbers: [],
     ...createDefaultStructuredPolicies(),
   });
 }
@@ -280,6 +296,11 @@ export function normalizeScheduleSettings(
     typeof input.adminSupportEnabled === "boolean"
       ? input.adminSupportEnabled
       : fallback.adminSupportEnabled;
+  result.latePriorityFlightNumbers = normalizeLatePriorityFlightNumbers(
+    Array.isArray(input.latePriorityFlightNumbers)
+      ? input.latePriorityFlightNumbers
+      : fallback.latePriorityFlightNumbers
+  );
   Object.assign(result, normalizeStructuredPolicies(input, fallback));
   return result;
 }

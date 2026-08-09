@@ -7,6 +7,7 @@ import {
 import { normalizeTime } from "../domain/shared/time";
 import type { AppState, ScheduleSettings } from "../model";
 import type {
+  CrossWorkdayQualificationReservation,
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
@@ -14,6 +15,7 @@ import type {
   PositionTransitionPolicy,
 } from "../domain/rules/structured-policy-contract";
 import { createId, normalizeText, splitList } from "../utils";
+import { normalizeLatePriorityFlightNumber } from "../domain/reviews/late-priority-policy";
 import {
   append,
   headerIndex,
@@ -30,6 +32,8 @@ const RULE_SHEET_NAMES = {
   recoveryTargets: "次班恢复目标",
   lateShiftPositions: "末班重点岗位",
   supervisorCoverage: "机动督导范围",
+  crossWorkdayReservations: "跨工作日资质预留",
+  latePriorityFlightScope: "末班重点航班范围",
 } as const;
 
 interface ParsedRuleSheet<T> {
@@ -367,6 +371,81 @@ function parseSupervisorCoverage(
   );
 }
 
+function parseCrossWorkdayReservations(
+  workbook: XLSX.WorkBook
+): ParsedRuleSheet<CrossWorkdayQualificationReservation> {
+  return parseRuleSheet(
+    workbook,
+    RULE_SHEET_NAMES.crossWorkdayReservations,
+    (row, header) => {
+      const enabled = parseBoolean(cell(row, header, ["启用"], 1));
+      const fieldText = cell(row, header, ["匹配字段"], 3).toLowerCase();
+      const matchField =
+        fieldText === "position" ||
+        fieldText === "岗位名称" ||
+        fieldText === "岗位"
+          ? "position"
+          : fieldText === "remark" ||
+              fieldText === "岗位备注" ||
+              fieldText === "备注"
+            ? "remark"
+            : undefined;
+      const minimumStaffCount = Number(
+        cell(row, header, ["至少保留人数", "最低人数"], 5)
+      );
+      const errors = [
+        enabled === undefined ? "启用值必须填写是或否" : "",
+        !matchField
+          ? "匹配字段必须填写 position/岗位名称 或 remark/岗位备注"
+          : "",
+        !Number.isInteger(minimumStaffCount) ||
+        minimumStaffCount < 1 ||
+        minimumStaffCount > 50
+          ? "至少保留人数必须是1至50的整数"
+          : "",
+      ].filter(Boolean);
+      if (errors.length || enabled === undefined || !matchField)
+        return { errors };
+      return {
+        errors: [],
+        value: {
+          id: ruleId(
+            cell(row, header, ["规则ID", "ID"], 0),
+            "cross-workday-reservation"
+          ),
+          enabled,
+          flightNo: cell(
+            row,
+            header,
+            ["下一工作班航班号", "航班号"],
+            2
+          ).toUpperCase(),
+          matchField,
+          keyword: cell(row, header, ["岗位关键词", "关键词"], 4),
+          minimumStaffCount,
+        },
+      };
+    }
+  );
+}
+
+function parseLatePriorityFlightScope(
+  workbook: XLSX.WorkBook
+): ParsedRuleSheet<string> {
+  return parseRuleSheet(
+    workbook,
+    RULE_SHEET_NAMES.latePriorityFlightScope,
+    (row, header) => {
+      const flightNo = normalizeLatePriorityFlightNumber(
+        cell(row, header, ["航班号"], 0)
+      );
+      return flightNo
+        ? { value: flightNo, errors: [] }
+        : { errors: ["航班号不能为空"] };
+    }
+  );
+}
+
 export function parseScheduleRuleSettings(
   workbook: XLSX.WorkBook
 ): ParsedScheduleRuleSettings {
@@ -376,20 +455,26 @@ export function parseScheduleRuleSettings(
   const recoveryTargets = parseRecoveryTargets(workbook);
   const lateShiftPositions = parseLateShiftPositions(workbook);
   const supervisorCoverage = parseSupervisorCoverage(workbook);
+  const crossWorkdayReservations = parseCrossWorkdayReservations(workbook);
+  const latePriorityFlightScope = parseLatePriorityFlightScope(workbook);
   const recognized =
     scalar.present ||
     transitions.present ||
     dutyPriorities.present ||
     recoveryTargets.present ||
     lateShiftPositions.present ||
-    supervisorCoverage.present;
+    supervisorCoverage.present ||
+    crossWorkdayReservations.present ||
+    latePriorityFlightScope.present;
   const hasImportableSettings =
     Boolean(scalar.settings && Object.keys(scalar.settings).length) ||
     transitions.value !== undefined ||
     dutyPriorities.value !== undefined ||
     recoveryTargets.value !== undefined ||
     lateShiftPositions.value !== undefined ||
-    supervisorCoverage.value !== undefined;
+    supervisorCoverage.value !== undefined ||
+    crossWorkdayReservations.value !== undefined ||
+    latePriorityFlightScope.value !== undefined;
   const settings: Partial<ScheduleSettings> | undefined = hasImportableSettings
     ? { ...(scalar.settings ?? {}) }
     : undefined;
@@ -403,6 +488,11 @@ export function parseScheduleRuleSettings(
     settings.lateShiftRecoveryPositionRules = lateShiftPositions.value;
   if (settings && supervisorCoverage.value)
     settings.mobileSupervisorCoverageRules = supervisorCoverage.value;
+  if (settings && crossWorkdayReservations.value)
+    settings.crossWorkdayQualificationReservations =
+      crossWorkdayReservations.value;
+  if (settings && latePriorityFlightScope.value !== undefined)
+    settings.latePriorityFlightNumbers = latePriorityFlightScope.value;
   return {
     settings,
     recognized,
@@ -413,6 +503,8 @@ export function parseScheduleRuleSettings(
       ...recoveryTargets.warnings,
       ...lateShiftPositions.warnings,
       ...supervisorCoverage.warnings,
+      ...crossWorkdayReservations.warnings,
+      ...latePriorityFlightScope.warnings,
     ],
   };
 }
@@ -541,5 +633,39 @@ export function appendScheduleRuleSheets(
       ]),
     ],
     [32, 10, 24, 16, 24, 14]
+  );
+  append(
+    workbook,
+    RULE_SHEET_NAMES.crossWorkdayReservations,
+    [
+      [
+        "规则ID",
+        "启用",
+        "下一工作班航班号",
+        "匹配字段",
+        "岗位关键词",
+        "至少保留人数",
+      ],
+      ...state.settings.crossWorkdayQualificationReservations.map(
+        (reservation) => [
+          reservation.id,
+          reservation.enabled ? "是" : "否",
+          reservation.flightNo,
+          reservation.matchField,
+          reservation.keyword,
+          reservation.minimumStaffCount,
+        ]
+      ),
+    ],
+    [32, 10, 24, 16, 24, 18]
+  );
+  append(
+    workbook,
+    RULE_SHEET_NAMES.latePriorityFlightScope,
+    [
+      ["航班号"],
+      ...state.settings.latePriorityFlightNumbers.map((flightNo) => [flightNo]),
+    ],
+    [20]
   );
 }

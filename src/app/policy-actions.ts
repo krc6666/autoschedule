@@ -1,5 +1,6 @@
 import type { AppState } from "../model";
 import type {
+  CrossWorkdayQualificationReservation,
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   NextWorkdayRecoveryTarget,
@@ -7,17 +8,26 @@ import type {
 import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
 import { markActiveScheduleStale } from "../domain/kernel/schedule-lifecycle";
 import { createId, normalizeText, splitList } from "../utils";
+import {
+  appendPolicyItem,
+  deletePolicyItem,
+  movePolicyItem,
+  updatePolicyItem,
+  type PolicyItemUpdate,
+} from "./policy-collection-actions";
 
 export type PolicyValue = string | number | boolean;
 export type PolicyEntity =
   | "duty-priority"
   | "recovery-target"
   | "late-shift-recovery-position"
+  | "cross-workday-reservation"
   | "transition-policy"
   | "supervisor-coverage";
 export type PolicyFieldUpdateResult = "not-policy" | "missing" | "saved";
 
 export interface SchedulePolicyInput {
+  minimumRegularTransitionMinutes: number;
   highLoadProtectionEnabled: boolean;
   highLoadFatigueThreshold: number;
   highLoadRecoveryMinutes: number;
@@ -26,6 +36,7 @@ export interface SchedulePolicyInput {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
+  latePriorityFlightNumbers: string[];
   lateShiftRecoveryEnabled: boolean;
   lateShiftEndTime: string;
   teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
@@ -38,8 +49,14 @@ export interface SchedulePolicyInput {
   afternoonRestEndTime: string;
 }
 
-function markPolicyMutation(state: AppState): void {
-  markActiveScheduleStale(state);
+function replacePolicyValue<T, K extends keyof T>(
+  item: T,
+  key: K,
+  value: T[K]
+): PolicyItemUpdate {
+  if (Object.is(item[key], value)) return "unchanged";
+  item[key] = value;
+  return "changed";
 }
 
 export function applySchedulePolicy(
@@ -57,9 +74,11 @@ export function addDutyPriority(state: AppState): DutyPositionPriority {
     positionKeyword: "一号",
     enabled: true,
   };
-  state.settings.dutyPositionPriorities.push(priority);
-  markPolicyMutation(state);
-  return priority;
+  return appendPolicyItem(
+    state,
+    state.settings.dutyPositionPriorities,
+    priority
+  );
 }
 
 export function moveDutyPriority(
@@ -67,34 +86,16 @@ export function moveDutyPriority(
   id: string,
   direction: -1 | 1
 ): boolean {
-  const index = state.settings.dutyPositionPriorities.findIndex(
-    (item) => item.id === id
+  return movePolicyItem(
+    state,
+    state.settings.dutyPositionPriorities,
+    id,
+    direction
   );
-  const targetIndex = index + direction;
-  if (
-    index < 0 ||
-    targetIndex < 0 ||
-    targetIndex >= state.settings.dutyPositionPriorities.length
-  )
-    return false;
-  [
-    state.settings.dutyPositionPriorities[index],
-    state.settings.dutyPositionPriorities[targetIndex],
-  ] = [
-    state.settings.dutyPositionPriorities[targetIndex]!,
-    state.settings.dutyPositionPriorities[index]!,
-  ];
-  markPolicyMutation(state);
-  return true;
 }
 
 export function deleteDutyPriority(state: AppState, id: string): boolean {
-  const before = state.settings.dutyPositionPriorities.length;
-  state.settings.dutyPositionPriorities =
-    state.settings.dutyPositionPriorities.filter((item) => item.id !== id);
-  const deleted = state.settings.dutyPositionPriorities.length !== before;
-  if (deleted) markPolicyMutation(state);
-  return deleted;
+  return deletePolicyItem(state, state.settings.dutyPositionPriorities, id);
 }
 
 export function updateDutyPriority(
@@ -103,30 +104,28 @@ export function updateDutyPriority(
   field: string,
   value: string | number | boolean
 ): boolean {
-  const priority = state.settings.dutyPositionPriorities.find(
-    (item) => item.id === id
+  return updatePolicyItem(
+    state,
+    state.settings.dutyPositionPriorities,
+    id,
+    (priority) => {
+      if (field === "flightNo")
+        return replacePolicyValue(
+          priority,
+          "flightNo",
+          normalizeText(value).toUpperCase()
+        );
+      if (field === "positionKeyword")
+        return replacePolicyValue(
+          priority,
+          "positionKeyword",
+          normalizeText(value)
+        );
+      if (field === "enabled")
+        return replacePolicyValue(priority, "enabled", Boolean(value));
+      return "invalid";
+    }
   );
-  if (!priority) return false;
-  if (field === "flightNo") {
-    const nextValue = normalizeText(value).toUpperCase();
-    if (priority.flightNo !== nextValue) {
-      priority.flightNo = nextValue;
-      markPolicyMutation(state);
-    }
-  } else if (field === "positionKeyword") {
-    const nextValue = normalizeText(value);
-    if (priority.positionKeyword !== nextValue) {
-      priority.positionKeyword = nextValue;
-      markPolicyMutation(state);
-    }
-  } else if (field === "enabled") {
-    const nextValue = Boolean(value);
-    if (priority.enabled !== nextValue) {
-      priority.enabled = nextValue;
-      markPolicyMutation(state);
-    }
-  } else return false;
-  return true;
 }
 
 export function addNextWorkdayRecoveryTarget(
@@ -138,21 +137,98 @@ export function addNextWorkdayRecoveryTarget(
     positionKeyword: "一号",
     enabled: true,
   };
-  state.settings.nextWorkdayRecoveryTargets.push(target);
-  markPolicyMutation(state);
-  return target;
+  return appendPolicyItem(
+    state,
+    state.settings.nextWorkdayRecoveryTargets,
+    target
+  );
+}
+
+export function addCrossWorkdayQualificationReservation(
+  state: AppState
+): CrossWorkdayQualificationReservation {
+  const reservation: CrossWorkdayQualificationReservation = {
+    id: createId("cross-workday-reservation"),
+    enabled: true,
+    flightNo: "",
+    matchField: "position",
+    keyword: "控制",
+    minimumStaffCount: 1,
+  };
+  return appendPolicyItem(
+    state,
+    state.settings.crossWorkdayQualificationReservations,
+    reservation
+  );
+}
+
+export function moveCrossWorkdayQualificationReservation(
+  state: AppState,
+  id: string,
+  direction: -1 | 1
+): boolean {
+  return movePolicyItem(
+    state,
+    state.settings.crossWorkdayQualificationReservations,
+    id,
+    direction
+  );
+}
+
+export function deleteCrossWorkdayQualificationReservation(
+  state: AppState,
+  id: string
+): boolean {
+  return deletePolicyItem(
+    state,
+    state.settings.crossWorkdayQualificationReservations,
+    id
+  );
+}
+
+function updateCrossWorkdayQualificationReservation(
+  state: AppState,
+  id: string,
+  field: string,
+  value: PolicyValue
+): boolean {
+  return updatePolicyItem(
+    state,
+    state.settings.crossWorkdayQualificationReservations,
+    id,
+    (reservation) => {
+      if (field === "enabled")
+        return replacePolicyValue(reservation, "enabled", Boolean(value));
+      if (field === "flightNo")
+        return replacePolicyValue(
+          reservation,
+          "flightNo",
+          normalizeText(value).toUpperCase()
+        );
+      if (field === "matchField")
+        return replacePolicyValue(
+          reservation,
+          "matchField",
+          value === "position" ? "position" : "remark"
+        );
+      if (field === "keyword")
+        return replacePolicyValue(reservation, "keyword", normalizeText(value));
+      if (field === "minimumStaffCount")
+        return replacePolicyValue(
+          reservation,
+          "minimumStaffCount",
+          Math.min(50, Math.max(1, Math.round(Number(value)) || 1))
+        );
+      return "invalid";
+    }
+  );
 }
 
 export function deleteNextWorkdayRecoveryTarget(
   state: AppState,
   id: string
 ): boolean {
-  const before = state.settings.nextWorkdayRecoveryTargets.length;
-  state.settings.nextWorkdayRecoveryTargets =
-    state.settings.nextWorkdayRecoveryTargets.filter((item) => item.id !== id);
-  const deleted = state.settings.nextWorkdayRecoveryTargets.length !== before;
-  if (deleted) markPolicyMutation(state);
-  return deleted;
+  return deletePolicyItem(state, state.settings.nextWorkdayRecoveryTargets, id);
 }
 
 export function updateNextWorkdayRecoveryTarget(
@@ -161,30 +237,28 @@ export function updateNextWorkdayRecoveryTarget(
   field: string,
   value: string | number | boolean
 ): boolean {
-  const target = state.settings.nextWorkdayRecoveryTargets.find(
-    (item) => item.id === id
+  return updatePolicyItem(
+    state,
+    state.settings.nextWorkdayRecoveryTargets,
+    id,
+    (target) => {
+      if (field === "flightNo")
+        return replacePolicyValue(
+          target,
+          "flightNo",
+          normalizeText(value).toUpperCase()
+        );
+      if (field === "positionKeyword")
+        return replacePolicyValue(
+          target,
+          "positionKeyword",
+          normalizeText(value)
+        );
+      if (field === "enabled")
+        return replacePolicyValue(target, "enabled", Boolean(value));
+      return "invalid";
+    }
   );
-  if (!target) return false;
-  if (field === "flightNo") {
-    const nextValue = normalizeText(value).toUpperCase();
-    if (target.flightNo !== nextValue) {
-      target.flightNo = nextValue;
-      markPolicyMutation(state);
-    }
-  } else if (field === "positionKeyword") {
-    const nextValue = normalizeText(value);
-    if (target.positionKeyword !== nextValue) {
-      target.positionKeyword = nextValue;
-      markPolicyMutation(state);
-    }
-  } else if (field === "enabled") {
-    const nextValue = Boolean(value);
-    if (target.enabled !== nextValue) {
-      target.enabled = nextValue;
-      markPolicyMutation(state);
-    }
-  } else return false;
-  return true;
 }
 
 export function addLateShiftRecoveryPositionRule(
@@ -198,24 +272,22 @@ export function addLateShiftRecoveryPositionRule(
     keyword: "一号",
     nextWorkdayCutoffTime: "",
   };
-  state.settings.lateShiftRecoveryPositionRules.push(rule);
-  markPolicyMutation(state);
-  return rule;
+  return appendPolicyItem(
+    state,
+    state.settings.lateShiftRecoveryPositionRules,
+    rule
+  );
 }
 
 export function deleteLateShiftRecoveryPositionRule(
   state: AppState,
   id: string
 ): boolean {
-  const before = state.settings.lateShiftRecoveryPositionRules.length;
-  state.settings.lateShiftRecoveryPositionRules =
-    state.settings.lateShiftRecoveryPositionRules.filter(
-      (item) => item.id !== id
-    );
-  const deleted =
-    state.settings.lateShiftRecoveryPositionRules.length !== before;
-  if (deleted) markPolicyMutation(state);
-  return deleted;
+  return deletePolicyItem(
+    state,
+    state.settings.lateShiftRecoveryPositionRules,
+    id
+  );
 }
 
 export function updateLateShiftRecoveryPositionRule(
@@ -224,42 +296,42 @@ export function updateLateShiftRecoveryPositionRule(
   field: string,
   value: string | number | boolean
 ): boolean {
-  const rule = state.settings.lateShiftRecoveryPositionRules.find(
-    (item) => item.id === id
+  return updatePolicyItem(
+    state,
+    state.settings.lateShiftRecoveryPositionRules,
+    id,
+    (rule) => {
+      if (field === "flightNo")
+        return replacePolicyValue(
+          rule,
+          "flightNo",
+          normalizeText(value).toUpperCase()
+        );
+      if (field === "matchField")
+        return replacePolicyValue(
+          rule,
+          "matchField",
+          value === "position" ? "position" : "remark"
+        );
+      if (field === "keyword")
+        return replacePolicyValue(rule, "keyword", normalizeText(value));
+      if (field === "nextWorkdayCutoffTime") {
+        const nextValue = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value))
+          ? String(value)
+          : "";
+        return replacePolicyValue(rule, "nextWorkdayCutoffTime", nextValue);
+      }
+      if (field === "enabled")
+        return replacePolicyValue(rule, "enabled", Boolean(value));
+      return "invalid";
+    }
   );
-  if (!rule) return false;
-  let changed = false;
-  if (field === "flightNo") {
-    const nextValue = normalizeText(value).toUpperCase();
-    changed = rule.flightNo !== nextValue;
-    rule.flightNo = nextValue;
-  } else if (field === "matchField") {
-    const nextValue = value === "position" ? "position" : "remark";
-    changed = rule.matchField !== nextValue;
-    rule.matchField = nextValue;
-  } else if (field === "keyword") {
-    const nextValue = normalizeText(value);
-    changed = rule.keyword !== nextValue;
-    rule.keyword = nextValue;
-  } else if (field === "nextWorkdayCutoffTime") {
-    const nextValue = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value))
-      ? String(value)
-      : "";
-    changed = rule.nextWorkdayCutoffTime !== nextValue;
-    rule.nextWorkdayCutoffTime = nextValue;
-  } else if (field === "enabled") {
-    const nextValue = Boolean(value);
-    changed = rule.enabled !== nextValue;
-    rule.enabled = nextValue;
-  } else return false;
-  if (changed) markPolicyMutation(state);
-  return true;
 }
 
 export function addTransitionPolicy(state: AppState): void {
   const sourceFlight = state.flights[0];
   const targetFlight = state.flights.at(-1) ?? sourceFlight;
-  state.settings.positionTransitionPolicies.push({
+  appendPolicyItem(state, state.settings.positionTransitionPolicies, {
     id: createId("transition-policy"),
     name: "新岗位衔接规则",
     enabled: false,
@@ -270,20 +342,14 @@ export function addTransitionPolicy(state: AppState): void {
     minimumGapMinutes: 180,
     mode: "prefer",
   });
-  markPolicyMutation(state);
 }
 
 export function deleteTransitionPolicy(state: AppState, id: string): boolean {
-  const before = state.settings.positionTransitionPolicies.length;
-  state.settings.positionTransitionPolicies =
-    state.settings.positionTransitionPolicies.filter((item) => item.id !== id);
-  const deleted = state.settings.positionTransitionPolicies.length !== before;
-  if (deleted) markPolicyMutation(state);
-  return deleted;
+  return deletePolicyItem(state, state.settings.positionTransitionPolicies, id);
 }
 
 export function addMobileSupervisorCoverageRule(state: AppState): void {
-  state.settings.mobileSupervisorCoverageRules.push({
+  appendPolicyItem(state, state.settings.mobileSupervisorCoverageRules, {
     id: createId("supervisor-coverage"),
     enabled: true,
     flightNo: "",
@@ -291,22 +357,17 @@ export function addMobileSupervisorCoverageRule(state: AppState): void {
     keyword: "",
     mode: "forbid",
   });
-  markPolicyMutation(state);
 }
 
 export function deleteMobileSupervisorCoverageRule(
   state: AppState,
   id: string
 ): boolean {
-  const before = state.settings.mobileSupervisorCoverageRules.length;
-  state.settings.mobileSupervisorCoverageRules =
-    state.settings.mobileSupervisorCoverageRules.filter(
-      (item) => item.id !== id
-    );
-  const deleted =
-    state.settings.mobileSupervisorCoverageRules.length !== before;
-  if (deleted) markPolicyMutation(state);
-  return deleted;
+  return deletePolicyItem(
+    state,
+    state.settings.mobileSupervisorCoverageRules,
+    id
+  );
 }
 
 function updateTransitionPolicy(
@@ -315,42 +376,43 @@ function updateTransitionPolicy(
   field: string,
   value: PolicyValue
 ): boolean {
-  const policy = state.settings.positionTransitionPolicies.find(
-    (item) => item.id === id
+  return updatePolicyItem(
+    state,
+    state.settings.positionTransitionPolicies,
+    id,
+    (policy) => {
+      if (field === "sourcePositions") {
+        const nextValue = splitList(value);
+        if (policy.sourcePositions.join("\u0000") === nextValue.join("\u0000"))
+          return "unchanged";
+        policy.sourcePositions = nextValue;
+        return "changed";
+      }
+      if (field === "minimumGapMinutes")
+        return replacePolicyValue(
+          policy,
+          "minimumGapMinutes",
+          Math.min(1440, Math.max(0, Math.round(Number(value)) || 0))
+        );
+      if (field === "sourceFlightNo" || field === "targetFlightNo")
+        return replacePolicyValue(
+          policy,
+          field,
+          normalizeText(value).toUpperCase()
+        );
+      if (field === "mode")
+        return replacePolicyValue(
+          policy,
+          "mode",
+          value === "forbid" ? "forbid" : "prefer"
+        );
+      if (field === "enabled")
+        return replacePolicyValue(policy, "enabled", Boolean(value));
+      if (field === "name" || field === "targetPosition")
+        return replacePolicyValue(policy, field, normalizeText(value));
+      return "invalid";
+    }
   );
-  if (!policy) return false;
-  let changed = false;
-  if (field === "sourcePositions") {
-    const nextValue = splitList(value);
-    changed =
-      policy.sourcePositions.join("\u0000") !== nextValue.join("\u0000");
-    policy.sourcePositions = nextValue;
-  } else if (field === "minimumGapMinutes") {
-    const nextValue = Math.min(
-      1440,
-      Math.max(0, Math.round(Number(value)) || 0)
-    );
-    changed = policy.minimumGapMinutes !== nextValue;
-    policy.minimumGapMinutes = nextValue;
-  } else if (field === "sourceFlightNo" || field === "targetFlightNo") {
-    const nextValue = normalizeText(value).toUpperCase();
-    changed = policy[field] !== nextValue;
-    policy[field] = nextValue;
-  } else if (field === "mode") {
-    const nextValue = value === "forbid" ? "forbid" : "prefer";
-    changed = policy.mode !== nextValue;
-    policy.mode = nextValue;
-  } else if (field === "enabled") {
-    const nextValue = Boolean(value);
-    changed = policy.enabled !== nextValue;
-    policy.enabled = nextValue;
-  } else if (field === "name" || field === "targetPosition") {
-    const nextValue = normalizeText(value);
-    changed = policy[field] !== nextValue;
-    policy[field] = nextValue;
-  } else return false;
-  if (changed) markPolicyMutation(state);
-  return true;
 }
 
 function updateMobileSupervisorCoverageRule(
@@ -359,34 +421,36 @@ function updateMobileSupervisorCoverageRule(
   field: string,
   value: PolicyValue
 ): boolean {
-  const rule = state.settings.mobileSupervisorCoverageRules.find(
-    (item) => item.id === id
+  return updatePolicyItem(
+    state,
+    state.settings.mobileSupervisorCoverageRules,
+    id,
+    (rule) => {
+      if (field === "enabled")
+        return replacePolicyValue(rule, "enabled", Boolean(value));
+      if (field === "flightNo")
+        return replacePolicyValue(
+          rule,
+          "flightNo",
+          normalizeText(value).toUpperCase()
+        );
+      if (field === "matchField")
+        return replacePolicyValue(
+          rule,
+          "matchField",
+          value === "position" ? "position" : "remark"
+        );
+      if (field === "keyword")
+        return replacePolicyValue(rule, "keyword", normalizeText(value));
+      if (field === "mode")
+        return replacePolicyValue(
+          rule,
+          "mode",
+          value === "allow" ? "allow" : "forbid"
+        );
+      return "invalid";
+    }
   );
-  if (!rule) return false;
-  let changed = false;
-  if (field === "enabled") {
-    const nextValue = Boolean(value);
-    changed = rule.enabled !== nextValue;
-    rule.enabled = nextValue;
-  } else if (field === "flightNo") {
-    const nextValue = normalizeText(value).toUpperCase();
-    changed = rule.flightNo !== nextValue;
-    rule.flightNo = nextValue;
-  } else if (field === "matchField") {
-    const nextValue = value === "position" ? "position" : "remark";
-    changed = rule.matchField !== nextValue;
-    rule.matchField = nextValue;
-  } else if (field === "keyword") {
-    const nextValue = normalizeText(value);
-    changed = rule.keyword !== nextValue;
-    rule.keyword = nextValue;
-  } else if (field === "mode") {
-    const nextValue = value === "allow" ? "allow" : "forbid";
-    changed = rule.mode !== nextValue;
-    rule.mode = nextValue;
-  } else return false;
-  if (changed) markPolicyMutation(state);
-  return true;
 }
 
 type PolicyEntityUpdater = (
@@ -402,6 +466,7 @@ const POLICY_ENTITY_UPDATERS: Readonly<
   "duty-priority": updateDutyPriority,
   "recovery-target": updateNextWorkdayRecoveryTarget,
   "late-shift-recovery-position": updateLateShiftRecoveryPositionRule,
+  "cross-workday-reservation": updateCrossWorkdayQualificationReservation,
   "transition-policy": updateTransitionPolicy,
   "supervisor-coverage": updateMobileSupervisorCoverageRule,
 };
