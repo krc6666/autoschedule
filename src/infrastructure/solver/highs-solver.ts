@@ -103,6 +103,123 @@ function objectiveCosts(
   return costs;
 }
 
+function objectiveVariableBound(
+  problem: SolverProblem,
+  objective: LexicographicObjective,
+  columnById: ReadonlyMap<string, number>
+): number | undefined {
+  const costs = objectiveCosts(problem, objective, columnById);
+  let bound = 0;
+  for (const [index, coefficient] of costs.entries()) {
+    if (coefficient === 0) continue;
+    const variable = problem.variables[index]!;
+    const lowerBound = variable.lowerBound ?? 0;
+    const upperBound =
+      variable.upperBound ?? (variable.type === "continuous" ? undefined : 1);
+    const endpoint =
+      objective.direction === "minimize"
+        ? coefficient > 0
+          ? lowerBound
+          : upperBound
+        : coefficient > 0
+          ? upperBound
+          : lowerBound;
+    if (endpoint === undefined || !Number.isFinite(endpoint)) return undefined;
+    bound += coefficient * endpoint;
+  }
+  return Math.abs(bound) < 1e-9 ? 0 : Number(bound.toPrecision(12));
+}
+
+function reachesVariableBound(value: number, bound: number): boolean {
+  const tolerance =
+    OBJECTIVE_LOCK_TOLERANCE * Math.max(1, Math.abs(value), Math.abs(bound));
+  return Math.abs(value - bound) <= tolerance;
+}
+
+function objectiveAbsoluteGap(objective: LexicographicObjective): number {
+  if (objective.optimality !== "best-effort") return 0;
+  return objective.acceptedGap?.absolute ?? 0;
+}
+
+function objectiveRelativeGap(objective: LexicographicObjective): number {
+  return objective.optimality === "best-effort"
+    ? (objective.acceptedGap?.relative ?? 0)
+    : 0;
+}
+
+function resultGapKind(
+  objective: LexicographicObjective,
+  result: {
+    mipGap?: number;
+    mipDualBound?: number;
+    objective?: number;
+  }
+): "exact" | "accepted" | "rejected" {
+  const relativeGap = result.mipGap;
+  if (relativeGap === undefined) return "exact";
+  if (!Number.isFinite(relativeGap) || relativeGap < 0) return "rejected";
+  if (relativeGap <= OBJECTIVE_LOCK_TOLERANCE) return "exact";
+  if (objective.optimality !== "best-effort") return "rejected";
+  if (
+    relativeGap <=
+    (objective.acceptedGap?.relative ?? 0) + OBJECTIVE_LOCK_TOLERANCE
+  )
+    return "accepted";
+  const absoluteGap =
+    result.objective !== undefined && result.mipDualBound !== undefined
+      ? Math.abs(result.objective - result.mipDualBound)
+      : Number.POSITIVE_INFINITY;
+  return absoluteGap <=
+    (objective.acceptedGap?.absolute ?? 0) + OBJECTIVE_LOCK_TOLERANCE
+    ? "accepted"
+    : "rejected";
+}
+
+function normalizeLowerEnvelopeValues(
+  problem: SolverProblem,
+  objective: LexicographicObjective,
+  values: Float64Array,
+  columnById: ReadonlyMap<string, number>,
+  lockedVariableIds: ReadonlySet<string>
+): Float64Array {
+  if (objective.direction !== "minimize") return values;
+  const costs = objectiveCosts(problem, objective, columnById);
+  let normalized: Float64Array | undefined;
+  for (const [index, coefficient] of costs.entries()) {
+    const variable = problem.variables[index]!;
+    if (
+      coefficient <= 0 ||
+      !variable.lowerEnvelope ||
+      lockedVariableIds.has(variable.id)
+    )
+      continue;
+    let lowerBound = variable.lowerBound ?? 0;
+    for (const constraint of problem.constraints) {
+      if (constraint.lowerBound === undefined) continue;
+      const ownTerm = constraint.terms.find(
+        (term) => term.variableId === variable.id
+      );
+      if (!ownTerm || ownTerm.coefficient <= 0) continue;
+      const otherValue = constraint.terms.reduce((total, term) => {
+        if (term.variableId === variable.id) return total;
+        return (
+          total + term.coefficient * values[columnById.get(term.variableId)!]!
+        );
+      }, 0);
+      lowerBound = Math.max(
+        lowerBound,
+        (constraint.lowerBound - otherValue) / ownTerm.coefficient
+      );
+    }
+    const upperBound = variable.upperBound ?? HIGHS_INF;
+    const tightened = Math.min(upperBound, lowerBound);
+    if (Math.abs(tightened - values[index]!) <= 1e-9) continue;
+    normalized ??= Float64Array.from(values);
+    normalized[index] = tightened;
+  }
+  return normalized ?? values;
+}
+
 function rawModel(
   problem: SolverProblem,
   objective: LexicographicObjective,
@@ -222,7 +339,33 @@ function validateProblem(problem: SolverProblem): void {
       throw new Error(`求解变量 ${variable.id} 的下限不能大于上限`);
   }
   const precedingObjectiveIds = new Set<string>();
+  let reachedBestEffort = false;
   for (const objective of problem.objectives) {
+    if (
+      objective.objectiveValueStep !== undefined &&
+      (!Number.isFinite(objective.objectiveValueStep) ||
+        objective.objectiveValueStep <= 0)
+    )
+      throw new Error(`求解目标 ${objective.id} 的离散步长必须大于 0`);
+    if (objective.optimality === "best-effort") reachedBestEffort = true;
+    else if (reachedBestEffort)
+      throw new Error(
+        `必须最优的目标 ${objective.id} 不能排在限时优化目标之后`
+      );
+    const relativeGap = objective.acceptedGap?.relative ?? 0;
+    const absoluteGap = objective.acceptedGap?.absolute ?? 0;
+    if (
+      !Number.isFinite(relativeGap) ||
+      !Number.isFinite(absoluteGap) ||
+      relativeGap < 0 ||
+      absoluteGap < 0
+    )
+      throw new Error(`求解目标 ${objective.id} 的允许差距必须是非负有限数`);
+    if (
+      objective.optimality !== "best-effort" &&
+      (relativeGap !== 0 || absoluteGap !== 0)
+    )
+      throw new Error(`required 目标 ${objective.id} 不能声明非零允许差距`);
     if (
       objective.solveOnlyWhen &&
       !precedingObjectiveIds.has(objective.solveOnlyWhen.objectiveId)
@@ -238,10 +381,13 @@ export class HighsSolver implements SolverPort {
   private instance?: Promise<HiGHS>;
   private queue: Promise<void> = Promise.resolve();
 
-  solve(problem: SolverProblem): Promise<SolverResult> {
+  solve(
+    problem: SolverProblem,
+    options?: Parameters<SolverPort["solve"]>[1]
+  ): Promise<SolverResult> {
     const pending = this.queue.then(
-      () => this.solveExclusive(problem),
-      () => this.solveExclusive(problem)
+      () => this.solveExclusive(problem, options),
+      () => this.solveExclusive(problem, options)
     );
     this.queue = pending.then(
       () => undefined,
@@ -250,10 +396,13 @@ export class HighsSolver implements SolverPort {
     return pending;
   }
 
-  private async solveExclusive(problem: SolverProblem): Promise<SolverResult> {
+  private async solveExclusive(
+    problem: SolverProblem,
+    options?: Parameters<SolverPort["solve"]>[1]
+  ): Promise<SolverResult> {
     validateProblem(problem);
     if (problem.strategy === "native-lexicographic")
-      return this.solveNativeLexicographic(problem);
+      return this.solveNativeLexicographic(problem, options);
     this.instance ??= HiGHS.create();
     const highs = await this.instance;
     const deadline = Date.now() + problem.timeoutMs;
@@ -280,7 +429,8 @@ export class HighsSolver implements SolverPort {
         };
       }
       highs.setParam("time_limit", remainingMs / 1000);
-      highs.setParam("mip_rel_gap", 0);
+      highs.setParam("mip_rel_gap", objectiveRelativeGap(objective));
+      highs.setParam("mip_abs_gap", objectiveAbsoluteGap(objective));
       highs.setParam("random_seed", 0);
       highs.setParam("output_flag", false);
       highs.passModel(rawModel(problem, objective, locks));
@@ -327,12 +477,15 @@ export class HighsSolver implements SolverPort {
   }
 
   private async solveNativeLexicographic(
-    problem: SolverProblem
+    problem: SolverProblem,
+    options?: Parameters<SolverPort["solve"]>[1]
   ): Promise<SolverResult> {
     const deadline = Date.now() + problem.timeoutMs;
     const locks: LockedObjective[] = [];
     const objectiveValues = new Map<string, number>();
-    let finalValues: Float64Array = new Float64Array(problem.variables.length);
+    const completedObjectiveIds: string[] = [];
+    const approximatedObjectiveIds: string[] = [];
+    let finalValues: Float64Array | undefined;
     const columnById = new Map(
       problem.variables.map((variable, index) => [variable.id, index])
     );
@@ -350,58 +503,168 @@ export class HighsSolver implements SolverPort {
     const highs = await NativeHiGHS.create();
     let modelPassed = false;
     let loadedLockCount = 0;
+    let requiredSolutionReported = false;
 
-    const solveBatch = async (
-      objectives: readonly LexicographicObjective[]
-    ): Promise<Pick<SolverResult, "termination" | "diagnostic"> | null> => {
-      if (!objectives.length) return null;
-      const remainingMs = deadline - Date.now();
-      if (remainingMs <= 0)
+    const selectedVariableIds = (values: Float64Array): Set<string> =>
+      new Set(
+        problem.variables.flatMap((variable, index) =>
+          variable.type !== "continuous" && values[index]! > 0.5
+            ? [variable.id]
+            : []
+        )
+      );
+
+    const completeObjectiveValues = (values: Float64Array): void => {
+      for (const objective of problem.objectives) {
+        if (objectiveValues.has(objective.id)) continue;
+        objectiveValues.set(
+          objective.id,
+          objectiveValue(objective, values, columnById, integralVariableIds)
+        );
+      }
+    };
+
+    const timeLimitedResult = (
+      objective: LexicographicObjective,
+      solutionSource: "current-incumbent" | "previous-optimal"
+    ): SolverResult => {
+      if (!finalValues)
         return {
           termination: "timed-out",
-          diagnostic: `求解目标 ${objectives[0]!.id} 前已达到时间上限`,
+          selectedVariableIds: new Set(),
+          objectiveValues,
+          diagnostic: `求解目标 ${objective.id} 前已达到时间上限`,
         };
+      completeObjectiveValues(finalValues);
+      return {
+        termination: "time-limited-feasible",
+        selectedVariableIds: selectedVariableIds(finalValues),
+        objectiveValues,
+        bestEffort: {
+          stoppedAtObjectiveId: objective.id,
+          completedObjectiveIds: [...completedObjectiveIds],
+          solutionSource,
+        },
+      };
+    };
+    try {
+      for (const objective of problem.objectives) {
+        if (
+          !requiredSolutionReported &&
+          objective.optimality === "best-effort" &&
+          finalValues
+        ) {
+          requiredSolutionReported = true;
+          options?.onRequiredSolution?.({
+            termination: "optimal",
+            selectedVariableIds: selectedVariableIds(finalValues),
+            objectiveValues: new Map(objectiveValues),
+          });
+        }
+        if (!shouldSolveObjective(objective, objectiveValues)) continue;
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+          if (objective.optimality === "best-effort")
+            return timeLimitedResult(objective, "previous-optimal");
+          return {
+            termination: "timed-out",
+            selectedVariableIds: new Set(),
+            objectiveValues,
+            diagnostic: `求解目标 ${objective.id} 前已达到时间上限`,
+          };
+        }
 
-      let passedObjectives = false;
-      try {
-        highs.setParam("time_limit", remainingMs / 1000);
-        highs.setParam("mip_rel_gap", 0);
-        highs.setParam("random_seed", 0);
-        highs.setParam("output_flag", false);
-        highs.setParam("blend_multi_objectives", false);
+        if (finalValues) {
+          const lockedVariableIds = new Set(
+            locks.flatMap((lock) =>
+              lock.objective.terms.map((term) => term.variableId)
+            )
+          );
+          finalValues = normalizeLowerEnvelopeValues(
+            problem,
+            objective,
+            finalValues,
+            columnById,
+            lockedVariableIds
+          );
+          const currentValue = objectiveValue(
+            objective,
+            finalValues,
+            columnById,
+            integralVariableIds
+          );
+          const variableBound = objectiveVariableBound(
+            problem,
+            objective,
+            columnById
+          );
+          if (
+            variableBound !== undefined &&
+            !objective.acceptedGap &&
+            reachesVariableBound(currentValue, variableBound)
+          ) {
+            objectiveValues.set(objective.id, currentValue);
+            locks.push({ objective, value: currentValue });
+            completedObjectiveIds.push(objective.id);
+            continue;
+          }
+        }
+
         if (!modelPassed) {
           highs.passModel(rawModel(problem, emptyObjective, []));
           modelPassed = true;
         } else {
-          const pendingLocks = locks
+          const pendingRows: LinearConstraint[] = locks
             .slice(loadedLockCount)
             .map(objectiveLockConstraint);
-          if (pendingLocks.length) {
-            highs.addRows(rawRows(pendingLocks, columnById));
+          if (pendingRows.length) {
+            highs.addRows(rawRows(pendingRows, columnById));
             loadedLockCount = locks.length;
           }
-          highs.setSolutionValues(finalValues);
+          if (finalValues) highs.setSolutionValues(finalValues);
         }
-        highs.passLinearObjectives(
-          objectives.map((objective, index) => ({
+
+        highs.zeroAllClocks();
+        highs.setParam("time_limit", remainingMs / 1000);
+        highs.setParam("mip_rel_gap", objectiveRelativeGap(objective));
+        highs.setParam("mip_abs_gap", objectiveAbsoluteGap(objective));
+        highs.setParam("random_seed", 0);
+        highs.setParam("output_flag", false);
+        highs.setParam("blend_multi_objectives", false);
+        highs.passLinearObjectives([
+          {
             direction: objective.direction,
             coefficients: objectiveCosts(problem, objective, columnById),
-            priority: objectives.length - index,
+            priority: 1,
             absTolerance: 0,
             relTolerance: 0,
-          }))
-        );
-        passedObjectives = true;
-        const result = await highs.solve();
-        const termination = solverTermination(result.status);
-        if (termination !== "optimal")
-          return {
-            termination,
-            diagnostic: `分层求解从目标 ${objectives[0]!.id} 开始，结束状态：${result.status}`,
-          };
+          },
+        ]);
 
-        finalValues = highs.getSolutionValues();
-        for (const objective of objectives) {
+        let result: Awaited<ReturnType<typeof highs.solve>>;
+        try {
+          result = await highs.solve();
+        } finally {
+          highs.clearLinearObjectives();
+        }
+        const termination = solverTermination(result.status);
+        if (termination === "optimal") {
+          if (result.solutionStatus !== "feasible")
+            return {
+              termination: "failed",
+              selectedVariableIds: new Set(),
+              objectiveValues,
+              diagnostic: `求解目标 ${objective.id} 已完成但没有有效完整解`,
+            };
+          const gapKind = resultGapKind(objective, result);
+          if (gapKind === "rejected")
+            return {
+              termination: "failed",
+              selectedVariableIds: new Set(),
+              objectiveValues,
+              diagnostic: `求解目标 ${objective.id} 未达到允许的完成范围`,
+            };
+          finalValues = highs.getSolutionValues();
           const value = objectiveValue(
             objective,
             finalValues,
@@ -410,73 +673,73 @@ export class HighsSolver implements SolverPort {
           );
           objectiveValues.set(objective.id, value);
           locks.push({ objective, value });
-        }
-        return null;
-      } finally {
-        if (passedObjectives) highs.clearLinearObjectives();
-      }
-    };
-    try {
-      let cursor = 0;
-      let pending: LexicographicObjective[] = [];
-      while (cursor < problem.objectives.length) {
-        const objective = problem.objectives[cursor]!;
-        if (!objective.solveOnlyWhen) {
-          pending.push(objective);
-          cursor += 1;
+          completedObjectiveIds.push(objective.id);
+          if (gapKind === "accepted")
+            approximatedObjectiveIds.push(objective.id);
+          if (objective.optimality === "best-effort") {
+            options?.onBestEffortSolution?.({
+              termination:
+                gapKind === "accepted" ? "gap-limited-feasible" : "optimal",
+              selectedVariableIds: selectedVariableIds(finalValues),
+              objectiveValues: new Map(objectiveValues),
+              ...(gapKind === "accepted"
+                ? { approximatedObjectiveIds: [...approximatedObjectiveIds] }
+                : {}),
+            });
+          }
           continue;
         }
-        if (!objectiveValues.has(objective.solveOnlyWhen.objectiveId)) {
-          if (!pending.length)
-            throw new Error(
-              `条件目标 ${objective.id} 的前置目标尚未完成分层求解`
-            );
-          const failure = await solveBatch(pending);
-          if (failure)
-            return {
-              ...failure,
-              selectedVariableIds: new Set(),
-              objectiveValues,
-            };
-          pending = [];
-          continue;
-        }
-        if (shouldSolveObjective(objective, objectiveValues))
-          pending.push(objective);
-        cursor += 1;
-      }
 
-      const failure = await solveBatch(pending);
-      if (failure)
+        if (
+          result.status === "timelimit" &&
+          objective.optimality === "best-effort" &&
+          finalValues
+        ) {
+          let solutionSource: "current-incumbent" | "previous-optimal" =
+            "previous-optimal";
+          if (result.solutionStatus === "feasible") {
+            finalValues = highs.getSolutionValues();
+            solutionSource = "current-incumbent";
+          }
+          return timeLimitedResult(objective, solutionSource);
+        }
+
         return {
-          ...failure,
+          termination,
           selectedVariableIds: new Set(),
           objectiveValues,
+          diagnostic: `求解目标 ${objective.id} 结束状态：${result.status}`,
         };
-
-      for (const objective of problem.objectives) {
-        if (objectiveValues.has(objective.id)) continue;
-        objectiveValues.set(
-          objective.id,
-          objectiveValue(
-            objective,
-            finalValues,
-            columnById,
-            integralVariableIds
-          )
-        );
       }
 
+      if (!finalValues)
+        return {
+          termination: "failed",
+          selectedVariableIds: new Set(),
+          objectiveValues,
+          diagnostic: "分层求解没有生成完整解",
+        };
+      completeObjectiveValues(finalValues);
+
       return {
-        termination: "optimal",
-        selectedVariableIds: new Set(
-          problem.variables.flatMap((variable, index) =>
-            variable.type !== "continuous" && finalValues[index]! > 0.5
-              ? [variable.id]
-              : []
-          )
-        ),
+        termination: approximatedObjectiveIds.length
+          ? "gap-limited-feasible"
+          : "optimal",
+        selectedVariableIds: selectedVariableIds(finalValues),
         objectiveValues,
+        ...(approximatedObjectiveIds.length
+          ? {
+              approximatedObjectiveIds,
+              bestEffort: {
+                stoppedAtObjectiveId:
+                  approximatedObjectiveIds[
+                    approximatedObjectiveIds.length - 1
+                  ]!,
+                completedObjectiveIds: [...completedObjectiveIds],
+                solutionSource: "current-incumbent" as const,
+              },
+            }
+          : {}),
       };
     } finally {
       highs.free();

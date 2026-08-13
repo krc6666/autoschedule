@@ -140,7 +140,7 @@ describe("late-shift next-workday cutoff review", () => {
     );
   });
 
-  it("keeps the complete schedule and reports a fallback when every reassignment would widen fatigue spread", async () => {
+  it("gives the earlier safe departure to the protected worker even when ordinary fatigue favors the alternate", async () => {
     const state = cutoffState();
     const assignments = [
       assignment(state, "early", 0, 0, 0),
@@ -156,10 +156,61 @@ describe("late-shift next-workday cutoff review", () => {
       new Set()
     );
 
+    expect(warnings).toEqual([]);
     expect(assignments.find((item) => item.id === "evening")?.staffId).toBe(
+      state.staff[1]!.id
+    );
+  });
+
+  it("keeps the original complete schedule when the only alternate is locked", async () => {
+    const state = cutoffState();
+    const assignments = [
+      assignment(state, "early", 0, 0),
+      assignment(state, "afternoon", 1, 1),
+      assignment(state, "evening", 2, 0),
+    ];
+    const warnings = await reviewLateShiftCutoff(
+      defaultHighsSolver,
+      state,
+      assignments,
+      "2026-08-23",
+      new Set(["afternoon", "early"])
+    );
+    expect(assignments.every((item) => item.staffId)).toBe(true);
+    expect(assignments.find((item) => item.id === "evening")?.staffId).not.toBe(
+      undefined
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  it("keeps strict next-workday targets ahead of cutoff preference", async () => {
+    const state = cutoffState();
+    state.settings.nextWorkdayRecoveryMode = "forbid";
+    state.settings.nextWorkdayRecoveryTargets = [
+      {
+        id: "strict-target",
+        enabled: true,
+        flightNo: "NIGHT300",
+        positionKeyword: "P2",
+      },
+    ];
+    const assignments = [
+      assignment(state, "early", 0, 0),
+      assignment(state, "afternoon", 1, 1),
+      assignment(state, "evening", 2, 0),
+    ];
+    await reviewLateShiftCutoff(
+      defaultHighsSolver,
+      state,
+      assignments,
+      "2026-08-23",
+      new Set()
+    );
+    expect(assignments.find((item) => item.id === "evening")?.staffId).toBe(
+      state.staff[1]!.id
+    );
+    expect(assignments.find((item) => item.id === "evening")?.staffId).not.toBe(
       state.staff[0]!.id
     );
-    expect(warnings.join(" ")).toContain("扩大工时或疲劳差");
-    expect(warnings.join(" ")).toContain("岗位完整性优先");
   });
 });

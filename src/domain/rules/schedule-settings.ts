@@ -14,13 +14,14 @@ export type ScalarScheduleSettingKey = Exclude<
   | "lateShiftRecoveryPositionRules"
   | "mobileSupervisorCoverageRules"
   | "crossWorkdayQualificationReservations"
+  | "crossFlightPriorityPolicies"
   | "latePriorityFlightNumbers"
 >;
 
 export interface ScheduleSettingDefinition {
   key: ScalarScheduleSettingKey;
   label: string;
-  type: "boolean" | "number" | "time";
+  type: "boolean" | "number" | "time" | "mode";
   description: string;
   defaultValue: boolean | number | string;
   min?: number;
@@ -156,6 +157,13 @@ export const SCHEDULE_SETTING_DEFINITIONS: readonly ScheduleSettingDefinition[] 
       defaultValue: true,
     },
     {
+      key: "nextWorkdayRecoveryMode",
+      label: "跨工作日恢复目标强度",
+      type: "mode",
+      description: "优先避开或严格限制次班恢复目标",
+      defaultValue: "prefer",
+    },
+    {
       key: "lateShiftEndTime",
       label: "末班结束界线",
       type: "time",
@@ -240,6 +248,7 @@ function scalarDefaults(): Omit<
   | "lateShiftRecoveryPositionRules"
   | "mobileSupervisorCoverageRules"
   | "crossWorkdayQualificationReservations"
+  | "crossFlightPriorityPolicies"
   | "latePriorityFlightNumbers"
 > {
   return Object.fromEntries(
@@ -266,6 +275,8 @@ function normalizeScalar(
 ): boolean | number | string {
   if (definition.type === "boolean")
     return typeof value === "boolean" ? value : Boolean(fallback);
+  if (definition.type === "mode")
+    return value === "forbid" || value === "prefer" ? value : String(fallback);
   if (definition.type === "time")
     return CLOCK_PATTERN.test(String(value ?? ""))
       ? String(value)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
-import type { Assignment, Staff } from "../../src/model";
+import type { Assignment, PositionRule, Staff } from "../../src/model";
 import {
   analyzeAutomaticEligibilityPool,
   diagnoseAutomaticAssignmentEligibility,
@@ -318,6 +318,187 @@ describe("assignment eligibility diagnostics", () => {
       diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
         .eligible
     ).toBe(true);
+  });
+
+  it("exempts only a valid afternoon diversion transfer from the global transition gap", () => {
+    const state = createDefaultState();
+    const person: Staff = {
+      ...state.staff[0]!,
+      id: "worker",
+      name: "测试人员",
+      status: "正常" as const,
+      staffType: "常规" as const,
+      nightShift: true,
+    };
+    const sourceFlight = {
+      ...state.flights[0]!,
+      id: "source-flight",
+      flightNo: "AA100",
+      startTime: "21:05",
+      endTime: "23:05",
+    };
+    const targetFlight = {
+      ...state.flights[0]!,
+      id: "target-flight",
+      flightNo: "BB200",
+      startTime: "22:10",
+      endTime: "00:10",
+    };
+    const sourceRule: PositionRule = {
+      ...state.positionRules[0]!,
+      id: "source-rule",
+      flightNo: sourceFlight.flightNo,
+      name: "G09",
+      category: "分流" as const,
+      qualifiedStaffIds: [person.id],
+      earlyReleaseMinutes: 60,
+    };
+    const targetRule = {
+      ...sourceRule,
+      id: "target-rule",
+      flightNo: targetFlight.flightNo,
+      name: "G13",
+      category: "常规" as const,
+      earlyReleaseMinutes: 0,
+    };
+    const sourceAssignment: Assignment = {
+      id: "source-assignment",
+      flightId: sourceFlight.id,
+      flightNo: sourceFlight.flightNo,
+      positionRuleId: sourceRule.id,
+      position: sourceRule.name,
+      staffId: person.id,
+      staffName: person.name,
+      startTime: sourceFlight.startTime,
+      endTime: sourceFlight.endTime,
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const targetAssignment: Assignment = {
+      ...sourceAssignment,
+      id: "target-assignment",
+      flightId: targetFlight.id,
+      flightNo: targetFlight.flightNo,
+      positionRuleId: targetRule.id,
+      position: targetRule.name,
+      staffId: null,
+      staffName: "",
+      startTime: targetFlight.startTime,
+      endTime: targetFlight.endTime,
+      workHours: 2,
+      status: "unfilled",
+    };
+    state.staff = [person];
+    state.flights = [sourceFlight, targetFlight];
+    state.positionRules = [sourceRule, targetRule];
+    state.assignments = [sourceAssignment, targetAssignment];
+    state.settings.minimumRegularTransitionMinutes = 90;
+
+    expect(
+      diagnoseAutomaticAssignmentEligibility({
+        state,
+        assignments: [sourceAssignment],
+        flight: targetFlight,
+        rule: targetRule,
+        person,
+      }).eligible
+    ).toBe(true);
+    expect(
+      diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
+        .eligible
+    ).toBe(true);
+
+    sourceRule.category = "常规";
+    expect(
+      diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
+        .eligible
+    ).toBe(false);
+
+    sourceRule.category = "分流";
+    sourceFlight.startTime = "08:05";
+    sourceFlight.endTime = "10:05";
+    sourceAssignment.startTime = sourceFlight.startTime;
+    sourceAssignment.endTime = sourceFlight.endTime;
+    targetFlight.startTime = "09:10";
+    targetFlight.endTime = "11:10";
+    targetAssignment.startTime = targetFlight.startTime;
+    targetAssignment.endTime = targetFlight.endTime;
+    expect(
+      diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
+        .eligible
+    ).toBe(false);
+
+    sourceFlight.startTime = "13:00";
+    sourceFlight.endTime = "15:00";
+    sourceAssignment.startTime = sourceFlight.startTime;
+    sourceAssignment.endTime = sourceFlight.endTime;
+    targetFlight.startTime = "13:59";
+    targetFlight.endTime = "15:59";
+    targetAssignment.startTime = targetFlight.startTime;
+    targetAssignment.endTime = targetFlight.endTime;
+    expect(
+      diagnoseManualAssignmentEligibility(state, targetAssignment.id, person.id)
+        .eligible
+    ).toBe(false);
+
+    sourceFlight.startTime = "21:05";
+    sourceFlight.endTime = "23:05";
+    sourceAssignment.startTime = sourceFlight.startTime;
+    sourceAssignment.endTime = sourceFlight.endTime;
+    targetFlight.startTime = "22:10";
+    targetFlight.endTime = "00:10";
+    targetAssignment.startTime = targetFlight.startTime;
+    targetAssignment.endTime = targetFlight.endTime;
+
+    targetRule.qualifiedStaffIds = [];
+    expect(
+      diagnoseAutomaticAssignmentEligibility({
+        state,
+        assignments: [sourceAssignment],
+        flight: targetFlight,
+        rule: targetRule,
+        person,
+      }).violations[0]?.code
+    ).toBe("position-qualification");
+
+    targetRule.qualifiedStaffIds = [person.id];
+    person.status = "休假";
+    expect(
+      diagnoseAutomaticAssignmentEligibility({
+        state,
+        assignments: [sourceAssignment],
+        flight: targetFlight,
+        rule: targetRule,
+        person,
+      }).violations[0]?.code
+    ).toBe("staff-unavailable");
+
+    person.status = "正常";
+    person.nightShift = false;
+    expect(
+      diagnoseAutomaticAssignmentEligibility({
+        state,
+        assignments: [sourceAssignment],
+        flight: targetFlight,
+        rule: targetRule,
+        person,
+      }).violations[0]?.code
+    ).toBe("night-shift");
+
+    person.nightShift = true;
+    state.settings.maxDailyHours = 3;
+    expect(
+      diagnoseAutomaticAssignmentEligibility({
+        state,
+        assignments: [sourceAssignment],
+        flight: targetFlight,
+        rule: targetRule,
+        person,
+      }).violations[0]?.code
+    ).toBe("daily-hours");
   });
 
   it("uses one staged diagnosis for filtering and shortage evidence", () => {

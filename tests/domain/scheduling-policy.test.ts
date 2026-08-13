@@ -79,7 +79,6 @@ function priority(
     },
     repeatedPriorityPosition: false,
     repeatedHighFatiguePosition: false,
-    unavoidableLaterTask: false,
     rollingLoadExcess: 0,
     highLoadRecoveryConflict: false,
     latePriorityFrequency: {
@@ -214,7 +213,7 @@ describe("scheduling policy contract", () => {
     }
   });
 
-  it("uses a protected worker before their cutoff but prefers an unprotected worker after the cutoff", () => {
+  it("leaves before-cutoff access to the whole-day model and prefers an unprotected worker after the cutoff", () => {
     const beforeCutoff = priority({
       lateShiftCutoff: {
         disposition: "before-cutoff",
@@ -231,13 +230,11 @@ describe("scheduling policy contract", () => {
     });
     const unprotected = priority();
 
-    expect(compareCandidatePriority(beforeCutoff, unprotected)).toBeLessThan(0);
+    expect(compareCandidatePriority(beforeCutoff, unprotected)).toBe(0);
     expect(compareCandidatePriority(afterCutoff, unprotected)).toBeGreaterThan(
       0
     );
-    expect(firstDifferentCandidateRule(beforeCutoff, unprotected)).toBe(
-      "late-shift-cutoff"
-    );
+    expect(firstDifferentCandidateRule(beforeCutoff, unprotected)).toBeNull();
     expect(firstDifferentCandidateRule(afterCutoff, unprotected)).toBe(
       "late-shift-cutoff"
     );
@@ -261,10 +258,9 @@ describe("scheduling policy contract", () => {
     );
   });
 
-  it("prevents a repeated high-fatigue ordinary position before same-day and workload balancing", () => {
+  it("prevents a repeated high-fatigue ordinary position before workload balancing", () => {
     const repeated = priority({
       repeatedHighFatiguePosition: true,
-      unavoidableLaterTask: false,
       workloadBalance: {
         violatesConfiguredTarget: false,
         todayHoursExcess: 0,
@@ -277,7 +273,6 @@ describe("scheduling policy contract", () => {
     });
     const alternate = priority({
       repeatedHighFatiguePosition: false,
-      unavoidableLaterTask: true,
       workloadBalance: {
         violatesConfiguredTarget: true,
         todayHoursExcess: 10,
@@ -295,7 +290,7 @@ describe("scheduling policy contract", () => {
     );
   });
 
-  it("gives earlier cutoffs and later previous finishes first access to before-cutoff work", () => {
+  it("defers before-cutoff ordering between protected workers to the whole-day model", () => {
     const earlierCutoff = priority({
       lateShiftCutoff: {
         disposition: "before-cutoff",
@@ -318,12 +313,10 @@ describe("scheduling policy contract", () => {
       },
     });
 
-    expect(compareCandidatePriority(earlierCutoff, laterCutoff)).toBeLessThan(
+    expect(compareCandidatePriority(earlierCutoff, laterCutoff)).toBe(0);
+    expect(compareCandidatePriority(laterPreviousFinish, earlierCutoff)).toBe(
       0
     );
-    expect(
-      compareCandidatePriority(laterPreviousFinish, earlierCutoff)
-    ).toBeLessThan(0);
   });
 
   it("registers every candidate priority exactly once", () => {

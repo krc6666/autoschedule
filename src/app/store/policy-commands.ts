@@ -1,5 +1,6 @@
 import {
   addCrossWorkdayQualificationReservation,
+  addCrossFlightPriorityPolicy,
   addDutyPriority,
   addLateShiftRecoveryPositionRule,
   addMobileSupervisorCoverageRule,
@@ -8,12 +9,14 @@ import {
   applySchedulePolicy,
   deleteDutyPriority,
   deleteCrossWorkdayQualificationReservation,
+  deleteCrossFlightPriorityPolicy,
   deleteLateShiftRecoveryPositionRule,
   deleteMobileSupervisorCoverageRule,
   deleteNextWorkdayRecoveryTarget,
   deleteTransitionPolicy,
   moveDutyPriority,
   moveCrossWorkdayQualificationReservation,
+  moveCrossFlightPriorityPolicy,
   updatePolicyEntityField,
   type PolicyValue,
   type SchedulePolicyInput,
@@ -32,14 +35,19 @@ export function createPolicyCommands(command: StateCommand) {
     addRecoveryTarget: () => command(addNextWorkdayRecoveryTarget),
     addCrossWorkdayReservation: () =>
       command(addCrossWorkdayQualificationReservation),
+    addCrossFlightPriority: () => command(addCrossFlightPriorityPolicy),
     deleteRecoveryTarget: (id: string) =>
       command((state) => deleteNextWorkdayRecoveryTarget(state, id)),
     deleteCrossWorkdayReservation: (id: string) =>
       command((state) => deleteCrossWorkdayQualificationReservation(state, id)),
+    deleteCrossFlightPriority: (id: string) =>
+      command((state) => deleteCrossFlightPriorityPolicy(state, id)),
     moveCrossWorkdayReservation: (id: string, direction: -1 | 1) =>
       command((state) =>
         moveCrossWorkdayQualificationReservation(state, id, direction)
       ),
+    moveCrossFlightPriority: (id: string, direction: -1 | 1) =>
+      command((state) => moveCrossFlightPriorityPolicy(state, id, direction)),
     addLateShiftPosition: () => command(addLateShiftRecoveryPositionRule),
     deleteLateShiftPosition: (id: string) =>
       command((state) => deleteLateShiftRecoveryPositionRule(state, id)),

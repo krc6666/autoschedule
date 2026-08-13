@@ -212,6 +212,12 @@ const RULE_EXECUTION: Readonly<
       execute: diagnoseMinimumFlightTransitionEligibility,
     },
   ],
+  "strict-next-workday-recovery": [
+    {
+      kind: "daily-model",
+      id: "strict-next-workday-recovery",
+    },
+  ],
   "ke166-supervisor": [
     candidate(compareKe166Reservation),
     {
@@ -271,6 +277,9 @@ const RULE_EXECUTION: Readonly<
       id: "cross-workday-qualification-reservation",
     },
   ],
+  "cross-flight-priority": [
+    { kind: "daily-model", id: "cross-flight-priority" },
+  ],
   "position-transition": [candidate(compareStrictPositionTransition)],
   "late-priority-aggregate-rotation": [
     candidate(compareLatePriorityAggregateRotation),
@@ -298,10 +307,16 @@ const RULE_EXECUTION: Readonly<
     ),
   ],
   "same-day-late-obligation": [
-    candidate(
-      (left, right) =>
-        Number(left.unavoidableLaterTask) - Number(right.unavoidableLaterTask)
-    ),
+    {
+      kind: "daily-model",
+      id: "same-day-late-obligation",
+    },
+  ],
+  "late-shift-position-relief": [
+    {
+      kind: "daily-model",
+      id: "late-shift-position-relief",
+    },
   ],
   "preferred-position-transition": [
     candidate(comparePreferredPositionTransition),

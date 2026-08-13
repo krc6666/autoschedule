@@ -4,7 +4,11 @@ import { createAssignedPosition } from "../assignments/assignment-factory";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
 import { preNoonShortageNote } from "../coverage/schedule-coverage";
 import { makeUnfilled } from "../flights/schedule-position-rules";
-import { isPreNoonFlight } from "../flights/schedule-tasks";
+import {
+  isKe166MobileSupervisor,
+  isPreNoonFlight,
+} from "../flights/schedule-tasks";
+import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import {
   compareCandidateRulePlan,
   firstDifferentCandidateRulePlan,
@@ -15,16 +19,25 @@ import {
 } from "../reviews/cross-workday-qualification-reservation";
 import { violatedPositionTransitionPoliciesForInsertion } from "../reviews/schedule-protection";
 import { intervalsOverlap } from "../shared/time";
+import { schedulingDecision } from "../rules/schedule-rule-contract";
+import { isCrossFlightPriorityAssignment } from "../rules/cross-flight-priority";
 import type {
   DailyScheduleModel,
   DailyScheduleStaffChoice,
 } from "./daily-schedule-model";
+import type { SolverResult } from "../solver/solver-port";
 import type { SchedulePreparation } from "./schedule-preparation";
+import { assertDailyScheduleSafety } from "./daily-schedule-safety";
 
 export interface DailySchedulePlan {
   assignments: Assignment[];
   lockedAssignmentIds: Set<string>;
   warnings: string[];
+  optimizationQuality:
+    | "all-objectives-optimal"
+    | "fairness-gap-limited"
+    | "fairness-time-limited"
+    | "fairness-user-stopped";
 }
 
 function choiceAssignment(choice: DailyScheduleStaffChoice): Assignment {
@@ -200,6 +213,45 @@ function attachVacancyEvidence(
   }
 }
 
+function attachCrossFlightPriorityEvidence(
+  state: AppState,
+  model: DailyScheduleModel,
+  assignments: Assignment[]
+): void {
+  for (const assignment of assignments) {
+    if (
+      assignment.status !== "assigned" ||
+      !assignment.staffId ||
+      !isCrossFlightPriorityAssignment(state, assignment)
+    )
+      continue;
+    const competing = assignments.find(
+      (other) =>
+        other.status === "assigned" &&
+        other.staffId &&
+        other.flightId !== assignment.flightId &&
+        intervalsOverlap(
+          assignment.startTime,
+          assignment.endTime,
+          other.startTime,
+          other.endTime
+        ) &&
+        model.staffChoices.some(
+          (choice) =>
+            choice.task.flight.id === other.flightId &&
+            choice.task.rule.name === other.position &&
+            choice.person.id === assignment.staffId
+        )
+    );
+    if (!competing) continue;
+    const message = `${assignment.staffName}安排在${assignment.flightNo}/${assignment.position}。该岗位与${competing.flightNo}同时争用具备资质人员，因此本次先保障${assignment.flightNo}重点岗位；如有同等或更优替代人员，可在完整安全复核后调整。`;
+    assignment.decisionTrace = [
+      ...(assignment.decisionTrace ?? []),
+      schedulingDecision("cross-flight-priority", "preserved", message),
+    ];
+  }
+}
+
 function decodeAssignments(
   selectedVariableIds: ReadonlySet<string>,
   model: DailyScheduleModel
@@ -239,6 +291,7 @@ export function materializeDailySchedulePlan({
   const assignments = decodeAssignments(selectedVariableIds, model);
   applyConfiguredEarlyReleases(assignments, state);
   attachDecisionTraces(state, date, preparation, model, assignments);
+  attachCrossFlightPriorityEvidence(state, model, assignments);
   attachVacancyEvidence(state, preparation, model, assignments);
   const lockedAssignmentIds = new Set(
     assignments.flatMap((assignment) =>
@@ -266,5 +319,47 @@ export function materializeDailySchedulePlan({
     assignments,
     lockedAssignmentIds,
     warnings,
+    optimizationQuality: "all-objectives-optimal",
   };
+}
+
+export function materializeValidatedDailySchedulePlan(options: {
+  state: AppState;
+  date: string;
+  preparation: SchedulePreparation;
+  model: DailyScheduleModel;
+  selectedVariableIds: ReadonlySet<string>;
+  optimizationQuality: DailySchedulePlan["optimizationQuality"];
+}): DailySchedulePlan {
+  const plan = materializeDailySchedulePlan(options);
+  assertDailyScheduleSafety({
+    state: options.state,
+    date: options.date,
+    assignments: plan.assignments,
+    tasks: options.preparation.tasks.filter(
+      (task) => !isKe166MobileSupervisor(task.flight, task.rule)
+    ),
+    evaluateEligibility: evaluateAutomaticHardConstraints,
+  });
+  return { ...plan, optimizationQuality: options.optimizationQuality };
+}
+
+export function validatedPlanCallback(
+  base: Omit<
+    Parameters<typeof materializeValidatedDailySchedulePlan>[0],
+    "selectedVariableIds" | "optimizationQuality"
+  >,
+  receive: ((plan: DailySchedulePlan) => void) | undefined,
+  quality: (result: SolverResult) => DailySchedulePlan["optimizationQuality"]
+): ((result: SolverResult) => void) | undefined {
+  return receive
+    ? (result) =>
+        receive(
+          materializeValidatedDailySchedulePlan({
+            ...base,
+            selectedVariableIds: result.selectedVariableIds,
+            optimizationQuality: quality(result),
+          })
+        )
+    : undefined;
 }

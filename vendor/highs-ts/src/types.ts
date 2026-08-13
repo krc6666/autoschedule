@@ -12,9 +12,17 @@ export type SolveStatus =
   | "error"
   | "unknown";
 
+/** Official HiGHS primal solution status. */
+export type PrimalSolutionStatus = "none" | "infeasible" | "feasible";
+
 /** Result of solving an optimization problem. */
 export interface SolveResult {
   status: SolveStatus;
+  solutionStatus: PrimalSolutionStatus;
+  /** Official HiGHS relative MIP gap for the completed run. */
+  mipGap?: number;
+  /** Official HiGHS MIP dual bound for the completed run. */
+  mipDualBound?: number;
   objective?: number;
   solution?: Map<string, number>;
 }

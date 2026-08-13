@@ -51,6 +51,96 @@ interface SoftCombinationGroup {
   coefficient: number;
 }
 
+interface EnabledCombinationGroup {
+  group: SoftCombinationGroup;
+  variableId: string;
+}
+
+const INDEPENDENT_CAPACITY_NODE_LIMIT = 10;
+
+function maximumIndependentSetSize(
+  adjacency: readonly ReadonlySet<number>[]
+): number {
+  let maximum = 0;
+  const visit = (index: number, selected: number[]): void => {
+    if (selected.length + adjacency.length - index <= maximum) return;
+    if (index === adjacency.length) {
+      maximum = Math.max(maximum, selected.length);
+      return;
+    }
+    if (selected.every((other) => !adjacency[index]!.has(other))) {
+      selected.push(index);
+      visit(index + 1, selected);
+      selected.pop();
+    }
+    visit(index + 1, selected);
+  };
+  visit(0, []);
+  return maximum;
+}
+
+function highLoadIndependentCapacityConstraints(
+  groups: readonly EnabledCombinationGroup[]
+): LinearConstraint[] {
+  const byStaffId = new Map<string, EnabledCombinationGroup[]>();
+  for (const item of groups) {
+    if (item.group.objectiveId !== "candidate:high-load-recovery") continue;
+    const targetStaffIds = new Set(
+      [...item.group.targets.values()].map((choice) => choice.person.id)
+    );
+    const targetFlightIds = new Set(
+      [...item.group.targets.values()].map((choice) => choice.task.flight.id)
+    );
+    if (targetStaffIds.size !== 1 || targetFlightIds.size !== 1) continue;
+    const staffId = [...targetStaffIds][0]!;
+    const own = byStaffId.get(staffId) ?? [];
+    own.push(item);
+    byStaffId.set(staffId, own);
+  }
+
+  const constraints: LinearConstraint[] = [];
+  for (const [staffId, ownGroups] of byStaffId) {
+    if (
+      ownGroups.length < 2 ||
+      ownGroups.length > INDEPENDENT_CAPACITY_NODE_LIMIT
+    )
+      continue;
+    const targetIds = ownGroups.map(
+      ({ group }) => new Set(group.targets.keys())
+    );
+    const sourceIds = ownGroups.map(
+      ({ group }) => new Set(group.sources.keys())
+    );
+    const adjacency = ownGroups.map(() => new Set<number>());
+    for (let left = 0; left < ownGroups.length; left += 1) {
+      for (let right = left + 1; right < ownGroups.length; right += 1) {
+        const linked =
+          [...targetIds[left]!].some((id) => sourceIds[right]!.has(id)) ||
+          [...targetIds[right]!].some((id) => sourceIds[left]!.has(id));
+        if (!linked) continue;
+        adjacency[left]!.add(right);
+        adjacency[right]!.add(left);
+      }
+    }
+    const alpha = maximumIndependentSetSize(adjacency);
+    if (alpha <= 0 || alpha === ownGroups.length) continue;
+    constraints.push({
+      id: `high-load-independent-capacity:${staffId}`,
+      terms: [
+        ...ownGroups.map(({ variableId }) => ({
+          variableId,
+          coefficient: 1,
+        })),
+        ...[...new Set(targetIds.flatMap((ids) => [...ids]))].map(
+          (variableId) => ({ variableId, coefficient: -1 })
+        ),
+      ],
+      lowerBound: -alpha,
+    });
+  }
+  return constraints;
+}
+
 interface CombinationTaskPair {
   sourceTaskKey: string;
   strictPolicyIds: readonly string[];
@@ -567,10 +657,12 @@ export function buildDailyCombinationModel(
       );
   }
   const enabledVariableIds = new Set<string>();
+  const enabledGroups: EnabledCombinationGroup[] = [];
   for (const group of groups.values()) {
     if (!enabledObjectiveIds.has(group.objectiveId)) continue;
     const targetIds = [...group.targets.keys()];
     const variableId = variableIdBySignature.get(signatureForGroup(group))!;
+    enabledGroups.push({ group, variableId });
     if (enabledVariableIds.has(variableId)) {
       addObjectiveTerm(group.objectiveId, variableId, group.coefficient);
       continue;
@@ -587,6 +679,7 @@ export function buildDailyCombinationModel(
       type: "continuous",
       lowerBound: 0,
       upperBound: 1,
+      lowerEnvelope: true,
     });
     constraints.push(
       ...[...sourcesByFlightId.values()].map((sourceChoices, index) => ({
@@ -607,6 +700,7 @@ export function buildDailyCombinationModel(
     );
     addObjectiveTerm(group.objectiveId, variableId, group.coefficient);
   }
+  constraints.push(...highLoadIndependentCapacityConstraints(enabledGroups));
 
   return {
     variables,
@@ -616,15 +710,46 @@ export function buildDailyCombinationModel(
   };
 }
 
+function objectiveValueStep(
+  terms: readonly { coefficient: number }[]
+): number | undefined {
+  const scale = 1_000_000;
+  const values = terms.map((term) => Math.abs(term.coefficient));
+  if (
+    !values.length ||
+    values.some(
+      (value) =>
+        !Number.isFinite(value) ||
+        value <= 0 ||
+        Math.abs(value * scale - Math.round(value * scale)) > 1e-7
+    )
+  )
+    return undefined;
+  const greatestCommonDivisor = (left: number, right: number): number => {
+    let a = left;
+    let b = right;
+    while (b) [a, b] = [b, a % b];
+    return a;
+  };
+  const scaledStep = values
+    .map((value) => Math.round(value * scale))
+    .reduce(greatestCommonDivisor);
+  return scaledStep > 0 ? scaledStep / scale : undefined;
+}
+
 export function withDailyCombinationObjectives(
   objectives: readonly LexicographicObjective[],
   combination: DailyCombinationModel
 ): LexicographicObjective[] {
-  return objectives.map((objective) => ({
-    ...objective,
-    terms: [
-      ...objective.terms,
-      ...(combination.objectiveTerms.get(objective.id) ?? []),
-    ],
-  }));
+  return objectives.map((objective) => {
+    const combinationTerms = combination.objectiveTerms.get(objective.id) ?? [];
+    const terms = [...objective.terms, ...combinationTerms];
+    return {
+      ...objective,
+      terms,
+      ...(combinationTerms.length && objective.direction === "minimize"
+        ? { objectiveValueStep: objectiveValueStep(terms) }
+        : {}),
+    };
+  });
 }

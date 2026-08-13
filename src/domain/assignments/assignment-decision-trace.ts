@@ -21,6 +21,8 @@ import {
   lateShiftRecoveryRisk,
   positionTransitionInsertionCost,
 } from "../reviews/schedule-protection";
+import { isLateEndingWork } from "../reviews/cross-day-recovery";
+import { latePriorityFlightInScope } from "../statistics/late-priority-flight-scope";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import { assignmentWarningMessage } from "../reviews/schedule-warning-message";
 import {
@@ -202,6 +204,62 @@ function appendProtectionFallbacks(
   );
 }
 
+function appendLateShiftPositionReliefDecision(
+  trace: SchedulingDecision[],
+  context: AssignmentDecisionTraceContext
+): void {
+  const { state, assignments, task, selected, runFacts } = context;
+  if (
+    !state.settings.lateShiftRecoveryEnabled ||
+    !runFacts.crossDayRecovery.previousWorkday.scopedProtectedStaffIds.has(
+      selected.id
+    ) ||
+    !latePriorityFlightInScope(
+      state.settings.latePriorityFlightNumbers,
+      task.flight.flightNo
+    ) ||
+    !isLateEndingWork(task.flight, state)
+  )
+    return;
+  const previousLate =
+    runFacts.crossDayRecovery.previousWorkday.protectedRecords
+      .filter(
+        (record) =>
+          record.staffId === selected.id &&
+          latePriorityFlightInScope(
+            state.settings.latePriorityFlightNumbers,
+            record.flightNo
+          )
+      )
+      .map((record) => `${record.flightNo}/${record.position}`)
+      .join("、");
+  const assignedLateFatigues = assignments
+    .filter(
+      (assignment) =>
+        assignment.staffId === selected.id &&
+        latePriorityFlightInScope(
+          state.settings.latePriorityFlightNumbers,
+          assignment.flightNo
+        ) &&
+        isLateEndingWork(assignment, state)
+    )
+    .map((assignment) => assignment.fatiguePoints);
+  const minimumFatigue = Math.min(
+    task.rule.fatiguePoints,
+    ...assignedLateFatigues
+  );
+  const isLightest = task.rule.fatiguePoints <= minimumFatigue;
+  trace.push(
+    schedulingDecision(
+      "late-shift-position-relief",
+      isLightest ? "selected" : "fallback",
+      isLightest
+        ? `${selected.name}上一班承担${previousLate || "已勾选末班重点岗位"}；本班晚班必须工作，已优先选择${task.flight.flightNo}/${task.rule.name}（${task.rule.fatiguePoints}疲劳点）`
+        : `${selected.name}上一班承担${previousLate || "已勾选末班重点岗位"}；本班仍承担${task.flight.flightNo}/${task.rule.name}，更轻岗位未形成完整安全方案或被更高优先级规则占用`
+    )
+  );
+}
+
 function appendDecisiveRule(
   trace: SchedulingDecision[],
   context: AssignmentDecisionTraceContext
@@ -279,6 +337,7 @@ export function buildAssignmentDecisionTrace(
   const trace: SchedulingDecision[] = [];
   appendReservedAssignmentDecisions(trace, context);
   appendProtectionFallbacks(trace, context);
+  appendLateShiftPositionReliefDecision(trace, context);
   appendDecisiveRule(trace, context);
   appendCrossWorkdayFallback(trace, context);
   return trace;

@@ -41,6 +41,54 @@ function latestAssignedEnd(
   return ends.length ? Math.max(...ends) : -1;
 }
 
+function cutoffProtectionOrder(
+  state: AppState,
+  assignments: readonly Assignment[],
+  date: string,
+  facts?: ScheduleRunFacts
+): string[] {
+  const byStaff = new Map<
+    string,
+    ReturnType<typeof nextWorkdayCutoffProtection>
+  >();
+  for (const assignment of assignments) {
+    if (!assignment.staffId) continue;
+    const protection = nextWorkdayCutoffProtection(
+      state,
+      assignment.staffId,
+      date,
+      facts?.crossDayRecovery
+    );
+    if (protection) byStaff.set(assignment.staffId, protection);
+  }
+  return [...byStaff.entries()]
+    .sort(
+      ([leftId, left], [rightId, right]) =>
+        left!.cutoffMinutes - right!.cutoffMinutes ||
+        right!.previousEndMinutes - left!.previousEndMinutes ||
+        leftId.localeCompare(rightId)
+    )
+    .map(([staffId]) => staffId);
+}
+
+function protectedEndVector(
+  assignments: readonly Assignment[],
+  staffOrder: readonly string[]
+): number[] {
+  return staffOrder.map((staffId) => latestAssignedEnd(assignments, staffId));
+}
+
+function compareVectors(
+  left: readonly number[],
+  right: readonly number[]
+): number {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (left[index] ?? -1) - (right[index] ?? -1);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
 function plannedAssignments(
   state: AppState,
   assignments: readonly Assignment[],
@@ -112,6 +160,16 @@ export async function reviewLateShiftCutoff(
   if (!state.settings.lateShiftRecoveryEnabled) return [];
   const warnings: string[] = [];
   const reviewed = new Set<string>();
+  const protectedStaffOrder = cutoffProtectionOrder(
+    state,
+    assignments,
+    date,
+    facts
+  );
+  const protectedEndBefore = protectedEndVector(
+    assignments,
+    protectedStaffOrder
+  );
   const protectedAssignments = assignments
     .filter(
       (assignment) => !isRotationLocked(state, assignment, lockedAssignmentIds)
@@ -166,12 +224,22 @@ export async function reviewLateShiftCutoff(
       state,
       assignments,
       primary,
-      movableAssignments: rotationCandidateAssignments(
-        assignments,
-        primary,
-        state,
-        lockedAssignmentIds
-      ).filter((assignment) => !reviewed.has(assignment.id)),
+      movableAssignments: [
+        ...new Map(
+          protectedAssignments
+            .flatMap((protectedAssignment) => [
+              protectedAssignment,
+              ...rotationCandidateAssignments(
+                assignments,
+                protectedAssignment,
+                state,
+                lockedAssignmentIds
+              ),
+            ])
+            .filter((assignment) => !reviewed.has(assignment.id))
+            .map((assignment) => [assignment.id, assignment] as const)
+        ).values(),
+      ],
       date,
       review: "recovery",
       facts,
@@ -184,12 +252,27 @@ export async function reviewLateShiftCutoff(
           facts?.crossDayRecovery
         ),
       validateChanges: (changes) =>
+        compareVectors(
+          protectedEndVector(
+            plannedAssignments(state, assignments, changes),
+            protectedStaffOrder
+          ),
+          protectedEndBefore
+        ) < 0 &&
         latestAssignedEnd(
           plannedAssignments(state, assignments, changes),
           protectedStaffId
         ) < originalLatestEnd
           ? []
           : ["整体重排后受保护人员的最终下班时间没有提前"],
+      leadingObjectives: protectedStaffOrder.map((staffId) => ({
+        id: `late-shift-cutoff:${staffId}:final-end`,
+        direction: "minimize" as const,
+        coefficient: ({ assignment, person }) =>
+          person.id === staffId ? operationalEnd(assignment) : 0,
+      })),
+      allowWorkloadBalanceRegression: true,
+      allowCutoffProtectionRegression: true,
       maxParticipants: 3,
     });
     if (result.changes) {

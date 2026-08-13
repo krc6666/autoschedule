@@ -31,16 +31,27 @@ import {
 } from "../reviews/workload-balance";
 import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
 import { LATE_PRIORITY_FREQUENCY_ORDER } from "../reviews/late-priority-policy";
+import {
+  isLateEndingWork,
+  isStrictNextWorkdayRecoveryTarget,
+} from "../reviews/cross-day-recovery";
+import { latePriorityFlightInScope } from "../statistics/late-priority-flight-scope";
 import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
 import {
   buildDailyCombinationModel,
   withDailyCombinationObjectives,
 } from "./daily-combination-model";
+import { buildSameDayLateObligationModel } from "./daily-same-day-late-obligation-model";
 import {
   crossWorkdayReservationTargets,
   crossWorkdayReservationTargetsOverlap,
   taskConsumesCrossWorkdayReservation,
 } from "../reviews/cross-workday-qualification-reservation";
+import {
+  crossFlightPriorityPolicyMatches,
+  enabledCrossFlightPriorityPolicies,
+} from "../rules/cross-flight-priority";
+import { intervalsOverlap } from "../shared/time";
 
 export interface DailyScheduleStaffChoice {
   readonly id: string;
@@ -48,6 +59,7 @@ export interface DailyScheduleStaffChoice {
   readonly person: Staff;
   readonly priority: CandidatePriority;
   readonly workHours: number;
+  readonly lateShiftPositionRelief: boolean;
 }
 
 export interface DailyScheduleVacancyChoice {
@@ -72,6 +84,57 @@ interface CrossWorkdayReservationModel {
   variables: Array<SolverProblem["variables"][number]>;
   constraints: LinearConstraint[];
   objectives: LexicographicObjective[];
+}
+
+function crossFlightPriorityObjectives(
+  state: AppState,
+  tasks: readonly AssignmentTask[],
+  choices: readonly DailyScheduleStaffChoice[]
+): LexicographicObjective[] {
+  return enabledCrossFlightPriorityPolicies(state).flatMap((policy) => {
+    const protectedTasks = tasks.filter((task) =>
+      crossFlightPriorityPolicyMatches(policy, {
+        flightNo: task.flight.flightNo,
+        position: task.rule.name,
+      })
+    );
+    if (!protectedTasks.length) return [];
+    const terms = choices.flatMap((choice) => {
+      if (
+        crossFlightPriorityPolicyMatches(policy, {
+          flightNo: choice.task.flight.flightNo,
+          position: choice.task.rule.name,
+        })
+      )
+        return [];
+      const canProtectOverlappingTask = choices.some(
+        (protectedChoice) =>
+          protectedChoice.person.id === choice.person.id &&
+          protectedTasks.some(
+            (task) =>
+              task.key === protectedChoice.task.key &&
+              intervalsOverlap(
+                choice.task.flight.startTime,
+                choice.task.flight.endTime,
+                task.flight.startTime,
+                task.flight.endTime
+              )
+          )
+      );
+      return canProtectOverlappingTask
+        ? [{ variableId: choice.id, coefficient: 1 }]
+        : [];
+    });
+    return terms.length
+      ? [
+          {
+            id: `cross-flight-priority:${policy.id}`,
+            direction: "minimize" as const,
+            terms,
+          },
+        ]
+      : [];
+  });
 }
 
 export interface BuildDailyScheduleModelOptions {
@@ -145,12 +208,34 @@ function staffChoicesForTasks(
       ])
     );
     for (const person of candidates) {
+      if (
+        isStrictNextWorkdayRecoveryTarget(state, {
+          flightNo: task.flight.flightNo,
+          position: task.rule.name,
+          remark: task.rule.remark,
+        }) &&
+        preparation.runFacts.crossDayRecovery.previousWorkday.protectedStaffIds.has(
+          person.id
+        )
+      ) {
+        continue;
+      }
       choices.push({
         id: `staff:${choices.length}`,
         task,
         person,
         priority: priorities.get(person.id)!,
         workHours: minimumChoiceHours(task),
+        lateShiftPositionRelief:
+          state.settings.lateShiftRecoveryEnabled &&
+          preparation.runFacts.crossDayRecovery.previousWorkday.scopedProtectedStaffIds.has(
+            person.id
+          ) &&
+          latePriorityFlightInScope(
+            state.settings.latePriorityFlightNumbers,
+            task.flight.flightNo
+          ) &&
+          isLateEndingWork(task.flight, state),
       });
     }
   }
@@ -239,7 +324,8 @@ function dutyModel(
 function assignmentConstraints(
   tasks: readonly AssignmentTask[],
   staffChoices: readonly DailyScheduleStaffChoice[],
-  vacancyChoices: readonly DailyScheduleVacancyChoice[]
+  vacancyChoices: readonly DailyScheduleVacancyChoice[],
+  strictRecoveryTargetTaskKeys: ReadonlySet<string>
 ): LinearConstraint[] {
   return tasks.map((task, index) => ({
     id: `assignment:${index}`,
@@ -253,7 +339,11 @@ function assignmentConstraints(
         )!.id,
         coefficient: 1,
       },
-    ],
+    ].filter((term) =>
+      term.variableId.startsWith("vacancy:")
+        ? !strictRecoveryTargetTaskKeys.has(task.key)
+        : true
+    ),
     lowerBound: 1,
     upperBound: 1,
   }));
@@ -586,27 +676,32 @@ function workloadModel(
       id: "candidate:workload-balance:target",
       direction: "minimize",
       terms: [{ variableId: violationId, coefficient: 1 }],
+      optimality: "best-effort",
     },
     {
       id: "candidate:workload-balance:today-hours-excess",
       direction: "minimize",
       terms: [{ variableId: today.excessId, coefficient: 1 }],
+      optimality: "best-effort",
     },
     {
       id: "candidate:workload-balance:rolling-hours-excess",
       direction: "minimize",
       terms: [{ variableId: rolling.excessId, coefficient: 1 }],
+      optimality: "best-effort",
     },
     ...[
       {
         id: "candidate:workload-balance:today-fatigue-excess",
         direction: "minimize" as const,
         terms: [{ variableId: fatigue.excessId, coefficient: 1 }],
+        optimality: "best-effort" as const,
       },
       {
         id: "candidate:workload-balance:today-hours-spread",
         direction: "minimize" as const,
         terms: [{ variableId: today.spreadId, coefficient: 1 }],
+        optimality: "best-effort" as const,
         solveOnlyWhen: {
           objectiveId: "candidate:workload-balance:today-hours-excess",
           equals: 0,
@@ -616,6 +711,7 @@ function workloadModel(
         id: "candidate:workload-balance:rolling-hours-spread",
         direction: "minimize" as const,
         terms: [{ variableId: rolling.spreadId, coefficient: 1 }],
+        optimality: "best-effort" as const,
         solveOnlyWhen: {
           objectiveId: "candidate:workload-balance:rolling-hours-excess",
           equals: 0,
@@ -625,6 +721,7 @@ function workloadModel(
         id: "candidate:workload-balance:today-fatigue-spread",
         direction: "minimize" as const,
         terms: [{ variableId: fatigue.spreadId, coefficient: 1 }],
+        optimality: "best-effort" as const,
         solveOnlyWhen: {
           objectiveId: "candidate:workload-balance:today-fatigue-excess",
           equals: 0,
@@ -662,6 +759,19 @@ function candidateRuleObjectives(
   workedVariableIds: ReadonlyMap<string, string>
 ): LexicographicObjective[] {
   const objectives = rulePlan.flatMap<LexicographicObjective>((rule) => {
+    if (rule.id === "late-shift-cutoff") {
+      return [
+        {
+          id: `candidate:${rule.id}`,
+          direction: "minimize",
+          terms: choices.flatMap((choice) =>
+            choice.priority.lateShiftCutoff.disposition === "after-cutoff"
+              ? [{ variableId: choice.id, coefficient: 1 }]
+              : []
+          ),
+        },
+      ];
+    }
     if (rule.id === "staff-coverage") {
       return [
         {
@@ -774,6 +884,10 @@ function candidateRuleObjectives(
       return {
         id: variant.id,
         direction: "minimize" as const,
+        optimality:
+          rule.id === "historical-fatigue"
+            ? ("best-effort" as const)
+            : ("required" as const),
         terms: choices.flatMap((choice) => {
           const coefficient = rankByChoiceId.get(choice.id) ?? 0;
           return coefficient ? [{ variableId: choice.id, coefficient }] : [];
@@ -781,10 +895,7 @@ function candidateRuleObjectives(
       };
     });
   });
-  const deferredIds = new Set([
-    "candidate:scarce-qualification",
-    "candidate:same-day-late-obligation",
-  ]);
+  const deferredIds = new Set(["candidate:scarce-qualification"]);
   const deferred = objectives.filter((objective) =>
     deferredIds.has(objective.id)
   );
@@ -799,6 +910,22 @@ function candidateRuleObjectives(
     ...ordered.slice(0, coverageIndex + 1),
     ...deferred,
     ...ordered.slice(coverageIndex + 1),
+  ];
+}
+
+function insertSameDayLateObligationObjectives(
+  objectives: readonly LexicographicObjective[],
+  insertedObjectives: readonly LexicographicObjective[]
+): LexicographicObjective[] {
+  if (!insertedObjectives.length) return [...objectives];
+  const insertionIndex = objectives.findIndex(
+    (item) => item.id === "candidate:preferred-position-transition"
+  );
+  const index = insertionIndex < 0 ? objectives.length : insertionIndex;
+  return [
+    ...objectives.slice(0, index),
+    ...insertedObjectives,
+    ...objectives.slice(index),
   ];
 }
 
@@ -818,11 +945,70 @@ function simplifyLexicographicObjectives(
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([variableId, coefficient]) => ({ variableId, coefficient }));
     if (!terms.length) return [];
-    return [{ ...objective, terms }];
+    return [
+      {
+        ...objective,
+        terms,
+        optimality: objective.optimality ?? "required",
+      },
+    ];
   });
   const first = simplified[0];
   if (!first) throw new Error("当天整体排班没有可执行的求解目标");
   return [first, ...simplified.slice(1)];
+}
+
+const BEST_EFFORT_RELATIVE_GAP = 0.05;
+const BEST_EFFORT_OBJECTIVE_PREFIXES = [
+  "candidate:late-shift-recovery",
+  "candidate:late-shift-cutoff",
+  "candidate:high-fatigue-position-consecutive",
+  "candidate:same-day-late-obligation",
+  "candidate:late-shift-position-relief",
+  "candidate:preferred-position-transition",
+  "candidate:staff-coverage",
+  "candidate:rolling-load",
+  "candidate:high-load-recovery",
+  "candidate:cross-workday-load",
+  "candidate:workload-balance",
+  "candidate:historical-fatigue",
+] as const;
+
+function applyDailyObjectiveOptimality(
+  objectives: readonly LexicographicObjective[]
+): [LexicographicObjective, ...LexicographicObjective[]] {
+  const projected = objectives.map((objective) => {
+    const bestEffort = BEST_EFFORT_OBJECTIVE_PREFIXES.some(
+      (prefix) =>
+        objective.id === prefix || objective.id.startsWith(`${prefix}:`)
+    );
+    if (!bestEffort)
+      return {
+        ...objective,
+        optimality: "required" as const,
+        acceptedGap: undefined,
+      };
+    return {
+      ...objective,
+      optimality: "best-effort" as const,
+      acceptedGap: {
+        relative: BEST_EFFORT_RELATIVE_GAP,
+        ...(objective.objectiveValueStep !== undefined
+          ? { absolute: objective.objectiveValueStep }
+          : {}),
+      },
+    };
+  });
+  const required = projected.filter(
+    (objective) => objective.optimality === "required"
+  );
+  const bestEffort = projected.filter(
+    (objective) => objective.optimality === "best-effort"
+  );
+  const ordered = [...required, ...bestEffort];
+  const first = ordered[0];
+  if (!first) throw new Error("当天整体排班没有可执行的求解目标");
+  return [first, ...ordered.slice(1)];
 }
 
 export function buildDailyScheduleModel({
@@ -846,6 +1032,23 @@ export function buildDailyScheduleModel({
     id: `vacancy:${index}`,
     task,
   }));
+  const strictRecoveryTargetTaskKeys = new Set(
+    scheduledTasks
+      .filter(
+        (task) =>
+          isStrictNextWorkdayRecoveryTarget(state, {
+            flightNo: task.flight.flightNo,
+            position: task.rule.name,
+            remark: task.rule.remark,
+          }) &&
+          task.rule.qualifiedStaffIds.some((staffId) =>
+            preparation.runFacts.crossDayRecovery.previousWorkday.protectedStaffIds.has(
+              staffId
+            )
+          )
+      )
+      .map((task) => task.key)
+  );
   const staffCoverage = staffCoverageModel(state, staffChoices);
   const workload = workloadModel(state, date, preparation, staffChoices);
   const crossWorkdayReservation = crossWorkdayReservationModel(
@@ -859,10 +1062,15 @@ export function buildDailyScheduleModel({
     rulePlan,
     staffCoverage.workedVariableIds
   );
+  const sameDayLateObligation = buildSameDayLateObligationModel(staffChoices);
+  const dailyModelCandidateObjectives = insertSameDayLateObligationObjectives(
+    staticCandidateObjectives,
+    sameDayLateObligation.objectives
+  );
   const combinations = buildDailyCombinationModel(
     state,
     staffChoices,
-    new Set(staticCandidateObjectives.map((objective) => objective.id))
+    new Set(dailyModelCandidateObjectives.map((objective) => objective.id))
   );
   const duty = dutyModel(preparation, staffChoices);
   const maximumEligibleCount = Math.max(
@@ -901,6 +1109,19 @@ export function buildDailyScheduleModel({
         coefficient: 1,
       })),
     },
+    ...enabledCrossFlightPriorityPolicies(state).map((policy) => ({
+      id: `cross-flight-priority-vacancies:${policy.id}`,
+      direction: "minimize" as const,
+      terms: vacancyChoices.map((choice) => ({
+        variableId: choice.id,
+        coefficient: crossFlightPriorityPolicyMatches(policy, {
+          flightNo: choice.task.flight.flightNo,
+          position: choice.task.rule.name,
+        })
+          ? 1
+          : 0,
+      })),
+    })),
     ...(distinctPreNoonScarcityCoefficients.size > 1
       ? [
           {
@@ -934,25 +1155,39 @@ export function buildDailyScheduleModel({
     },
   ];
   const candidateObjectives = replaceWorkloadObjective(
-    withDailyCombinationObjectives(staticCandidateObjectives, combinations),
+    withDailyCombinationObjectives(dailyModelCandidateObjectives, combinations),
     workload.objectives
+  );
+  const crossFlightPriority = crossFlightPriorityObjectives(
+    state,
+    scheduledTasks,
+    staffChoices
   );
   const ke166ReservationObjectives = candidateObjectives.filter(
     (objective) => objective.id === "candidate:ke166-supervisor"
   );
-  const remainingCandidateObjectives = candidateObjectives.filter(
-    (objective) => objective.id !== "candidate:ke166-supervisor"
+  const strictTransitionObjectives = candidateObjectives.filter(
+    (objective) => objective.id === "candidate:position-transition"
   );
-  const objectives = simplifyLexicographicObjectives([
-    ...ke166ReservationObjectives,
-    ...duty.objectives,
-    ...coverageObjectives,
-    ...crossWorkdayReservation.objectives,
-    ...(duty.additionalPriorityObjective?.terms.length
-      ? [duty.additionalPriorityObjective]
-      : []),
-    ...remainingCandidateObjectives,
-  ]);
+  const remainingCandidateObjectives = candidateObjectives.filter(
+    (objective) =>
+      objective.id !== "candidate:ke166-supervisor" &&
+      objective.id !== "candidate:position-transition"
+  );
+  const objectives = applyDailyObjectiveOptimality(
+    simplifyLexicographicObjectives([
+      ...ke166ReservationObjectives,
+      ...duty.objectives,
+      ...coverageObjectives,
+      ...crossWorkdayReservation.objectives,
+      ...strictTransitionObjectives,
+      ...crossFlightPriority,
+      ...(duty.additionalPriorityObjective?.terms.length
+        ? [duty.additionalPriorityObjective]
+        : []),
+      ...remainingCandidateObjectives,
+    ])
+  );
   return {
     staffChoices,
     vacancyChoices,
@@ -962,15 +1197,22 @@ export function buildDailyScheduleModel({
         ...staffChoices.map(({ id }) => ({ id })),
         ...vacancyChoices.map(({ id }) => ({ id })),
         ...staffCoverage.variables,
+        ...sameDayLateObligation.variables,
         ...combinations.variables,
         ...workload.variables,
         ...crossWorkdayReservation.variables,
       ],
       constraints: [
-        ...assignmentConstraints(scheduledTasks, staffChoices, vacancyChoices),
+        ...assignmentConstraints(
+          scheduledTasks,
+          staffChoices,
+          vacancyChoices,
+          strictRecoveryTargetTaskKeys
+        ),
         ...combinations.incompatibilityConstraints,
         ...capacityConstraints(state, staffChoices),
         ...staffCoverage.constraints,
+        ...sameDayLateObligation.constraints,
         ...combinations.constraints,
         ...workload.constraints,
         ...crossWorkdayReservation.constraints,

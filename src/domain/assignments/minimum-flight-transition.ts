@@ -1,5 +1,6 @@
 import type { AppState, Assignment, Flight, PositionRule } from "../../model";
 import { timeToMinutes } from "../shared/time";
+import { isValidDiversionTransfer } from "./assignment-timing";
 
 interface TransitionWork {
   flightId: string;
@@ -99,6 +100,7 @@ function transitionViolation(
   const next = existingFirst ? candidate : existing;
   const previousInterval = existingFirst ? existingInterval : candidateInterval;
   const nextInterval = existingFirst ? candidateInterval : existingInterval;
+  if (isValidDiversionTransfer(previous, previous.rule, next)) return null;
   const gapMinutes = nextInterval.start - previousInterval.end;
   if (gapMinutes < 0 || gapMinutes >= requiredMinutes) return null;
   return {

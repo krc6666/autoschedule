@@ -1,5 +1,6 @@
 import type {
   CrossWorkdayQualificationReservation,
+  CrossFlightPriorityPolicy,
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
@@ -12,6 +13,7 @@ const CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 const DEFAULT_STRUCTURED_POLICIES: StructuredSchedulePolicies = {
   crossWorkdayQualificationReservations: [],
+  crossFlightPriorityPolicies: [],
   lateShiftRecoveryPositionRules: [
     {
       id: "late-recovery-supervisor",
@@ -283,6 +285,31 @@ function normalizeCrossWorkdayReservations(
     });
 }
 
+function normalizeCrossFlightPriorityPolicies(
+  value: unknown,
+  fallback: CrossFlightPriorityPolicy[]
+): CrossFlightPriorityPolicy[] {
+  return sourceArray(value, fallback)
+    .filter((item) => item && typeof item === "object")
+    .map((item, index) => {
+      const policy = item as Partial<CrossFlightPriorityPolicy>;
+      return {
+        id:
+          String(policy.id ?? "").trim() ||
+          `cross-flight-priority-${index + 1}`,
+        enabled: policy.enabled !== false,
+        flightNo: String(policy.flightNo ?? "")
+          .trim()
+          .toUpperCase(),
+        positions: Array.isArray(policy.positions)
+          ? policy.positions
+              .map((position) => String(position).trim())
+              .filter(Boolean)
+          : [],
+      };
+    });
+}
+
 export function normalizeStructuredPolicies(
   input: Partial<StructuredSchedulePolicies>,
   fallback = createDefaultStructuredPolicies()
@@ -311,6 +338,10 @@ export function normalizeStructuredPolicies(
     crossWorkdayQualificationReservations: normalizeCrossWorkdayReservations(
       input.crossWorkdayQualificationReservations,
       fallback.crossWorkdayQualificationReservations
+    ),
+    crossFlightPriorityPolicies: normalizeCrossFlightPriorityPolicies(
+      input.crossFlightPriorityPolicies,
+      fallback.crossFlightPriorityPolicies
     ),
   };
 }

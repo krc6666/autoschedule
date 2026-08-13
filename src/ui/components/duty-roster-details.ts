@@ -13,6 +13,7 @@ import {
 } from "../projections/duty-roster-page-model";
 import { dispatchUiCommand } from "../events/ui-command";
 import { LightDomElement } from "./light-dom-element";
+import { dynamicSelectValue } from "./dynamic-select";
 
 export class DutyRosterDetailsElement extends LightDomElement {
   static override properties = {
@@ -342,13 +343,16 @@ export class DutyRosterDetailsElement extends LightDomElement {
     label: string
   ) {
     return html`<select
+      ${dynamicSelectValue(selectedId ?? "")}
       class="form-select form-select-sm"
       aria-label="${row.date} ${label}"
       .value=${selectedId ?? ""}
       @change=${(event: Event) => dispatchUiCommand(this, { type: "update-duty-roster", date: row.date, slot, staffId: (event.currentTarget as HTMLSelectElement).value })}
     >
       <option value="">未配置</option>
-      ${staff.map((person) => html`<option .value=${person.id}>${person.name}</option>`)}
+      ${staff.map(
+        (person) => html`<option .value=${person.id}>${person.name}</option>`
+      )}
     </select>`;
   }
 

@@ -104,7 +104,11 @@ export async function optimizeReassignment(
       return {
         changes: null,
         attemptedReasons: [...new Set(attemptedReasons)],
-        termination: result.termination,
+        termination:
+          result.termination === "time-limited-feasible" ||
+          result.termination === "gap-limited-feasible"
+            ? "failed"
+            : result.termination,
       };
     }
     const decodedChanges = decodeReassignmentChanges(
@@ -128,6 +132,9 @@ export async function optimizeReassignment(
         frequencyFacts: options.frequencyFacts,
         permittedConcurrentAssignmentIds,
         latePriorityFatigueRelief: options.latePriorityFatigueRelief,
+        allowWorkloadBalanceRegression: options.allowWorkloadBalanceRegression,
+        allowCutoffProtectionRegression:
+          options.allowCutoffProtectionRegression,
       }),
       ...(options.validateChanges?.(changes) ?? []),
     ];

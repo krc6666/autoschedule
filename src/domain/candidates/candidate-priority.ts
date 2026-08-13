@@ -39,7 +39,6 @@ import {
   isHighFatigueOrdinaryRotationPosition,
   isPriorityRotationPosition,
 } from "../reviews/position-rotation-policy";
-import { timeToMinutes } from "../shared/time";
 import { intervalsOverlap } from "../shared/time";
 import { isKe166MobileSupervisor } from "../flights/schedule-tasks";
 import {
@@ -59,7 +58,6 @@ export const CANDIDATE_PRIORITY_ORDER = [
   "late-shift-recovery",
   "late-shift-cutoff",
   "high-fatigue-position-consecutive",
-  "same-day-late-obligation",
   "preferred-position-transition",
   "staff-coverage",
   "rolling-load",
@@ -82,7 +80,6 @@ export interface CandidatePriority {
   lateShiftCutoff: LateShiftCutoffPriority;
   repeatedPriorityPosition: boolean;
   repeatedHighFatiguePosition: boolean;
-  unavoidableLaterTask: boolean;
   rollingLoadExcess: number;
   highLoadRecoveryConflict: boolean;
   latePriorityFrequency: LatePriorityFrequencyProfile;
@@ -156,33 +153,20 @@ export function compareLateShiftRecovery(
   );
 }
 
-const CUTOFF_DISPOSITION_ORDER: Readonly<
-  Record<CandidatePriority["lateShiftCutoff"]["disposition"], number>
-> = {
-  "before-cutoff": 0,
-  unprotected: 1,
-  "after-cutoff": 2,
-};
-
 export function compareLateShiftCutoff(
   left: CandidatePriority,
   right: CandidatePriority
 ): number {
-  const disposition =
-    CUTOFF_DISPOSITION_ORDER[left.lateShiftCutoff.disposition] -
-    CUTOFF_DISPOSITION_ORDER[right.lateShiftCutoff.disposition];
-  if (disposition) return disposition;
+  const leftAfterCutoff = left.lateShiftCutoff.disposition === "after-cutoff";
+  const rightAfterCutoff = right.lateShiftCutoff.disposition === "after-cutoff";
+  if (leftAfterCutoff !== rightAfterCutoff)
+    return Number(leftAfterCutoff) - Number(rightAfterCutoff);
+  if (!leftAfterCutoff) return 0;
   const leftCutoff = left.lateShiftCutoff.cutoffMinutes ?? 0;
   const rightCutoff = right.lateShiftCutoff.cutoffMinutes ?? 0;
   const leftPreviousEnd = left.lateShiftCutoff.previousEndMinutes ?? 0;
   const rightPreviousEnd = right.lateShiftCutoff.previousEndMinutes ?? 0;
-  if (left.lateShiftCutoff.disposition === "before-cutoff") {
-    return leftCutoff - rightCutoff || rightPreviousEnd - leftPreviousEnd;
-  }
-  if (left.lateShiftCutoff.disposition === "after-cutoff") {
-    return rightCutoff - leftCutoff || leftPreviousEnd - rightPreviousEnd;
-  }
-  return 0;
+  return rightCutoff - leftCutoff || leftPreviousEnd - rightPreviousEnd;
 }
 
 export function compareWorkloadBalance(
@@ -396,12 +380,6 @@ export function buildCandidatePriority(
     workloadBalanceLoads,
   } = context;
   const { flight, rule, key: taskKey } = task;
-  const operationalMinutes = (value: string): number => {
-    const minutes = timeToMinutes(value);
-    return minutes < timeToMinutes(state.settings.nightEnd)
-      ? minutes + 24 * 60
-      : minutes;
-  };
   return {
     ke166ReservationConflict: tasks.some(
       (futureTask) =>
@@ -505,19 +483,6 @@ export function buildCandidatePriority(
         date,
         runFacts.scheduleFrequency
       ) > 0,
-    unavoidableLaterTask:
-      isPriorityRotationPosition(rule) &&
-      tasks.some((futureTask) => {
-        if (
-          processedTasks.has(futureTask.key) ||
-          futureTask.key === taskKey ||
-          operationalMinutes(futureTask.flight.startTime) <
-            operationalMinutes(flight.endTime) ||
-          !eligibleStaffIds.get(futureTask.key)?.has(person.id)
-        )
-          return false;
-        return (eligibleCounts.get(futureTask.key) ?? 0) === 1;
-      }),
     rollingLoadExcess: rollingLoadCost(
       assignments,
       person.id,

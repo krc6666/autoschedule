@@ -179,6 +179,94 @@ describe("schedule feedback", () => {
     ).toContain(`${worker!.name} 未落实（TR 一号`);
   });
 
+  it("does not report a valid diversion transfer as a 90-minute violation", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    const baseRule = state.positionRules[0]!;
+    state.staff = [person];
+    state.flights = [
+      {
+        id: "source",
+        flightNo: "AA100",
+        startTime: "21:05",
+        endTime: "23:05",
+        bookedPassengers: 100,
+        positions: ["G09"],
+        remark: "",
+      },
+      {
+        id: "target",
+        flightNo: "BB200",
+        startTime: "22:10",
+        endTime: "00:10",
+        bookedPassengers: 100,
+        positions: ["G13"],
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...baseRule,
+        id: "source-rule",
+        flightNo: "AA100",
+        name: "G09",
+        category: "分流",
+        earlyReleaseMinutes: 60,
+        qualifiedStaffIds: [person.id],
+      },
+      {
+        ...baseRule,
+        id: "target-rule",
+        flightNo: "BB200",
+        name: "G13",
+        category: "常规",
+        earlyReleaseMinutes: 0,
+        qualifiedStaffIds: [person.id],
+      },
+    ];
+    state.assignments = [
+      {
+        id: "source-assignment",
+        flightId: "source",
+        flightNo: "AA100",
+        positionRuleId: "source-rule",
+        position: "G09",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:05",
+        endTime: "22:10",
+        workHours: 65 / 60,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "target-assignment",
+        flightId: "target",
+        flightNo: "BB200",
+        positionRuleId: "target-rule",
+        position: "G13",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "22:10",
+        endTime: "00:10",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    state.settings.minimumRegularTransitionMinutes = 90;
+
+    const feedback = buildScheduleFeedback(state, "2026-10-03").find(
+      (item) => item.key === "connections"
+    )!;
+
+    expect(feedback.text).not.toContain("少于要求的 90 分钟");
+  });
+
   it("reports an enabled position-transition rule when its minimum gap is not met", () => {
     const state = createDefaultState();
     const person = state.staff[0]!;

@@ -1,8 +1,42 @@
 import { describe, expect, it } from "vitest";
+import { HiGHS as NativeHiGHS } from "@autoschedule/highs-ts";
 
 import { HighsSolver } from "../../src/infrastructure/solver/highs-solver";
 
 describe("HiGHS solver adapter", () => {
+  it("exposes clock reset and the official primal solution status", async () => {
+    const highs = await NativeHiGHS.create();
+    try {
+      highs.passModel({
+        numCol: 1,
+        numRow: 1,
+        sense: "minimize",
+        colCost: [1],
+        colLower: [0],
+        colUpper: [1],
+        rowLower: [1],
+        rowUpper: [1],
+        matrix: {
+          format: "row",
+          start: [0, 1],
+          index: [0],
+          value: [1],
+        },
+        integrality: [1],
+      });
+
+      highs.zeroAllClocks();
+      const result = await highs.solve();
+
+      expect(result.status).toBe("optimal");
+      expect(result.solutionStatus).toBe("feasible");
+      expect(result.mipGap).toBe(0);
+      expect(result.mipDualBound).toBe(1);
+    } finally {
+      highs.free();
+    }
+  });
+
   it("keeps native objectives in strict priority order", async () => {
     const solver = new HighsSolver();
     const result = await solver.solve({

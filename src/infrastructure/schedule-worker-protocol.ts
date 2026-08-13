@@ -8,5 +8,6 @@ export interface ScheduleWorkerRequest {
 
 export type ScheduleWorkerResponse =
   | { type: "progress"; stage: ScheduleProgressStage; percent: number }
+  | { type: "safe-result"; result: ScheduleResult }
   | { type: "result"; result: ScheduleResult }
   | { type: "error"; message: string };

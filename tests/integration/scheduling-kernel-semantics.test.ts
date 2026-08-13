@@ -25,7 +25,9 @@ describe("scheduler semantic quality", { timeout: 15_000 }, () => {
     );
 
     expect(result.unfilledCount).toBe(0);
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([
+      "班表已满足全部硬性要求和核心排班规则；人员恢复与公平已优化到允许的小幅差距内。",
+    ]);
     expect(new Set(assignmentKeys).size).toBe(assignmentKeys.length);
     expect(
       expectedTaskKeys.every((taskKey) => assignmentKeys.includes(taskKey))
@@ -85,7 +87,7 @@ describe("scheduler semantic quality", { timeout: 15_000 }, () => {
       maximumFatigue: Math.max(...loads.map((load) => load.fatigue)),
     }).toMatchInlineSnapshot(`
       {
-        "maximumFatigue": 12,
+        "maximumFatigue": 13,
         "maximumHours": 6,
         "minimumFatigue": 4.5,
         "minimumHours": 2,

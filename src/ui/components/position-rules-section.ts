@@ -4,6 +4,7 @@ import type { AppState, PositionRule } from "../../model";
 import { dispatchUiCommand } from "../events/ui-command";
 import { configurationInput, configurationSelect } from "./configuration-field";
 import { LightDomElement } from "./light-dom-element";
+import { dynamicSelectValue } from "./dynamic-select";
 
 const POSITION_CATEGORIES = [
   "常规",
@@ -48,6 +49,7 @@ export class PositionRulesSectionElement extends LightDomElement {
         </div>
         <div class="position-batch-controls">
           <select
+            ${dynamicSelectValue(this.selectedFlight)}
             class="form-select form-select-sm"
             aria-label="新增规则所属航班"
             .value=${this.selectedFlight}
@@ -57,7 +59,10 @@ export class PositionRulesSectionElement extends LightDomElement {
               ).value;
             }}
           >
-            ${flightNumbers.map((flightNo) => html`<option .value=${flightNo}>${flightNo}</option>`)}
+            ${flightNumbers.map(
+              (flightNo) =>
+                html`<option .value=${flightNo}>${flightNo}</option>`
+            )}
           </select>
           <input
             class="form-control form-control-sm"

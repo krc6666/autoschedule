@@ -3,7 +3,10 @@ import type {
   ScheduleWorkerRequest,
   ScheduleWorkerResponse,
 } from "./infrastructure/schedule-worker-protocol";
-import { defaultHighsSolver } from "./infrastructure/solver/highs-solver";
+import {
+  defaultHighsSolver,
+  HighsSolver,
+} from "./infrastructure/solver/highs-solver";
 
 self.onmessage = async (
   event: MessageEvent<ScheduleWorkerRequest>
@@ -11,11 +14,18 @@ self.onmessage = async (
   try {
     const result = await generateSchedule(event.data.state, event.data.date, {
       solver: defaultHighsSolver,
+      checkpointSolver: new HighsSolver(),
       onProgress: (stage, percent) => {
         self.postMessage({
           type: "progress",
           stage,
           percent,
+        } satisfies ScheduleWorkerResponse);
+      },
+      onSafeResult: (safeResult) => {
+        self.postMessage({
+          type: "safe-result",
+          result: safeResult,
         } satisfies ScheduleWorkerResponse);
       },
     });

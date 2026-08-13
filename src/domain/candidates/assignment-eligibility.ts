@@ -145,6 +145,7 @@ function diagnoseAutomaticStaffEligibilityWithTransitionCheck(
     state,
     assignments,
     flight,
+    rule,
     person,
     workHours: options.workHours,
     sameFlightConflict: options.ignoreSameFlightReusable
@@ -260,6 +261,7 @@ export function analyzeAutomaticEligibilityPool({
         state,
         assignments,
         flight,
+        rule,
         person,
       }),
     ])
@@ -406,6 +408,7 @@ export function diagnoseManualAssignmentEligibility(
     state,
     assignments: others,
     flight,
+    rule: factRule,
     person,
     workHours: assignment.workHours,
     sameFlightConflict: reuse

@@ -40,6 +40,8 @@ export interface ReassignmentOptimizationOptions {
     changes: readonly RotationStaffChange[]
   ): readonly RotationStaffChange[];
   leadingObjectives?: readonly ReassignmentChoiceObjective[];
+  allowWorkloadBalanceRegression?: boolean;
+  allowCutoffProtectionRegression?: boolean;
   validateChanges?(changes: readonly RotationStaffChange[]): readonly string[];
   maxParticipants?: number;
   timeoutMs?: number;

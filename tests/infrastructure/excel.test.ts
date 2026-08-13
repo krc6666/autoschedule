@@ -102,6 +102,22 @@ describe("workbook boundary", () => {
     });
   });
 
+  it("round-trips cross-flight priority policies", () => {
+    const state = createDefaultState();
+    state.settings.crossFlightPriorityPolicies = [
+      {
+        id: "priority-1",
+        enabled: true,
+        flightNo: "KE166",
+        positions: ["督导", "H02", "H03", "H04"],
+      },
+    ];
+    const imported = parseWorkbook(buildConfigWorkbook(state), state.staff);
+    expect(imported.settings?.crossFlightPriorityPolicies).toEqual(
+      state.settings.crossFlightPriorityPolicies
+    );
+  });
+
   it("round-trips administrative support position categories", () => {
     const state = createDefaultState();
     state.positionRules[0]!.category = "行政支援";
@@ -219,6 +235,7 @@ describe("workbook boundary", () => {
     state.settings.nightEnd = "05:30";
     state.settings.dutyFatiguePoints = 7.5;
     state.settings.lateShiftEndTime = "23:30";
+    state.settings.nextWorkdayRecoveryMode = "forbid";
     state.settings.teamLeaderConcurrentSupervisionMaxOverlapMinutes = 45;
     state.settings.minimumRegularTransitionMinutes = 90;
     state.settings.earlyDepartureCutoffTime = "11:45";

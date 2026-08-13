@@ -1,4 +1,5 @@
 import type { AppState } from "../../model";
+import { isValidAssignmentDiversionTransfer } from "../assignments/assignment-timing";
 import { dutyFatigueByStaff } from "../duty-roster/roster";
 import { buildStaffLoads } from "../statistics/fatigue";
 import {
@@ -203,7 +204,12 @@ function connectionFeedback(state: AppState): ScheduleFeedbackItem {
     );
   const minimumGapViolation = connections.find(
     (connection) =>
-      connection.gap < state.settings.minimumRegularTransitionMinutes
+      connection.gap < state.settings.minimumRegularTransitionMinutes &&
+      !isValidAssignmentDiversionTransfer(
+        state,
+        connection.previous,
+        connection.next
+      )
   );
   if (minimumGapViolation)
     return feedbackItem(

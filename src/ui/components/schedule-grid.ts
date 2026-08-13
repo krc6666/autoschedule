@@ -174,7 +174,27 @@ export class ScheduleGridElement extends LightDomElement {
             @pointerdown=${() => this.pointerSource(assignment)}
           >
             ${assignment.staffId ? html`<i class="bi bi-grip-vertical assignment-drag-handle" aria-hidden="true"></i>` : null}
-            ${warning ? html`<i class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon" title=${warning.message} aria-label=${warning.ruleId === "position-rotation" ? "连续轮岗异常" : "软约束提醒"}></i>` : null}
+            ${
+              warning
+                ? html`<button
+                    class="schedule-soft-warning-button"
+                    type="button"
+                    title="${warning.message}。点击分析人员调换"
+                    aria-label="分析这个岗位的调换方案"
+                    @click=${() =>
+                dispatchUiCommand(this, {
+                  type: "open-swap-analysis",
+                  assignmentId: assignment.id,
+                })}
+                  >
+                    <i
+                      class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"
+                      title=${warning.message}
+                      aria-hidden="true"
+                    ></i>
+                  </button>`
+                : null
+            }
             <input
               class="schedule-name-input"
               list=${guide ? guideListId : auxiliary ? "" : "schedule-staff-names"}

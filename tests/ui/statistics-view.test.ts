@@ -68,6 +68,36 @@ describe("statistics page", () => {
     ).not.toBeNull();
   });
 
+  it("shows the persisted duty-roster person when it is not the first option", async () => {
+    const state = createDefaultState();
+    const dutyStaff = state.staff.filter(
+      (person) =>
+        person.status === "正常" &&
+        person.staffType === "常规" &&
+        person.dutyQualified
+    );
+    const selected = dutyStaff[1]!;
+    const rosterDate = getMonthlyDutyRoster(state, "2026-07-18")[0]!.date;
+    state.dutyRosterOverrides = [
+      {
+        date: rosterDate,
+        cxPreflightStaffId: null,
+        dutyStaffId: selected.id,
+        standbyStaffIds: [null, null],
+      },
+    ];
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-07-18" });
+
+    expect(
+      element.querySelector<HTMLSelectElement>(
+        `select[aria-label="${rosterDate} 值班人员"]`
+      )?.value
+    ).toBe(selected.id);
+  });
+
   it("summarizes all selected late-priority flights in one table", async () => {
     const state = createDefaultState();
     const staffId = state.staff[0]!.id;

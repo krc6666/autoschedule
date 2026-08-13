@@ -10,6 +10,8 @@ import "./duty-roster-import-dialog";
 import "./flight-query-dialog";
 import "./qualification-dialog";
 import "./template-picker-dialog";
+import "./workbook-import-dialog";
+import "./swap-analysis-dialog";
 
 export class AppDialogElement extends LightDomElement {
   static override properties = {
@@ -63,6 +65,8 @@ export class AppDialogElement extends LightDomElement {
     }
     if (dialog?.kind === "flight-query") return "在线查询航班";
     if (dialog?.kind === "duty-roster-import") return "值班备勤表导入预览";
+    if (dialog?.kind === "workbook-import") return "配置导入预览";
+    if (dialog?.kind === "swap-analysis") return "调整原因分析";
     return "";
   }
 
@@ -90,6 +94,18 @@ export class AppDialogElement extends LightDomElement {
         .model=${this.model}
         .preview=${dialog.preview}
       ></autoschedule-duty-roster-import-dialog>`;
+    if (dialog?.kind === "workbook-import")
+      return html`<autoschedule-workbook-import-dialog
+        class="modal-content-stack"
+        .model=${this.model}
+        .dialog=${dialog}
+      ></autoschedule-workbook-import-dialog>`;
+    if (dialog?.kind === "swap-analysis")
+      return html`<autoschedule-swap-analysis-dialog
+        class="modal-content-stack"
+        .model=${this.model}
+        .dialog=${dialog}
+      ></autoschedule-swap-analysis-dialog>`;
     return nothing;
   }
 

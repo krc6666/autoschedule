@@ -1,6 +1,7 @@
 import type { AppState } from "../model";
 import type {
   CrossWorkdayQualificationReservation,
+  CrossFlightPriorityPolicy,
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   NextWorkdayRecoveryTarget,
@@ -23,7 +24,8 @@ export type PolicyEntity =
   | "late-shift-recovery-position"
   | "cross-workday-reservation"
   | "transition-policy"
-  | "supervisor-coverage";
+  | "supervisor-coverage"
+  | "cross-flight-priority";
 export type PolicyFieldUpdateResult = "not-policy" | "missing" | "saved";
 
 export interface SchedulePolicyInput {
@@ -38,6 +40,7 @@ export interface SchedulePolicyInput {
   positionRotationEnabled: boolean;
   latePriorityFlightNumbers: string[];
   lateShiftRecoveryEnabled: boolean;
+  nextWorkdayRecoveryMode?: "prefer" | "forbid";
   lateShiftEndTime: string;
   teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
   workloadBalanceEnabled: boolean;
@@ -183,6 +186,77 @@ export function deleteCrossWorkdayQualificationReservation(
     state,
     state.settings.crossWorkdayQualificationReservations,
     id
+  );
+}
+
+export function addCrossFlightPriorityPolicy(
+  state: AppState
+): CrossFlightPriorityPolicy {
+  const policy: CrossFlightPriorityPolicy = {
+    id: createId("cross-flight-priority"),
+    enabled: true,
+    flightNo: state.flights[0]?.flightNo ?? "",
+    positions: [],
+  };
+  return appendPolicyItem(
+    state,
+    state.settings.crossFlightPriorityPolicies,
+    policy
+  );
+}
+
+export function moveCrossFlightPriorityPolicy(
+  state: AppState,
+  id: string,
+  direction: -1 | 1
+): boolean {
+  return movePolicyItem(
+    state,
+    state.settings.crossFlightPriorityPolicies,
+    id,
+    direction
+  );
+}
+
+export function deleteCrossFlightPriorityPolicy(
+  state: AppState,
+  id: string
+): boolean {
+  return deletePolicyItem(
+    state,
+    state.settings.crossFlightPriorityPolicies,
+    id
+  );
+}
+
+function updateCrossFlightPriorityPolicy(
+  state: AppState,
+  id: string,
+  field: string,
+  value: PolicyValue
+): boolean {
+  return updatePolicyItem(
+    state,
+    state.settings.crossFlightPriorityPolicies,
+    id,
+    (policy) => {
+      if (field === "enabled")
+        return replacePolicyValue(policy, "enabled", Boolean(value));
+      if (field === "flightNo")
+        return replacePolicyValue(
+          policy,
+          "flightNo",
+          normalizeText(value).toUpperCase()
+        );
+      if (field === "positions") {
+        const positions = splitList(value);
+        if (policy.positions.join("\u0000") === positions.join("\u0000"))
+          return "unchanged";
+        policy.positions = positions;
+        return "changed";
+      }
+      return "invalid";
+    }
   );
 }
 
@@ -469,6 +543,7 @@ const POLICY_ENTITY_UPDATERS: Readonly<
   "cross-workday-reservation": updateCrossWorkdayQualificationReservation,
   "transition-policy": updateTransitionPolicy,
   "supervisor-coverage": updateMobileSupervisorCoverageRule,
+  "cross-flight-priority": updateCrossFlightPriorityPolicy,
 };
 
 function isPolicyEntity(entity: string): entity is PolicyEntity {

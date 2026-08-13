@@ -43,10 +43,14 @@ export declare class HiGHS {
   setSolutionValues(values: Float64Array | number[]): void;
   passLinearObjectives(objectives: readonly RawLinearObjective[]): void;
   clearLinearObjectives(): void;
+  /** Resets HiGHS' cumulative clocks before another run on this instance. */
+  zeroAllClocks(): void;
   /** Sets a HiGHS option by name. Supports boolean, integer, real, and string values. */
   setParam(name: string, value: boolean | number | string): void;
   /** Solves the loaded problem and returns the result. */
   solve(): Promise<SolveResult>;
+  private doubleInfoValue;
+  private primalSolutionStatus;
   private extractSolution;
   /** Frees the HiGHS instance. Safe to call multiple times. */
   free(): void;

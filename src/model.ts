@@ -1,6 +1,7 @@
 import type { SchedulingDecision } from "./domain/rules/schedule-rule-contract";
 import type {
   CrossWorkdayQualificationReservation,
+  CrossFlightPriorityPolicy,
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
@@ -116,6 +117,7 @@ export interface ScheduleSettings {
   positionRotationEnabled: boolean;
   latePriorityFlightNumbers: string[];
   lateShiftRecoveryEnabled: boolean;
+  nextWorkdayRecoveryMode: "prefer" | "forbid";
   lateShiftEndTime: string;
   teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
   lateShiftRecoveryPositionRules: LateShiftRecoveryPositionRule[];
@@ -124,6 +126,7 @@ export interface ScheduleSettings {
   dutyPositionPriorities: DutyPositionPriority[];
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
   crossWorkdayQualificationReservations: CrossWorkdayQualificationReservation[];
+  crossFlightPriorityPolicies: CrossFlightPriorityPolicy[];
   earlyDepartureCutoffTime: string;
   afternoonRestStartTime: string;
   afternoonRestEndTime: string;

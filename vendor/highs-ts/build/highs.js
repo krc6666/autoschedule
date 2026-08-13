@@ -921,7 +921,7 @@ async function createHiGHSModule(moduleArg = {}) {
           } catch (e) {
             throw new FS.ErrnoError(29);
           }
-          if (result === undefined && bytesRead === 0) {
+          if (result === undefined && !bytesRead) {
             throw new FS.ErrnoError(6);
           }
           if (result === null || result === undefined) break;
@@ -1258,7 +1258,7 @@ async function createHiGHSModule(moduleArg = {}) {
         if (canOwn) {
           node.contents = buffer.subarray(offset, offset + length);
           node.usedBytes = length;
-        } else if (node.usedBytes === 0 && position === 0) {
+        } else if (!node.usedBytes && !position) {
           // If this is a simple first write to an empty file, do a fast set since we don't need to care about old data.
           node.contents = buffer.slice(offset, offset + length);
           node.usedBytes = length;
@@ -2656,11 +2656,7 @@ async function createHiGHSModule(moduleArg = {}) {
       // to write to file opened in read-only mode with MAP_PRIVATE flag,
       // as all modifications will be visible only in the memory of
       // the current process.
-      if (
-        (prot & 2) !== 0 &&
-        (flags & 2) === 0 &&
-        (stream.flags & 2097155) !== 2
-      ) {
+      if (prot & 2 && !(flags & 2) && (stream.flags & 2097155) !== 2) {
         throw new FS.ErrnoError(2);
       }
       if ((stream.flags & 2097155) === 1) {
@@ -2752,7 +2748,7 @@ async function createHiGHSModule(moduleArg = {}) {
       var randomBuffer = new Uint8Array(1024),
         randomLeft = 0;
       var randomByte = () => {
-        if (randomLeft === 0) {
+        if (!randomLeft) {
           randomFill(randomBuffer);
           randomLeft = randomBuffer.byteLength;
         }
@@ -2979,7 +2975,7 @@ async function createHiGHSModule(moduleArg = {}) {
             } catch (e) {
               throw new FS.ErrnoError(29);
             }
-            if (result === undefined && bytesRead === 0) {
+            if (result === undefined && !bytesRead) {
               throw new FS.ErrnoError(6);
             }
             if (result === null || result === undefined) break;
@@ -3783,8 +3779,7 @@ async function createHiGHSModule(moduleArg = {}) {
       var stream = SYSCALLS.getStreamFromFD(fd);
       FS.llseek(stream, offset, whence);
       HEAP64[newOffset >> 3] = BigInt(stream.position);
-      if (stream.getdents && offset === 0 && whence === 0)
-        stream.getdents = null; // reset readdir state
+      if (stream.getdents && !offset && whence === 0) stream.getdents = null; // reset readdir state
       return 0;
     } catch (e) {
       if (typeof FS == "undefined" || !(e.name === "ErrnoError")) throw e;
@@ -3903,7 +3898,7 @@ async function createHiGHSModule(moduleArg = {}) {
       for (var i = 0; i < args.length; i++) {
         var converter = toC[argTypes[i]];
         if (converter) {
-          if (stack === 0) stack = stackSave();
+          if (!stack) stack = stackSave();
           cArgs[i] = converter(args[i]);
         } else {
           cArgs[i] = args[i];
@@ -3912,7 +3907,7 @@ async function createHiGHSModule(moduleArg = {}) {
     }
     var ret = func(...cArgs);
     function onDone(ret) {
-      if (stack !== 0) stackRestore(stack);
+      if (stack) stackRestore(stack);
       return convertReturnValue(ret);
     }
 
@@ -4069,14 +4064,15 @@ async function createHiGHSModule(moduleArg = {}) {
     _Highs_setIntOptionValue,
     _Highs_setDoubleOptionValue,
     _Highs_setStringOptionValue,
+    _Highs_getIntInfoValue,
+    _Highs_getDoubleInfoValue,
     _Highs_getSolution,
     _Highs_getModelStatus,
     _Highs_getObjectiveValue,
     _Highs_getNumRow,
     _Highs_setSolution,
+    _Highs_zeroAllClocks,
     _Highs_addRows,
-    _Highs_changeObjectiveSense,
-    _Highs_changeColsCostByRange,
     _Highs_getColName,
     _malloc,
     _free,
@@ -4110,6 +4106,10 @@ async function createHiGHSModule(moduleArg = {}) {
       wasmExports["Highs_setDoubleOptionValue"];
     _Highs_setStringOptionValue = Module["_Highs_setStringOptionValue"] =
       wasmExports["Highs_setStringOptionValue"];
+    _Highs_getIntInfoValue = Module["_Highs_getIntInfoValue"] =
+      wasmExports["Highs_getIntInfoValue"];
+    _Highs_getDoubleInfoValue = Module["_Highs_getDoubleInfoValue"] =
+      wasmExports["Highs_getDoubleInfoValue"];
     _Highs_getSolution = Module["_Highs_getSolution"] =
       wasmExports["Highs_getSolution"];
     _Highs_getModelStatus = Module["_Highs_getModelStatus"] =
@@ -4120,11 +4120,9 @@ async function createHiGHSModule(moduleArg = {}) {
       wasmExports["Highs_getNumRow"];
     _Highs_setSolution = Module["_Highs_setSolution"] =
       wasmExports["Highs_setSolution"];
+    _Highs_zeroAllClocks = Module["_Highs_zeroAllClocks"] =
+      wasmExports["Highs_zeroAllClocks"];
     _Highs_addRows = Module["_Highs_addRows"] = wasmExports["Highs_addRows"];
-    _Highs_changeObjectiveSense = Module["_Highs_changeObjectiveSense"] =
-      wasmExports["Highs_changeObjectiveSense"];
-    _Highs_changeColsCostByRange = Module["_Highs_changeColsCostByRange"] =
-      wasmExports["Highs_changeColsCostByRange"];
     _Highs_getColName = Module["_Highs_getColName"] =
       wasmExports["Highs_getColName"];
     _malloc = Module["_malloc"] = wasmExports["malloc"];

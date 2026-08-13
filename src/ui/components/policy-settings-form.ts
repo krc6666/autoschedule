@@ -201,7 +201,9 @@ export class PolicySettingsFormElement extends LightDomElement {
       <legend>
         <span
           ><strong>末班重点岗位航班范围</strong
-          ><small>勾选后参与四类合计轮换、差值控制和统计</small></span
+          ><small
+            >勾选后参与末班岗位轮换、统计及上一班末班人员晚班轻岗保护</small
+          ></span
         >
         <span class="btn-group btn-group-sm" role="group">
           <button
@@ -231,16 +233,17 @@ export class PolicySettingsFormElement extends LightDomElement {
                       type="checkbox"
                       .checked=${selected.has(flightNo)}
                       @change=${(event: Event) => {
-                    const checked = (event.currentTarget as HTMLInputElement)
-                      .checked;
-                    setScope(
-                      candidates.filter((candidate) =>
-                        candidate === flightNo
-                          ? checked
-                          : selected.has(candidate)
-                      )
-                    );
-                  }}
+                        const checked = (
+                          event.currentTarget as HTMLInputElement
+                        ).checked;
+                        setScope(
+                          candidates.filter((candidate) =>
+                            candidate === flightNo
+                              ? checked
+                              : selected.has(candidate)
+                          )
+                        );
+                      }}
                     />
                     <span class="form-check-label">${flightNo}</span>
                   </label>`

@@ -363,6 +363,19 @@ describe("schedule page", () => {
         .querySelector(".schedule-soft-warning-icon")
         ?.getAttribute("title")
     ).toContain("上一班末班重点岗位人员作为最后兜底接替");
+    const warningButton = element.querySelector<HTMLButtonElement>(
+      'button[aria-label="分析这个岗位的调换方案"]'
+    );
+    expect(warningButton).not.toBeNull();
+    const commands: UiCommandEvent["detail"][] = [];
+    element.addEventListener(UI_COMMAND_EVENT, (event) => {
+      commands.push((event as UiCommandEvent).detail);
+    });
+    warningButton?.click();
+    expect(commands).toContainEqual({
+      type: "open-swap-analysis",
+      assignmentId: assignment.id,
+    });
 
     const comparisonOnlyState = structuredClone(state);
     const comparisonOnlyAssignment = comparisonOnlyState.assignments.find(

@@ -70,6 +70,77 @@ describe("application persistence feedback", () => {
 });
 
 describe("application scheduling exclusivity", () => {
+  it("keeps the pre-run schedule when calculation is stopped without a result", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    state.assignments = [
+      {
+        id: "existing",
+        flightId: state.flights[0]!.id,
+        flightNo: state.flights[0]!.flightNo,
+        positionRuleId: null,
+        position: "原岗位",
+        staffId: state.staff[0]!.id,
+        staffName: state.staff[0]!.name,
+        startTime: state.flights[0]!.startTime,
+        endTime: state.flights[0]!.endTime,
+        workHours: 2,
+        fatiguePoints: 2,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences }
+    );
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: {
+        calculate: vi
+          .fn()
+          .mockResolvedValue({ kind: "stopped-without-result" }),
+        isRunning: () => false,
+      },
+    });
+
+    await coordinator.handle({ type: "generate-schedule" });
+
+    expect(coordinator.model().assignments).toHaveLength(1);
+    expect(coordinator.model().assignments[0]!.id).toBe("existing");
+    expect(coordinator.view().toast?.message).toContain("原班表保持不变");
+  });
+
+  it("installs only the complete safe result selected by stop-and-adopt", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    const safeResult: ScheduleResult = {
+      assignments: [],
+      warnings: ["已安全复核"],
+      unfilledCount: 0,
+    };
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences }
+    );
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: {
+        calculate: vi.fn().mockResolvedValue({
+          kind: "stopped-with-result",
+          result: safeResult,
+        }),
+        isRunning: () => false,
+      },
+    });
+
+    await coordinator.handle({ type: "generate-schedule" });
+
+    expect(coordinator.model().activeScheduleDate).toBe(
+      coordinator.view().date
+    );
+    expect(coordinator.view().toast?.message).toContain("完整安全方案");
+  });
+
   it("reserves a schedule run before asynchronous command routing", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
@@ -143,6 +214,71 @@ describe("application scheduling exclusivity", () => {
     expect(coordinator.view().toast).toMatchObject({
       tone: "warning",
       message: "排班正在计算，请等待当前任务完成",
+    });
+  });
+});
+
+describe("manual swap analysis workflow", () => {
+  it("rechecks a proposed swap before applying it", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    const flight = state.flights.find((item) => item.flightNo === "TR121")!;
+    const h02 = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.name === "H02"
+    )!;
+    const h08 = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.name === "H08"
+    )!;
+    const people = state.staff.slice(0, 2);
+    h02.qualifiedStaffIds = people.map((person) => person.id);
+    h08.qualifiedStaffIds = people.map((person) => person.id);
+    state.settings.rollingLoadProtectionEnabled = false;
+    state.assignments = [h02, h08].map((rule, index) => ({
+      id: `swap-${index}`,
+      flightId: flight.id,
+      flightNo: flight.flightNo,
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId: people[index]!.id,
+      staffName: people[index]!.name,
+      startTime: flight.startTime,
+      endTime: flight.endTime,
+      workHours: 2,
+      fatiguePoints: rule.fatiguePoints,
+      remark: rule.remark,
+      manualRemark: "",
+      status: "assigned" as const,
+    }));
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences }
+    );
+
+    await coordinator.handle({
+      type: "open-swap-analysis",
+      assignmentId: "swap-0",
+    });
+    await coordinator.handle({
+      type: "select-swap-target",
+      assignmentId: "swap-1",
+    });
+    expect(coordinator.view().dialog).toMatchObject({
+      kind: "swap-analysis",
+      analysis: { outcome: "safe" },
+    });
+
+    h02.qualifiedStaffIds = [people[0]!.id];
+    coordinator
+      .model()
+      .positionRules.find((item) => item.id === h02.id)!.qualifiedStaffIds = [
+      people[0]!.id,
+    ];
+    await coordinator.handle({ type: "apply-swap-analysis" });
+
+    expect(coordinator.model().assignments[0]!.staffId).toBe(people[0]!.id);
+    expect(coordinator.view().toast).toMatchObject({
+      tone: "danger",
+      message: expect.stringContaining("资质"),
     });
   });
 });

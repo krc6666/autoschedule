@@ -3,6 +3,7 @@ import type { LateShiftRecoveryPositionRule } from "../rules/structured-policy-c
 import { recentArchivedWorkdays } from "../statistics/fatigue";
 import { timeToMinutes } from "../shared/time";
 import { endsAfterLateShiftThreshold } from "./late-priority-policy";
+import { latePriorityFlightInScope } from "../statistics/late-priority-flight-scope";
 
 export function isLateEndingWork(
   target: Pick<Flight, "startTime" | "endTime">,
@@ -16,6 +17,7 @@ export interface PreviousWorkdayLateProtection {
   finalLateRecords: HistoryRecord[];
   protectedRecords: HistoryRecord[];
   protectedStaffIds: ReadonlySet<string>;
+  scopedProtectedStaffIds: ReadonlySet<string>;
 }
 
 export interface CrossDayRecoveryFacts {
@@ -61,12 +63,21 @@ export function previousWorkdayLateProtection(
   const protectedRecords = finalLateRecords.filter((record) =>
     matchesLateShiftRecoveryPosition(state, record)
   );
+  const scopedProtectedRecords = protectedRecords.filter((record) =>
+    latePriorityFlightInScope(
+      state.settings.latePriorityFlightNumbers,
+      record.flightNo
+    )
+  );
   return {
     previousDate,
     finalLateRecords,
     protectedRecords,
     protectedStaffIds: new Set(
       protectedRecords.map((record) => record.staffId)
+    ),
+    scopedProtectedStaffIds: new Set(
+      scopedProtectedRecords.map((record) => record.staffId)
     ),
   };
 }
@@ -128,6 +139,17 @@ export function matchesNextWorkdayRecoveryTarget(
       normalized(item.flightNo) === flightNo &&
       Boolean(item.positionKeyword.trim()) &&
       searchable.includes(normalized(item.positionKeyword))
+  );
+}
+
+export function isStrictNextWorkdayRecoveryTarget(
+  state: AppState,
+  target: Pick<Flight, "flightNo"> & { position: string; remark: string }
+): boolean {
+  return (
+    state.settings.lateShiftRecoveryEnabled &&
+    state.settings.nextWorkdayRecoveryMode === "forbid" &&
+    matchesNextWorkdayRecoveryTarget(state, target)
   );
 }
 

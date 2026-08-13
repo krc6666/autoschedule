@@ -14,6 +14,7 @@ import {
 } from "../statistics/schedule-frequency";
 import {
   isLateEndingWork,
+  isStrictNextWorkdayRecoveryTarget,
   isNextWorkdayCutoffConflict,
 } from "./cross-day-recovery";
 import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
@@ -135,6 +136,7 @@ export interface ReassignmentCandidateSafetyOptions {
   facts?: ScheduleRunFacts;
   frequencyFacts?: ScheduleFrequencyFacts;
   latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy;
+  allowCutoffProtectionRegression?: boolean;
 }
 
 export function reassignmentCandidateSafetyReasons({
@@ -147,6 +149,7 @@ export function reassignmentCandidateSafetyReasons({
   facts,
   frequencyFacts,
   latePriorityFatigueRelief,
+  allowCutoffProtectionRegression = false,
 }: ReassignmentCandidateSafetyOptions): string[] {
   if (!assignment.staffId) return ["交换后会造成其他岗位空缺"];
   const rule = assignmentRule(state, assignment);
@@ -178,6 +181,20 @@ export function reassignmentCandidateSafetyReasons({
   );
   const reasons: string[] = [];
   if (
+    assignment.staffId &&
+    isStrictNextWorkdayRecoveryTarget(state, {
+      flightNo: assignment.flightNo,
+      position: assignment.position,
+      remark: assignment.remark,
+    }) &&
+    state.settings.lateShiftRecoveryEnabled &&
+    facts?.crossDayRecovery.previousWorkday.protectedStaffIds.has(
+      assignment.staffId
+    )
+  ) {
+    reasons.push("严格跨工作日恢复限制不允许该人员承担次班目标岗位");
+  }
+  if (
     exceedsTr121NumberOneAutomaticLimit(
       state,
       assignment.staffId,
@@ -191,6 +208,7 @@ export function reassignmentCandidateSafetyReasons({
   }
   if (
     !recoveryProtectionMayYield &&
+    !allowCutoffProtectionRegression &&
     !priorityFairnessMayYield &&
     isNextWorkdayCutoffConflict(
       state,

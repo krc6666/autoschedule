@@ -22,6 +22,7 @@ const view: ApplicationViewState = {
     stage: "prepare",
     percent: 0,
     steps: [],
+    canAdoptCurrentResult: false,
   },
 };
 
@@ -81,6 +82,7 @@ describe("application shell", () => {
           { stage: "optimize", percent: 15, label: "整体计算岗位与人员" },
           { stage: "complete", percent: 100, label: "排班完成" },
         ],
+        canAdoptCurrentResult: false,
       },
     };
     const element = await mountElement<

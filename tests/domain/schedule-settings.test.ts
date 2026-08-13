@@ -18,6 +18,7 @@ describe("schedule settings module", () => {
       "lateShiftRecoveryPositionRules",
       "mobileSupervisorCoverageRules",
       "crossWorkdayQualificationReservations",
+      "crossFlightPriorityPolicies",
       "latePriorityFlightNumbers",
     ]);
     const scalarKeys = Object.keys(createDefaultScheduleSettings())
@@ -38,8 +39,20 @@ describe("schedule settings module", () => {
     ).toMatchObject({ defaultValue: 90, min: 0, max: 1440 });
     expect(createDefaultScheduleSettings()).toMatchObject({
       minimumRegularTransitionMinutes: 90,
+      nextWorkdayRecoveryMode: "prefer",
       crossWorkdayQualificationReservations: [],
     });
+  });
+
+  it("normalizes the cross-workday recovery target strength", () => {
+    expect(
+      normalizeScheduleSettings({ nextWorkdayRecoveryMode: "forbid" })
+        .nextWorkdayRecoveryMode
+    ).toBe("forbid");
+    expect(
+      normalizeScheduleSettings({ nextWorkdayRecoveryMode: "invalid" as never })
+        .nextWorkdayRecoveryMode
+    ).toBe("prefer");
   });
 
   it("normalizes the same values for every settings adapter", () => {

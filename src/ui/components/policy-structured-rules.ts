@@ -7,11 +7,13 @@ import {
   normalizePolicySearchQuery,
 } from "../projections/policy-search";
 import { LightDomElement } from "./light-dom-element";
+import { dynamicSelectValue } from "./dynamic-select";
 
 type Collection =
   | "duty"
   | "recovery-target"
   | "cross-workday-reservation"
+  | "cross-flight-priority"
   | "late-position"
   | "supervisor"
   | "transition";
@@ -26,10 +28,57 @@ export class PolicyStructuredRulesElement extends LightDomElement {
 
   protected override render() {
     return html`
-      ${this.dutyPriorities()} ${this.crossWorkdayReservations()}
-      ${this.recoveryRules()} ${this.supervisorRules()}
-      ${this.transitionRules()}
+      ${this.dutyPriorities()} ${this.crossFlightPriorities()}
+      ${this.crossWorkdayReservations()} ${this.recoveryRules()}
+      ${this.supervisorRules()} ${this.transitionRules()}
     `;
+  }
+
+  private crossFlightPriorities() {
+    const items = this.model.settings.crossFlightPriorityPolicies;
+    if (
+      !matchesPolicySearch(
+        this.query,
+        "跨航班重点岗位优先",
+        "优先航班",
+        "优先岗位",
+        "新增规则",
+        items.map((item) => [item.flightNo, item.positions])
+      )
+    )
+      return nothing;
+    return html`<details
+      class="policy-rule-card"
+      ?open=${Boolean(normalizePolicySearchQuery(this.query))}
+    >
+      <summary>
+        <span
+          ><strong>跨航班重点岗位优先</strong
+          ><small
+            >${items.filter((item) => item.enabled).length} 条启用 ·
+            同时段冲突时优先保护</small
+          ></span
+        ><i class="bi bi-chevron-down"></i>
+      </summary>
+      <div class="policy-rule-content">
+        <div class="d-flex justify-content-end mb-2">
+          ${this.addButton("cross-flight-priority", "新增规则")}
+        </div>
+        <div class="supervisor-coverage-list">
+          ${items.map(
+            (item, index) =>
+              html`<div class="supervisor-coverage-row">
+                ${this.toggle("cross-flight-priority", item.id, "enabled", item.enabled, "启用")}
+                ${this.flightSelect("cross-flight-priority", item.id, item.flightNo, "优先航班")}
+                ${this.positionCheckboxes(item.id, item.flightNo, item.positions)}
+                <div class="d-flex gap-1">
+                  ${this.moveCrossFlightPriority(item.id, -1, index === 0)}${this.moveCrossFlightPriority(item.id, 1, index === items.length - 1)}${this.deleteButton("cross-flight-priority", item.id)}
+                </div>
+              </div>`
+          )}
+        </div>
+      </div>
+    </details>`;
   }
 
   private crossWorkdayReservations() {
@@ -80,16 +129,16 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                 ${this.toggle("cross-workday-reservation", item.id, "enabled", item.enabled, "启用")}
                 ${this.field("cross-workday-reservation", item.id, "flightNo", item.flightNo, "下一工作班航班")}
                 ${this.select(
-                "cross-workday-reservation",
-                item.id,
-                "matchField",
-                item.matchField,
-                "匹配位置",
-                [
-                  ["position", "岗位名称"],
-                  ["remark", "岗位备注"],
-                ]
-              )}
+                  "cross-workday-reservation",
+                  item.id,
+                  "matchField",
+                  item.matchField,
+                  "匹配位置",
+                  [
+                    ["position", "岗位名称"],
+                    ["remark", "岗位备注"],
+                  ]
+                )}
                 ${this.field("cross-workday-reservation", item.id, "keyword", item.keyword, "岗位关键词")}
                 ${this.field("cross-workday-reservation", item.id, "minimumStaffCount", item.minimumStaffCount, "至少保留人数", "", "number")}
                 <div class="d-flex gap-1">
@@ -173,6 +222,9 @@ export class PolicyStructuredRulesElement extends LightDomElement {
         "新增目标",
         "目标航班",
         "岗位或备注关键词",
+        "跨工作日恢复目标强度",
+        "优先避开",
+        "严格限制",
         settings.lateShiftRecoveryPositionRules.map((rule) => [
           rule.flightNo,
           rule.keyword,
@@ -202,6 +254,31 @@ export class PolicyStructuredRulesElement extends LightDomElement {
         ><i class="bi bi-chevron-down"></i>
       </summary>
       <div class="policy-rule-content">
+        <div class="policy-recovery-mode mb-3" data-policy-recovery-mode>
+          <label class="form-label mb-0">
+            <strong>跨工作日恢复目标强度</strong>
+            <select
+              class="form-select form-select-sm"
+              .value=${settings.nextWorkdayRecoveryMode}
+              @change=${(event: Event) =>
+                dispatchUiCommand(this, {
+                  type: "apply-policy",
+                  input: {
+                    ...settings,
+                    nextWorkdayRecoveryMode: (
+                      event.currentTarget as HTMLSelectElement
+                    ).value as "prefer" | "forbid",
+                  },
+                })}
+            >
+              <option value="prefer">优先避开</option>
+              <option value="forbid">严格限制</option>
+            </select>
+          </label>
+          <small class="text-muted"
+            >严格限制时，上一班末班重点岗位人员不得承担已配置的次班恢复目标；无安全完整方案则保留原班表。</small
+          >
+        </div>
         <div class="d-flex justify-content-between align-items-center">
           <strong>末班重点岗位</strong
           >${this.addButton("late-position", "新增规则")}
@@ -427,13 +504,84 @@ export class PolicyStructuredRulesElement extends LightDomElement {
   ) {
     return html`<label class="form-label"
       >${label}<select
+        ${dynamicSelectValue(value)}
         class="form-select form-select-sm"
         .value=${value}
         @change=${(event: Event) => dispatchUiCommand(this, { type: "update-policy", entity, id, field, value: (event.currentTarget as HTMLSelectElement).value })}
       >
-        ${choices.map(([choice, text]) => html`<option .value=${choice}>${text}</option>`)}
+        ${choices.map(
+          ([choice, text]) => html`<option .value=${choice}>${text}</option>`
+        )}
       </select></label
     >`;
+  }
+
+  private flightSelect(
+    entity: string,
+    id: string,
+    value: string,
+    label: string
+  ) {
+    const choices = [
+      ...new Set(
+        [
+          ...this.model.flights.map((flight) => flight.flightNo.trim()),
+          ...this.model.positionRules.map((rule) => rule.flightNo.trim()),
+        ].filter(Boolean)
+      ),
+    ];
+    return this.select(
+      entity,
+      id,
+      "flightNo",
+      value,
+      label,
+      choices.map((flightNo) => [flightNo, flightNo] as const)
+    );
+  }
+
+  private positionCheckboxes(id: string, flightNo: string, selected: string[]) {
+    const choices = [
+      ...new Set(
+        this.model.positionRules
+          .filter(
+            (rule) =>
+              rule.flightNo.trim().toUpperCase() ===
+              flightNo.trim().toUpperCase()
+          )
+          .map((rule) => rule.name.trim())
+          .filter(Boolean)
+      ),
+    ];
+    return html`<fieldset class="form-label">
+      <legend class="form-label mb-1">优先岗位</legend>
+      <div class="d-flex flex-wrap gap-2">
+        ${choices.map(
+        (position) =>
+          html`<label class="form-check mb-0"
+            ><input
+              class="form-check-input"
+              type="checkbox"
+              .checked=${selected.includes(position)}
+              @change=${(event: Event) => {
+                const checked = (event.currentTarget as HTMLInputElement)
+                  .checked;
+                const next = checked
+                  ? [...selected, position]
+                  : selected.filter((item) => item !== position);
+                dispatchUiCommand(this, {
+                  type: "update-policy",
+                  entity: "cross-flight-priority",
+                  id,
+                  field: "positions",
+                  value: next.join(","),
+                });
+              }}
+            /><span class="form-check-label">${position}</span></label
+          >`
+      )}
+      </div>
+    </fieldset>`;
   }
 
   private toggle(
@@ -499,6 +647,22 @@ export class PolicyStructuredRulesElement extends LightDomElement {
           id,
           direction,
         })}
+    >
+      <i class="bi bi-arrow-${direction < 0 ? "up" : "down"}"></i>
+    </button>`;
+  }
+
+  private moveCrossFlightPriority(
+    id: string,
+    direction: -1 | 1,
+    disabled: boolean
+  ) {
+    return html`<button
+      class="btn btn-sm icon-btn"
+      type="button"
+      title=${direction < 0 ? "提高优先级" : "降低优先级"}
+      ?disabled=${disabled}
+      @click=${() => dispatchUiCommand(this, { type: "move-cross-flight-priority", id, direction })}
     >
       <i class="bi bi-arrow-${direction < 0 ? "up" : "down"}"></i>
     </button>`;

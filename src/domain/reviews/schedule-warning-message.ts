@@ -7,6 +7,28 @@ export interface AssignmentWarningMessageOptions {
   attempt?: string;
 }
 
+export const FAIRNESS_TIME_LIMITED_WARNING =
+  "班表已满足全部硬性要求和核心排班规则；人员恢复与公平已在可用时间内尽量优化，仍可能存在小幅改善空间。";
+
+export const FAIRNESS_GAP_LIMITED_WARNING =
+  "班表已满足全部硬性要求和核心排班规则；人员恢复与公平已优化到允许的小幅差距内。";
+
+export const FAIRNESS_USER_STOPPED_WARNING =
+  "班表已满足全部硬性要求和核心排班规则；人员恢复与公平只采用了停止时已经完成的优化结果。";
+
+export function scheduleOptimizationWarning(
+  quality:
+    | "all-objectives-optimal"
+    | "fairness-gap-limited"
+    | "fairness-time-limited"
+    | "fairness-user-stopped"
+): string | null {
+  if (quality === "fairness-user-stopped") return FAIRNESS_USER_STOPPED_WARNING;
+  if (quality === "fairness-time-limited") return FAIRNESS_TIME_LIMITED_WARNING;
+  if (quality === "fairness-gap-limited") return FAIRNESS_GAP_LIMITED_WARNING;
+  return null;
+}
+
 function mappedReason(reason: string): string | null {
   const normalized = reason.trim();
   if (!normalized) return null;

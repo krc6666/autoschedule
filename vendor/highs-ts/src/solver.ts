@@ -2,6 +2,7 @@ import { loadHiGHSModule } from "./module.js";
 import { HIGHS_INF } from "./types.js";
 import type {
   EmscriptenModule,
+  PrimalSolutionStatus,
   RawLinearObjective,
   RawModel,
   RawRows,
@@ -414,6 +415,19 @@ export class HiGHS {
       );
   }
 
+  /** Resets HiGHS' cumulative clocks before another run on this instance. */
+  zeroAllClocks(): void {
+    this.ensureNotFreed();
+    const status = this.module.ccall(
+      "Highs_zeroAllClocks",
+      "number",
+      ["number"],
+      [this.highsPtr]
+    ) as number;
+    if (status !== 0)
+      throw new Error(`Highs_zeroAllClocks failed with status ${status}`);
+  }
+
   /** Sets a HiGHS option by name. Supports boolean, integer, real, and string values. */
   setParam(name: string, value: boolean | number | string): void {
     this.ensureNotFreed();
@@ -463,15 +477,12 @@ export class HiGHS {
     ) as number;
     const status = HIGHS_STATUS_MAP[statusCode] ?? "unknown";
 
-    const result: SolveResult = { status };
+    const solutionStatus = this.primalSolutionStatus();
+    const result: SolveResult = { status, solutionStatus };
 
-    if (
-      status === "optimal" ||
-      status === "timelimit" ||
-      status === "solutionlimit" ||
-      status === "objectivebound" ||
-      status === "objectivetarget"
-    ) {
+    if (solutionStatus === "feasible") {
+      result.mipGap = this.doubleInfoValue("mip_gap");
+      result.mipDualBound = this.doubleInfoValue("mip_dual_bound");
       result.objective = this.module.ccall(
         "Highs_getObjectiveValue",
         "number",
@@ -483,6 +494,48 @@ export class HiGHS {
     }
 
     return result;
+  }
+
+  private doubleInfoValue(name: string): number {
+    const valuePtr = this.module._malloc(8);
+    try {
+      const status = this.module.ccall(
+        "Highs_getDoubleInfoValue",
+        "number",
+        ["number", "string", "number"],
+        [this.highsPtr, name, valuePtr]
+      ) as number;
+      if (status !== 0)
+        throw new Error(
+          `Highs_getDoubleInfoValue(${name}) failed with status ${status}`
+        );
+      return this.module.getValue(valuePtr, "double");
+    } finally {
+      this.module._free(valuePtr);
+    }
+  }
+
+  private primalSolutionStatus(): PrimalSolutionStatus {
+    const valuePtr = this.module._malloc(4);
+    try {
+      const status = this.module.ccall(
+        "Highs_getIntInfoValue",
+        "number",
+        ["number", "string", "number"],
+        [this.highsPtr, "primal_solution_status", valuePtr]
+      ) as number;
+      if (status !== 0)
+        throw new Error(
+          `Highs_getIntInfoValue(primal_solution_status) failed with status ${status}`
+        );
+      const value = this.module.getValue(valuePtr, "i32");
+      if (value === 0) return "none";
+      if (value === 1) return "infeasible";
+      if (value === 2) return "feasible";
+      throw new Error(`Unknown HiGHS primal solution status ${value}`);
+    } finally {
+      this.module._free(valuePtr);
+    }
   }
 
   private extractSolution(): Map<string, number> {

@@ -44,7 +44,9 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
   "staff-eligibility":
     "人员状态、岗位资质、夜班能力、时间冲突和每日工时都必须符合要求。",
   "minimum-flight-transition":
-    "同一人员跨航班连续工作时，必须留足规则页设置的准备时间。",
+    "常规跨航班连续工作必须留足准备时间；符合条件的下午分流按提前撤岗配置接续。",
+  "strict-next-workday-recovery":
+    "选择严格限制时，上一班末班重点岗位人员不得承担配置的次班恢复目标；无完整方案时本次排班失败。",
   "ke166-supervisor":
     "先完成柜台与重点岗位，再安排独立督导；只有缺员时才受控兼任。",
   "duty-position": "按值班优先项安排晚撤岗位，并只锁定实际安排的岗位。",
@@ -56,18 +58,23 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "常规岗位仍有空缺时，才允许符合条件的分队长短时并行督导。",
   "cross-workday-qualification-reservation":
     "当天岗位填满后，优先保留下一工作班稀缺岗位所需的合格人员。",
+  "cross-flight-priority":
+    "同一时段航班发生人员冲突时，优先保护规则页配置航班的重点岗位轮换；其他航班轮换可以让步，但不会突破硬约束或制造空缺。",
   "position-transition":
     "严格衔接不符合要求时阻止安排；12 点前无人替代时保留原因供复核。",
   "late-priority-aggregate-rotation":
     "先避开上一班承担过末班重岗位的人，再平衡本月和最近 8 班的四类合计次数。",
   "late-shift-recovery":
     "上一工作班承担晚间重点岗位的人，本班优先通过整体换位获得恢复。",
-  "late-shift-cutoff": "需要恢复的人优先在设定时间前结束本班工作。",
+  "late-shift-cutoff":
+    "需要恢复的人若能退出截止后岗位，优先按设定时间下班；若整体缺员使晚班不可避免，则保留晚班并优先安全撤掉其截止前岗位。",
   "priority-position-consecutive": "重点岗位连续由同一人承担时优先换人。",
   "high-fatigue-position-consecutive":
     "高疲劳普通岗位连续由同一人承担时优先换人。",
   "same-day-late-obligation":
-    "后续晚班只有少数人能做时，尽量不让这些人先承担早班重点岗位。",
+    "整体判断受保护人员是否必须承担后续晚班；晚班不可避免时，在不制造岗位空缺的前提下优先安全撤掉其截止前岗位，多人冲突时先保护截止更早的人。",
+  "late-shift-position-relief":
+    "上一班做过已勾选末班重点岗位、这班又必须上晚班时，优先选择该人员可胜任的最低疲劳晚班岗位。",
   "preferred-position-transition":
     "多人都能胜任时，优先选择岗位衔接更顺畅的人。",
   "staff-coverage":

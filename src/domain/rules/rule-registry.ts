@@ -62,7 +62,12 @@ export interface CandidatePriorityExecutor {
 
 export interface DailyModelExecutor {
   kind: "daily-model";
-  id: "cross-workday-qualification-reservation";
+  id:
+    | "cross-flight-priority"
+    | "cross-workday-qualification-reservation"
+    | "strict-next-workday-recovery"
+    | "same-day-late-obligation"
+    | "late-shift-position-relief";
 }
 
 export interface ScheduleMutationExecutor {

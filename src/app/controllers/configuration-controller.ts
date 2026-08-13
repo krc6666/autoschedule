@@ -29,15 +29,22 @@ export class ConfigurationController implements UiCommandController {
           }
           this.context.commit();
           try {
-            const result = await this.context.scheduleRunner.calculate(
+            const outcome = await this.context.scheduleRunner.calculate(
               this.context.model(),
               activeDate
             );
+            if (outcome.kind === "stopped-without-result") {
+              this.context.commit("人员状态已更新，排班重算已停止");
+              return true;
+            }
+            const result = outcome.result;
             this.context.store.getState().schedule.install(activeDate, result);
             this.context.commit(
-              result.unfilledCount
-                ? `人员状态已更新，当前排班已重新计算，${result.unfilledCount} 个岗位待补位`
-                : "人员状态已更新，当前排班已重新计算"
+              outcome.kind === "stopped-with-result"
+                ? "人员状态已更新，已采用最近一份完整安全方案"
+                : result.unfilledCount
+                  ? `人员状态已更新，当前排班已重新计算，${result.unfilledCount} 个岗位待补位`
+                  : "人员状态已更新，当前排班已重新计算"
             );
           } catch (error) {
             this.context.toast(

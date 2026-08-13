@@ -1,6 +1,7 @@
 import { HiGHS } from "./solver.js";
 export { HIGHS_INF } from "./types.js";
 export type {
+  PrimalSolutionStatus,
   RawModel,
   SolverOptions,
   SolveResult,

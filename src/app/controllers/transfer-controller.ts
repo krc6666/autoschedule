@@ -20,6 +20,8 @@ export class TransferController implements UiCommandController {
           command.date ?? this.context.view().date
         );
         return true;
+      case "apply-workbook-import":
+        return this.applyWorkbookImport();
       case "export-config": {
         const { buildConfigWorkbook, writeWorkbook } =
           await import("../../infrastructure/excel");
@@ -95,20 +97,39 @@ export class TransferController implements UiCommandController {
         });
         return;
       }
-      this.context.store.getState().replaceModel(importedState);
-      this.context.commit(
-        prepared.recognized
-          ? `已导入 ${prepared.recognized}`
-          : (prepared.warnings[0] ?? "文件中没有有效数据")
-      );
-      if (prepared.recognized && prepared.warnings.length)
-        this.context.toast(prepared.warnings.join("；"), "warning");
+      this.context.updateView({
+        dialog: {
+          kind: "workbook-import",
+          mode: mode === "duty-roster" ? "all" : mode,
+          importedState,
+          recognized: prepared.recognized,
+          warnings: prepared.warnings,
+        },
+      });
     } catch (error) {
       this.context.toast(
         `导入失败：${error instanceof Error ? error.message : String(error)}`,
         "danger"
       );
     }
+  }
+
+  private applyWorkbookImport(): boolean {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "workbook-import") return false;
+    if (!dialog.recognized) {
+      this.context.toast(
+        dialog.warnings[0] ?? "文件中没有有效数据，未导入任何内容",
+        "warning"
+      );
+      return true;
+    }
+    this.context.store.getState().replaceModel(dialog.importedState);
+    this.context.updateView({ dialog: null });
+    this.context.commit(`已导入 ${dialog.recognized}；请重新排班`);
+    if (dialog.warnings.length)
+      this.context.toast(dialog.warnings.join("；"), "warning");
+    return true;
   }
 
   private async queryFlights(date: string): Promise<void> {

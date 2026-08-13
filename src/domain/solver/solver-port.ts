@@ -3,6 +3,8 @@ export interface DecisionVariable {
   type?: "binary" | "continuous";
   lowerBound?: number;
   upperBound?: number;
+  /** The variable can be safely tightened to its base-constraint lower envelope. */
+  lowerEnvelope?: true;
 }
 
 export interface LinearTerm {
@@ -21,6 +23,15 @@ export interface LexicographicObjective {
   id: string;
   direction: "minimize" | "maximize";
   terms: readonly LinearTerm[];
+  /** Defaults to required when omitted by shared solver callers. */
+  optimality?: "required" | "best-effort";
+  /** Proven minimum distance between distinct feasible objective values. */
+  objectiveValueStep?: number;
+  /** Product-approved optimality gap for a best-effort objective. */
+  acceptedGap?: {
+    relative?: number;
+    absolute?: number;
+  };
   solveOnlyWhen?: {
     objectiveId: string;
     equals: number;
@@ -37,15 +48,34 @@ export interface SolverProblem {
 }
 
 export type SolverTermination =
-  "optimal" | "infeasible" | "timed-out" | "failed";
+  | "optimal"
+  | "gap-limited-feasible"
+  | "time-limited-feasible"
+  | "infeasible"
+  | "timed-out"
+  | "failed";
+
+export interface BestEffortSolveDetails {
+  stoppedAtObjectiveId: string;
+  completedObjectiveIds: readonly string[];
+  solutionSource: "current-incumbent" | "previous-optimal";
+}
 
 export interface SolverResult {
   termination: SolverTermination;
   selectedVariableIds: ReadonlySet<string>;
   objectiveValues: ReadonlyMap<string, number>;
+  bestEffort?: BestEffortSolveDetails;
+  approximatedObjectiveIds?: readonly string[];
   diagnostic?: string;
 }
 
 export interface SolverPort {
-  solve(problem: SolverProblem): Promise<SolverResult>;
+  solve(
+    problem: SolverProblem,
+    options?: {
+      onRequiredSolution?: (result: SolverResult) => void;
+      onBestEffortSolution?: (result: SolverResult) => void;
+    }
+  ): Promise<SolverResult>;
 }

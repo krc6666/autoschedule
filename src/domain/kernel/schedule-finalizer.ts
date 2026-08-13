@@ -21,6 +21,11 @@ import {
   crossWorkdayReservationStatuses,
   crossWorkdayReservationWarning,
 } from "../reviews/cross-workday-qualification-reservation";
+import type { AssignmentTask } from "../flights/schedule-tasks";
+import type { DailySchedulePlan } from "./daily-schedule-result";
+import { assertDailyScheduleSafety } from "./daily-schedule-safety";
+import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
+import { scheduleOptimizationWarning } from "../reviews/schedule-warning-message";
 
 export interface ScheduleFinalizerOptions {
   solver: SolverPort;
@@ -32,6 +37,9 @@ export interface ScheduleFinalizerOptions {
   displayRulesByFlight: ReadonlyMap<string, readonly PositionRule[]>;
   lockedAssignmentIds: Set<string>;
   runFacts: ScheduleRunFacts;
+  automaticTasks: readonly AssignmentTask[];
+  preservedAssignments: readonly Assignment[];
+  optimizationQuality: DailySchedulePlan["optimizationQuality"];
   finalizeKe166Supervisor: () => Promise<void>;
   reportProgress: (stage: ScheduleProgressStage, percent: number) => void;
 }
@@ -77,7 +85,8 @@ function applyPreNoonDecisionNotes(
 function rebuildWarnings(
   state: AppState,
   assignments: readonly Assignment[],
-  postReviewWarnings: readonly string[]
+  postReviewWarnings: readonly string[],
+  optimizationQuality: DailySchedulePlan["optimizationQuality"]
 ): string[] {
   const warnings = assignments.flatMap((assignment) => {
     if (assignment.systemNotes?.length)
@@ -96,8 +105,14 @@ function rebuildWarnings(
   )
     .filter((status) => status.shortfall > 0)
     .map(crossWorkdayReservationWarning);
+  const optimizationWarning = scheduleOptimizationWarning(optimizationQuality);
   return [
-    ...new Set([...warnings, ...reservationWarnings, ...postReviewWarnings]),
+    ...new Set([
+      ...warnings,
+      ...reservationWarnings,
+      ...postReviewWarnings,
+      ...(optimizationWarning ? [optimizationWarning] : []),
+    ]),
   ];
 }
 
@@ -134,6 +149,9 @@ export async function finalizeSchedule({
   displayRulesByFlight,
   lockedAssignmentIds,
   runFacts,
+  automaticTasks,
+  preservedAssignments,
+  optimizationQuality,
   finalizeKe166Supervisor,
   reportProgress,
 }: ScheduleFinalizerOptions): Promise<ScheduleResult> {
@@ -163,10 +181,24 @@ export async function finalizeSchedule({
   sortAssignments(assignments, flights, displayRulesByFlight);
   ledger.commit({ type: "replace", assignments });
   const resultAssignments = workingAssignments(ledger);
+  assertDailyScheduleSafety({
+    state,
+    date,
+    assignments: resultAssignments,
+    tasks: automaticTasks,
+    evaluateEligibility: evaluateAutomaticHardConstraints,
+    allowFinalizedConcurrency: true,
+    preservedAssignments,
+  });
   warnings.splice(
     0,
     warnings.length,
-    ...rebuildWarnings(state, resultAssignments, postReviewWarnings)
+    ...rebuildWarnings(
+      state,
+      resultAssignments,
+      postReviewWarnings,
+      optimizationQuality
+    )
   );
   return {
     assignments: resultAssignments,

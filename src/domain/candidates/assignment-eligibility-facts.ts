@@ -6,7 +6,8 @@ import type {
   Staff,
 } from "../../model";
 import {
-  canReleaseForFlight,
+  isValidAssignmentDiversionTransfer,
+  isValidDiversionTransfer,
   projectedAssignedHours,
   staffConflicts,
 } from "../assignments/assignment-timing";
@@ -27,6 +28,7 @@ export interface AssignmentLoadFactsOptions {
   state: AppState;
   assignments: readonly Assignment[];
   flight: Pick<Flight, "id" | "startTime" | "endTime">;
+  rule?: PositionRule;
   person: Staff;
   workHours?: number;
   sameFlightConflict?: SameFlightConflict;
@@ -73,6 +75,7 @@ export function assignmentConflictFacts({
   state,
   assignments,
   flight,
+  rule,
   person,
   sameFlightConflict = "block",
 }: AssignmentLoadFactsOptions): AssignmentConflictFacts {
@@ -89,7 +92,10 @@ export function assignmentConflictFacts({
       )
         return false;
     }
-    return !canReleaseForFlight(assignment, flight, state);
+    return !(
+      isValidAssignmentDiversionTransfer(state, assignment, flight) ||
+      isValidDiversionTransfer(flight, rule, assignment)
+    );
   });
   return { blockingConflicts };
 }

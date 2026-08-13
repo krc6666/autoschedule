@@ -1,5 +1,26 @@
-import type { AppState, Assignment, Flight } from "../../model";
+import type { AppState, Assignment, Flight, PositionRule } from "../../model";
 import { durationHours, intervalsOverlap, timeToMinutes } from "../shared/time";
+
+export function isValidDiversionTransfer(
+  source: Pick<Assignment, "startTime" | "endTime">,
+  sourceRule:
+    Pick<PositionRule, "category" | "earlyReleaseMinutes"> | undefined,
+  target: Pick<Flight, "startTime" | "endTime">
+): boolean {
+  if (
+    sourceRule?.category !== "分流" ||
+    sourceRule.earlyReleaseMinutes <= 0 ||
+    timeToMinutes(source.startTime) < 12 * 60
+  )
+    return false;
+  const sourceStart = timeToMinutes(source.startTime);
+  let sourceEnd = timeToMinutes(source.endTime);
+  let targetStart = timeToMinutes(target.startTime);
+  if (sourceEnd <= sourceStart) sourceEnd += 24 * 60;
+  if (targetStart < sourceStart) targetStart += 24 * 60;
+  const overlapMinutes = sourceEnd - targetStart;
+  return overlapMinutes > 0 && overlapMinutes <= sourceRule.earlyReleaseMinutes;
+}
 
 export function canReleaseForFlight(
   assignment: Assignment,
@@ -9,19 +30,21 @@ export function canReleaseForFlight(
   const rule = assignment.positionRuleId
     ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
     : undefined;
-  if (
-    rule?.category !== "分流" ||
-    rule.earlyReleaseMinutes <= 0 ||
-    timeToMinutes(assignment.startTime) < 12 * 60
-  )
-    return false;
-  const assignmentStart = timeToMinutes(assignment.startTime);
-  let assignmentEnd = timeToMinutes(assignment.endTime);
-  let nextStart = timeToMinutes(flight.startTime);
-  if (assignmentEnd <= assignmentStart) assignmentEnd += 24 * 60;
-  if (nextStart < assignmentStart) nextStart += 24 * 60;
-  const overlapMinutes = assignmentEnd - nextStart;
-  return overlapMinutes > 0 && overlapMinutes <= rule.earlyReleaseMinutes;
+  return isValidDiversionTransfer(assignment, rule, flight);
+}
+
+export function isValidAssignmentDiversionTransfer(
+  state: AppState,
+  source: Assignment,
+  target: Pick<Flight, "startTime" | "endTime">
+): boolean {
+  const rule = source.positionRuleId
+    ? state.positionRules.find((item) => item.id === source.positionRuleId)
+    : undefined;
+  const sourceFlight = state.flights.find(
+    (item) => item.id === source.flightId
+  );
+  return isValidDiversionTransfer(sourceFlight ?? source, rule, target);
 }
 
 export function staffConflicts(

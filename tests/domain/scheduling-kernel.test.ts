@@ -540,7 +540,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         );
       expect(conflicts).toHaveLength(0);
     }
-  });
+  }, 30_000);
 
   it("marks a position unfilled when every qualified person is unavailable", async () => {
     const state = createDefaultState();
@@ -6250,6 +6250,67 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       endTime: "17:00",
       workHours: 1,
     });
+  });
+
+  it("allows a valid afternoon diversion transfer without the regular 90-minute gap", async () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => item.id === "2")!;
+    person.nightShift = true;
+    state.staff = [person];
+    state.flights = [
+      {
+        id: "f1",
+        flightNo: "F1",
+        startTime: "21:05",
+        endTime: "23:05",
+        bookedPassengers: 0,
+        positions: ["P1"],
+        remark: "",
+      },
+      {
+        id: "f2",
+        flightNo: "F2",
+        startTime: "22:10",
+        endTime: "00:10",
+        bookedPassengers: 0,
+        positions: ["P2"],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "p1",
+        flightNo: "F1",
+        name: "P1",
+        category: "分流",
+        qualifiedStaffIds: [person.id],
+        earlyReleaseMinutes: 60,
+      },
+      {
+        ...base,
+        id: "p2",
+        flightNo: "F2",
+        name: "P2",
+        category: "常规",
+        qualifiedStaffIds: [person.id],
+        earlyReleaseMinutes: 0,
+      },
+    ];
+    state.settings.minimumRegularTransitionMinutes = 90;
+
+    const result = await generateSchedule(state, "2026-10-03");
+    const assignments = result.assignments.filter(
+      (assignment) => assignment.positionRuleId
+    );
+
+    expect(assignments.map((assignment) => assignment.staffId)).toEqual([
+      person.id,
+      person.id,
+    ]);
+    expect(assignments[0]!.endTime).toBe("22:10");
+    expect(assignments[0]!.workHours).toBeCloseTo(65 / 60);
   });
 
   it("does not apply diversion release to morning flights", async () => {

@@ -16,12 +16,18 @@ export type UiCommand =
       date?: string;
     }
   | { type: "close-dialog" }
+  | { type: "apply-workbook-import" }
   | { type: "dismiss-toast" }
   | { type: "export-config" }
   | { type: "export-schedule" }
   | { type: "export-share-html" }
   | { type: "export-share-png" }
   | { type: "generate-schedule" }
+  | { type: "stop-schedule-without-result" }
+  | { type: "stop-schedule-with-current-result" }
+  | { type: "open-swap-analysis"; assignmentId: string }
+  | { type: "select-swap-target"; assignmentId: string }
+  | { type: "apply-swap-analysis" }
   | {
       type: "update-configuration";
       entity: string;
@@ -65,6 +71,7 @@ export type UiCommand =
         | "duty"
         | "recovery-target"
         | "cross-workday-reservation"
+        | "cross-flight-priority"
         | "late-position"
         | "supervisor"
         | "transition";
@@ -75,6 +82,7 @@ export type UiCommand =
         | "duty"
         | "recovery-target"
         | "cross-workday-reservation"
+        | "cross-flight-priority"
         | "late-position"
         | "supervisor"
         | "transition";
@@ -82,6 +90,7 @@ export type UiCommand =
     }
   | { type: "move-duty-priority"; id: string; direction: -1 | 1 }
   | { type: "move-cross-workday-reservation"; id: string; direction: -1 | 1 }
+  | { type: "move-cross-flight-priority"; id: string; direction: -1 | 1 }
   | { type: "toggle-administrative-mode"; enabled: boolean }
   | {
       type: "assign-staff";

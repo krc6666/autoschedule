@@ -6,6 +6,7 @@ import type {
   ApplicationContext,
   UiCommandController,
 } from "../application-context";
+import { analyzeManualSwap } from "../../domain/reviews/manual-swap-analysis";
 
 export class ScheduleController implements UiCommandController {
   constructor(private readonly context: ApplicationContext) {}
@@ -16,6 +17,28 @@ export class ScheduleController implements UiCommandController {
       case "generate-schedule":
         await this.generate(this.context.view().date);
         return true;
+      case "stop-schedule-without-result":
+        if (!this.context.scheduleRunner.stopWithoutResult())
+          this.context.toast("当前没有正在运行的排班", "warning");
+        return true;
+      case "stop-schedule-with-current-result":
+        if (!this.context.scheduleRunner.stopWithCurrentResult())
+          this.context.toast("完整安全方案尚未准备好，请稍后再试", "warning");
+        return true;
+      case "open-swap-analysis":
+        this.context.updateView({
+          dialog: {
+            kind: "swap-analysis",
+            sourceAssignmentId: command.assignmentId,
+            targetAssignmentId: null,
+            analysis: null,
+          },
+        });
+        return true;
+      case "select-swap-target":
+        return this.selectSwapTarget(command.assignmentId);
+      case "apply-swap-analysis":
+        return this.applySwapAnalysis();
       case "toggle-administrative-mode":
         schedule.setAdministrativeMode(command.enabled);
         this.context.commit();
@@ -95,16 +118,23 @@ export class ScheduleController implements UiCommandController {
 
   async generate(date: string): Promise<void> {
     try {
-      const result = await this.context.scheduleRunner.calculate(
+      const outcome = await this.context.scheduleRunner.calculate(
         this.context.model(),
         date
       );
+      if (outcome.kind === "stopped-without-result") {
+        this.context.toast("排班已停止，原班表保持不变", "warning");
+        return;
+      }
+      const result = outcome.result;
       this.context.store.getState().schedule.install(date, result);
       this.context.updateView({ section: "schedule" });
       this.context.commit(
-        result.unfilledCount
-          ? `排班已生成，${result.unfilledCount} 个常规岗位待补位`
-          : "排班已生成"
+        outcome.kind === "stopped-with-result"
+          ? "排班已停止，并采用最近一份完整安全方案"
+          : result.unfilledCount
+            ? `排班已生成，${result.unfilledCount} 个常规岗位待补位`
+            : "排班已生成"
       );
     } catch (error) {
       this.context.toast(
@@ -125,6 +155,71 @@ export class ScheduleController implements UiCommandController {
       .schedule.assignStaff(assignmentId, staffId, sourceAssignmentId);
     if (result.error) this.context.toast(result.error, "danger");
     else if (result.changed) this.context.commit(result.message);
+    return true;
+  }
+
+  private selectSwapTarget(targetAssignmentId: string): boolean {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "swap-analysis") return true;
+    const analysis = analyzeManualSwap(
+      this.context.model(),
+      this.context.view().date,
+      dialog.sourceAssignmentId,
+      targetAssignmentId
+    );
+    this.context.updateView({
+      dialog: { ...dialog, targetAssignmentId, analysis },
+    });
+    return true;
+  }
+
+  private applySwapAnalysis(): boolean {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "swap-analysis" || !dialog.targetAssignmentId)
+      return true;
+    const analysis = analyzeManualSwap(
+      this.context.model(),
+      this.context.view().date,
+      dialog.sourceAssignmentId,
+      dialog.targetAssignmentId
+    );
+    if (analysis.outcome === "blocked") {
+      this.context.updateView({ dialog: { ...dialog, analysis } });
+      this.context.toast(`不能交换：${analysis.blockers.join("；")}`, "danger");
+      return true;
+    }
+    if (
+      analysis.outcome === "soft-tradeoff" &&
+      !this.context.confirm(
+        `这次交换会带来以下取舍：${analysis.tradeoffs.join("；")}。仍要确认交换吗？`
+      )
+    )
+      return true;
+    const source = this.context
+      .model()
+      .assignments.find(
+        (assignment) => assignment.id === dialog.sourceAssignmentId
+      );
+    const target = this.context
+      .model()
+      .assignments.find(
+        (assignment) => assignment.id === dialog.targetAssignmentId
+      );
+    if (!source || !target?.staffId) {
+      this.context.toast("岗位已经变化，请重新打开分析", "danger");
+      return true;
+    }
+    const result = this.context.store
+      .getState()
+      .schedule.assignStaff(source.id, target.staffId, target.id);
+    if (result.error) {
+      this.context.toast(result.error, "danger");
+      return true;
+    }
+    if (result.changed) {
+      this.context.updateView({ dialog: null });
+      this.context.commit("人员岗位已按分析结果交换");
+    }
     return true;
   }
 

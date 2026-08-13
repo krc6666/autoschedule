@@ -16,6 +16,7 @@ import {
 } from "./reassignment-safety-policy";
 import { evaluateWorkloadBalance } from "./workload-balance";
 import { crossWorkdayReservationStatuses } from "./cross-workday-qualification-reservation";
+import { crossFlightPriorityReassignmentReasons } from "../rules/cross-flight-priority";
 
 export function isRotationLocked(
   state: AppState,
@@ -82,7 +83,9 @@ function plannedAssignmentSafetyReasons(
   facts?: ScheduleRunFacts,
   permittedConcurrentAssignmentIds: ReadonlySet<string> = new Set(),
   frequencyFacts?: ScheduleFrequencyFacts,
-  latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy
+  latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy,
+  allowWorkloadBalanceRegression = false,
+  allowCutoffProtectionRegression = false
 ): string[] {
   const originalById = new Map(
     assignments.map((assignment) => [assignment.id, assignment])
@@ -98,6 +101,15 @@ function plannedAssignmentSafetyReasons(
   const policy = ROTATION_REVIEW_POLICIES[review];
   const primaryAssignment = originalById.get(primaryAssignmentId)!;
   const reasons: string[] = [];
+  reasons.push(
+    ...crossFlightPriorityReassignmentReasons(
+      state,
+      assignments,
+      planned,
+      date,
+      frequencyFacts
+    )
+  );
   for (const assignment of planned.filter((item) =>
     changedAssignmentIds.has(item.id)
   )) {
@@ -148,6 +160,7 @@ function plannedAssignmentSafetyReasons(
         facts,
         frequencyFacts,
         latePriorityFatigueRelief,
+        allowCutoffProtectionRegression,
       })
     );
     const safetyAssignments = permittedConcurrentAssignmentIds.has(
@@ -224,7 +237,7 @@ function plannedAssignmentSafetyReasons(
   ) {
     reasons.push("交换后值班人员没有12点前开始的航班");
   }
-  if (policy.protectWorkloadBalance) {
+  if (policy.protectWorkloadBalance && !allowWorkloadBalanceRegression) {
     const before = evaluateWorkloadBalance(
       state,
       date,
@@ -291,6 +304,8 @@ interface ReassignmentSafetyOptionsBase {
   facts?: ScheduleRunFacts;
   frequencyFacts?: ScheduleFrequencyFacts;
   latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy;
+  allowWorkloadBalanceRegression?: boolean;
+  allowCutoffProtectionRegression?: boolean;
 }
 
 interface RotationCycleSafetyOptions extends ReassignmentSafetyOptionsBase {
@@ -393,7 +408,9 @@ export function reassignmentSafetyReasons(
       facts,
       options.permittedConcurrentAssignmentIds,
       frequencyFacts,
-      options.latePriorityFatigueRelief
+      options.latePriorityFatigueRelief,
+      options.allowWorkloadBalanceRegression,
+      options.allowCutoffProtectionRegression
     );
   }
 

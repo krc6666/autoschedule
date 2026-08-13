@@ -1,6 +1,7 @@
 import { html } from "lit";
 
 import { dispatchUiCommand, inputValue } from "../events/ui-command";
+import { dynamicSelectValue } from "./dynamic-select";
 
 export function configurationInput(
   target: EventTarget,
@@ -76,6 +77,7 @@ export function configurationSelect(
   options: readonly string[]
 ) {
   return html`<select
+    ${dynamicSelectValue(value)}
     class="form-select form-select-sm"
     .value=${value}
     aria-label=${label}
@@ -88,6 +90,8 @@ export function configurationSelect(
         value: (event.currentTarget as HTMLSelectElement).value,
       })}
   >
-    ${options.map((option) => html`<option .value=${option}>${option}</option>`)}
+    ${options.map(
+      (option) => html`<option .value=${option}>${option}</option>`
+    )}
   </select>`;
 }

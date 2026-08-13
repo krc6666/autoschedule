@@ -167,6 +167,8 @@ function createChoices(
             facts: options.facts,
             frequencyFacts: options.frequencyFacts,
             latePriorityFatigueRelief: options.latePriorityFatigueRelief,
+            allowCutoffProtectionRegression:
+              options.allowCutoffProtectionRegression,
           }),
           ...dynamicChoiceSafetyReasons(
             options,

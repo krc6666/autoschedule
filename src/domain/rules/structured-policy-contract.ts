@@ -51,6 +51,13 @@ export interface CrossWorkdayQualificationReservation {
   minimumStaffCount: number;
 }
 
+export interface CrossFlightPriorityPolicy {
+  id: string;
+  enabled: boolean;
+  flightNo: string;
+  positions: string[];
+}
+
 export interface StructuredSchedulePolicies {
   positionTransitionPolicies: PositionTransitionPolicy[];
   dutyPositionPriorities: DutyPositionPriority[];
@@ -58,6 +65,7 @@ export interface StructuredSchedulePolicies {
   lateShiftRecoveryPositionRules: LateShiftRecoveryPositionRule[];
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
   crossWorkdayQualificationReservations: CrossWorkdayQualificationReservation[];
+  crossFlightPriorityPolicies: CrossFlightPriorityPolicy[];
 }
 
 export const STRUCTURED_POLICY_KEYS = [
@@ -67,4 +75,5 @@ export const STRUCTURED_POLICY_KEYS = [
   "lateShiftRecoveryPositionRules",
   "mobileSupervisorCoverageRules",
   "crossWorkdayQualificationReservations",
+  "crossFlightPriorityPolicies",
 ] as const satisfies readonly (keyof StructuredSchedulePolicies)[];

@@ -28,6 +28,8 @@ const COMMANDS_ALLOWED_DURING_SCHEDULE_RUN = new Set<UiCommand["type"]>([
   "dismiss-toast",
   "set-schedule-zoom",
   "set-load-sort",
+  "stop-schedule-without-result",
+  "stop-schedule-with-current-result",
 ]);
 
 const COMMANDS_THAT_MAY_RUN_SCHEDULE = new Set<UiCommand["type"]>([
@@ -63,6 +65,7 @@ function initialView(
       stage: "prepare",
       percent: 0,
       steps: [],
+      canAdoptCurrentResult: false,
     },
   };
 }
@@ -95,6 +98,7 @@ export class ApplicationCoordinator implements ApplicationContext {
               this.model().settings,
               this.model().flights
             ),
+            canAdoptCurrentResult: false,
           },
         });
       },
@@ -106,6 +110,13 @@ export class ApplicationCoordinator implements ApplicationContext {
             visible: true,
             stage,
             percent,
+          },
+        }),
+      safeResultAvailable: () =>
+        this.updateView({
+          progress: {
+            ...this.currentView.progress,
+            canAdoptCurrentResult: true,
           },
         }),
       finish: (outcome) => {
