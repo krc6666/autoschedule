@@ -6,13 +6,50 @@ import {
   addAdministrativeStaff,
   addFlightsFromTemplates,
   addStaff,
+  deleteTemplate,
   deleteStaff,
+  setWeeklyFlightPlanFlight,
   updateConfigurationField,
 } from "../../src/app/configuration-actions";
+import { flightNumbersForDate } from "../../src/domain/flights/weekly-flight-plan";
 import { buildFlightPlanReconciliation } from "../../src/domain/flights/flight-plan-reconciliation";
 import type { OnlineFlightQueryResult } from "../../src/infrastructure/flight-query";
 
 describe("configuration actions", () => {
+  it("updates only the selected weekday and keeps template references synchronized", () => {
+    const state = createDefaultState();
+    const template = state.templates[0]!;
+    const originalFlightNo = template.flightNo;
+
+    expect(setWeeklyFlightPlanFlight(state, 1, originalFlightNo, true)).toBe(
+      true
+    );
+    expect(flightNumbersForDate(state.weeklyFlightPlans, "2026-08-17")).toEqual(
+      [originalFlightNo]
+    );
+    expect(flightNumbersForDate(state.weeklyFlightPlans, "2026-08-18")).toEqual(
+      []
+    );
+
+    expect(
+      updateConfigurationField(
+        state,
+        "template",
+        template.id,
+        "flightNo",
+        "NEW937"
+      )
+    ).toBe("updated");
+    expect(flightNumbersForDate(state.weeklyFlightPlans, "2026-08-17")).toEqual(
+      ["NEW937"]
+    );
+
+    deleteTemplate(state, template.id);
+    expect(flightNumbersForDate(state.weeklyFlightPlans, "2026-08-17")).toEqual(
+      []
+    );
+  });
+
   it("defaults standby qualification by staff type and clears it for administrative support", () => {
     const state = createDefaultState();
 

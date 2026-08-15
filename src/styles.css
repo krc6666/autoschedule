@@ -198,6 +198,52 @@ select {
   min-height: 0;
   overflow: hidden;
 }
+.next-workday-flight-picker {
+  min-height: 0;
+}
+.next-workday-flight-list {
+  max-height: min(52vh, 520px);
+  overflow-y: auto;
+}
+.next-workday-flight-list .list-group-item {
+  min-height: 48px;
+  cursor: pointer;
+}
+.next-workday-flight-list .list-group-item strong {
+  overflow-wrap: anywhere;
+}
+.weekly-flight-plan-section {
+  display: grid;
+  gap: 16px;
+}
+.weekly-flight-plan-heading {
+  margin-bottom: 0;
+}
+.weekly-flight-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(64px, 1fr));
+  width: min(100%, 720px);
+}
+.weekly-flight-template-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+.weekly-flight-template-row {
+  display: grid;
+  grid-template-columns: 20px minmax(72px, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--as-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.weekly-flight-template-row span {
+  color: var(--as-muted);
+  font-size: 13px;
+}
 .section-heading {
   display: flex;
   align-items: center;
@@ -2410,6 +2456,18 @@ autoschedule-previous-schedule-comparison {
   }
   .workspace-section {
     padding: 15px 12px;
+  }
+  .weekly-flight-weekdays {
+    grid-template-columns: repeat(4, minmax(56px, 1fr));
+  }
+  .weekly-flight-template-list {
+    grid-template-columns: 1fr;
+  }
+  .weekly-flight-template-row {
+    grid-template-columns: 20px minmax(70px, 1fr) auto;
+  }
+  .weekly-flight-template-row span:last-child {
+    display: none;
   }
   .online-flight-query-form {
     grid-template-columns: 1fr;

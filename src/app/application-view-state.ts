@@ -6,11 +6,19 @@ import type { ScheduleProgressOutcome } from "../ui/projections/schedule-progres
 import type { FlightPlanReconciliation } from "../domain/flights/flight-plan-reconciliation";
 import type { DutyRosterImportPreview } from "../infrastructure/duty-roster-excel";
 import type { OnlineFlight } from "../infrastructure/flight-query";
-import type { AppSection, AppState } from "../model";
+import type { AppSection, AppState, IsoWeekday } from "../model";
 import type { ManualSwapAnalysis } from "../domain/reviews/manual-swap-analysis";
+import type { NextWorkdayFlightCandidate } from "../domain/flights/next-workday-flight-plan";
 
 export type ApplicationDialog =
   | { kind: "templates" }
+  | {
+      kind: "next-workday-flight-picker";
+      date: string;
+      weekday: IsoWeekday;
+      candidates: NextWorkdayFlightCandidate[];
+      selectedIds: string[];
+    }
   | { kind: "qualification"; positionRuleId: string }
   | {
       kind: "flight-query";

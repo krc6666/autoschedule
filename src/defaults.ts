@@ -1,6 +1,7 @@
 import type { AppState, Flight, PositionRule, Staff } from "./model";
 import { createDefaultScheduleSettings } from "./domain/rules/schedule-settings";
 import { latePriorityFlightScopeCandidates } from "./domain/statistics/late-priority-flight-scope";
+import { createEmptyWeeklyFlightPlans } from "./domain/flights/weekly-flight-plan";
 import { orderPositionRules } from "./utils";
 
 const allRegular = Array.from({ length: 17 }, (_, index) => String(index + 2));
@@ -190,7 +191,7 @@ export function createDefaultState(): AppState {
   settings.latePriorityFlightNumbers =
     latePriorityFlightScopeCandidates(positionRules);
   return {
-    version: 4,
+    version: 5,
     staff: structuredClone(defaultStaff),
     flights: structuredClone(defaultFlights),
     templates: defaultFlights.map(
@@ -199,6 +200,7 @@ export function createDefaultState(): AppState {
         id: `template-${id}`,
       })
     ),
+    weeklyFlightPlans: createEmptyWeeklyFlightPlans(),
     positionRules,
     history: [],
     dutyRosterOverrides: [],

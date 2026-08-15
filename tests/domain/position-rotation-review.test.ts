@@ -464,10 +464,10 @@ describe("consecutive priority-position rotation review", () => {
       new Set()
     );
 
-    expect(priority.staffId).toBe(replacementWorker!.id);
-    expect(ordinary.staffId).toBe(repeatedWorker!.id);
-    expect(g09).toMatchObject({ endTime: "21:55" });
-    expect(g09.workHours).toBeCloseTo(0.83, 2);
+    expect(priority.staffId).toBe(repeatedWorker!.id);
+    expect(ordinary.staffId).toBe(replacementWorker!.id);
+    expect(g09).toMatchObject({ endTime: "22:10" });
+    expect(g09.workHours).toBeCloseTo(1.08, 2);
     expect(warnings.join("\n")).not.toContain("重点岗位连续轮岗未落实");
   });
 

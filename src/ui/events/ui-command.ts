@@ -1,7 +1,7 @@
 import type { SchedulePolicyInput } from "../../app/policy-actions";
 import type { WorkbookImportMode } from "../../app/workbook-import-controller";
 import type { DutyRosterSlot } from "../../domain/duty-roster/roster";
-import type { AppSection } from "../../model";
+import type { AppSection, IsoWeekday } from "../../model";
 
 export type EditableValue = string | number | boolean;
 
@@ -41,6 +41,12 @@ export type UiCommand =
   | { type: "add-template-flight"; id: string }
   | { type: "add-template" }
   | { type: "delete-template"; id: string }
+  | {
+      type: "set-weekly-flight-template";
+      weekday: IsoWeekday;
+      flightNo: string;
+      selected: boolean;
+    }
   | { type: "add-staff"; administrative: boolean }
   | { type: "delete-staff"; id: string }
   | { type: "add-positions"; flightNo: string; count: number }
@@ -116,6 +122,11 @@ export type UiCommand =
   | { type: "clear-schedule" }
   | { type: "archive-schedule" }
   | { type: "archive-next-duty-day" }
+  | {
+      type: "update-next-workday-flight-picker-selection";
+      selectedIds: string[];
+    }
+  | { type: "confirm-next-workday-flight-picker"; selectedIds: string[] }
   | { type: "set-schedule-zoom"; value: number }
   | {
       type: "set-load-sort";

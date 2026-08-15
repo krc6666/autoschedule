@@ -12,11 +12,13 @@ import {
   deleteTemplate,
   movePosition,
   saveQualified,
+  setWeeklyFlightPlanFlight,
   sortCountersDescending,
   updateConfigurationField,
 } from "../configuration-actions";
 import type { FlightPlanReconciliation } from "../../domain/flights/flight-plan-reconciliation";
 import type { ConfigurationValue } from "../configuration-actions";
+import type { IsoWeekday } from "../../model";
 import type { StateCommand } from "./store-command";
 
 export function createConfigurationCommands(command: StateCommand) {
@@ -26,6 +28,14 @@ export function createConfigurationCommands(command: StateCommand) {
     addTemplate: () => command(addTemplate),
     deleteTemplate: (id: string) =>
       command((state) => deleteTemplate(state, id)),
+    setWeeklyFlightPlanFlight: (
+      weekday: IsoWeekday,
+      flightNo: string,
+      selected: boolean
+    ) =>
+      command((state) =>
+        setWeeklyFlightPlanFlight(state, weekday, flightNo, selected)
+      ),
     addTemplateFlight: (id: string) =>
       command((state) => addTemplateFlight(state, id)),
     addStaff: () => command(addStaff),

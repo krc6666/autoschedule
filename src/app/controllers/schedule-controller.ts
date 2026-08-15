@@ -1,5 +1,8 @@
 import { currentScheduleHistory } from "../history-actions";
-import { manualAssignmentConfirmation } from "../schedule-actions";
+import {
+  installArchivedNextWorkdaySchedule,
+  manualAssignmentConfirmation,
+} from "../schedule-actions";
 import { addIsoDays } from "../../domain/shared/time";
 import type { UiCommand } from "../../ui/events/ui-command";
 import type {
@@ -7,6 +10,14 @@ import type {
   UiCommandController,
 } from "../application-context";
 import { analyzeManualSwap } from "../../domain/reviews/manual-swap-analysis";
+import {
+  buildNextWorkdayFlightCandidates,
+  materializeNextWorkdayFlights,
+} from "../../domain/flights/next-workday-flight-plan";
+import {
+  flightNumbersForDate,
+  isoWeekdayForDate,
+} from "../../domain/flights/weekly-flight-plan";
 
 export class ScheduleController implements UiCommandController {
   constructor(private readonly context: ApplicationContext) {}
@@ -97,7 +108,13 @@ export class ScheduleController implements UiCommandController {
         this.archive();
         return true;
       case "archive-next-duty-day":
-        await this.archiveNext();
+        this.openNextWorkdayFlightPicker();
+        return true;
+      case "update-next-workday-flight-picker-selection":
+        this.updateNextWorkdayFlightSelection(command.selectedIds);
+        return true;
+      case "confirm-next-workday-flight-picker":
+        await this.confirmNextWorkdayFlightPicker(command.selectedIds);
         return true;
       case "set-schedule-zoom": {
         const zoom = Math.min(1.6, Math.max(0.7, command.value));
@@ -253,23 +270,121 @@ export class ScheduleController implements UiCommandController {
     this.context.commit("排班已归档到历史");
   }
 
-  private async archiveNext(): Promise<void> {
+  private openNextWorkdayFlightPicker(): void {
     const currentDate = this.context.view().date;
     const records = currentScheduleHistory(this.context.model(), currentDate);
     if (!records.length)
       return this.context.toast("没有可归档的已排岗位", "warning");
-    if (!this.confirmStale("归档当前排班并生成后天排班")) return;
     const nextDate = addIsoDays(currentDate, 2);
+    const model = this.context.model();
+    const candidates = buildNextWorkdayFlightCandidates(
+      model.templates,
+      flightNumbersForDate(model.weeklyFlightPlans, nextDate)
+    );
+    if (!candidates.length)
+      return this.context.toast("没有可选择的本地航班", "warning");
+    this.context.updateView({
+      dialog: {
+        kind: "next-workday-flight-picker",
+        date: nextDate,
+        weekday: isoWeekdayForDate(nextDate),
+        candidates,
+        selectedIds: candidates
+          .filter((candidate) => candidate.selectedByDefault)
+          .map((candidate) => candidate.id),
+      },
+    });
+  }
+
+  private updateNextWorkdayFlightSelection(selectedIds: string[]): void {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "next-workday-flight-picker") return;
+    const candidateIds = new Set(
+      dialog.candidates.map((candidate) => candidate.id)
+    );
+    this.context.updateView({
+      dialog: {
+        ...dialog,
+        selectedIds: [...new Set(selectedIds)].filter((id) =>
+          candidateIds.has(id)
+        ),
+      },
+    });
+  }
+
+  private async confirmNextWorkdayFlightPicker(
+    selectedIds: string[]
+  ): Promise<void> {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "next-workday-flight-picker") return;
+    const currentDate = this.context.view().date;
+    const records = currentScheduleHistory(this.context.model(), currentDate);
+    if (!records.length) {
+      this.context.toast("没有可归档的已排岗位", "warning");
+      return;
+    }
+    if (!this.confirmStale("归档当前排班并生成后天排班")) return;
+    const selected = new Set(selectedIds);
+    const flights = materializeNextWorkdayFlights(
+      dialog.candidates,
+      dialog.candidates
+        .filter((candidate) => selected.has(candidate.id))
+        .map((candidate) => candidate.id)
+    );
+    if (!flights.length) {
+      this.context.toast("请至少选择一个航班", "warning");
+      return;
+    }
+    const nextDate = dialog.date;
     if (
       !this.context.confirm(
-        `归档 ${currentDate}，并根据今天的负荷生成后天 ${nextDate} 排班？`
+        `归档 ${currentDate}，并根据已选择的 ${flights.length} 个航班生成后天 ${nextDate} 排班？`
       )
     )
       return;
-    this.context.store.getState().records.replaceHistory(currentDate, records);
-    this.context.updateView({ date: nextDate });
-    this.context.preferences.saveScheduleDate(nextDate);
-    await this.generate(nextDate);
+
+    const temporaryState = structuredClone(this.context.model());
+    temporaryState.history = [
+      ...temporaryState.history.filter((item) => item.date !== currentDate),
+      ...records,
+    ];
+    temporaryState.flights = flights;
+    temporaryState.assignments = [];
+    temporaryState.activeScheduleDate = null;
+    temporaryState.schedulePolicyStale = false;
+
+    this.context.updateView({ dialog: null });
+    try {
+      const outcome = await this.context.scheduleRunner.calculate(
+        temporaryState,
+        nextDate
+      );
+      if (outcome.kind !== "completed") {
+        this.context.toast("排班已停止，原班表保持不变", "warning");
+        return;
+      }
+      installArchivedNextWorkdaySchedule(
+        temporaryState,
+        currentDate,
+        records,
+        nextDate,
+        flights,
+        outcome.result
+      );
+      this.context.store.getState().replaceModel(temporaryState);
+      this.context.preferences.saveScheduleDate(nextDate);
+      this.context.updateView({ date: nextDate, section: "schedule" });
+      this.context.commit(
+        outcome.result.unfilledCount
+          ? `后天排班已生成，${outcome.result.unfilledCount} 个常规岗位待补位`
+          : "后天排班已生成"
+      );
+    } catch (error) {
+      this.context.toast(
+        `后天排班生成失败：${error instanceof Error ? error.message : String(error)}`,
+        "danger"
+      );
+    }
   }
 
   private confirmStale(action: string): boolean {

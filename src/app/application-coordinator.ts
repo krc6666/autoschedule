@@ -36,6 +36,7 @@ const COMMANDS_THAT_MAY_RUN_SCHEDULE = new Set<UiCommand["type"]>([
   "generate-schedule",
   "toggle-administrative-mode",
   "archive-next-duty-day",
+  "confirm-next-workday-flight-picker",
 ]);
 
 function mayRunSchedule(command: UiCommand): boolean {

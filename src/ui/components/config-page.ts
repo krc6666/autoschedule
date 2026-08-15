@@ -5,6 +5,7 @@ import { LightDomElement } from "./light-dom-element";
 import "./configuration-settings-section";
 import "./position-rules-section";
 import "./staff-config-section";
+import "./weekly-flight-plan-section";
 
 export class ConfigPageElement extends LightDomElement {
   static override properties = { model: { attribute: false } };
@@ -21,6 +22,9 @@ export class ConfigPageElement extends LightDomElement {
       <autoschedule-configuration-settings
         .model=${this.model}
       ></autoschedule-configuration-settings>
+      <autoschedule-weekly-flight-plan
+        .model=${this.model}
+      ></autoschedule-weekly-flight-plan>
     `;
   }
 }

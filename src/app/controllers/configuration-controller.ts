@@ -97,6 +97,16 @@ export class ConfigurationController implements UiCommandController {
         commands.deleteTemplate(command.id);
         this.context.commit("模板已删除");
         return true;
+      case "set-weekly-flight-template":
+        if (
+          commands.setWeeklyFlightPlanFlight(
+            command.weekday,
+            command.flightNo,
+            command.selected
+          )
+        )
+          this.context.commit("每周航班计划已更新");
+        return true;
       case "add-staff":
         command.administrative
           ? commands.addAdministrativeStaff()

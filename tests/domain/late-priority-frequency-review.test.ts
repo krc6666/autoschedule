@@ -251,4 +251,118 @@ describe("late priority frequency review", () => {
     expect(warnings[0]).not.toMatch(/infeasible|求解目标|完整重排方案/i);
     expect(warnings[0]!.split("。").filter(Boolean)).toHaveLength(2);
   });
+
+  it("commits the diversion release time together with a late-priority reassignment", async () => {
+    const state = createDefaultState();
+    const [protectedWorker, replacementWorker] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = [protectedWorker!, replacementWorker!];
+    protectedWorker!.name = "人员A";
+    replacementWorker!.name = "人员B";
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
+    state.settings.positionRotationEnabled = true;
+    state.settings.latePriorityFlightNumbers = ["TARGET"];
+    state.settings.lateShiftEndTime = "23:00";
+    state.settings.highLoadProtectionEnabled = false;
+    state.settings.rollingLoadProtectionEnabled = false;
+    state.settings.workloadBalanceEnabled = false;
+    state.settings.positionTransitionPolicies = [];
+    const sourceFlight = {
+      ...state.flights[0]!,
+      id: "source-flight",
+      flightNo: "SOURCE",
+      startTime: "21:05",
+      endTime: "23:05",
+    };
+    const targetFlight = {
+      ...state.flights[0]!,
+      id: "target-flight",
+      flightNo: "TARGET",
+      startTime: "21:55",
+      endTime: "23:55",
+    };
+    const sourceRule: PositionRule = {
+      ...state.positionRules[0]!,
+      id: "source-rule",
+      flightNo: "SOURCE",
+      name: "G09",
+      category: "分流",
+      earlyReleaseMinutes: 75,
+      qualifiedStaffIds: [protectedWorker!.id],
+    };
+    const targetRule: PositionRule = {
+      ...sourceRule,
+      id: "target-rule",
+      flightNo: "TARGET",
+      name: "H02",
+      category: "常规",
+      remark: "申报",
+      earlyReleaseMinutes: 0,
+      qualifiedStaffIds: [protectedWorker!.id, replacementWorker!.id],
+    };
+    const source: Assignment = {
+      id: "source-assignment",
+      flightId: sourceFlight.id,
+      flightNo: sourceFlight.flightNo,
+      positionRuleId: sourceRule.id,
+      position: sourceRule.name,
+      staffId: protectedWorker!.id,
+      staffName: protectedWorker!.name,
+      startTime: sourceFlight.startTime,
+      endTime: "22:10",
+      workHours: 1.08,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const target: Assignment = {
+      id: "target-assignment",
+      flightId: targetFlight.id,
+      flightNo: targetFlight.flightNo,
+      positionRuleId: targetRule.id,
+      position: targetRule.name,
+      staffId: replacementWorker!.id,
+      staffName: replacementWorker!.name,
+      startTime: targetFlight.startTime,
+      endTime: targetFlight.endTime,
+      workHours: 2,
+      fatiguePoints: 5,
+      remark: targetRule.remark,
+      manualRemark: "",
+      status: "assigned",
+    };
+    state.flights = [sourceFlight, targetFlight];
+    state.positionRules = [sourceRule, targetRule];
+    state.history = Array.from({ length: 4 }, (_, index) => ({
+      id: `history-${index}`,
+      date: `2026-08-${10 + index}`,
+      flightNo: "TARGET",
+      position: "H02",
+      staffId: replacementWorker!.id,
+      staffName: replacementWorker!.name,
+      startTime: "21:55",
+      endTime: "23:55",
+      workHours: 2,
+      fatiguePoints: 5,
+      remark: "申报",
+    }));
+    const assignments = [source, target];
+
+    await reviewLatePriorityFrequency(
+      defaultHighsSolver,
+      state,
+      assignments,
+      DATE,
+      new Set()
+    );
+
+    expect(target.staffId).toBe(protectedWorker!.id);
+    expect(source.endTime).toBe("21:55");
+    expect(source.workHours).toBe(0.83);
+  });
 });

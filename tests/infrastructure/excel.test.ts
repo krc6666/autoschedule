@@ -9,6 +9,7 @@ import {
   buildScheduleWorkbook,
   parseWorkbook,
 } from "../../src/infrastructure/excel";
+import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 
 describe("workbook boundary", () => {
   it("maps workbook rows into stable domain models", () => {
@@ -100,6 +101,36 @@ describe("workbook boundary", () => {
       category: "分流",
       earlyReleaseMinutes: 45,
     });
+  });
+
+  it("round-trips weekly flight plans and treats an empty sheet as a cleared plan", () => {
+    const state = createDefaultState();
+    state.weeklyFlightPlans = replaceWeeklyFlightPlan(
+      state.weeklyFlightPlans,
+      1,
+      [state.templates[0]!.flightNo, state.templates[1]!.flightNo]
+    );
+    state.weeklyFlightPlans = replaceWeeklyFlightPlan(
+      state.weeklyFlightPlans,
+      7,
+      [state.templates[2]!.flightNo]
+    );
+
+    const exported = buildConfigWorkbook(state);
+    const imported = parseWorkbook(exported, state.staff);
+
+    expect(exported.SheetNames).toContain("每周航班计划");
+    expect(imported.weeklyFlightPlans).toEqual(state.weeklyFlightPlans);
+
+    const emptyWorkbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      emptyWorkbook,
+      XLSX.utils.aoa_to_sheet([["星期", "航班号（用逗号分隔）"]]),
+      "每周航班计划"
+    );
+    expect(parseWorkbook(emptyWorkbook, state.staff).weeklyFlightPlans).toEqual(
+      createDefaultState().weeklyFlightPlans
+    );
   });
 
   it("round-trips cross-flight priority policies", () => {

@@ -20,12 +20,28 @@ import {
   nextWorkdayCutoffProtection,
 } from "../domain/reviews/cross-day-recovery";
 import type { AppState, Staff } from "../model";
+import type { Flight, HistoryRecord, ScheduleResult } from "../model";
+import { replaceHistoryForDate } from "./history-actions";
+import { installGeneratedSchedule } from "../domain/kernel/schedule-lifecycle";
 import { createId, normalizeText } from "../utils";
 
 export interface ScheduleEditResult {
   changed: boolean;
   message?: string;
   error?: string;
+}
+
+export function installArchivedNextWorkdaySchedule(
+  state: AppState,
+  currentDate: string,
+  records: HistoryRecord[],
+  nextDate: string,
+  flights: Flight[],
+  result: ScheduleResult
+): void {
+  replaceHistoryForDate(state, currentDate, records);
+  state.flights = flights;
+  installGeneratedSchedule(state, nextDate, result);
 }
 
 function refreshManualRuleEvidence(state: AppState): void {

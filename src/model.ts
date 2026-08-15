@@ -42,6 +42,13 @@ export interface FlightTemplate extends Omit<
   id: string;
 }
 
+export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export interface WeeklyFlightPlanEntry {
+  weekday: IsoWeekday;
+  flightNos: string[];
+}
+
 export interface PositionRule {
   id: string;
   flightNo: string;
@@ -136,10 +143,11 @@ export interface ScheduleSettings {
 }
 
 export interface AppState {
-  version: 4;
+  version: 5;
   staff: Staff[];
   flights: Flight[];
   templates: FlightTemplate[];
+  weeklyFlightPlans: WeeklyFlightPlanEntry[];
   positionRules: PositionRule[];
   history: HistoryRecord[];
   dutyRosterOverrides: DutyRosterOverride[];

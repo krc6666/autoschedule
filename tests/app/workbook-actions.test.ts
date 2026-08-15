@@ -8,8 +8,44 @@ import {
   applyWorkbookImport,
   validateDutyRosterImport,
 } from "../../src/app/workbook-actions";
+import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 
 describe("workbook actions", () => {
+  it("replaces an imported weekly plan, filters missing templates, and preserves it when omitted", () => {
+    const state = createDefaultState();
+    state.weeklyFlightPlans = replaceWeeklyFlightPlan(
+      state.weeklyFlightPlans,
+      1,
+      [state.templates[0]!.flightNo]
+    );
+    const preserved = structuredClone(state.weeklyFlightPlans);
+
+    applyWorkbookImport(state, { warnings: [] }, "config");
+    expect(state.weeklyFlightPlans).toEqual(preserved);
+
+    const importedPlan = replaceWeeklyFlightPlan(
+      createDefaultState().weeklyFlightPlans,
+      2,
+      [state.templates[1]!.flightNo, "MISSING100"]
+    );
+    const result = applyWorkbookImport(
+      state,
+      { weeklyFlightPlans: importedPlan, warnings: [] },
+      "config"
+    );
+
+    expect(
+      state.weeklyFlightPlans.find((entry) => entry.weekday === 1)?.flightNos
+    ).toEqual([]);
+    expect(
+      state.weeklyFlightPlans.find((entry) => entry.weekday === 2)?.flightNos
+    ).toEqual([state.templates[1]!.flightNo]);
+    expect(result).toEqual({
+      changedConfig: true,
+      recognized: "每周航班计划",
+    });
+  });
+
   it("applies a mixed import, clears the active schedule, and reports recognized data", () => {
     const state = createDefaultState();
     const flight = {

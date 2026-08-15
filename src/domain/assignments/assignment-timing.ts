@@ -30,7 +30,10 @@ export function canReleaseForFlight(
   const rule = assignment.positionRuleId
     ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
     : undefined;
-  return isValidDiversionTransfer(assignment, rule, flight);
+  const sourceFlight = state.flights.find(
+    (item) => item.id === assignment.flightId
+  );
+  return isValidDiversionTransfer(sourceFlight ?? assignment, rule, flight);
 }
 
 export function isValidAssignmentDiversionTransfer(

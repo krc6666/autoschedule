@@ -8,6 +8,11 @@ import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
 import { clearActiveSchedule } from "../domain/kernel/schedule-lifecycle";
 import type { AppState } from "../model";
 import { createId, orderPositionRules } from "../utils";
+import {
+  createEmptyWeeklyFlightPlans,
+  normalizeWeeklyFlightNo,
+  replaceWeeklyFlightPlan,
+} from "../domain/flights/weekly-flight-plan";
 
 export type ImportMode = "all" | "config" | "history";
 
@@ -103,6 +108,24 @@ export function applyWorkbookImport(
       })
     );
   }
+  if (importConfig && imported.weeklyFlightPlans) {
+    const availableFlightNos = new Set(
+      state.templates.map((template) =>
+        normalizeWeeklyFlightNo(template.flightNo)
+      )
+    );
+    state.weeklyFlightPlans = imported.weeklyFlightPlans.reduce(
+      (plans, entry) =>
+        replaceWeeklyFlightPlan(
+          plans,
+          entry.weekday,
+          entry.flightNos.filter((flightNo) =>
+            availableFlightNos.has(normalizeWeeklyFlightNo(flightNo))
+          )
+        ),
+      createEmptyWeeklyFlightPlans()
+    );
+  }
   if (mode === "all" && imported.flights?.length)
     state.flights = imported.flights;
   if (importHistory && imported.history) {
@@ -128,6 +151,7 @@ export function applyWorkbookImport(
       imported.staff?.length ||
       imported.flights?.length ||
       imported.templates?.length ||
+      imported.weeklyFlightPlans ||
       imported.positionRules?.length ||
       imported.settings
     );
@@ -142,6 +166,7 @@ export function applyWorkbookImport(
     importConfig &&
       imported.templates?.length &&
       `${imported.templates.length} 个航班模板`,
+    importConfig && imported.weeklyFlightPlans && "每周航班计划",
     importConfig &&
       imported.positionRules?.length &&
       `${imported.positionRules.length} 条岗位规则`,

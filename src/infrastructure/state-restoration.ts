@@ -11,6 +11,7 @@ import type {
   PositionRule,
   ScheduleSettings,
   Staff,
+  WeeklyFlightPlanEntry,
 } from "../model";
 import {
   SCHEDULING_RULES,
@@ -20,9 +21,15 @@ import {
 } from "../domain/rules/schedule-rule-contract";
 import { orderPositionRules } from "../utils";
 import { latePriorityFlightScopeCandidates } from "../domain/statistics/late-priority-flight-scope";
+import {
+  createEmptyWeeklyFlightPlans,
+  replaceWeeklyFlightPlan,
+} from "../domain/flights/weekly-flight-plan";
 
 type PersistedSettings = Partial<ScheduleSettings>;
-type PersistedAppState = Record<string, unknown> & { version: 1 | 2 | 3 | 4 };
+type PersistedAppState = Record<string, unknown> & {
+  version: 1 | 2 | 3 | 4 | 5;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -34,7 +41,8 @@ function isPersistedState(value: unknown): value is PersistedAppState {
     value.version === 1 ||
     value.version === 2 ||
     value.version === 3 ||
-    value.version === 4
+    value.version === 4 ||
+    value.version === 5
   );
 }
 
@@ -164,6 +172,26 @@ function restoreTemplates(value: unknown[]): FlightTemplate[] {
       },
     ];
   });
+}
+
+function restoreWeeklyFlightPlans(value: unknown): WeeklyFlightPlanEntry[] {
+  if (!Array.isArray(value)) return createEmptyWeeklyFlightPlans();
+  return value.reduce<WeeklyFlightPlanEntry[]>((plans, item) => {
+    if (
+      !isRecord(item) ||
+      !Number.isInteger(item.weekday) ||
+      Number(item.weekday) < 1 ||
+      Number(item.weekday) > 7 ||
+      !Array.isArray(item.flightNos) ||
+      !item.flightNos.every((flightNo) => typeof flightNo === "string")
+    )
+      return plans;
+    return replaceWeeklyFlightPlan(
+      plans,
+      Number(item.weekday) as WeeklyFlightPlanEntry["weekday"],
+      item.flightNos as string[]
+    );
+  }, createEmptyWeeklyFlightPlans());
 }
 
 type PersistedPositionCategory = PositionRule["category"] | "督导" | "督导补位";
@@ -416,7 +444,7 @@ export function restorePersistedState(
     (items) => restorePositionRules(items, value.version === 1)
   );
   const next: AppState = {
-    version: 4,
+    version: 5,
     staff: restoredCollection(value.staff, fallback.staff, restoreStaff),
     flights: restoredCollection(
       value.flights,
@@ -428,6 +456,10 @@ export function restorePersistedState(
       fallback.templates,
       restoreTemplates
     ),
+    weeklyFlightPlans:
+      value.version < 5
+        ? createEmptyWeeklyFlightPlans()
+        : restoreWeeklyFlightPlans(value.weeklyFlightPlans),
     positionRules,
     history: restoredCollection(
       value.history,

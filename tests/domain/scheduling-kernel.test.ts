@@ -1266,7 +1266,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       staffName: frequent!.name,
       startTime: "08:00",
       endTime: "10:00",
-      workHours: 2,
+      workHours: 1,
       fatiguePoints: 4,
       remark: "一号",
     }));

@@ -4,6 +4,7 @@ import { ApplicationCoordinator } from "../../src/app/application-coordinator";
 import type { ApplicationPreferences } from "../../src/app/application-preferences";
 import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
 import { createDefaultState } from "../../src/defaults";
+import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 import type { ScheduleResult } from "../../src/model";
 
 const preferences: ApplicationPreferences = {
@@ -280,5 +281,203 @@ describe("manual swap analysis workflow", () => {
       tone: "danger",
       message: expect.stringContaining("资质"),
     });
+  });
+});
+
+describe("next workday flight picker workflow", () => {
+  function stateWithCurrentSchedule() {
+    const state = createDefaultState();
+    state.weeklyFlightPlans = replaceWeeklyFlightPlan(
+      state.weeklyFlightPlans,
+      1,
+      [state.templates[1]!.flightNo]
+    );
+    const flight = state.flights[0]!;
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === flight.flightNo && item.category === "常规"
+    )!;
+    const person = state.staff.find((item) =>
+      rule.qualifiedStaffIds.includes(item.id)
+    )!;
+    state.assignments = [
+      {
+        id: "current-assignment",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: person.id,
+        staffName: person.name,
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        manualRemark: "",
+        status: "assigned" as const,
+      },
+    ];
+    return state;
+  }
+
+  it("opens local flight selection before changing history or starting calculation", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = stateWithCurrentSchedule();
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences, confirm: () => true }
+    );
+    const calculate = vi.fn();
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: { calculate, isRunning: () => false },
+    });
+
+    await coordinator.handle({ type: "archive-next-duty-day" });
+
+    expect(coordinator.view().dialog?.kind).toBe("next-workday-flight-picker");
+    const dialog = coordinator.view().dialog;
+    if (dialog?.kind !== "next-workday-flight-picker")
+      throw new Error("缺少选择窗口");
+    expect(dialog.weekday).toBe(1);
+    expect(
+      dialog.candidates
+        .filter((candidate) => dialog.selectedIds.includes(candidate.id))
+        .map((candidate) => candidate.flightNo)
+    ).toEqual([state.templates[1]!.flightNo]);
+    const weeklyBeforeTemporaryChange = structuredClone(
+      coordinator.model().weeklyFlightPlans
+    );
+    await coordinator.handle({
+      type: "update-next-workday-flight-picker-selection",
+      selectedIds: dialog.candidates.map((candidate) => candidate.id),
+    });
+    expect(coordinator.model().weeklyFlightPlans).toEqual(
+      weeklyBeforeTemporaryChange
+    );
+    expect(coordinator.model().history).toHaveLength(0);
+    expect(coordinator.model().activeScheduleDate).toBeNull();
+    expect(calculate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original model when the selected next schedule fails", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = stateWithCurrentSchedule();
+    const original = structuredClone(state);
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences, confirm: () => true }
+    );
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: {
+        calculate: vi.fn().mockRejectedValue(new Error("测试失败")),
+        isRunning: () => false,
+      },
+    });
+
+    await coordinator.handle({ type: "archive-next-duty-day" });
+    const dialog = coordinator.view().dialog;
+    if (dialog?.kind !== "next-workday-flight-picker")
+      throw new Error("缺少选择窗口");
+    await coordinator.handle({
+      type: "confirm-next-workday-flight-picker",
+      selectedIds: dialog.selectedIds,
+    });
+
+    expect(coordinator.model()).toEqual(original);
+    expect(coordinator.view().toast?.message).toContain("后天排班生成失败");
+  });
+
+  it("keeps the original model when the run is stopped, even with a latest result", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = stateWithCurrentSchedule();
+    const original = structuredClone(state);
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences, confirm: () => true }
+    );
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: {
+        calculate: vi.fn().mockResolvedValue({
+          kind: "stopped-with-result",
+          result: { assignments: [], warnings: [], unfilledCount: 0 },
+        }),
+        isRunning: () => false,
+      },
+    });
+
+    await coordinator.handle({ type: "archive-next-duty-day" });
+    const dialog = coordinator.view().dialog;
+    if (dialog?.kind !== "next-workday-flight-picker")
+      throw new Error("缺少选择窗口");
+    await coordinator.handle({
+      type: "confirm-next-workday-flight-picker",
+      selectedIds: dialog.selectedIds,
+    });
+
+    expect(coordinator.model()).toEqual(original);
+    expect(coordinator.view().toast?.message).toContain("原班表保持不变");
+  });
+
+  it("commits archive, selected flights, date, and result only after success", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = stateWithCurrentSchedule();
+    state.templates.push({
+      id: "template-ke166",
+      flightNo: "KE166",
+      startTime: "12:00",
+      endTime: "14:00",
+      positions: ["G18"],
+      remark: "本地模板",
+    });
+    let savedDate: string | null = null;
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      {
+        preferences: {
+          ...preferences,
+          saveScheduleDate: (date) => (savedDate = date),
+        },
+        confirm: () => true,
+      }
+    );
+    const calculate = vi.fn().mockResolvedValue({
+      kind: "completed",
+      result: { assignments: [], warnings: [], unfilledCount: 0 },
+    });
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: { calculate, isRunning: () => false },
+    });
+
+    await coordinator.handle({ type: "archive-next-duty-day" });
+    const dialog = coordinator.view().dialog;
+    if (dialog?.kind !== "next-workday-flight-picker")
+      throw new Error("缺少选择窗口");
+    const selectedId = dialog.candidates.find(
+      (item) => item.flightNo === "KE166"
+    )?.id;
+    if (!selectedId) throw new Error("缺少本地模板航班");
+    await coordinator.handle({
+      type: "confirm-next-workday-flight-picker",
+      selectedIds: [selectedId],
+    });
+
+    expect(calculate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flights: [
+          expect.objectContaining({ flightNo: "KE166", bookedPassengers: 0 }),
+        ],
+        assignments: [],
+      }),
+      "2026-08-17"
+    );
+    expect(coordinator.model().flights.map((item) => item.flightNo)).toEqual([
+      "KE166",
+    ]);
+    expect(coordinator.model().history.length).toBeGreaterThan(0);
+    expect(
+      coordinator.model().history.every((item) => item.date === "2026-08-15")
+    ).toBe(true);
+    expect(coordinator.model().activeScheduleDate).toBe("2026-08-17");
+    expect(savedDate).toBe("2026-08-17");
   });
 });

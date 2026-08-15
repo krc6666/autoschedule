@@ -1,6 +1,6 @@
 import { isAuxiliaryCategory } from "../domain/flights/schedule-position-rules";
 import type { FlightPlanReconciliation } from "../domain/flights/flight-plan-reconciliation";
-import type { AppState, Flight, FlightTemplate } from "../model";
+import type { AppState, Flight, FlightTemplate, IsoWeekday } from "../model";
 import { clearActiveSchedule } from "../domain/kernel/schedule-lifecycle";
 import { clearUnqualifiedStandbyOverrides } from "../domain/duty-roster/roster";
 import {
@@ -10,6 +10,11 @@ import {
   sortFlightCountersDescending,
   splitList,
 } from "../utils";
+import {
+  normalizeWeeklyFlightNo,
+  replaceWeeklyFlightNumber,
+  replaceWeeklyFlightPlan,
+} from "../domain/flights/weekly-flight-plan";
 
 export type ConfigurationValue = string | number | boolean;
 
@@ -65,7 +70,49 @@ export function addTemplate(state: AppState): void {
 }
 
 export function deleteTemplate(state: AppState, id: string): void {
+  const deleted = state.templates.find((item) => item.id === id);
   state.templates = state.templates.filter((item) => item.id !== id);
+  if (
+    deleted &&
+    !state.templates.some(
+      (item) =>
+        normalizeWeeklyFlightNo(item.flightNo) ===
+        normalizeWeeklyFlightNo(deleted.flightNo)
+    )
+  )
+    state.weeklyFlightPlans = replaceWeeklyFlightNumber(
+      state.weeklyFlightPlans,
+      deleted.flightNo,
+      ""
+    );
+}
+
+export function setWeeklyFlightPlanFlight(
+  state: AppState,
+  weekday: IsoWeekday,
+  flightNo: string,
+  selected: boolean
+): boolean {
+  const normalized = normalizeWeeklyFlightNo(flightNo);
+  if (
+    !normalized ||
+    !state.templates.some(
+      (template) => normalizeWeeklyFlightNo(template.flightNo) === normalized
+    )
+  )
+    return false;
+  const current =
+    state.weeklyFlightPlans.find((entry) => entry.weekday === weekday)
+      ?.flightNos ?? [];
+  const currentSet = new Set(current.map(normalizeWeeklyFlightNo));
+  if (currentSet.has(normalized) === selected) return false;
+  selected ? currentSet.add(normalized) : currentSet.delete(normalized);
+  state.weeklyFlightPlans = replaceWeeklyFlightPlan(
+    state.weeklyFlightPlans,
+    weekday,
+    [...currentSet]
+  );
+  return true;
 }
 
 export function addTemplateFlight(state: AppState, id: string): boolean {
@@ -378,12 +425,19 @@ export function updateConfigurationField(
   if (entity === "template") {
     const template = state.templates.find((item) => item.id === id);
     if (!template) return "missing";
+    const previousFlightNo = template.flightNo;
     if (field === "positions") template.positions = splitList(value);
     else
       (template as unknown as Record<string, unknown>)[field] =
         typeof value === "string" && field === "flightNo"
           ? value.toUpperCase()
           : value;
+    if (field === "flightNo" && typeof value === "string")
+      state.weeklyFlightPlans = replaceWeeklyFlightNumber(
+        state.weeklyFlightPlans,
+        previousFlightNo,
+        value
+      );
     return "updated";
   }
   if (entity === "staff") {

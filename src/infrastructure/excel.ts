@@ -9,6 +9,7 @@ import type {
   PositionRule,
   ScheduleSettings,
   Staff,
+  WeeklyFlightPlanEntry,
 } from "../model";
 import {
   combinedAssignmentRemark,
@@ -19,6 +20,10 @@ import {
   splitList,
 } from "../utils";
 import { durationHours, normalizeTime } from "../domain/shared/time";
+import {
+  createEmptyWeeklyFlightPlans,
+  replaceWeeklyFlightPlan,
+} from "../domain/flights/weekly-flight-plan";
 import {
   appendScheduleRuleSheets,
   parseScheduleRuleSettings,
@@ -36,6 +41,7 @@ export interface WorkbookImport {
   staff?: Staff[];
   flights?: Flight[];
   templates?: FlightTemplate[];
+  weeklyFlightPlans?: WeeklyFlightPlanEntry[];
   positionRules?: PositionRule[];
   history?: HistoryRecord[];
   settings?: Partial<ScheduleSettings>;
@@ -189,6 +195,51 @@ function parseTemplates(workbook: XLSX.WorkBook): FlightTemplate[] | undefined {
   });
 }
 
+function parseWeeklyFlightPlans(
+  workbook: XLSX.WorkBook
+): WeeklyFlightPlanEntry[] | undefined {
+  const sheetName = findSheet(workbook, ["每周航班计划"]);
+  if (!sheetName) return undefined;
+  const data = rows(workbook, sheetName);
+  let plans = createEmptyWeeklyFlightPlans();
+  const weekdayByLabel = new Map<string, number>([
+    ["星期一", 1],
+    ["周一", 1],
+    ["星期二", 2],
+    ["周二", 2],
+    ["星期三", 3],
+    ["周三", 3],
+    ["星期四", 4],
+    ["周四", 4],
+    ["星期五", 5],
+    ["周五", 5],
+    ["星期六", 6],
+    ["周六", 6],
+    ["星期日", 7],
+    ["星期天", 7],
+    ["周日", 7],
+    ["周天", 7],
+  ]);
+  for (const row of data.slice(1)) {
+    const rawWeekday = normalizeText(row[0]);
+    const numericWeekday = Number(rawWeekday);
+    const weekday =
+      weekdayByLabel.get(rawWeekday) ??
+      (Number.isInteger(numericWeekday) &&
+      numericWeekday >= 1 &&
+      numericWeekday <= 7
+        ? numericWeekday
+        : undefined);
+    if (!weekday) continue;
+    plans = replaceWeeklyFlightPlan(
+      plans,
+      weekday as WeeklyFlightPlanEntry["weekday"],
+      splitList(row[1])
+    );
+  }
+  return plans;
+}
+
 function parseFatigueMap(workbook: XLSX.WorkBook): Map<string, number> {
   const sheetName = findSheet(workbook, ["岗位疲劳度", "疲劳度计算"]);
   const result = new Map<string, number>();
@@ -332,6 +383,7 @@ export function parseWorkbook(
   const effectiveStaff = staff?.length ? staff : currentStaff;
   const flights = parseFlights(workbook);
   const templates = parseTemplates(workbook);
+  const weeklyFlightPlans = parseWeeklyFlightPlans(workbook);
   const positionRules = parsePositions(workbook);
   const history = parseHistory(workbook, effectiveStaff);
   const parsedRules = parseScheduleRuleSettings(workbook);
@@ -347,6 +399,7 @@ export function parseWorkbook(
     !staff &&
     !flights &&
     !templates &&
+    !weeklyFlightPlans &&
     !positionRules &&
     !history &&
     !parsedRules.recognized
@@ -356,6 +409,7 @@ export function parseWorkbook(
     staff,
     flights,
     templates,
+    weeklyFlightPlans,
     positionRules,
     history,
     settings: parsedRules.settings,
@@ -444,6 +498,18 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
       ]),
     ],
     [12, 12, 12, 48, 24]
+  );
+  append(
+    workbook,
+    "每周航班计划",
+    [
+      ["星期", "航班号（用逗号分隔）"],
+      ...state.weeklyFlightPlans.map((entry) => [
+        `星期${["一", "二", "三", "四", "五", "六", "日"][entry.weekday - 1]}`,
+        entry.flightNos.join(","),
+      ]),
+    ],
+    [12, 48]
   );
   append(
     workbook,

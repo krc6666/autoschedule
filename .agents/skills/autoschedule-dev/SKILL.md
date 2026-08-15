@@ -1,6 +1,6 @@
 ---
 name: autoschedule-dev
-description: 维护 autoschedule 机场值机排班项目时使用。适用于排查不合理班表、修改排班规则与优先级、岗位完整性、值班与 KE166 锁定、疲劳恢复、轮岗、公平性、反馈、行政支援、Excel/localStorage、界面、性能、测试、产品事实文档、数据模板、构建和运行配置；要求先核实真实数据与规则合同，再以失败测试驱动修改并完成全量验证。
+description: 维护 autoschedule 机场值机排班项目时使用。适用于排查不合理班表、修改排班规则与优先级、岗位完整性、值班与 KE166 锁定、疲劳恢复、轮岗、公平性、反馈、行政支援、Excel/localStorage、界面、性能、测试、产品事实文档、数据模板、构建和运行配置；要求先核实真实数据与规则合同，再以失败测试驱动修改并按风险分层验证。
 ---
 
 # autoschedule Development
@@ -73,14 +73,48 @@ owner 的请求已经明确给出无歧义的小改动范围，且不改变上�
 ## 文档与验证
 
 - 产品事实变化时同步 `spec.md`；用户操作变化时同步 `README.md`；长期协作纪律变化时同步 `AGENTS.md` 和本 skill。
-- 先运行最接近改动的测试，收尾完成：
+- 按 `AGENTS.md` 的 L0-L4 分层验证执行，方法依据见 `docs/research/development-testing-strategy.md`。日常开发只运行当前层级一次，不因后续还有完整门禁而在每次编辑后重复跑全量。
+
+### L0：编辑反馈
+
+- 行为变更先写并运行能稳定失败的测试；修复后先重跑该测试，再覆盖本模块和直接消费者。
+- 使用明确测试文件，示例：`npm.cmd exec vitest -- run tests/domain/example.test.ts tests/app/example.test.ts`。
+- 此阶段不运行 `test:performance`、生产构建或 `verify`。
+
+### L1：本地变更集
+
+- 先列出本任务实际修改的源文件和显式相关测试，不把 owner 的其他未提交文件混入判断。
+- 对可静态追踪的源文件可运行，例如：`npm.cmd exec vitest -- related src/domain/example.ts --run --exclude tests/performance/**`；多个源文件在 `related` 后依次列出。
+- 也可用 `npm.cmd test -- --changed=HEAD~1` 辅助检查相对固定基准的改动；脏工作区中没有可靠基准时优先使用显式文件和 `related`。
+- 运行 `npm.cmd run typecheck`、`git diff --check`，并检查 `git status --short`。`related` 或 `--changed` 返回的集合只是候选，不得替代下表中的显式补测。
+
+| 改动类型                                    | L0/L1 必须覆盖                                                         | 是否追加 L2/L3                           |
+| ------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------- |
+| 纯协作文档                                  | `git diff --check` + 人工核对规则引用                                  | 不追加应用测试                           |
+| 单一纯领域函数                              | 目标 domain 测试 + 直接消费者 + `related` + typecheck                  | 通常不追加                               |
+| 单一 UI 组件或 CSS                          | 目标 UI 测试 + 相关 app 测试 + typecheck + 受影响视口/交互检查         | 仅跨流程或高影响时 L2；渲染性能变化时 L3 |
+| controller/coordinator/命令流程             | 相关 app、UI 和 domain 测试 + `related` + typecheck + 真实入口烟雾检查 | 跨多个职责或关键工作流时 L2              |
+| `AppState`、Store、迁移、Excel/localStorage | 相关往返、迁移和集成测试 + typecheck + 真实导入导出/恢复入口           | 必须 L2；大数据路径变化再 L3             |
+| 排班规则合同、kernel、solver/Worker         | 失败测试 + 受影响规则合同、硬约束和最终安全测试 + typecheck            | 必须 L2 和 L3                            |
+| 依赖、Vite、动态导入、Worker/WASM、构建配置 | 相关 architecture/build-config 测试 + typecheck + build                | 必须 L2；影响运行性能时 L3               |
+| 性能优化、阈值或性能夹具                    | 独立功能正确性测试 + 目标性能测试                                      | 必须 L2 和 L3，并说明环境与样本限制      |
+
+- 以下边界必须显式补测，因为 Vitest 静态依赖影响分析可能漏选：动态 `import()`、Worker/WASM、通过 `readFileSync` 检查源码或配置的架构测试、Excel/localStorage、共享状态迁移、样式文件和隐式数据合同。
+
+### L2-L4：后续门禁
+
+- L2 完整功能验证依次运行：
 
 ```powershell
-npm.cmd run verify
-git diff --check
-git status --short
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
 ```
 
-- 交付时说明根因、实际规则顺序、修改文件、新增回归、真实命令结果、未验证项和剩余风险。
+- L3 只在矩阵要求、owner 明确要求性能验收或固定性能通道中运行 `npm.cmd run test:performance`。本地墙钟阈值受机器负载影响，必须报告真实环境和偶发性，不得只凭一次结果宣称性能改善或退化。
+- L4 使用 `npm.cmd run verify`，只用于发布、部署、owner 明确要求完整验收，或当前 commit/push 门槛。仓库目前没有 PR 必需检查，在服务端功能门禁建立并稳定前，不得先弱化现有 commit/push 前完整验证。
+- 同一交付若已在最后一次相关修改后成功完成较高层级，不重复运行被其包含的低层级命令；改动后只重跑受影响层级及必要的最终门禁。
 - commit、push、部署和发布只在 owner 明确授权后执行。
+
+- 交付时说明根因、实际规则顺序、修改文件、新增回归、真实命令结果、未验证项和剩余风险。
 - 任何未实现、未运行或未验证内容都不得写成已经完成。

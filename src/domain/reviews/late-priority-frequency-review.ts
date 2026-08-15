@@ -28,21 +28,43 @@ import {
   type LatePriorityFrequencyKind,
 } from "./late-priority-policy";
 import { assignmentRule } from "../flights/schedule-position-rules";
+import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
 
 function applyChanges(
   state: AppState,
   assignments: Assignment[],
   changes: readonly RotationStaffChange[]
 ): Assignment[] {
-  const changed: Assignment[] = [];
-  for (const change of changes) {
+  const pending = changes.flatMap((change) => {
     const assignment = assignments.find(
       (item) => item.id === change.assignmentId
     );
     const person = state.staff.find((item) => item.id === change.staffId);
-    if (!assignment || !person) continue;
-    assignment.staffId = person.id;
-    assignment.staffName = person.name;
+    return assignment && person ? [{ assignment, person }] : [];
+  });
+  const affectedStaffIds = new Set(
+    pending.flatMap(({ assignment, person }) =>
+      [assignment.staffId, person.id].filter((staffId): staffId is string =>
+        Boolean(staffId)
+      )
+    )
+  );
+  const planned = assignments.map((assignment) => {
+    const change = pending.find((item) => item.assignment.id === assignment.id);
+    return change
+      ? {
+          ...assignment,
+          staffId: change.person.id,
+          staffName: change.person.name,
+        }
+      : { ...assignment };
+  });
+  applyConfiguredEarlyReleases(planned, state, affectedStaffIds);
+  assignments.forEach((assignment, index) => {
+    Object.assign(assignment, planned[index]);
+  });
+  const changed: Assignment[] = [];
+  for (const { assignment } of pending) {
     changed.push(assignment);
   }
   return changed;

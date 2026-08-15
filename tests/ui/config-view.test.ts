@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
+import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 import "../../src/ui/components/config-page";
 import { mountElement } from "./lit-test-helpers";
 
@@ -18,6 +19,8 @@ describe("configuration page", () => {
     expect(text).toContain("岗位规则");
     expect(text).toContain("排班约束");
     expect(text).toContain("航班计划模板");
+    expect(text).toContain("每周航班计划");
+    expect(element.querySelectorAll("[data-weekday]")).toHaveLength(7);
     expect(text).not.toContain("排班规则");
     expect(
       element.querySelector(".config-collapsible")?.hasAttribute("open")
@@ -28,6 +31,30 @@ describe("configuration page", () => {
     );
     expect(text).toContain("机动督导");
     expect(text).not.toContain(">督导<");
+  });
+
+  it("shows the selected weekday preset as checked template rows", async () => {
+    const state = createDefaultState();
+    state.weeklyFlightPlans = replaceWeeklyFlightPlan(
+      state.weeklyFlightPlans,
+      1,
+      [state.templates[0]!.flightNo]
+    );
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-config-page", { model: state });
+
+    expect(
+      element.querySelector<HTMLInputElement>(
+        `[aria-label="星期一 ${state.templates[0]!.flightNo}"]`
+      )?.checked
+    ).toBe(true);
+    expect(
+      element.querySelector<HTMLInputElement>(
+        `[aria-label="星期一 ${state.templates[1]!.flightNo}"]`
+      )?.checked
+    ).toBe(false);
   });
 
   it("shows persisted non-default staff and position selections after remount", async () => {

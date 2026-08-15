@@ -10,8 +10,10 @@ import "./duty-roster-import-dialog";
 import "./flight-query-dialog";
 import "./qualification-dialog";
 import "./template-picker-dialog";
+import "./next-workday-flight-picker-dialog";
 import "./workbook-import-dialog";
 import "./swap-analysis-dialog";
+import { weekdayLabel } from "../../domain/flights/weekly-flight-plan";
 
 export class AppDialogElement extends LightDomElement {
   static override properties = {
@@ -57,6 +59,8 @@ export class AppDialogElement extends LightDomElement {
   private titleText(): string {
     const dialog = this.dialog;
     if (dialog?.kind === "templates") return "从模板添加航班";
+    if (dialog?.kind === "next-workday-flight-picker")
+      return `确认 ${dialog.date}（${weekdayLabel(dialog.weekday)}）航班`;
     if (dialog?.kind === "qualification") {
       const rule = this.model.positionRules.find(
         (item) => item.id === dialog.positionRuleId
@@ -77,6 +81,11 @@ export class AppDialogElement extends LightDomElement {
         class="modal-content-stack"
         .model=${this.model}
       ></autoschedule-template-picker>`;
+    if (dialog?.kind === "next-workday-flight-picker")
+      return html`<autoschedule-next-workday-flight-picker
+        class="modal-content-stack"
+        .dialog=${dialog}
+      ></autoschedule-next-workday-flight-picker>`;
     if (dialog?.kind === "qualification")
       return html`<autoschedule-qualification-dialog
         class="modal-content-stack"

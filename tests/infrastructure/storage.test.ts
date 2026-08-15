@@ -6,11 +6,12 @@ import {
   saveState,
   STORAGE_KEY,
 } from "../../src/infrastructure/storage";
+import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 
 describe("state persistence", () => {
   it("falls back to valid defaults for corrupt persisted data", () => {
     const state = loadState({ getItem: () => "not-json" });
-    expect(state.version).toBe(4);
+    expect(state.version).toBe(5);
     expect(state.staff.length).toBeGreaterThan(0);
     expect(
       state.positionRules.some((rule) => rule.category === "机动督导")
@@ -106,7 +107,7 @@ describe("state persistence", () => {
 
     const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
 
-    expect(loaded.version).toBe(4);
+    expect(loaded.version).toBe(5);
     expect(
       loaded.positionRules.some((rule) => rule.category === "机动督导")
     ).toBe(false);
@@ -130,6 +131,11 @@ describe("state persistence", () => {
       },
     };
     const state = createDefaultState();
+    state.weeklyFlightPlans = replaceWeeklyFlightPlan(
+      state.weeklyFlightPlans,
+      1,
+      ["CX937", "KE166"]
+    );
     state.staff[0]!.remark = "changed";
     state.staff[0]!.teamLeader = true;
     state.staff[0]!.cxPreflightQualified = true;
@@ -152,9 +158,28 @@ describe("state persistence", () => {
     expect(loadState(storage).staff[0]!.dutyQualified).toBe(false);
     expect(loadState(storage).staff[0]!.standbyQualified).toBe(false);
     expect(loadState(storage).schedulePolicyStale).toBe(true);
+    expect(loadState(storage).weeklyFlightPlans).toEqual(
+      state.weeklyFlightPlans
+    );
     expect(loadState(storage).dutyRosterOverrides[0]).toEqual(
       state.dutyRosterOverrides[0]
     );
+  });
+
+  it("initializes an empty seven-day flight plan when migrating version 4 state", () => {
+    const legacy = JSON.parse(JSON.stringify(createDefaultState()));
+    legacy.version = 4;
+    delete legacy.weeklyFlightPlans;
+    legacy.staff[0].remark = "旧配置继续保留";
+
+    const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
+
+    expect(loaded.version).toBe(5);
+    expect(loaded.weeklyFlightPlans).toHaveLength(7);
+    expect(
+      loaded.weeklyFlightPlans.every((entry) => entry.flightNos.length === 0)
+    ).toBe(true);
+    expect(loaded.staff[0]?.remark).toBe("旧配置继续保留");
   });
 
   it("warns near the local storage limit without deleting history", () => {
