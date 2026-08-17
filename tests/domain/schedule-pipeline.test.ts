@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { POST_SCHEDULE_REVIEW_STEPS } from "../../src/domain/kernel/schedule-review-contract";
 import { createDefaultScheduleSettings } from "../../src/domain/rules/schedule-settings";
+import {
+  SCHEDULE_PROGRESS_STAGES,
+  visibleScheduleProgressStep,
+} from "../../src/domain/kernel/schedule-progress";
 import {
   plannedScheduleProgress,
   postScheduleReviewPlan,
@@ -9,11 +12,15 @@ import {
 
 describe("schedule pipeline contract", () => {
   it("keeps post-schedule reviews in the documented order", () => {
-    expect(POST_SCHEDULE_REVIEW_STEPS.map((step) => step.stage)).toEqual([
-      "late-shift-recovery",
-      "late-shift-cutoff",
+    expect(
+      postScheduleReviewPlan(createDefaultScheduleSettings()).map(
+        (step) => step.stage
+      )
+    ).toEqual([
       "late-priority-frequency",
       "position-frequency",
+      "late-shift-recovery",
+      "late-shift-cutoff",
       "position-rotation",
       "ke166-supervisor-finalize",
       "post-ke166-late-priority-frequency-validation",
@@ -23,19 +30,20 @@ describe("schedule pipeline contract", () => {
   });
 
   it("owns the visible progress metadata for every review that reports progress", () => {
-    const visible = POST_SCHEDULE_REVIEW_STEPS.filter(
-      (step) => step.progress !== null
-    );
+    const plan = postScheduleReviewPlan(createDefaultScheduleSettings());
+    const visible = plan.flatMap((step) => {
+      const progress = visibleScheduleProgressStep(step.stage);
+      return progress ? [progress] : [];
+    });
 
-    expect(visible.map((step) => step.progress?.percent)).toEqual([
+    expect(visible.map((step) => step.percent)).toEqual([
       65, 75, 82, 85, 92, 95, 96, 98,
     ]);
-    expect(visible.every((step) => Boolean(step.progress?.label.trim()))).toBe(
-      true
+    expect(visible.every((step) => Boolean(step.label.trim()))).toBe(true);
+    expect(new Set(plan.map((step) => step.stage)).size).toBe(plan.length);
+    expect(SCHEDULE_PROGRESS_STAGES.slice(3, -1)).toEqual(
+      visible.map((step) => step.stage)
     );
-    expect(
-      new Set(POST_SCHEDULE_REVIEW_STEPS.map((step) => step.stage)).size
-    ).toBe(POST_SCHEDULE_REVIEW_STEPS.length);
   });
 
   it("projects post reviews from the fixed hook order and named settings", () => {

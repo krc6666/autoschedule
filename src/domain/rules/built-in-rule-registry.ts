@@ -12,7 +12,6 @@ import type {
   AutomaticAssignmentEligibilityOptions,
 } from "../candidates/assignment-eligibility";
 import {
-  CANDIDATE_PRIORITY_ORDER,
   compareDutyPosition,
   compareKe166Reservation,
   compareLatePriorityAggregateRotation,
@@ -27,7 +26,6 @@ import {
   compareStrictPositionTransition,
   compareWorkloadBalance,
   type CandidatePriority,
-  type CandidatePriorityId,
 } from "../candidates/candidate-priority";
 import { reviewLateShiftCutoff } from "../reviews/late-shift-cutoff-review";
 import { reviewLateShiftRecovery } from "../reviews/late-shift-recovery-review";
@@ -45,10 +43,6 @@ import {
   type SchedulingHookExecutor,
 } from "./rule-registry";
 import { compactRegularAssignments } from "../coverage/schedule-coverage";
-import {
-  scheduleProgressLabel,
-  scheduleProgressPercent,
-} from "../kernel/schedule-progress";
 import { fillVacancyWithTeamLeaderConcurrentSupervision } from "../coverage/team-leader-concurrent-supervision";
 
 export const CONFIGURABLE_RULE_SETTINGS: Partial<
@@ -98,7 +92,7 @@ function mutableAssignments(context: ScheduleMutationContext) {
 }
 
 function review(
-  stage: Parameters<typeof scheduleProgressPercent>[0],
+  stage: string,
   pass: ScheduleMutationExecutor["pass"],
   execute: (
     context: ScheduleMutationContext
@@ -108,11 +102,6 @@ function review(
     kind: "post-schedule",
     id: stage,
     pass,
-    progress: {
-      stage,
-      percent: scheduleProgressPercent(stage),
-      label: scheduleProgressLabel(stage),
-    },
     execute,
   };
 }
@@ -383,8 +372,8 @@ export const BUILT_IN_SCHEDULING_HOOKS: readonly SchedulingHook[] =
     stage: rule.stage,
     defaultEnabled: true,
     configurable: CONFIGURABLE_RULE_SETTINGS[rule.id] !== undefined,
-    before: rule.id === "ke166-supervisor" ? ["duty-position"] : [],
-    after: rule.id === "position-rotation" ? ["position-frequency-review"] : [],
+    before: [],
+    after: [],
     source: "built-in",
     execute: RULE_EXECUTION[rule.id],
   }));
@@ -412,7 +401,7 @@ export function evaluateAutomaticHardConstraints(
 export function builtInRulePreferences(
   settings: ScheduleSettings
 ): RulePreference[] {
-  return BUILT_IN_SCHEDULING_HOOKS.map((hook, defaultOrder) => {
+  return BUILT_IN_SCHEDULING_HOOKS.map((hook) => {
     const setting =
       CONFIGURABLE_RULE_SETTINGS[
         hook.id as keyof typeof CONFIGURABLE_RULE_SETTINGS
@@ -420,23 +409,6 @@ export function builtInRulePreferences(
     return {
       id: hook.id,
       enabled: setting ? Boolean(settings[setting]) : true,
-      order: defaultOrder,
     };
   });
-}
-
-export function candidatePriorityOrder(
-  settings: ScheduleSettings
-): CandidatePriorityId[] {
-  const candidateIds = new Set<string>(CANDIDATE_PRIORITY_ORDER);
-  return BUILT_IN_RULE_REGISTRY.executionPlan(builtInRulePreferences(settings))
-    .filter(
-      (hook) =>
-        hook.enabled &&
-        hook.execute.some(
-          (executor) => executor.kind === "candidate-priority"
-        ) &&
-        candidateIds.has(hook.id)
-    )
-    .map((hook) => hook.id as CandidatePriorityId);
 }

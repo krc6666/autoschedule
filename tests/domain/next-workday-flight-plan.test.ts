@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildNextWorkdayFlightCandidates,
   materializeNextWorkdayFlights,
+  updateNextWorkdayFlightBookedPassengers,
 } from "../../src/domain/flights/next-workday-flight-plan";
 import type { FlightTemplate } from "../../src/model";
 
@@ -33,7 +34,7 @@ describe("next workday flight plan", () => {
     ).toEqual(["KE166"]);
   });
 
-  it("materializes only selected flights with zero booked passengers", () => {
+  it("materializes only selected flights with their entered booked passengers", () => {
     const candidates = buildNextWorkdayFlightCandidates(
       [
         template("template-cx937", "CX937"),
@@ -45,13 +46,37 @@ describe("next workday flight plan", () => {
     const selected = candidates
       .filter((item) => item.flightNo === "KE166")
       .map((item) => item.id);
-    const result = materializeNextWorkdayFlights(candidates, selected);
+    const edited = updateNextWorkdayFlightBookedPassengers(
+      candidates,
+      selected[0]!,
+      186
+    );
+    const result = materializeNextWorkdayFlights(edited, selected);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       flightNo: "KE166",
-      bookedPassengers: 0,
+      bookedPassengers: 186,
       positions: ["G18", "G19"],
     });
+  });
+
+  it("normalizes invalid passenger input without changing other candidates", () => {
+    const candidates = buildNextWorkdayFlightCandidates(
+      [
+        template("template-cx937", "CX937"),
+        template("template-ke166", "KE166"),
+      ],
+      []
+    );
+
+    const edited = updateNextWorkdayFlightBookedPassengers(
+      candidates,
+      candidates[0]!.id,
+      -12
+    );
+
+    expect(edited.map((item) => item.bookedPassengers)).toEqual([0, 0]);
+    expect(edited).not.toBe(candidates);
   });
 });

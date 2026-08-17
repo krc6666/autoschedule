@@ -1,4 +1,4 @@
-import type { AppState, Assignment, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
 import { isLateEndingWork } from "./cross-day-recovery";
 import { isPriorityRotationPosition } from "./position-rotation-policy";
 import { assignmentRule } from "../flights/schedule-position-rules";
@@ -7,6 +7,7 @@ import {
   type ScheduleFrequencyFacts,
 } from "../statistics/schedule-frequency";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import type { RotationStaffChange } from "./rotation-review-safety";
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
@@ -25,7 +26,7 @@ export interface ConsecutiveRotationPlanSearchResult {
 
 interface ConsecutiveRotationPlanSearchOptions {
   solver: SolverPort;
-  state: AppState;
+  state: ScheduleGenerationFacts;
   assignments: Assignment[];
   primary: Assignment;
   availableAssignments: Assignment[];
@@ -37,7 +38,7 @@ interface ConsecutiveRotationPlanSearchOptions {
 }
 
 function configuredForAssignment(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   staffId: string
 ): boolean {
@@ -48,7 +49,7 @@ function configuredForAssignment(
 }
 
 function improvesPrimaryConsecutiveRun(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   primary: Assignment,
   staff: Staff,
   date: string,
@@ -74,7 +75,7 @@ function improvesPrimaryConsecutiveRun(
 }
 
 function usesFatigueRelief(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   primary: Assignment,
   changes: readonly RotationStaffChange[]

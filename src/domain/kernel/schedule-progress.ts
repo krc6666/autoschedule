@@ -1,7 +1,12 @@
-import {
-  hasPostScheduleReviewProgress,
-  POST_SCHEDULE_REVIEW_STEPS,
-} from "./schedule-review-contract";
+import { createDefaultScheduleSettings } from "../rules/schedule-settings";
+import { compileSchedulingPlan } from "../rules/scheduling-execution-plan";
+
+export type ScheduleProgressStage = string;
+export interface ScheduleProgressStep {
+  stage: ScheduleProgressStage;
+  percent: number;
+  label: string;
+}
 
 const SCHEDULE_START_PROGRESS = [
   { stage: "prepare", percent: 5, label: "准备航班和岗位" },
@@ -9,22 +14,44 @@ const SCHEDULE_START_PROGRESS = [
   { stage: "assign", percent: 30, label: "整理班表和特殊岗位" },
 ] as const;
 
-const POST_SCHEDULE_REVIEW_PROGRESS = POST_SCHEDULE_REVIEW_STEPS.filter(
-  hasPostScheduleReviewProgress
-).map(({ stage, progress }) => ({ stage, ...progress }));
+const POST_SCHEDULE_PROGRESS_METADATA: Readonly<
+  Record<string, Omit<ScheduleProgressStep, "stage">>
+> = {
+  "late-priority-frequency": {
+    percent: 65,
+    label: "检查末班重点岗位轮换",
+  },
+  "position-frequency": { percent: 75, label: "检查重点岗位轮换" },
+  "late-shift-recovery": { percent: 82, label: "保护上一班晚班人员" },
+  "late-shift-cutoff": { percent: 85, label: "检查末班人员下班保护" },
+  "position-rotation": { percent: 92, label: "检查连续轮岗" },
+  "post-ke166-late-priority-frequency-validation": {
+    percent: 95,
+    label: "复查机动督导后的末班轮换",
+  },
+  "post-ke166-frequency-validation": {
+    percent: 96,
+    label: "复查机动督导后的岗位轮换",
+  },
+  "post-ke166-rotation-validation": {
+    percent: 98,
+    label: "复查机动督导后的连续轮岗",
+  },
+};
 
-export const SCHEDULE_PROGRESS = [
+const POST_SCHEDULE_REVIEW_PROGRESS: readonly ScheduleProgressStep[] =
+  compileSchedulingPlan(
+    createDefaultScheduleSettings()
+  ).postScheduleMutations.flatMap((item) => {
+    const metadata = POST_SCHEDULE_PROGRESS_METADATA[item.stage];
+    return metadata ? [{ stage: item.stage, ...metadata }] : [];
+  });
+
+export const SCHEDULE_PROGRESS: readonly ScheduleProgressStep[] = [
   ...SCHEDULE_START_PROGRESS,
   ...POST_SCHEDULE_REVIEW_PROGRESS,
   { stage: "complete", percent: 100, label: "排班完成" },
 ] as const;
-
-export type ScheduleProgressStage = (typeof SCHEDULE_PROGRESS)[number]["stage"];
-export interface ScheduleProgressStep {
-  stage: ScheduleProgressStage;
-  percent: number;
-  label: string;
-}
 
 const PROGRESS_BY_STAGE: ReadonlyMap<
   ScheduleProgressStage,
@@ -47,4 +74,13 @@ export function scheduleProgressStep(
 ): ScheduleProgressStep {
   const step = PROGRESS_BY_STAGE.get(stage)!;
   return { stage: step.stage, percent: step.percent, label: step.label };
+}
+
+export function visibleScheduleProgressStep(
+  stage: ScheduleProgressStage
+): ScheduleProgressStep | null {
+  const step = PROGRESS_BY_STAGE.get(stage);
+  return step
+    ? { stage: step.stage, percent: step.percent, label: step.label }
+    : null;
 }

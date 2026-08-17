@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultScheduleSettings } from "../../src/domain/rules/schedule-settings";
 import { createCandidateRulePlan } from "../../src/domain/rules/candidate-rule-plan";
-import { CANDIDATE_PRIORITY_ORDER } from "../../src/domain/candidates/candidate-priority";
+import { compileSchedulingPlan } from "../../src/domain/rules/scheduling-execution-plan";
 
 describe("candidate rule plan", () => {
   it("projects only the fixed typed built-in candidate rules", () => {
     const plan = createCandidateRulePlan(createDefaultScheduleSettings());
 
-    expect(plan.map((rule) => rule.id)).toEqual(CANDIDATE_PRIORITY_ORDER);
+    expect(plan).toEqual(
+      compileSchedulingPlan(createDefaultScheduleSettings()).candidateRules
+    );
     expect(plan.every((rule) => rule.source === "built-in")).toBe(true);
   });
 

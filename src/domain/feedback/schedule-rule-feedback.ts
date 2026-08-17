@@ -1,8 +1,7 @@
-import type { AppState, Assignment } from "../../model";
-import {
-  RULE_FEEDBACK_ORDER,
-  type RuleFeedbackKey,
-} from "../rules/schedule-rule-contract";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
+import type { RuleFeedbackKey } from "../rules/schedule-rule-contract";
+import { compileSchedulingPlan } from "../rules/scheduling-execution-plan";
 import { recentArchivedWorkdays } from "../statistics/fatigue";
 import {
   getDutyRosterForDate,
@@ -46,7 +45,9 @@ import {
   type ScheduleFeedbackItem,
 } from "./schedule-feedback-model";
 
-function morningPriorityFeedback(state: AppState): ScheduleFeedbackItem {
+function morningPriorityFeedback(
+  state: ScheduleGenerationFacts
+): ScheduleFeedbackItem {
   const assignments = state.assignments.filter((assignment) => {
     if (!isPreNoonFlight(assignment)) return false;
     const rule = assignment.positionRuleId
@@ -88,7 +89,9 @@ function morningPriorityFeedback(state: AppState): ScheduleFeedbackItem {
   );
 }
 
-function highLoadFeedback(state: AppState): ScheduleFeedbackItem {
+function highLoadFeedback(
+  state: ScheduleGenerationFacts
+): ScheduleFeedbackItem {
   const highLoadAssignments = timedAssignments(state)
     .filter((item) => isCountedWorkloadAssignment(state, item.assignment))
     .filter((item) =>
@@ -141,7 +144,7 @@ function highLoadFeedback(state: AppState): ScheduleFeedbackItem {
 }
 
 function crossWorkdayQualificationReservationFeedback(
-  state: AppState
+  state: ScheduleGenerationFacts
 ): ScheduleFeedbackItem {
   const statuses = crossWorkdayReservationStatuses(state);
   if (!statuses.length) {
@@ -178,7 +181,7 @@ function crossWorkdayQualificationReservationFeedback(
 }
 
 function previousLateFeedback(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string
 ): ScheduleFeedbackItem {
   const protection = previousWorkdayLateProtection(state, date);
@@ -316,7 +319,9 @@ function conciseProtectionReason(messages: string[]): string {
   return "无人可安全替代";
 }
 
-function positionRotationFeedback(state: AppState): ScheduleFeedbackItem {
+function positionRotationFeedback(
+  state: ScheduleGenerationFacts
+): ScheduleFeedbackItem {
   const unresolved = assignmentDecisionMessages(state.assignments, {
     ruleIds: new Set(["position-rotation"]),
     outcomes: new Set(["fallback"]),
@@ -353,7 +358,7 @@ function positionRotationFeedback(state: AppState): ScheduleFeedbackItem {
 }
 
 function crossWorkdayLoadFeedback(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string
 ): ScheduleFeedbackItem {
   const unresolved = assignmentDecisionMessages(state.assignments, {
@@ -401,7 +406,7 @@ function crossWorkdayLoadFeedback(
 }
 
 function positionFrequencyReviewFeedback(
-  state: AppState
+  state: ScheduleGenerationFacts
 ): ScheduleFeedbackItem {
   const unresolved = assignmentDecisionMessages(state.assignments, {
     ruleIds: new Set(["position-frequency", "position-frequency-review"]),
@@ -438,7 +443,9 @@ function positionFrequencyReviewFeedback(
   );
 }
 
-function currentLateFeedback(state: AppState): ScheduleFeedbackItem {
+function currentLateFeedback(
+  state: ScheduleGenerationFacts
+): ScheduleFeedbackItem {
   const finalLateAssignments = state.assignments
     .filter(
       (assignment) =>
@@ -484,14 +491,20 @@ function currentLateFeedback(state: AppState): ScheduleFeedbackItem {
   );
 }
 
-function staffName(state: AppState, staffId: string | null): string {
+function staffName(
+  state: ScheduleGenerationFacts,
+  staffId: string | null
+): string {
   return staffId
     ? (state.staff.find((person) => person.id === staffId)?.name ??
         `#${staffId}`)
     : "未配置";
 }
 
-function assignmentSummary(state: AppState, staffId: string | null): string {
+function assignmentSummary(
+  state: ScheduleGenerationFacts,
+  staffId: string | null
+): string {
   if (!staffId) return "未配置";
   const latest = state.assignments
     .filter(
@@ -513,7 +526,7 @@ function monthlyCountDifference(counts: number[]): number {
 }
 
 function dutyRosterFeedback(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string
 ): ScheduleFeedbackItem {
   const roster = getDutyRosterForDate(state, date);
@@ -752,16 +765,16 @@ function dutyRosterFeedback(
 }
 
 export function buildRuleScheduleFeedback(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string
 ): ScheduleFeedbackItem[] {
-  return RULE_FEEDBACK_ORDER.map((key) =>
+  return compileSchedulingPlan(state.settings).feedbackKeys.map((key) =>
     RULE_FEEDBACK_BUILDERS[key](state, date)
   );
 }
 
 type RuleFeedbackBuilder = (
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string
 ) => ScheduleFeedbackItem;
 

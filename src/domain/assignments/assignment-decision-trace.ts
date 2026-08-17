@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import {
   schedulingDecision,
   type SchedulingDecision,
@@ -31,7 +32,7 @@ import {
 } from "../flights/schedule-tasks";
 
 export interface AssignmentDecisionTraceContext {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   assignments: Assignment[];
   task: AssignmentTask;

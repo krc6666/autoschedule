@@ -1,10 +1,5 @@
-import type {
-  AppState,
-  Assignment,
-  Flight,
-  PositionRule,
-  Staff,
-} from "../../model";
+import type { Assignment, Flight, PositionRule, Staff } from "../../model";
+import type { AssignmentEligibilityFacts } from "../shared/scheduling-facts";
 import {
   isValidAssignmentDiversionTransfer,
   isValidDiversionTransfer,
@@ -25,7 +20,7 @@ export interface StaffAssignmentFacts {
 export type SameFlightConflict = "block" | "allow-reusable" | "allow-all";
 
 export interface AssignmentLoadFactsOptions {
-  state: AppState;
+  state: AssignmentEligibilityFacts;
   assignments: readonly Assignment[];
   flight: Pick<Flight, "id" | "startTime" | "endTime">;
   rule?: PositionRule;
@@ -51,7 +46,7 @@ export type AssignmentHoursFacts = Pick<
 >;
 
 export function staffAssignmentFacts(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   flight: Pick<Flight, "startTime" | "endTime">,
   rule: PositionRule,
   person: Staff

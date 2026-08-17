@@ -35,6 +35,25 @@ function createRun() {
 }
 
 describe("background schedule runner", () => {
+  it("projects application state to schedule-generation facts before posting", () => {
+    const { run, worker } = createRun();
+
+    expect(worker.postMessage).toHaveBeenCalledOnce();
+    const request = worker.postMessage.mock.calls[0]![0];
+    expect(request.state).toMatchObject({
+      staff: expect.any(Array),
+      flights: expect.any(Array),
+      positionRules: expect.any(Array),
+      settings: expect.any(Object),
+    });
+    expect(request.state).not.toHaveProperty("version");
+    expect(request.state).not.toHaveProperty("weeklyFlightPlans");
+    expect(request.state).not.toHaveProperty("activeScheduleDate");
+    expect(request.state).not.toHaveProperty("schedulePolicyStale");
+    expect(request.state).not.toHaveProperty("updatedAt");
+    run.stopWithoutResult();
+  });
+
   it("stops immediately without exposing a calculated result", async () => {
     const { run, worker } = createRun();
 

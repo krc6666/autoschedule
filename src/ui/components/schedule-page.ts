@@ -13,6 +13,7 @@ import "./duty-roster-summary";
 import "./schedule-feedback";
 import "./schedule-grid";
 import "./previous-schedule-comparison";
+import "./schedule-relaxed-shift-summary";
 import "./schedule-toolbar";
 import "./staff-load-table";
 import "./staff-palette";
@@ -93,10 +94,16 @@ export class SchedulePageElement extends LightDomElement {
           .model=${this.model}
           .view=${view}
         ></autoschedule-schedule-grid>
-        <autoschedule-duty-roster-summary
-          .model=${this.model}
-          .date=${this.date}
-        ></autoschedule-duty-roster-summary>
+        <div class="schedule-side-panel">
+          <autoschedule-duty-roster-summary
+            .model=${this.model}
+            .date=${this.date}
+          ></autoschedule-duty-roster-summary>
+          <autoschedule-schedule-relaxed-shift-summary
+            .model=${this.model}
+            .date=${this.date}
+          ></autoschedule-schedule-relaxed-shift-summary>
+        </div>
       </section>
       <autoschedule-schedule-feedback
         .model=${this.model}

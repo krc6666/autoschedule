@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { eligibleStaffForRule } from "../candidates/assignment-eligibility";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import {
@@ -55,7 +56,7 @@ function projectedAssignments(
 }
 
 function eligibleProfiles(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   target: Assignment,
   assignments: readonly Assignment[],
   date: string,
@@ -104,7 +105,7 @@ function period(
 }
 
 export function assessLatePriorityFrequencyBalance(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   assignments: readonly Assignment[],
   date: string,
@@ -176,7 +177,7 @@ export function assessLatePriorityFrequencyBalance(
 }
 
 export function assessLatePriorityAggregateBalance(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   assignments: readonly Assignment[],
   date: string,
@@ -225,7 +226,7 @@ export function assessLatePriorityAggregateBalance(
 }
 
 export function compareProjectedLatePriorityCandidates(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   assignment: Assignment,
   left: Staff,
@@ -258,7 +259,7 @@ export function compareProjectedLatePriorityCandidates(
 }
 
 export function compareProjectedLatePriorityAggregateCandidates(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   assignment: Assignment,
   left: Staff,
@@ -289,7 +290,7 @@ export function compareProjectedLatePriorityAggregateCandidates(
 }
 
 function aggregateQualityVector(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   date: string,
   facts?: ScheduleFrequencyFacts
@@ -320,7 +321,7 @@ function aggregateQualityVector(
 }
 
 function assignmentSpreads(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   assignments: readonly Assignment[],
   date: string,
@@ -377,7 +378,7 @@ function worsensFrequencyPriority(
 }
 
 export function latePriorityFrequencyRegressionReasons(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   before: readonly Assignment[],
   after: readonly Assignment[],
   date: string,

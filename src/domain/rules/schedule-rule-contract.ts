@@ -10,6 +10,13 @@ export const SCHEDULING_STAGE_ORDER = [
 export type SchedulingRuleStage = (typeof SCHEDULING_STAGE_ORDER)[number];
 export type SchedulingRuleFeedbackMode =
   "dedicated" | "aggregated" | "decision-only";
+export type SchedulingRuleOptimization = "required" | "best-effort";
+
+type SchedulingRuleMetadata = {
+  optimization?: SchedulingRuleOptimization;
+  deferCandidateAfterCoverage?: boolean;
+  feedbackOrder?: number;
+};
 
 export const SCHEDULING_STAGE_LABELS: Readonly<
   Record<SchedulingRuleStage, string>
@@ -53,12 +60,14 @@ export const SCHEDULING_RULES = [
     label: "值班岗位锁定",
     feedbackMode: "dedicated",
     feedbackKey: "duty-roster",
+    feedbackOrder: 8,
   },
   {
     id: "scarce-qualification",
     stage: "coverage",
     label: "稀缺资质预留",
     feedbackMode: "decision-only",
+    deferCandidateAfterCoverage: true,
   },
   {
     id: "position-compaction",
@@ -66,6 +75,7 @@ export const SCHEDULING_RULES = [
     label: "岗位空缺下沉",
     feedbackMode: "dedicated",
     feedbackKey: "morning-priority",
+    feedbackOrder: 0,
   },
   {
     id: "team-leader-concurrent-supervision",
@@ -79,6 +89,7 @@ export const SCHEDULING_RULES = [
     label: "跨工作日资质预留",
     feedbackMode: "dedicated",
     feedbackKey: "cross-workday-qualification-reservation",
+    feedbackOrder: 1,
   },
   {
     id: "position-transition",
@@ -116,6 +127,7 @@ export const SCHEDULING_RULES = [
     label: "重点岗位频率安全重排",
     feedbackMode: "dedicated",
     feedbackKey: "position-frequency-review",
+    feedbackOrder: 4,
   },
   {
     id: "priority-position-consecutive",
@@ -129,6 +141,8 @@ export const SCHEDULING_RULES = [
     label: "跨工作日恢复保护",
     feedbackMode: "dedicated",
     feedbackKey: "previous-late",
+    optimization: "best-effort",
+    feedbackOrder: 6,
   },
   {
     id: "late-shift-cutoff",
@@ -136,42 +150,50 @@ export const SCHEDULING_RULES = [
     label: "末班重点岗位次班截止保护",
     feedbackMode: "dedicated",
     feedbackKey: "current-late",
+    optimization: "best-effort",
+    feedbackOrder: 7,
   },
   {
     id: "high-fatigue-position-consecutive",
     stage: "protection",
     label: "高疲劳普通岗位连续承担保护",
     feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "same-day-late-obligation",
     stage: "protection",
     label: "当天早晚负荷分散",
     feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "late-shift-position-relief",
     stage: "protection",
     label: "上一班末班重点人员晚班轻岗优先",
     feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "preferred-position-transition",
     stage: "protection",
     label: "优先岗位衔接",
     feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "staff-coverage",
     stage: "protection",
     label: "当日在岗覆盖",
     feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "rolling-load",
     stage: "protection",
     label: "滚动负荷保护",
     feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "high-load-recovery",
@@ -179,6 +201,8 @@ export const SCHEDULING_RULES = [
     label: "连续高负荷保护",
     feedbackMode: "dedicated",
     feedbackKey: "high-load",
+    optimization: "best-effort",
+    feedbackOrder: 2,
   },
   {
     id: "cross-workday-load",
@@ -186,18 +210,22 @@ export const SCHEDULING_RULES = [
     label: "跨工作班负荷互补",
     feedbackMode: "dedicated",
     feedbackKey: "cross-workday-load",
+    optimization: "best-effort",
+    feedbackOrder: 3,
   },
   {
     id: "workload-balance",
     stage: "protection",
     label: "工时与疲劳均衡",
     feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "historical-fatigue",
     stage: "stable-order",
     label: "历史疲劳",
     feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "position-rotation",
@@ -205,21 +233,22 @@ export const SCHEDULING_RULES = [
     label: "连续轮岗复核",
     feedbackMode: "dedicated",
     feedbackKey: "position-rotation",
+    feedbackOrder: 5,
   },
 ] as const satisfies readonly (
-  | {
+  | ({
       id: string;
       stage: SchedulingRuleStage;
       label: string;
       feedbackMode: Exclude<SchedulingRuleFeedbackMode, "dedicated">;
-    }
-  | {
+    } & SchedulingRuleMetadata)
+  | ({
       id: string;
       stage: SchedulingRuleStage;
       label: string;
       feedbackMode: "dedicated";
       feedbackKey: string;
-    }
+    } & SchedulingRuleMetadata)
 )[];
 
 export type SchedulingRuleId = (typeof SCHEDULING_RULES)[number]["id"];
@@ -228,17 +257,6 @@ export type RuleFeedbackKey = Extract<
   { feedbackMode: "dedicated" }
 >["feedbackKey"];
 
-export const RULE_FEEDBACK_ORDER = [
-  "morning-priority",
-  "cross-workday-qualification-reservation",
-  "high-load",
-  "cross-workday-load",
-  "position-frequency-review",
-  "position-rotation",
-  "previous-late",
-  "current-late",
-  "duty-roster",
-] as const satisfies readonly RuleFeedbackKey[];
 export type SchedulingDecisionOutcome =
   "selected" | "blocked" | "fallback" | "preserved";
 

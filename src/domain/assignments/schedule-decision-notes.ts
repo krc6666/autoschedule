@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { analyzeAutomaticEligibilityPool } from "../candidates/assignment-eligibility";
 import { violatedPositionTransitionPoliciesForInsertion } from "../reviews/schedule-protection";
 import {
@@ -7,7 +8,7 @@ import {
 } from "../flights/schedule-tasks";
 
 function alternativeStaffReason(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   selected: Staff,
   task: AssignmentTask
@@ -28,7 +29,7 @@ function alternativeStaffReason(
 }
 
 export function strictOverrideNotes(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   person: Staff,
   task: AssignmentTask
@@ -51,7 +52,7 @@ export function strictOverrideNotes(
 }
 
 export function nextWorkdayRecoveryOverrideReason(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   selected: Staff,
   task: AssignmentTask,

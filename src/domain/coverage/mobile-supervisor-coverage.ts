@@ -1,5 +1,5 @@
-import type { AppState } from "../../model";
 import type { MobileSupervisorCoverageRule } from "../rules/structured-policy-contract";
+import type { ScheduleSettingsFacts } from "../shared/scheduling-facts";
 
 export interface MobileSupervisorCoverageTarget {
   flightNo: string;
@@ -38,7 +38,7 @@ function matchesTarget(
 }
 
 export function evaluateMobileSupervisorCoverage(
-  state: AppState,
+  state: ScheduleSettingsFacts,
   target: MobileSupervisorCoverageTarget
 ): MobileSupervisorCoverageEvaluation {
   const applicable = state.settings.mobileSupervisorCoverageRules.filter(
@@ -73,7 +73,7 @@ export function evaluateMobileSupervisorCoverage(
 }
 
 export function canMobileSupervisorCoverPosition(
-  state: AppState,
+  state: ScheduleSettingsFacts,
   target: MobileSupervisorCoverageTarget
 ): boolean {
   return evaluateMobileSupervisorCoverage(state, target).allowed;

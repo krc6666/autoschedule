@@ -1,4 +1,5 @@
-import type { AppState, Staff } from "../../model";
+import type { Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { diagnoseBaseAssignmentEligibility } from "../candidates/assignment-eligibility";
 import {
   buildCandidatePriority,
@@ -18,6 +19,12 @@ import {
   createCandidateRulePlan,
   type CandidateRulePlanItem,
 } from "../rules/candidate-rule-plan";
+import {
+  candidateRuleAfterCoverage,
+  dailyObjectiveIsBestEffort,
+  dailyObjectiveRuleId,
+  orderDailyObjectiveBuckets,
+} from "../rules/scheduling-execution-plan";
 import type {
   LexicographicObjective,
   LinearConstraint,
@@ -87,7 +94,7 @@ interface CrossWorkdayReservationModel {
 }
 
 function crossFlightPriorityObjectives(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   tasks: readonly AssignmentTask[],
   choices: readonly DailyScheduleStaffChoice[]
 ): LexicographicObjective[] {
@@ -138,7 +145,7 @@ function crossFlightPriorityObjectives(
 }
 
 export interface BuildDailyScheduleModelOptions {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   preparation: SchedulePreparation;
   timeoutMs: number;
@@ -156,7 +163,7 @@ function minimumChoiceHours(task: AssignmentTask): number {
 }
 
 function staffChoicesForTasks(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   preparation: SchedulePreparation,
   scheduledTasks: readonly AssignmentTask[]
@@ -266,17 +273,23 @@ function dutyModel(
         choice.task.key === taskKey && choice.person.id === dutyStaffId
     );
   const constraints: LinearConstraint[] = [];
-  const morningChoice = preparation.preferredDutyMorningTaskKey
-    ? choiceForTask(preparation.preferredDutyMorningTaskKey)
-    : undefined;
-  if (morningChoice) {
+  const morningChoices = staffChoices.filter(
+    (choice) =>
+      choice.person.id === dutyStaffId && isPreNoonFlight(choice.task.flight)
+  );
+  if (morningChoices.length) {
     constraints.push({
       id: "duty:morning",
-      terms: [{ variableId: morningChoice.id, coefficient: 1 }],
+      terms: morningChoices.map((choice) => ({
+        variableId: choice.id,
+        coefficient: 1,
+      })),
       lowerBound: 1,
-      upperBound: 1,
     });
   }
+  const preferredMorningChoice = preparation.preferredDutyMorningTaskKey
+    ? choiceForTask(preparation.preferredDutyMorningTaskKey)
+    : undefined;
   const lateChoices = preparation.preferredDutyLateTaskCandidates.flatMap(
     (task) => {
       const choice = choiceForTask(task.key);
@@ -295,18 +308,31 @@ function dutyModel(
   }
   return {
     constraints,
-    objectives: lateChoices.length
-      ? [
-          {
-            id: "duty:late-target",
-            direction: "maximize" as const,
-            terms: lateChoices.map((choice, index) => ({
-              variableId: choice.id,
-              coefficient: lateChoices.length - index,
-            })),
-          },
-        ]
-      : [],
+    objectives: [
+      ...(lateChoices.length
+        ? [
+            {
+              id: "duty:late-target",
+              direction: "maximize" as const,
+              terms: lateChoices.map((choice, index) => ({
+                variableId: choice.id,
+                coefficient: lateChoices.length - index,
+              })),
+            },
+          ]
+        : []),
+      ...(preferredMorningChoice
+        ? [
+            {
+              id: "duty:preferred-morning",
+              direction: "maximize" as const,
+              terms: [
+                { variableId: preferredMorningChoice.id, coefficient: 1 },
+              ],
+            },
+          ]
+        : []),
+    ],
     additionalPriorityObjective: {
       id: "duty:avoid-additional-priority",
       direction: "minimize",
@@ -350,7 +376,7 @@ function assignmentConstraints(
 }
 
 function crossWorkdayReservationModel(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffChoices: readonly DailyScheduleStaffChoice[]
 ): CrossWorkdayReservationModel {
   const targets = crossWorkdayReservationTargets(state);
@@ -456,7 +482,7 @@ function crossWorkdayReservationModel(
 }
 
 function capacityConstraints(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffChoices: readonly DailyScheduleStaffChoice[]
 ): LinearConstraint[] {
   return state.staff.map((person, index) => ({
@@ -472,7 +498,7 @@ function capacityConstraints(
 }
 
 function staffCoverageModel(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffChoices: readonly DailyScheduleStaffChoice[]
 ): {
   variables: { id: string }[];
@@ -522,7 +548,7 @@ function staffCoverageModel(
 }
 
 function workloadModel(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   preparation: SchedulePreparation,
   staffChoices: readonly DailyScheduleStaffChoice[]
@@ -741,7 +767,7 @@ function replaceWorkloadObjective(
     (objective) => objective.id !== "candidate:workload-balance"
   );
   const insertionIndex = withoutStatic.findIndex(
-    (objective) => objective.id === "candidate:historical-fatigue"
+    (objective) => dailyObjectiveRuleId(objective.id) === "historical-fatigue"
   );
   const index = insertionIndex < 0 ? withoutStatic.length : insertionIndex;
   return [
@@ -752,7 +778,7 @@ function replaceWorkloadObjective(
 }
 
 function candidateRuleObjectives(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   tasks: readonly AssignmentTask[],
   choices: readonly DailyScheduleStaffChoice[],
   rulePlan: readonly CandidateRulePlanItem[],
@@ -895,12 +921,14 @@ function candidateRuleObjectives(
       };
     });
   });
-  const deferredIds = new Set(["candidate:scarce-qualification"]);
+  const deferredRuleIds = new Set(
+    rulePlan.filter(candidateRuleAfterCoverage).map((rule) => rule.id)
+  );
   const deferred = objectives.filter((objective) =>
-    deferredIds.has(objective.id)
+    deferredRuleIds.has(dailyObjectiveRuleId(objective.id)!)
   );
   const ordered = objectives.filter(
-    (objective) => !deferredIds.has(objective.id)
+    (objective) => !deferredRuleIds.has(dailyObjectiveRuleId(objective.id)!)
   );
   const coverageIndex = ordered.findIndex(
     (objective) => objective.id === "candidate:staff-coverage"
@@ -919,7 +947,7 @@ function insertSameDayLateObligationObjectives(
 ): LexicographicObjective[] {
   if (!insertedObjectives.length) return [...objectives];
   const insertionIndex = objectives.findIndex(
-    (item) => item.id === "candidate:preferred-position-transition"
+    (item) => dailyObjectiveRuleId(item.id) === "preferred-position-transition"
   );
   const index = insertionIndex < 0 ? objectives.length : insertionIndex;
   return [
@@ -959,29 +987,11 @@ function simplifyLexicographicObjectives(
 }
 
 const BEST_EFFORT_RELATIVE_GAP = 0.05;
-const BEST_EFFORT_OBJECTIVE_PREFIXES = [
-  "candidate:late-shift-recovery",
-  "candidate:late-shift-cutoff",
-  "candidate:high-fatigue-position-consecutive",
-  "candidate:same-day-late-obligation",
-  "candidate:late-shift-position-relief",
-  "candidate:preferred-position-transition",
-  "candidate:staff-coverage",
-  "candidate:rolling-load",
-  "candidate:high-load-recovery",
-  "candidate:cross-workday-load",
-  "candidate:workload-balance",
-  "candidate:historical-fatigue",
-] as const;
-
 function applyDailyObjectiveOptimality(
   objectives: readonly LexicographicObjective[]
 ): [LexicographicObjective, ...LexicographicObjective[]] {
   const projected = objectives.map((objective) => {
-    const bestEffort = BEST_EFFORT_OBJECTIVE_PREFIXES.some(
-      (prefix) =>
-        objective.id === prefix || objective.id.startsWith(`${prefix}:`)
-    );
+    const bestEffort = dailyObjectiveIsBestEffort(objective.id);
     if (!bestEffort)
       return {
         ...objective,
@@ -1175,18 +1185,20 @@ export function buildDailyScheduleModel({
       objective.id !== "candidate:position-transition"
   );
   const objectives = applyDailyObjectiveOptimality(
-    simplifyLexicographicObjectives([
-      ...ke166ReservationObjectives,
-      ...duty.objectives,
-      ...coverageObjectives,
-      ...crossWorkdayReservation.objectives,
-      ...strictTransitionObjectives,
-      ...crossFlightPriority,
-      ...(duty.additionalPriorityObjective?.terms.length
-        ? [duty.additionalPriorityObjective]
-        : []),
-      ...remainingCandidateObjectives,
-    ])
+    simplifyLexicographicObjectives(
+      orderDailyObjectiveBuckets({
+        ke166Reservation: ke166ReservationObjectives,
+        duty: duty.objectives,
+        coverage: coverageObjectives,
+        crossWorkdayReservation: crossWorkdayReservation.objectives,
+        strictTransition: strictTransitionObjectives,
+        crossFlightPriority,
+        dutyAdditional: duty.additionalPriorityObjective?.terms.length
+          ? [duty.additionalPriorityObjective]
+          : [],
+        remainingCandidate: remainingCandidateObjectives,
+      })
+    )
   );
   return {
     staffChoices,

@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Flight, PositionRule } from "../../model";
+import type { Assignment, Flight, PositionRule } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { createId } from "../../utils";
 import { eligibleStaffForRule } from "../candidates/assignment-eligibility";
 import { canMobileSupervisorCoverPosition } from "../coverage/mobile-supervisor-coverage";
@@ -33,7 +34,7 @@ interface CounterPlacementPlan {
 }
 
 export function compareKe166SupervisorRotation(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   flight: Flight,
   rule: PositionRule,
   date: string,
@@ -63,7 +64,7 @@ export function compareKe166SupervisorRotation(
 }
 
 function isAutomaticRegularAssignment(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment
 ): boolean {
   const rule = assignmentRule(state, assignment);
@@ -79,7 +80,7 @@ function isAutomaticRegularAssignment(
 }
 
 function counterPlacementChanges(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   changes: readonly RotationStaffChange[]
 ): CounterPlacementPlan["changes"] {
@@ -103,7 +104,7 @@ function counterPlacementChanges(
 }
 
 function eligibleSupervisorOrder(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   flight: Flight,
   rule: PositionRule,
@@ -166,7 +167,7 @@ function eligibleSupervisorOrder(
 
 async function findSupervisorCounterPlan(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   flight: Flight,
   supervisorRule: PositionRule,
@@ -267,7 +268,7 @@ async function findSupervisorCounterPlan(
 
 export async function assignKe166SupervisorByCounterCoverage(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   flight: Flight,
   rule: PositionRule,

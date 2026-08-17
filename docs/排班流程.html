@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>排班流程说明</title>
+    <style>
+      :root {
+        --ink: #1c2730;
+        --muted: #5b6871;
+        --line: #ccd6dc;
+        --canvas: #f3f6f7;
+        --paper: #ffffff;
+        --blue: #285f80;
+        --red: #a13f3b;
+        --amber: #8b651c;
+        --green: #286c4e;
+        --green-soft: #edf7f0;
+        --amber-soft: #fff7e7;
+        --red-soft: #fff1f0;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--canvas);
+        font-family: "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+        line-height: 1.55;
+      }
+      main {
+        width: min(1320px, 100%);
+        margin: 0 auto;
+        padding: 38px 42px 48px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        gap: 28px;
+        align-items: end;
+        padding-bottom: 22px;
+        border-bottom: 3px solid var(--ink);
+      }
+      .label {
+        margin: 0 0 7px;
+        color: var(--blue);
+        font-size: 13px;
+        font-weight: 700;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        margin-bottom: 7px;
+        font-size: clamp(30px, 4vw, 46px);
+        line-height: 1.18;
+        letter-spacing: 0;
+      }
+      .intro {
+        max-width: 760px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+      }
+      .rule-note {
+        min-width: 230px;
+        padding: 13px 16px;
+        border-left: 5px solid var(--blue);
+        background: var(--paper);
+        font-size: 14px;
+      }
+      .rule-note strong,
+      .rule-note span {
+        display: block;
+      }
+      .rule-note span {
+        margin-top: 3px;
+        color: var(--muted);
+      }
+      section {
+        margin-top: 30px;
+      }
+      h2 {
+        margin-bottom: 7px;
+        font-size: 24px;
+        letter-spacing: 0;
+      }
+      .section-intro {
+        margin-bottom: 16px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .flow {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .rule-map {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .rule-step {
+        position: relative;
+        min-height: 226px;
+        padding: 20px 16px 16px;
+        border-left: 1px solid var(--line);
+      }
+      .rule-step:first-child {
+        border-left: 0;
+      }
+      .rule-step::after {
+        position: absolute;
+        top: 50%;
+        right: -13px;
+        z-index: 2;
+        display: grid;
+        width: 26px;
+        height: 26px;
+        place-items: center;
+        border: 1px solid var(--blue);
+        border-radius: 50%;
+        color: var(--blue);
+        background: var(--paper);
+        content: "→";
+        font-size: 18px;
+        font-weight: 800;
+        transform: translateY(-50%);
+      }
+      .rule-step:last-child::after {
+        display: none;
+      }
+      .rule-number {
+        display: inline-grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        margin-bottom: 12px;
+        border-radius: 50%;
+        color: #fff;
+        background: var(--blue);
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .rule-step h3 {
+        margin-bottom: 8px;
+        font-size: 17px;
+        line-height: 1.3;
+      }
+      .rule-step p {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .rule-step.safety {
+        background: #f7fafb;
+      }
+      .rule-step.protection {
+        background: var(--green-soft);
+      }
+      .rule-step.balance {
+        background: var(--amber-soft);
+      }
+      .rule-step.final {
+        background: var(--red-soft);
+      }
+      .rule-step.protection .rule-number {
+        background: var(--green);
+      }
+      .rule-step.balance .rule-number {
+        background: var(--amber);
+      }
+      .rule-step.final .rule-number {
+        background: var(--red);
+      }
+      .rule-outcomes {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .rule-outcomes span {
+        padding: 6px 7px;
+        border: 1px solid rgba(161, 63, 59, 0.28);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.25;
+        text-align: center;
+      }
+      .rule-outcomes span:first-child {
+        border-color: rgba(40, 108, 78, 0.35);
+        color: var(--green);
+        background: var(--green-soft);
+      }
+      .rule-outcomes span:last-child {
+        color: var(--red);
+        background: var(--paper);
+      }
+      .phase-row,
+      .lane {
+        display: grid;
+        grid-template-columns: 122px 1.05fr 1.35fr 1.05fr;
+      }
+      .phase-row {
+        border-bottom: 1px solid var(--line);
+        background: var(--blue-soft);
+      }
+      .phase,
+      .lane-cell {
+        border-left: 1px solid var(--line);
+      }
+      .phase {
+        padding: 11px 14px;
+        color: var(--blue);
+        font-size: 14px;
+        font-weight: 800;
+        text-align: center;
+      }
+      .lane + .lane {
+        border-top: 1px solid var(--line);
+      }
+      .lane-title {
+        display: grid;
+        min-height: 176px;
+        place-items: center;
+        padding: 12px;
+        color: var(--blue);
+        background: #f7fafb;
+        font-size: 15px;
+        font-weight: 800;
+        text-align: center;
+      }
+      .lane-cell {
+        position: relative;
+        display: flex;
+        min-height: 176px;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 18px 14px;
+      }
+      .node {
+        position: relative;
+        z-index: 1;
+        width: min(100%, 218px);
+        padding: 12px 14px;
+        border: 1px solid var(--blue);
+        color: var(--ink);
+        background: var(--paper);
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.35;
+        text-align: center;
+      }
+      .node small {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 400;
+      }
+      .node.event {
+        width: 76px;
+        height: 76px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+      }
+      .node.subprocess {
+        border-width: 4px 1px;
+      }
+      .node.good {
+        border-color: var(--green);
+        background: var(--green-soft);
+      }
+      .node.warning {
+        border-color: var(--amber);
+        background: var(--amber-soft);
+      }
+      .decision-wrap {
+        position: relative;
+        display: grid;
+        width: 122px;
+        height: 122px;
+        place-items: center;
+        flex: 0 0 122px;
+        overflow: hidden;
+      }
+      .decision-wrap::before {
+        position: absolute;
+        width: 82px;
+        height: 82px;
+        border: 1px solid var(--blue);
+        background: var(--paper);
+        content: "";
+        transform: rotate(45deg);
+      }
+      .decision-wrap strong {
+        position: relative;
+        width: 76px;
+        font-size: 13px;
+        line-height: 1.25;
+        text-align: center;
+      }
+      .flow-arrow {
+        color: var(--blue);
+        font-size: 26px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .flow-arrow.down {
+        position: absolute;
+        right: 22px;
+        bottom: -16px;
+        z-index: 2;
+        padding: 0 5px;
+        background: var(--paper);
+      }
+      .branch-label {
+        position: absolute;
+        right: 12px;
+        bottom: 9px;
+        color: var(--amber);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .result-stack {
+        display: grid;
+        width: min(100%, 218px);
+        gap: 8px;
+      }
+      .explain {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .overview {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 12px;
+      }
+      .overview article,
+      .mechanism {
+        border: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .overview article {
+        padding: 18px;
+      }
+      .overview h3,
+      .mechanism h3 {
+        margin-bottom: 6px;
+        font-size: 18px;
+      }
+      .overview p,
+      .mechanism p {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .plain-list {
+        display: grid;
+        gap: 7px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .plain-list li {
+        position: relative;
+        padding-left: 17px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .plain-list li::before {
+        position: absolute;
+        left: 0;
+        color: var(--blue);
+        content: "•";
+        font-weight: 800;
+      }
+      .mechanisms {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .mechanism {
+        padding: 16px 18px;
+        border-top: 4px solid var(--blue);
+      }
+      .mechanism.recovery {
+        border-top-color: var(--green);
+      }
+      .mechanism.protection {
+        border-top-color: var(--amber);
+      }
+      .explain article,
+      .case,
+      .outcome {
+        border: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .explain article {
+        padding: 16px 18px;
+      }
+      .explain h3,
+      .case h3,
+      .outcome h3 {
+        margin-bottom: 5px;
+        font-size: 18px;
+      }
+      .explain p,
+      .case p,
+      .outcome p {
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .case {
+        margin-top: 12px;
+        padding: 18px;
+        border-left: 5px solid var(--amber);
+      }
+      .case strong {
+        color: var(--ink);
+      }
+      .outcomes {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .outcome {
+        padding: 16px 18px;
+      }
+      .outcome.ok {
+        border-top: 5px solid var(--green);
+        background: var(--green-soft);
+      }
+      .outcome.warn {
+        border-top: 5px solid var(--amber);
+        background: var(--amber-soft);
+      }
+      .outcome.stop {
+        border-top: 5px solid var(--red);
+        background: var(--red-soft);
+      }
+      footer {
+        margin-top: 28px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      @media (max-width: 960px) {
+        .phase-row,
+        .lane {
+          grid-template-columns: 96px 1fr 1fr 1fr;
+        }
+        .lane-title,
+        .lane-cell {
+          min-height: 164px;
+        }
+        .node.event {
+          display: none;
+        }
+      }
+      @media (max-width: 680px) {
+        main {
+          padding: 26px 16px 34px;
+        }
+        header,
+        .overview,
+        .explain,
+        .mechanisms,
+        .outcomes,
+        .rule-map {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+        .rule-map {
+          overflow: visible;
+          border: 0;
+          gap: 10px;
+          background: transparent;
+        }
+        .rule-step {
+          min-height: auto;
+          border: 1px solid var(--line);
+        }
+        .rule-step::after {
+          top: auto;
+          right: auto;
+          bottom: -18px;
+          left: 50%;
+          transform: translateX(-50%) rotate(90deg);
+        }
+        .flow {
+          overflow: visible;
+          border: 0;
+          background: transparent;
+        }
+        .phase-row {
+          display: none;
+        }
+        .lane {
+          display: block;
+          margin-bottom: 12px;
+          border: 1px solid var(--line);
+          background: var(--paper);
+        }
+        .lane + .lane {
+          border-top: 1px solid var(--line);
+        }
+        .lane-title,
+        .lane-cell {
+          min-height: auto;
+          border: 0;
+        }
+        .lane-title {
+          display: block;
+          padding: 9px 13px;
+          text-align: left;
+        }
+        .lane-cell {
+          justify-content: flex-start;
+          padding: 12px 13px;
+        }
+        .flow-arrow,
+        .branch-label {
+          display: none;
+        }
+        .node,
+        .result-stack {
+          width: 100%;
+          max-width: none;
+        }
+        header {
+          align-items: start;
+        }
+        .rule-note {
+          min-width: 0;
+        }
+        .step {
+          min-height: auto;
+        }
+      }
+      @media print {
+        body {
+          background: #fff;
+        }
+        main {
+          width: 100%;
+          padding: 0;
+        }
+        .step,
+        .explain article,
+        .case,
+        .outcome {
+          break-inside: avoid;
+        }
+        @page {
+          size: A4 landscape;
+          margin: 11mm;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="label">机场地勤排班说明</p>
+          <h1>排班流程</h1>
+          <p class="intro">
+            先保证当天航班能安全运行，再在可行方案里安排休息、轮换和工作量。
+          </p>
+        </div>
+        <aside class="rule-note">
+          <strong>安排原则</strong
+          ><span>安全和运行要求优先，公平在此基础上比较。</span>
+        </aside>
+      </header>
+
+      <section>
+        <h2>一次排班的顺序</h2>
+        <p class="section-intro">
+          正常路径从左到右。遇到数据或安全问题时，退回对应环节处理后再生成。
+        </p>
+        <div class="flow" aria-label="排班流程">
+          <div class="phase-row" aria-hidden="true">
+            <div></div>
+            <div class="phase">准备</div>
+            <div class="phase">生成与校验</div>
+            <div class="phase">确认结果</div>
+          </div>
+          <div class="lane">
+            <div class="lane-title">排班人员</div>
+            <div class="lane-cell">
+              <div class="node event">开始</div>
+              <span class="flow-arrow" aria-hidden="true">→</span>
+              <div class="node">
+                确认排班资料<small>航班、岗位、人员状态和锁定信息</small>
+              </div>
+              <span class="flow-arrow down" aria-hidden="true">↓</span>
+            </div>
+            <div class="lane-cell">
+              <div class="node warning">
+                补充或修正资料<small>数据不完整时退回这里处理</small>
+              </div>
+              <span class="branch-label">资料不完整</span>
+            </div>
+            <div class="lane-cell">
+              <div class="node good">
+                查看生成结果<small>查看新班表或提示原因</small>
+              </div>
+              <span class="flow-arrow" aria-hidden="true">→</span>
+              <div class="node event good">结束</div>
+            </div>
+          </div>
+          <div class="lane">
+            <div class="lane-title">排班系统</div>
+            <div class="lane-cell">
+              <div class="decision-wrap"><strong>资料完整吗？</strong></div>
+              <span class="flow-arrow" aria-hidden="true">是 →</span>
+              <span class="flow-arrow down" aria-hidden="true">↑</span>
+            </div>
+            <div class="lane-cell">
+              <div class="node subprocess">
+                生成并校验班表<small>先保证岗位、安全和运行要求</small>
+              </div>
+              <span class="flow-arrow" aria-hidden="true">→</span>
+              <div class="decision-wrap"><strong>满足采用条件吗？</strong></div>
+            </div>
+            <div class="lane-cell">
+              <div class="result-stack">
+                <div class="node good">
+                  通过：生成新班表<small>全部必要条件和复核通过</small>
+                </div>
+                <div class="node warning">
+                  未通过：保留原班表并提示原因<small
+                    >无法安全生成或仍需处理</small
+                  >
+                </div>
+              </div>
+              <span class="flow-arrow down" aria-hidden="true">↑</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>复杂规则如何共同决定一个人选</h2>
+        <p class="section-intro">
+          每个岗位都按同一条路径判断。前一步不通过，后面的比较不再进行；只有安全完整的方案才能进入最后选择。
+        </p>
+        <div class="rule-map" aria-label="排班规则决策流程">
+          <article class="rule-step safety">
+            <span class="rule-number">1</span>
+            <h3>先筛掉不能上岗的人</h3>
+            <p>人员状态、岗位资质、夜班能力、时间冲突、航班衔接和工时上限。</p>
+          </article>
+          <article class="rule-step safety">
+            <span class="rule-number">2</span>
+            <h3>先守住运行底线</h3>
+            <p>
+              人工锁定、值班、KE166、关键柜台、岗位完整性和稀缺资质优先落实。
+            </p>
+          </article>
+          <article class="rule-step protection">
+            <span class="rule-number">3</span>
+            <h3>为后续航班留出人</h3>
+            <p>保护 12 点前岗位，并为下一工作班需要的稀缺资质预留可用人员。</p>
+          </article>
+          <article class="rule-step protection">
+            <span class="rule-number">4</span>
+            <h3>照顾跨班恢复</h3>
+            <p>
+              严格避让必须满足；在完整安全方案中，优先给末班重点岗位人员更早下班机会。
+            </p>
+          </article>
+          <article class="rule-step balance">
+            <span class="rule-number">5</span>
+            <h3>在可行方案中做轮换</h3>
+            <p>
+              重点岗位次数、连续承担、早晚负荷、滚动负荷、工时和历史疲劳依次比较。
+            </p>
+          </article>
+          <article class="rule-step final">
+            <span class="rule-number">6</span>
+            <h3>整体换位后再复核</h3>
+            <p>轮换和换位必须一次完成，并重新检查前面所有底线。</p>
+            <div class="rule-outcomes">
+              <span>通过：采用新班表</span>
+              <span>不通过：保留原班表</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>这套系统解决的不是简单“填人”</h2>
+        <p class="section-intro">
+          同一张班表里，既有高负荷重点岗位，也有普通岗位；既要保证航班正常运行，也要让人员恢复、轮换和工作量尽量合理。
+        </p>
+        <div class="overview">
+          <article>
+            <h3>为什么需要系统统一计算</h3>
+            <p>
+              人员能不能上岗，不只看有没有空。还要同时看岗位资质、航班时间、夜班能力、当天工时、上一班承担情况，以及同事之间能否安全换位。单独照顾其中一项，往往会影响另一项。
+            </p>
+          </article>
+          <article>
+            <h3>系统先后判断的原则</h3>
+            <ul class="plain-list">
+              <li>先保证安全、资质和航班运行。</li>
+              <li>再保护稀缺人员和关键岗位。</li>
+              <li>最后在安全方案中比较恢复、轮换、负荷和公平。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>每一步主要看什么</h2>
+        <div class="explain">
+          <article>
+            <h3>第二步：先守住不能碰的线</h3>
+            <p>
+              人员不在岗、没有对应资质、不能上夜班、两个航班时间重叠，或者当天工时已到上限，都不能因为缺人而硬排。这些条件后面的调整也不能推翻。
+            </p>
+          </article>
+          <article>
+            <h3>第三步：先保证航班运行</h3>
+            <p>
+              值班、KE166、关键柜台和只有少数人能做的岗位先安排。普通岗位的公平比较，不能占用这些岗位需要的人员。
+            </p>
+          </article>
+          <article>
+            <h3>第四步：再选更合适的安排</h3>
+            <p>
+              如果有多种同样安全的安排，系统会比较重点岗位轮换、上一班工作强度、早晚负荷、工时和疲劳，优先选相对均衡的方案。
+            </p>
+          </article>
+          <article>
+            <h3>第五步：防止调整后出现问题</h3>
+            <p>
+              轮换或换位完成后，仍要重新检查。如果调整后出现时间重叠、岗位空缺或违反严格限制，就不采用这次调整。
+            </p>
+          </article>
+        </div>
+        <article class="case">
+          <h3>一个常见情况</h3>
+          <p>
+            <strong
+              >上一班承担末班重点岗位的人员，下一班有更早结束的安全机会时，优先让他获得这个机会。</strong
+            >例如两人都能做下午航班，且换位后岗位完整、时间和工时都合格，就优先让上一班承担末班重点岗位的人完成下午航班后下班，另一人承担更晚的岗位。
+          </p>
+        </article>
+      </section>
+
+      <section>
+        <h2>几个有针对性的安排机制</h2>
+        <p class="section-intro">
+          下面这些机制共同作用。前面的安全条件没有通过，后面的均衡安排不会覆盖它。
+        </p>
+        <div class="mechanisms">
+          <article class="mechanism">
+            <h3>岗位负荷有区别</h3>
+            <p>
+              每个岗位可配置不同疲劳点。系统会区分重点、高负荷和普通岗位，避免把高负荷任务长期集中给少数人。
+            </p>
+          </article>
+          <article class="mechanism recovery">
+            <h3>跨班恢复</h3>
+            <p>
+              上一班承担末班重点岗位的人员，下一班可优先避开指定重点岗位；设为严格限制时，没有完整安全方案就不采用新班表。
+            </p>
+          </article>
+          <article class="mechanism protection">
+            <h3>尽早下班保护</h3>
+            <p>
+              对上一班末班重点岗位人员，只要存在完整安全的更早下班机会，就优先给他，而不是被一般的工时或历史公平比较挤掉。
+            </p>
+          </article>
+          <article class="mechanism">
+            <h3>重点岗位轮换</h3>
+            <p>
+              系统参考最近已归档班表和当月承担次数，尽量避免同一人连续或频繁承担督导、一号、申报、送资料等重点岗位。
+            </p>
+          </article>
+          <article class="mechanism recovery">
+            <h3>预定人数决定岗位</h3>
+            <p>
+              航班的预定人数可以每天手动调整。人数达到岗位启用门槛时，该岗位才需要安排，避免不必要的柜台和人员占用。
+            </p>
+          </article>
+          <article class="mechanism protection">
+            <h3>值班与轮值</h3>
+            <p>
+              值班、CX
+              航前和次日备勤按资质和既定轮值顺序安排，并控制同一工作班内的互斥关系，兼顾必要保障和月度均衡。
+            </p>
+          </article>
+          <article class="mechanism">
+            <h3>优先保护稀缺资质</h3>
+            <p>
+              只有少数人能做的岗位和 12
+              点前关键岗位会优先考虑，防止稀缺人员先被普通岗位占用，最后反而缺人。
+            </p>
+          </article>
+          <article class="mechanism recovery">
+            <h3>时间衔接要真实可行</h3>
+            <p>
+              人员不能在重叠时段出现在两个岗位；跨航班还要满足最小衔接时间。符合有效分流条件时，才按实际撤岗时间计算。
+            </p>
+          </article>
+          <article class="mechanism protection">
+            <h3>结果有复核和说明</h3>
+            <p>
+              自动排完、轮换或换位后都会再次核对。确实缺少合格人员时，会保留具体原因，方便排班员调整配置或人工处理。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>排班完成后可能出现的结果</h2>
+        <div class="outcomes">
+          <article class="outcome ok">
+            <h3>采用新班表</h3>
+            <p>所有必要条件和最终复核都通过，生成完整班表。</p>
+          </article>
+          <article class="outcome warn">
+            <h3>保留普通岗位空缺</h3>
+            <p>
+              确实没有合格人员且规则允许时，保留空缺并说明是状态、资质、夜班、时间还是工时造成。
+            </p>
+          </article>
+          <article class="outcome stop">
+            <h3>不采用本次结果</h3>
+            <p>
+              关键岗位无法满足、严格限制无法满足或最终复核不通过时，保留生成前的班表并提示原因。
+            </p>
+          </article>
+        </div>
+      </section>
+      <footer>可直接打印为横向 PDF。</footer>
+    </main>
+  </body>
+</html>

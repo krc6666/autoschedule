@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import {
   rebuildAutomaticAssignmentEvidence,
@@ -54,7 +55,7 @@ function frequencyAlertFact(
 }
 
 function applyFrequencyAlertEvidence(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   attemptedReasons: ReadonlyMap<string, readonly string[]>
@@ -110,7 +111,7 @@ function applyFrequencyAlertEvidence(
 }
 
 function candidateFrequencyOrder(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   primary: Assignment,
   date: string,
   facts: ScheduleFrequencyFacts
@@ -137,7 +138,7 @@ function candidateFrequencyOrder(
 }
 
 function applyFrequencyPlan(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   primary: Assignment,
   profile: PositionFrequencyProfile,
@@ -188,7 +189,7 @@ function applyFrequencyPlan(
 
 export async function reviewSamePositionFrequency(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   lockedAssignmentIds: ReadonlySet<string>,

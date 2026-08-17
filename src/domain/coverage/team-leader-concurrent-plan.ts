@@ -1,10 +1,5 @@
-import type {
-  AppState,
-  Assignment,
-  Flight,
-  PositionRule,
-  Staff,
-} from "../../model";
+import type { Assignment, Flight, PositionRule, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import { durationHours, timeToMinutes } from "../shared/time";
@@ -61,7 +56,7 @@ function intervalBounds(startTime: string, endTime: string): [number, number] {
 }
 
 export function concurrentOverlapMinutes(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   left: Assignment,
   right: Assignment
 ): number {
@@ -91,7 +86,7 @@ export function concurrentOverlapMinutes(
 }
 
 function isMovableAssignment(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   lockedAssignmentIds: ReadonlySet<string>
 ): boolean {
@@ -111,7 +106,7 @@ function isMovableAssignment(
 }
 
 function pairChanges(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   pair: readonly [Assignment, Assignment],
   leader: Staff,
   overlapMinutes: number
@@ -140,7 +135,7 @@ function pairChanges(
 }
 
 function completeChange(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   change: RotationStaffChange
 ): PlannedConcurrentChange {
@@ -162,7 +157,7 @@ function completeChange(
 }
 
 function currentLoad(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   staffId: string,
   field: "workHours" | "fatiguePoints"
@@ -174,7 +169,7 @@ function currentLoad(
 
 export async function findConcurrentSupervisionPlan(options: {
   solver: SolverPort;
-  state: AppState;
+  state: ScheduleGenerationFacts;
   assignments: Assignment[];
   leader: Staff;
   pair: readonly [Assignment, Assignment];

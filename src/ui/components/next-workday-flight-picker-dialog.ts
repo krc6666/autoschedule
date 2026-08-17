@@ -20,44 +20,63 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
     return html`<div class="modal-body next-workday-flight-picker">
         <div class="d-flex flex-wrap gap-2 mb-3">
           ${this.quickAction(
-          `恢复${weekdayLabel(this.dialog.weekday)}预设`,
-          this.restorePreset
-        )}
+            `恢复${weekdayLabel(this.dialog.weekday)}预设`,
+            this.restorePreset
+          )}
           ${this.quickAction("全选", this.selectAll)}
           ${this.quickAction("清空", this.clearAll)}
         </div>
         ${
-        this.dialog.candidates.length
-          ? html`<div class="list-group next-workday-flight-list">
-              ${this.dialog.candidates.map(
-              (candidate) =>
-                html`<label
-                  class="list-group-item list-group-item-action d-flex align-items-center gap-3"
-                >
-                  <input
-                    class="form-check-input flex-shrink-0"
-                    type="checkbox"
-                    .checked=${selected.has(candidate.id)}
-                    @change=${(event: Event) =>
-                    this.toggle(
-                      candidate.id,
-                      (event.currentTarget as HTMLInputElement).checked
-                    )}
-                  />
-                  <span class="flex-grow-1 min-w-0">
-                    <strong>${candidate.flightNo}</strong>
-                    <small class="text-secondary ms-2"
-                      >${candidate.startTime}-${candidate.endTime}</small
-                    >
-                  </span>
-                  <span class="badge text-bg-light flex-shrink-0"
-                    >${candidate.positions.length} 岗</span
-                  >
-                </label>`
-            )}
-            </div>`
-          : html`<div class="empty-state">尚无可选择的本地航班</div>`
-      }
+          this.dialog.candidates.length
+            ? html`<div class="list-group next-workday-flight-list">
+                ${this.dialog.candidates.map(
+                  (candidate) =>
+                    html`<div class="list-group-item next-workday-flight-row">
+                      <label class="next-workday-flight-choice">
+                        <input
+                          class="form-check-input flex-shrink-0"
+                          type="checkbox"
+                          .checked=${selected.has(candidate.id)}
+                          @change=${(event: Event) =>
+                          this.toggle(
+                            candidate.id,
+                            (event.currentTarget as HTMLInputElement).checked
+                          )}
+                        />
+                        <span class="min-w-0">
+                          <strong>${candidate.flightNo}</strong>
+                          <small class="text-secondary ms-2"
+                            >${candidate.startTime}-${candidate.endTime}</small
+                          >
+                        </span>
+                      </label>
+                      <span class="next-workday-passenger-field">
+                        <input
+                          class="form-control form-control-sm"
+                          type="number"
+                          min="0"
+                          step="1"
+                          inputmode="numeric"
+                          data-next-workday-passengers
+                          aria-label="${candidate.flightNo} 预定人数"
+                          title="预定人数"
+                          .value=${String(candidate.bookedPassengers)}
+                          @change=${(event: Event) =>
+                          this.updatePassengers(
+                            candidate.id,
+                            (event.currentTarget as HTMLInputElement).value
+                          )}
+                        />
+                        <span aria-hidden="true">人</span>
+                      </span>
+                      <span class="badge text-bg-light flex-shrink-0"
+                        >${candidate.positions.length} 岗</span
+                      >
+                    </div>`
+                )}
+              </div>`
+            : html`<div class="empty-state">尚无可选择的本地航班</div>`
+        }
         <div class="small text-secondary mt-3">
           已选择 ${selectedCount} 个航班
         </div>
@@ -91,6 +110,14 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
     const selected = new Set(this.dialog.selectedIds);
     checked ? selected.add(id) : selected.delete(id);
     this.dispatchSelection([...selected]);
+  }
+
+  private updatePassengers(id: string, value: string): void {
+    dispatchUiCommand(this, {
+      type: "update-next-workday-flight-picker-passengers",
+      candidateId: id,
+      bookedPassengers: value === "" ? 0 : Number(value),
+    });
   }
 
   private restorePreset = (): void => {

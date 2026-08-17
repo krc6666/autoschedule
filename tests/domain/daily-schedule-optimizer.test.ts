@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDefaultState } from "../../src/defaults";
 import { buildDailyScheduleModel } from "../../src/domain/kernel/daily-schedule-model";
 import { optimizeDailySchedule } from "../../src/domain/kernel/daily-schedule-optimizer";
 import { materializeDailySchedulePlan } from "../../src/domain/kernel/daily-schedule-result";
@@ -10,7 +9,9 @@ import type {
   SolverPort,
   SolverProblem,
 } from "../../src/domain/solver/solver-port";
-import type { AppState, Flight, PositionRule } from "../../src/model";
+import type { Flight, PositionRule } from "../../src/model";
+import type { ScheduleGenerationFacts } from "../../src/domain/shared/scheduling-facts";
+import { createSchedulingScenario } from "../helpers/scheduling-scenario";
 
 class ModelCaptured extends Error {}
 
@@ -97,8 +98,8 @@ function flight(
 function modelState(
   flights: readonly Flight[],
   ruleOptions?: (rule: PositionRule) => PositionRule
-): AppState {
-  const state = createDefaultState();
+): ScheduleGenerationFacts {
+  const state = createSchedulingScenario();
   const person = {
     ...state.staff[0]!,
     id: "worker",
@@ -135,7 +136,9 @@ function modelState(
   return state;
 }
 
-async function captureProblem(state: AppState): Promise<SolverProblem> {
+async function captureProblem(
+  state: ScheduleGenerationFacts
+): Promise<SolverProblem> {
   const date = "2026-08-03";
   const solver = new CapturingSolver();
   const preparation = prepareSchedule(

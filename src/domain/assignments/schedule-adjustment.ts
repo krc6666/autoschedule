@@ -1,10 +1,11 @@
-import type { AppState, Assignment, PositionRule } from "../../model";
+import type { Assignment, PositionRule } from "../../model";
+import type { AssignmentEligibilityFacts } from "../shared/scheduling-facts";
 import { clearAutomaticAssignmentEvidence } from "./assignment-evidence";
 import { durationHours } from "../shared/time";
 import { evaluateMobileSupervisorCoverage } from "../coverage/mobile-supervisor-coverage";
 
 function assignmentRule(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   assignment: Assignment
 ): PositionRule | undefined {
   return assignment.positionRuleId
@@ -13,7 +14,7 @@ function assignmentRule(
 }
 
 function emptyStatus(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   assignment: Assignment
 ): Assignment["status"] {
   const rule = assignmentRule(state, assignment);
@@ -25,14 +26,14 @@ function emptyStatus(
 }
 
 export function isSupervisorAssignment(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   assignment: Assignment
 ): boolean {
   return assignmentRule(state, assignment)?.category === "机动督导";
 }
 
 function supervisorSource(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   assignment: Assignment
 ): Assignment | undefined {
   if (isSupervisorAssignment(state, assignment)) return assignment;
@@ -44,7 +45,7 @@ function supervisorSource(
 }
 
 function resetSupervisorLinkedAssignment(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   assignment: Assignment
 ): void {
   if (!assignment.supervisorSourceAssignmentId) return;
@@ -62,7 +63,7 @@ function resetSupervisorLinkedAssignment(
 }
 
 export function moveSupervisorWithinFlight(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   sourceAssignmentId: string,
   targetAssignmentId: string
 ): string | null {
@@ -114,13 +115,15 @@ export function moveSupervisorWithinFlight(
 }
 
 export function clearSupervisorLink(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   assignment: Assignment
 ): void {
   resetSupervisorLinkedAssignment(state, assignment);
 }
 
-export function normalizeSupervisorAssignments(state: AppState): void {
+export function normalizeSupervisorAssignments(
+  state: AssignmentEligibilityFacts
+): void {
   state.assignments.forEach((assignment) => {
     if (!assignment.supervisorSourceAssignmentId) return;
     const source = state.assignments.find(

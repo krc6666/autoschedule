@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import type {
   LatePriorityFatigueReliefPolicy,
   RotationReview,
@@ -20,7 +21,7 @@ export interface ReassignmentChoiceObjective {
 
 export interface ReassignmentOptimizationOptions {
   solver: SolverPort;
-  state: AppState;
+  state: ScheduleGenerationFacts;
   assignments: Assignment[];
   primary: Assignment;
   movableAssignments: readonly Assignment[];

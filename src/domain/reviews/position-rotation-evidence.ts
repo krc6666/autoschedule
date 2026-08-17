@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { consecutivePositionAssignments } from "../statistics/schedule-frequency";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { isKe166MobileSupervisor } from "../flights/schedule-tasks";
@@ -15,7 +16,7 @@ function clearPositionRotationDecisions(assignment: Assignment): void {
 }
 
 export function refreshPositionRotationEvidence(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string | null
 ): void {
   state.assignments.forEach(clearPositionRotationDecisions);

@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Flight, PositionRule } from "../../model";
+import type { Assignment, Flight, PositionRule } from "../../model";
+import type { AssignmentTimingFacts } from "../shared/scheduling-facts";
 import { durationHours, intervalsOverlap, timeToMinutes } from "../shared/time";
 
 export function isValidDiversionTransfer(
@@ -25,7 +26,7 @@ export function isValidDiversionTransfer(
 export function canReleaseForFlight(
   assignment: Assignment,
   flight: Pick<Flight, "startTime" | "endTime">,
-  state: AppState
+  state: AssignmentTimingFacts
 ): boolean {
   const rule = assignment.positionRuleId
     ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
@@ -37,7 +38,7 @@ export function canReleaseForFlight(
 }
 
 export function isValidAssignmentDiversionTransfer(
-  state: AppState,
+  state: AssignmentTimingFacts,
   source: Assignment,
   target: Pick<Flight, "startTime" | "endTime">
 ): boolean {
@@ -71,7 +72,7 @@ export function projectedAssignedHours(
   assignments: readonly Assignment[],
   staffId: string,
   flight: Pick<Flight, "startTime" | "endTime">,
-  state: AppState
+  state: AssignmentTimingFacts
 ): number {
   return assignments
     .filter((assignment) => assignment.staffId === staffId)
@@ -89,7 +90,7 @@ export function applyEarlyReleases(
   assignments: Assignment[],
   staffId: string,
   flight: Pick<Flight, "startTime" | "endTime">,
-  state: AppState
+  state: AssignmentTimingFacts
 ): void {
   staffConflicts(assignments, staffId, flight)
     .filter((assignment) => canReleaseForFlight(assignment, flight, state))
@@ -104,7 +105,7 @@ export function applyEarlyReleases(
 
 export function applyConfiguredEarlyReleases(
   assignments: Assignment[],
-  state: AppState,
+  state: AssignmentTimingFacts,
   staffIds?: ReadonlySet<string>
 ): void {
   for (let leftIndex = 0; leftIndex < assignments.length; leftIndex += 1) {
@@ -129,7 +130,7 @@ export function applyConfiguredEarlyReleases(
 }
 
 export function applyEarlyReleaseForStaff(
-  state: AppState,
+  state: AssignmentTimingFacts,
   assignmentId: string,
   staffId: string
 ): void {
@@ -140,7 +141,7 @@ export function applyEarlyReleaseForStaff(
 }
 
 export function isDiversionTransfer(
-  state: AppState,
+  state: AssignmentTimingFacts,
   sourceAssignmentId: string,
   targetAssignmentId: string
 ): boolean {

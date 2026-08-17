@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createDefaultState } from "../../src/defaults";
 import { generateSchedule } from "../helpers/generate-schedule";
 import { schedulingDecision } from "../../src/domain/rules/schedule-rule-contract";
+import { buildMonthlyRelaxedShiftStatistics } from "../../src/domain/statistics/relaxed-shift-statistics";
 import {
   UI_COMMAND_EVENT,
   type UiCommandEvent,
@@ -201,7 +202,7 @@ describe("schedule page", () => {
       "utf8"
     );
     const hostRule = styles.match(
-      /autoschedule-staff-palette,\s*autoschedule-schedule-grid,\s*autoschedule-duty-roster-summary\s*\{(?<declarations>[^}]*)\}/
+      /autoschedule-staff-palette,\s*autoschedule-schedule-grid,\s*autoschedule-duty-roster-summary,\s*autoschedule-schedule-relaxed-shift-summary\s*\{(?<declarations>[^}]*)\}/
     )?.groups?.declarations;
     const boardRule = styles.match(
       /\.schedule-board\s*\{(?<declarations>[^}]*)\}/
@@ -235,6 +236,222 @@ describe("schedule page", () => {
     expect(narrow).toContain(
       'grid-template-areas: "roster roster" "staff board"'
     );
+  });
+
+  it("shows today's relaxed-shift lists beside the schedule using statistics-page facts", async () => {
+    const state = createDefaultState();
+    const [earlyPerson, afternoonFreePerson] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    const rule = state.positionRules.find(
+      (item) => item.category === "常规" && !item.manual
+    )!;
+    state.staff = [earlyPerson!, afternoonFreePerson!];
+    state.activeScheduleDate = "2026-07-18";
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-07-18",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-early",
+        date: "2026-07-16",
+        flightNo: "EARLY100",
+        position: rule.name,
+        staffId: earlyPerson!.id,
+        staffName: earlyPerson!.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+      },
+    ];
+    state.assignments = [
+      {
+        id: "current-early",
+        flightId: "early-flight",
+        flightNo: "EARLY100",
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: earlyPerson!.id,
+        staffName: earlyPerson!.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "current-noon",
+        flightId: "noon-flight",
+        flightNo: "NOON200",
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: afternoonFreePerson!.id,
+        staffName: afternoonFreePerson!.name,
+        startTime: "10:00",
+        endTime: "12:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    const statistics = buildMonthlyRelaxedShiftStatistics(state, "2026-07-18");
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-07-18",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+    });
+    const summary = element.querySelector(".schedule-relaxed-shift-summary");
+    const text = summary?.textContent ?? "";
+
+    expect(summary).not.toBeNull();
+    expect(text).toContain("提前下班人员");
+    expect(text).toContain("下午无航班人员");
+    for (const item of statistics.currentEarlyDepartures) {
+      expect(text).toContain(item.staffName);
+      expect(text).toContain(`${item.flightNo} / ${item.cutoffTime}`);
+      expect(text).toContain(`本月 ${item.monthlyCount} 次`);
+    }
+    for (const item of statistics.currentAfternoonRest) {
+      expect(text).toContain(item.staffName);
+      expect(text).toContain(`本月 ${item.monthlyCount} 次`);
+    }
+  });
+
+  it("highlights only the last schedule cell for today's early-departure staff", async () => {
+    const state = createDefaultState();
+    const [earlyPerson, afternoonFreePerson, regularPerson] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 3);
+    const rule = state.positionRules.find(
+      (item) => item.category === "常规" && !item.manual
+    )!;
+    state.staff = [earlyPerson!, afternoonFreePerson!, regularPerson!];
+    state.activeScheduleDate = "2026-07-18";
+    state.settings.earlyDepartureCutoffTime = "13:00";
+    state.settings.afternoonRestStartTime = "13:00";
+    state.settings.afternoonRestEndTime = "17:00";
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-07-18",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    state.flights = [
+      {
+        id: "morning-flight",
+        flightNo: "TEST100",
+        startTime: "08:00",
+        endTime: "09:00",
+        remark: "",
+        bookedPassengers: 0,
+        positions: [],
+      },
+      {
+        id: "noon-flight",
+        flightNo: "TEST200",
+        startTime: "10:00",
+        endTime: "12:00",
+        remark: "",
+        bookedPassengers: 0,
+        positions: [],
+      },
+      {
+        id: "afternoon-flight",
+        flightNo: "TEST300",
+        startTime: "14:00",
+        endTime: "16:00",
+        remark: "",
+        bookedPassengers: 0,
+        positions: [],
+      },
+      {
+        id: "evening-flight",
+        flightNo: "TEST400",
+        startTime: "18:00",
+        endTime: "19:00",
+        remark: "",
+        bookedPassengers: 0,
+        positions: [],
+      },
+    ];
+    const assignment = (
+      id: string,
+      flightIndex: number,
+      staff: (typeof state.staff)[number]
+    ) => ({
+      id,
+      flightId: state.flights[flightIndex]!.id,
+      flightNo: state.flights[flightIndex]!.flightNo,
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId: staff.id,
+      staffName: staff.name,
+      startTime: state.flights[flightIndex]!.startTime,
+      endTime: state.flights[flightIndex]!.endTime,
+      workHours: 1,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned" as const,
+    });
+    state.assignments = [
+      assignment("early-first", 0, earlyPerson!),
+      assignment("early-last", 1, earlyPerson!),
+      assignment("afternoon-free-last", 3, afternoonFreePerson!),
+      assignment("regular-last", 2, regularPerson!),
+    ];
+    const statistics = buildMonthlyRelaxedShiftStatistics(state, "2026-07-18");
+
+    expect(
+      statistics.currentEarlyDepartures.map((item) => item.staffId)
+    ).toContain(earlyPerson!.id);
+    expect(
+      statistics.currentEarlyDepartures.map((item) => item.staffId)
+    ).not.toContain(afternoonFreePerson!.id);
+    expect(
+      statistics.currentAfternoonRest.map((item) => item.staffId)
+    ).toContain(afternoonFreePerson!.id);
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-07-18",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+    });
+
+    expect(
+      element.querySelector('[data-assignment-id="early-first"]')?.classList
+    ).not.toContain("is-early-departure-last");
+    expect(
+      element.querySelector('[data-assignment-id="early-last"]')?.classList
+    ).toContain("is-early-departure-last");
+    expect(
+      element.querySelector('[data-assignment-id="afternoon-free-last"]')
+        ?.classList
+    ).not.toContain("is-early-departure-last");
+    expect(
+      element.querySelector('[data-assignment-id="regular-last"]')?.classList
+    ).not.toContain("is-early-departure-last");
   });
 
   it("renders the complete toolbar, aligned grid, remarks, duty summary, feedback, and load controls", async () => {
@@ -296,11 +513,15 @@ describe("schedule page", () => {
       ":scope > autoschedule-schedule-grid"
     );
     const roster = workspace?.querySelector(
-      ":scope > autoschedule-duty-roster-summary"
+      ":scope > .schedule-side-panel > autoschedule-duty-roster-summary"
+    );
+    const relaxedShiftSummary = workspace?.querySelector(
+      ":scope > .schedule-side-panel > autoschedule-schedule-relaxed-shift-summary"
     );
     expect(palette).not.toBeNull();
     expect(grid).not.toBeNull();
-    expect(roster?.previousElementSibling).toBe(grid);
+    expect(roster).not.toBeNull();
+    expect(relaxedShiftSummary).not.toBeNull();
   }, 30_000);
 
   it("preserves stale warnings, zoom projection, administrative staff, and soft-rule evidence", async () => {

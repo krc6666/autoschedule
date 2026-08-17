@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Flight } from "../../model";
+import type { Assignment, Flight } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import {
@@ -17,7 +18,7 @@ import {
 import { latePriorityFrequencyKinds } from "../reviews/late-priority-policy";
 
 function repeatsPriorityPosition(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   task: AssignmentTask,
   staffId: string,
   date: string
@@ -47,7 +48,7 @@ export function dutyLatePositionPriority(
 }
 
 function matchesDutyPositionPriority(
-  priority: AppState["settings"]["dutyPositionPriorities"][number],
+  priority: ScheduleGenerationFacts["settings"]["dutyPositionPriorities"][number],
   target: Pick<Assignment, "flightNo" | "position" | "remark">
 ): boolean {
   const flightNo = target.flightNo
@@ -69,7 +70,7 @@ function matchesDutyPositionPriority(
 }
 
 export function configuredDutyPositionPriority(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   target: Pick<Assignment, "flightNo" | "position" | "remark">
 ): number {
   return state.settings.dutyPositionPriorities.findIndex((item) =>
@@ -81,7 +82,7 @@ export const DUTY_MORNING_CUTOFF = "12:00";
 
 export function isDutyMorningFlight(
   target: Pick<Flight, "startTime">,
-  state: AppState
+  state: ScheduleGenerationFacts
 ): boolean {
   const start = timeToMinutes(target.startTime);
   const morningStart = timeToMinutes(state.settings.nightEnd);
@@ -94,7 +95,7 @@ export function isDutyMorningFlight(
 }
 
 export function hasDutyMorningAssignment(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   dutyStaffId: string
 ): boolean {
@@ -107,14 +108,17 @@ export function hasDutyMorningAssignment(
   );
 }
 
-function operationalStartMinutes(startTime: string, state: AppState): number {
+function operationalStartMinutes(
+  startTime: string,
+  state: ScheduleGenerationFacts
+): number {
   const start = timeToMinutes(startTime);
   const nightEnd = timeToMinutes(state.settings.nightEnd);
   return start < nightEnd ? start + 24 * 60 : start;
 }
 
 function preservesLatePriorityFairness(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   task: AssignmentTask,
   dutyStaffId: string
@@ -169,7 +173,7 @@ function preservesLatePriorityFairness(
 }
 
 export function preferredDutyLateTasks(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   tasks: AssignmentTask[],
   knownDutyStaffId?: string | null
@@ -247,7 +251,7 @@ export function preferredDutyLateTasks(
 }
 
 export function configuredDutyTaskPriority(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   task: AssignmentTask
 ): number {
   return state.settings.dutyPositionPriorities.findIndex((priority) =>
@@ -260,7 +264,7 @@ export function configuredDutyTaskPriority(
 }
 
 export function dutyHardConstraintReason(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   dutyStaffId: string,
   task: AssignmentTask
 ): string | null {
@@ -273,7 +277,7 @@ export function dutyHardConstraintReason(
 }
 
 export function preferredDutyMorningTask(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   tasks: AssignmentTask[],
   knownDutyStaffId?: string | null

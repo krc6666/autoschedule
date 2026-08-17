@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import {
   rebuildAutomaticAssignmentEvidence,
@@ -37,7 +38,10 @@ import { countedWorkloadAssignments } from "../shared/workload-accounting";
 
 type RotationKind = "priority" | "high-fatigue" | "ordinary";
 
-function rotationKind(state: AppState, assignment: Assignment): RotationKind {
+function rotationKind(
+  state: ScheduleGenerationFacts,
+  assignment: Assignment
+): RotationKind {
   const rule = assignmentRule(state, assignment)!;
   if (isPriorityRotationPosition(rule)) return "priority";
   return isHighFatigueOrdinaryRotationPosition(
@@ -55,7 +59,7 @@ function rotationKindOrder(kind: RotationKind): number {
 }
 
 function targetStaffOrder(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   primary: Assignment,
   date: string,
@@ -136,7 +140,7 @@ function targetStaffOrder(
 }
 
 function applyRotationPlan(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   primary: Assignment,
   changes: readonly RotationStaffChange[],
@@ -236,7 +240,7 @@ function unresolvedMessage(
 
 export async function reviewConsecutivePositionRotation(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   lockedAssignmentIds: ReadonlySet<string>,

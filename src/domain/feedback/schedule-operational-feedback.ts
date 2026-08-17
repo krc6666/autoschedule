@@ -1,4 +1,4 @@
-import type { AppState } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { isValidAssignmentDiversionTransfer } from "../assignments/assignment-timing";
 import { dutyFatigueByStaff } from "../duty-roster/roster";
 import { buildStaffLoads } from "../statistics/fatigue";
@@ -16,7 +16,7 @@ import { countedWorkloadAssignments } from "../shared/workload-accounting";
 import { evaluateWorkloadBalance } from "../reviews/workload-balance";
 
 function matchesTransitionPolicy(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   connection: AssignmentConnection
 ): boolean {
   const normalize = (value: string): string => value.trim().toUpperCase();
@@ -39,7 +39,7 @@ function matchesTransitionPolicy(
   );
 }
 
-function flightDensityEvidence(state: AppState): string {
+function flightDensityEvidence(state: ScheduleGenerationFacts): string {
   if (!state.flights.length) return "当天无航班";
   if (state.flights.length === 1) return "当天 1 个航班，无相邻航班密集区间";
   const starts = state.flights
@@ -51,7 +51,10 @@ function flightDensityEvidence(state: AppState): string {
   return `当天 ${state.flights.length} 个航班，${densePairs} 组相邻航班起飞间隔不超过 120 分钟，最短 ${minimumGap} 分钟`;
 }
 
-function coverageFeedback(state: AppState, date: string): ScheduleFeedbackItem {
+function coverageFeedback(
+  state: ScheduleGenerationFacts,
+  date: string
+): ScheduleFeedbackItem {
   const workers = state.staff.filter(
     (person) =>
       person.staffType === "常规" &&
@@ -116,7 +119,10 @@ function coverageFeedback(state: AppState, date: string): ScheduleFeedbackItem {
   );
 }
 
-function fatigueFeedback(state: AppState, date: string): ScheduleFeedbackItem {
+function fatigueFeedback(
+  state: ScheduleGenerationFacts,
+  date: string
+): ScheduleFeedbackItem {
   const workers = state.staff.filter(
     (person) => person.staffType === "常规" && person.status === "正常"
   );
@@ -172,7 +178,9 @@ function fatigueFeedback(state: AppState, date: string): ScheduleFeedbackItem {
   );
 }
 
-function connectionFeedback(state: AppState): ScheduleFeedbackItem {
+function connectionFeedback(
+  state: ScheduleGenerationFacts
+): ScheduleFeedbackItem {
   const connections = staffConnections(state);
   if (!connections.length)
     return feedbackItem(
@@ -245,7 +253,7 @@ function connectionFeedback(state: AppState): ScheduleFeedbackItem {
 }
 
 export function buildOperationalScheduleFeedback(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string
 ): ScheduleFeedbackItem[] {
   return [

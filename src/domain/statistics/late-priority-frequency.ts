@@ -1,10 +1,10 @@
 import type {
-  AppState,
   Assignment,
   Flight,
   HistoryRecord,
   PositionRule,
 } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import {
   createScheduleFrequencyFacts,
   type ScheduleFrequencyFacts,
@@ -70,7 +70,7 @@ const EMPTY_LATE_PRIORITY_FREQUENCY: LatePriorityFrequencyProfile = {
 };
 
 function historyRule(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   record: HistoryRecord
 ): PositionRule | undefined {
   return state.positionRules.find(
@@ -90,7 +90,7 @@ function historyRule(
 }
 
 function isScopedLatePriorityHistoryRecord(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   record: HistoryRecord
 ): boolean {
   const rule = historyRule(state, record);
@@ -139,7 +139,7 @@ function totalCount(
 }
 
 function scopedRecordsForStaff(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   date: string,
   facts: ScheduleFrequencyFacts
@@ -151,7 +151,7 @@ function scopedRecordsForStaff(
 }
 
 function currentMonthKindCount(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   date: string,
   kind: LatePriorityFrequencyKind,
@@ -167,7 +167,7 @@ function currentMonthKindCount(
 }
 
 function supervisorQualifiedForScope(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string
 ): boolean {
   return state.positionRules.some(
@@ -183,7 +183,7 @@ function supervisorQualifiedForScope(
 }
 
 function supervisorRotationDeficit(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   date: string,
   facts: ScheduleFrequencyFacts
@@ -212,7 +212,7 @@ function supervisorRotationDeficit(
 }
 
 function categoryBoundaryExcess(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   rule: Pick<PositionRule, "qualifiedStaffIds" | "name" | "remark">,
   date: string,
@@ -240,7 +240,7 @@ function categoryBoundaryExcess(
 }
 
 export function latePriorityFrequencyProfileForRule(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   flight: Pick<Flight, "startTime" | "endTime">,
   rule: Pick<
@@ -304,7 +304,7 @@ export function latePriorityFrequencyProfileForRule(
 }
 
 export function isLatePriorityAssignment(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment
 ): boolean {
   const rule = assignmentRule(state, assignment);
@@ -321,7 +321,7 @@ export function isLatePriorityAssignment(
 }
 
 export function latePriorityFrequencyProfileForAssignment(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   assignment: Assignment,
   date: string,
@@ -340,7 +340,7 @@ export function latePriorityFrequencyProfileForAssignment(
 }
 
 export function latePriorityFrequencyProfileWithSchedule(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   target: Assignment,
   assignments: readonly Assignment[],
@@ -478,7 +478,7 @@ export function isTr121NumberOne(
 }
 
 export function tr121NumberOneCurrentMonthCount(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   date: string,
   facts?: ScheduleFrequencyFacts
@@ -505,7 +505,7 @@ export function tr121NumberOneCurrentMonthCount(
 export const TR121_NUMBER_ONE_MONTHLY_AUTOMATIC_LIMIT = 2;
 
 export function exceedsTr121NumberOneAutomaticLimit(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   flightNo: string,
   rule: Pick<PositionRule, "name" | "remark">,

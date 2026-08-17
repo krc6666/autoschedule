@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { minimumFlightTransitionViolationsForInsertion } from "../assignments/minimum-flight-transition";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
@@ -127,7 +128,7 @@ export const ROTATION_REVIEW_POLICIES: Readonly<
 };
 
 export interface ReassignmentCandidateSafetyOptions {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   assignment: Assignment;
   originalAssignment: Assignment;
   primaryAssignment: Assignment;
@@ -344,7 +345,7 @@ export function reassignmentCandidateSafetyReasons({
 }
 
 export interface ReassignmentDynamicSafetyOptions {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   assignments: Assignment[];
   assignment: Assignment;
   primaryAssignment: Assignment;

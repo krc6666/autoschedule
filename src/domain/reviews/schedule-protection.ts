@@ -1,4 +1,8 @@
-import type { AppState, Assignment, Flight, Staff } from "../../model";
+import type { Assignment, Flight, Staff } from "../../model";
+import type {
+  ScheduleGenerationFacts,
+  ScheduleSettingsFacts,
+} from "../shared/scheduling-facts";
 import {
   crossDayRecoveryRisk,
   nextWorkdayCutoffProtection,
@@ -27,7 +31,7 @@ export interface LateShiftCutoffPriority {
 export function totalFatiguePriority(
   person: Staff,
   assignments: Assignment[],
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   dutyStaffId?: string | null,
   knownHistoricalFatigue?: number
@@ -50,7 +54,7 @@ export function totalFatiguePriority(
 export function isHighLoadPosition(
   fatiguePoints: number,
   remark: string,
-  state: AppState
+  state: ScheduleGenerationFacts
 ): boolean {
   return (
     fatiguePoints >= state.settings.highLoadFatigueThreshold ||
@@ -77,7 +81,7 @@ export function hasHighLoadTransition(
   nextEndTime: string,
   nextFatiguePoints: number,
   nextRemark: string,
-  state: AppState
+  state: ScheduleGenerationFacts
 ): boolean {
   if (
     !state.settings.highLoadProtectionEnabled ||
@@ -114,7 +118,7 @@ export function positionTransitionCost(
   targetFlightNo: string,
   targetPosition: string,
   targetStartTime: string,
-  state: AppState,
+  state: ScheduleSettingsFacts,
   mode: "prefer" | "forbid"
 ): number {
   return violatedPositionTransitionPolicies(
@@ -134,7 +138,7 @@ export function violatedPositionTransitionPolicies(
   targetFlightNo: string,
   targetPosition: string,
   targetStartTime: string,
-  state: AppState,
+  state: ScheduleSettingsFacts,
   mode: "prefer" | "forbid"
 ) {
   const targetFlight = normalizedPolicyValue(targetFlightNo);
@@ -179,7 +183,7 @@ export function violatedPositionTransitionPoliciesForInsertion(
   position: string,
   startTime: string,
   endTime: string,
-  state: AppState,
+  state: ScheduleSettingsFacts,
   mode: "prefer" | "forbid"
 ) {
   const forward = violatedPositionTransitionPolicies(
@@ -230,7 +234,7 @@ export function positionTransitionInsertionCost(
   assignments: Assignment[],
   staffId: string,
   task: AssignmentTask,
-  state: AppState,
+  state: ScheduleSettingsFacts,
   mode: "prefer" | "forbid"
 ): number {
   return violatedPositionTransitionPoliciesForInsertion(
@@ -251,7 +255,7 @@ export function rollingLoadCost(
   targetStartTime: string,
   targetFatiguePoints: number,
   targetRemark: string,
-  state: AppState
+  state: ScheduleGenerationFacts
 ): number {
   if (
     !state.settings.rollingLoadProtectionEnabled ||
@@ -276,7 +280,7 @@ export function rollingLoadCost(
 }
 
 export function lateShiftRecoveryRisk(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   target: Pick<Flight, "flightNo" | "startTime" | "endTime"> & {
     position: string;
@@ -301,7 +305,7 @@ export function lateShiftRecoveryRisk(
 }
 
 export function lateShiftRecoveryPriority(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   target: Pick<Flight, "flightNo" | "startTime" | "endTime"> & {
     position: string;
@@ -319,7 +323,7 @@ export function lateShiftRecoveryPriority(
 }
 
 export function lateShiftCutoffPriority(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffId: string,
   target: Pick<Flight, "startTime">,
   date: string | null,

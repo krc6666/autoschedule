@@ -207,10 +207,39 @@ select {
 }
 .next-workday-flight-list .list-group-item {
   min-height: 48px;
+}
+.next-workday-flight-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px auto;
+  align-items: center;
+  gap: 12px;
+}
+.next-workday-flight-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
   cursor: pointer;
 }
 .next-workday-flight-list .list-group-item strong {
   overflow-wrap: anywhere;
+}
+.next-workday-passenger-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--as-muted);
+  font-size: 11px;
+}
+.next-workday-passenger-field input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding-inline: 6px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .weekly-flight-plan-section {
   display: grid;
@@ -1086,13 +1115,17 @@ select {
 }
 autoschedule-staff-palette,
 autoschedule-schedule-grid,
-autoschedule-duty-roster-summary {
+autoschedule-duty-roster-summary,
+autoschedule-schedule-relaxed-shift-summary {
   display: block;
   min-width: 0;
   max-width: 100%;
 }
-autoschedule-duty-roster-summary {
+.schedule-side-panel {
   grid-area: roster;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
   position: sticky;
   top: 68px;
 }
@@ -1194,6 +1227,101 @@ autoschedule-schedule-grid {
 .duty-roster-card.is-cx {
   border-color: #c9dcec;
   background: #f5faff;
+}
+.schedule-relaxed-shift-summary {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 3px 2px;
+  border-top: 1px solid var(--as-border);
+}
+.schedule-relaxed-shift-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.schedule-relaxed-shift-head > div {
+  display: grid;
+  gap: 1px;
+}
+.schedule-relaxed-shift-head h3 {
+  margin: 0;
+  color: var(--as-ink);
+  font-size: 14px;
+}
+.schedule-relaxed-shift-head span {
+  color: var(--as-muted);
+  font-size: 10px;
+}
+.schedule-relaxed-shift-head > i {
+  color: #176b48;
+  font-size: 16px;
+}
+.schedule-relaxed-shift-lists {
+  display: grid;
+  gap: 8px;
+}
+.schedule-relaxed-shift-lists > section {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--as-border);
+  border-radius: 6px;
+  background: #fff;
+}
+.schedule-relaxed-shift-lists h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 7px;
+  color: #39434d;
+  font-size: 11px;
+  font-weight: 700;
+}
+.schedule-relaxed-shift-lists h4 i {
+  color: var(--as-primary);
+  font-size: 12px;
+}
+.schedule-relaxed-shift-list {
+  display: grid;
+  gap: 6px;
+}
+.schedule-relaxed-shift-person {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 6px;
+  border-top: 1px dashed #dde2e7;
+}
+.schedule-relaxed-shift-person:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.schedule-relaxed-shift-person > span {
+  display: grid;
+  min-width: 0;
+}
+.schedule-relaxed-shift-person strong {
+  color: #176b48;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.schedule-relaxed-shift-person small {
+  color: var(--as-muted);
+  font-size: 10px;
+}
+.schedule-relaxed-shift-person em {
+  flex: 0 0 auto;
+  color: #805f18;
+  font-size: 10px;
+  font-style: normal;
+}
+.schedule-relaxed-shift-empty {
+  margin: 0;
+  color: var(--as-muted);
+  font-size: 11px;
 }
 .duty-roster-card.is-duty {
   border-color: #e4c9cc;
@@ -1597,6 +1725,10 @@ autoschedule-schedule-grid {
 .schedule-cell.is-soft-rule-warning {
   background: #fff7df;
   box-shadow: inset 3px 0 0 #d88a00;
+}
+.schedule-person-cell.is-early-departure-last {
+  background: #e8f5e9;
+  box-shadow: inset 3px 0 0 #2e7d32;
 }
 .schedule-soft-warning-icon {
   flex: 0 0 auto;
@@ -2372,8 +2504,11 @@ autoschedule-previous-schedule-comparison {
     grid-template-areas: "roster roster" "staff board";
     grid-template-columns: 126px minmax(0, 1fr);
   }
-  autoschedule-duty-roster-summary {
+  .schedule-side-panel {
     position: static;
+  }
+  .schedule-relaxed-shift-lists {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2532,6 +2667,9 @@ autoschedule-previous-schedule-comparison {
   .duty-roster-cards {
     grid-template-columns: 1fr;
   }
+  .schedule-relaxed-shift-lists {
+    grid-template-columns: 1fr;
+  }
   .duty-roster-groups {
     grid-template-columns: 1fr;
   }
@@ -2576,6 +2714,25 @@ autoschedule-previous-schedule-comparison {
 }
 
 @media (max-width: 430px) {
+  .next-workday-flight-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    padding-block: 8px;
+  }
+  .next-workday-flight-choice {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .next-workday-flight-row > .badge {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .next-workday-passenger-field {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: end;
+    width: 82px;
+  }
   .metric-grid {
     grid-template-columns: 1fr 1fr;
   }

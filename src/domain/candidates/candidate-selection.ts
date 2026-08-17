@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import type {
   AssignmentEligibilityDiagnostic,
   AutomaticAssignmentEligibilityOptions,
@@ -19,7 +20,7 @@ import { violatedPositionTransitionPoliciesForInsertion } from "../reviews/sched
 import { workloadBalanceLoadSnapshots } from "../reviews/workload-balance";
 
 export interface CandidateSelectionOptions {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   assignments: Assignment[];
   task: AssignmentTask;

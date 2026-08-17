@@ -1,10 +1,5 @@
-import type {
-  AppState,
-  Assignment,
-  Flight,
-  PositionRule,
-  Staff,
-} from "../../model";
+import type { Assignment, Flight, PositionRule, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import type { SchedulingDecision } from "../rules/schedule-rule-contract";
 import {
   analyzeAutomaticEligibilityPool,
@@ -24,7 +19,7 @@ import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority
 import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
 
 export function preNoonShortageNote(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   flight: Flight,
   rule: PositionRule
@@ -70,7 +65,7 @@ interface RegularSlot {
 }
 
 function canMoveRegularPlacement(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   flight: Flight,
   placement: RegularPlacement,
@@ -227,7 +222,7 @@ function canCoverRegularSlots(
 }
 
 export function compactRegularAssignments(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   lockedAssignmentIds: ReadonlySet<string>,
   date: string,

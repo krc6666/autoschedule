@@ -1,10 +1,10 @@
 import type {
-  AppState,
   Assignment,
   Flight,
   PositionRule,
   ScheduleResult,
 } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { assignmentDecisionMessages } from "../assignments/assignment-evidence";
 import { strictOverrideNotes } from "../assignments/schedule-decision-notes";
 import type { ScheduleLedger } from "./schedule-ledger";
@@ -29,7 +29,7 @@ import { scheduleOptimizationWarning } from "../reviews/schedule-warning-message
 
 export interface ScheduleFinalizerOptions {
   solver: SolverPort;
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   ledger: ScheduleLedger;
   warnings: string[];
@@ -51,7 +51,7 @@ function workingAssignments(ledger: ScheduleLedger): Assignment[] {
 }
 
 function applyPreNoonDecisionNotes(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[]
 ): void {
   assignments
@@ -83,7 +83,7 @@ function applyPreNoonDecisionNotes(
 }
 
 function rebuildWarnings(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   postReviewWarnings: readonly string[],
   optimizationQuality: DailySchedulePlan["optimizationQuality"]

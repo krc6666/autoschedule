@@ -1,4 +1,5 @@
-import type { AppState, Flight, PositionRule, Staff } from "../../model";
+import type { Flight, PositionRule, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { createId } from "../../utils";
 import type { ScheduleLedger } from "./schedule-ledger";
 import {
@@ -8,7 +9,7 @@ import {
 import { isKe166MobileSupervisor } from "../flights/schedule-tasks";
 
 export interface PassivePositionContext {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   ledger: ScheduleLedger;
   warnings: string[];
   flight: Flight;

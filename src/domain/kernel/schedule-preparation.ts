@@ -1,4 +1,5 @@
-import type { AppState, Flight, PositionRule } from "../../model";
+import type { Flight, PositionRule } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import type {
   AssignmentEligibilityDiagnostic,
   AutomaticAssignmentEligibilityOptions,
@@ -30,7 +31,7 @@ export interface SchedulePreparation {
 }
 
 export function prepareSchedule(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   evaluateEligibility: (
     context: AutomaticAssignmentEligibilityOptions

@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { timeToMinutes } from "../shared/time";
 import { operationalAssignmentInterval } from "../assignments/minimum-flight-transition";
 
@@ -21,13 +22,18 @@ export function conciseNames(names: string[]): string {
     : `${unique.slice(0, 3).join("、")}等 ${unique.length} 人`;
 }
 
-export function operationalStart(startTime: string, state: AppState): number {
+export function operationalStart(
+  startTime: string,
+  state: ScheduleGenerationFacts
+): number {
   const start = timeToMinutes(startTime);
   const nightEnd = timeToMinutes(state.settings.nightEnd);
   return start < nightEnd ? start + 24 * 60 : start;
 }
 
-export function timedAssignments(state: AppState): TimedAssignment[] {
+export function timedAssignments(
+  state: ScheduleGenerationFacts
+): TimedAssignment[] {
   const nightEnd = timeToMinutes(state.settings.nightEnd);
   return state.assignments
     .filter(
@@ -50,7 +56,9 @@ export function timedAssignments(state: AppState): TimedAssignment[] {
     .filter((item) => Number.isFinite(item.start) && Number.isFinite(item.end));
 }
 
-export function staffConnections(state: AppState): AssignmentConnection[] {
+export function staffConnections(
+  state: ScheduleGenerationFacts
+): AssignmentConnection[] {
   const timed = timedAssignments(state).map((item) => ({
     ...item,
     end: operationalAssignmentInterval(state, item.assignment).end,

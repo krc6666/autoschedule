@@ -1,10 +1,10 @@
 import type {
-  AppState,
   Assignment,
   HistoryRecord,
   PositionRule,
   Staff,
 } from "../../model";
+import type { SchedulingFacts } from "../shared/scheduling-facts";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import {
   endsAfterLateShiftThreshold,
@@ -65,7 +65,7 @@ function categoryKinds(
   );
 }
 
-function scopedRules(state: AppState): PositionRule[] {
+function scopedRules(state: SchedulingFacts): PositionRule[] {
   return state.positionRules.filter(
     (rule) =>
       rule.category === "常规" &&
@@ -142,14 +142,16 @@ function statisticsRange(
   };
 }
 
-export function latePriorityStatisticsFlightNumbers(state: AppState): string[] {
+export function latePriorityStatisticsFlightNumbers(
+  state: SchedulingFacts
+): string[] {
   return normalizeLatePriorityFlightNumbers(
     state.settings.latePriorityFlightNumbers
   );
 }
 
 export function buildMonthlyLatePriorityStatistics(
-  state: AppState,
+  state: SchedulingFacts,
   date: string
 ): MonthlyLatePriorityStatistics {
   const month = date.slice(0, 7);

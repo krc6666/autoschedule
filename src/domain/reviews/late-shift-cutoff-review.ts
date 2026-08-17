@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import {
   rebuildAutomaticAssignmentEvidence,
@@ -42,7 +43,7 @@ function latestAssignedEnd(
 }
 
 function cutoffProtectionOrder(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   date: string,
   facts?: ScheduleRunFacts
@@ -90,7 +91,7 @@ function compareVectors(
 }
 
 function plannedAssignments(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   changes: readonly RotationStaffChange[]
 ): Assignment[] {
@@ -110,7 +111,7 @@ function plannedAssignments(
 }
 
 function applyPlan(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   changes: readonly RotationStaffChange[],
   protectedName: string
@@ -151,7 +152,7 @@ function fallbackMessage(
 
 export async function reviewLateShiftCutoff(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   lockedAssignmentIds: ReadonlySet<string>,

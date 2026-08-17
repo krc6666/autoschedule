@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { buildAssignmentDecisionTrace } from "./assignment-decision-trace";
 import { createAssignedPosition } from "./assignment-factory";
 import { applyEarlyReleases } from "./assignment-timing";
@@ -19,7 +20,7 @@ import type { SchedulePreparation } from "../kernel/schedule-preparation";
 
 export interface FinalizeKe166SupervisorsOptions {
   solver: SolverPort;
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   assignments: Assignment[];
   preparation: SchedulePreparation;

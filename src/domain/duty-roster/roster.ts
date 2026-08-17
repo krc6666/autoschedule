@@ -1,4 +1,5 @@
-import type { AppState, DutyRosterOverride, Staff } from "../../model";
+import type { DutyRosterOverride, Staff } from "../../model";
+import type { DutyRosterFacts } from "../shared/scheduling-facts";
 import { previousWorkdayLateProtection } from "../reviews/cross-day-recovery";
 import { addIsoDays } from "../shared/time";
 
@@ -57,27 +58,27 @@ function monthlyRotationSeed(date: string): number {
   return parsed ? parsed.year * 12 + parsed.month - 1 : 0;
 }
 
-export function rosterEligibleStaff(state: AppState): Staff[] {
+export function rosterEligibleStaff(state: DutyRosterFacts): Staff[] {
   return state.staff.filter(
     (person) => person.staffType === "常规" && person.status === "正常"
   );
 }
 
-export function cxPreflightEligibleStaff(state: AppState): Staff[] {
+export function cxPreflightEligibleStaff(state: DutyRosterFacts): Staff[] {
   return rosterEligibleStaff(state).filter(
     (person) => person.cxPreflightQualified
   );
 }
 
-export function dutyQualifiedStaff(state: AppState): Staff[] {
+export function dutyQualifiedStaff(state: DutyRosterFacts): Staff[] {
   return rosterEligibleStaff(state).filter((person) => person.dutyQualified);
 }
 
-export function standbyQualifiedStaff(state: AppState): Staff[] {
+export function standbyQualifiedStaff(state: DutyRosterFacts): Staff[] {
   return rosterEligibleStaff(state).filter((person) => person.standbyQualified);
 }
 
-export function clearUnqualifiedStandbyOverrides(state: AppState): void {
+export function clearUnqualifiedStandbyOverrides(state: DutyRosterFacts): void {
   const qualifiedIds = new Set(
     state.staff
       .filter(
@@ -209,7 +210,7 @@ function assignStandbyRounds(
 }
 
 function defaultMonthlyDutyRoster(
-  state: AppState,
+  state: DutyRosterFacts,
   date: string
 ): DutyRosterAssignment[] {
   const dates = monthlyDutyDates(date);
@@ -266,7 +267,7 @@ function conflictsWithOtherRosterSlots(
 }
 
 function applyLateShiftRecoveryDutySwaps(
-  state: AppState,
+  state: DutyRosterFacts,
   rows: DutyRosterAssignment[]
 ): DutyRosterAssignment[] {
   if (!state.settings.lateShiftRecoveryEnabled) return rows;
@@ -334,7 +335,7 @@ function applyLateShiftRecoveryDutySwaps(
 }
 
 function resolvedMonthlyDutyRoster(
-  state: AppState,
+  state: DutyRosterFacts,
   date: string
 ): DutyRosterAssignment[] {
   return applyLateShiftRecoveryDutySwaps(
@@ -355,7 +356,10 @@ function resolvedMonthlyDutyRoster(
   });
 }
 
-function validOverride(state: AppState, override: DutyRosterOverride): boolean {
+function validOverride(
+  state: DutyRosterFacts,
+  override: DutyRosterOverride
+): boolean {
   const cxIds = new Set(
     cxPreflightEligibleStaff(state).map((person) => person.id)
   );
@@ -381,7 +385,7 @@ function validOverride(state: AppState, override: DutyRosterOverride): boolean {
 }
 
 export function getDutyRosterForDate(
-  state: AppState,
+  state: DutyRosterFacts,
   date: string
 ): DutyRosterAssignment {
   return (
@@ -398,14 +402,14 @@ export function getDutyRosterForDate(
 }
 
 export function getMonthlyDutyRoster(
-  state: AppState,
+  state: DutyRosterFacts,
   date: string
 ): DutyRosterAssignment[] {
   return resolvedMonthlyDutyRoster(state, date);
 }
 
 export function getMonthlyDutyRosterStats(
-  state: AppState,
+  state: DutyRosterFacts,
   date: string
 ): DutyRosterPersonStats[] {
   const rows = getMonthlyDutyRoster(state, date);
@@ -431,7 +435,7 @@ export function getMonthlyDutyRosterStats(
 }
 
 export function updateDutyRosterSlot(
-  state: AppState,
+  state: DutyRosterFacts,
   date: string,
   slot: DutyRosterSlot,
   staffId: string
@@ -493,14 +497,17 @@ export function updateDutyRosterSlot(
   return null;
 }
 
-export function clearDutyRosterOverride(state: AppState, date: string): void {
+export function clearDutyRosterOverride(
+  state: DutyRosterFacts,
+  date: string
+): void {
   state.dutyRosterOverrides = state.dutyRosterOverrides.filter(
     (item) => item.date !== date
   );
 }
 
 export function clearMonthlyDutyRosterOverrides(
-  state: AppState,
+  state: DutyRosterFacts,
   date: string
 ): void {
   const month = date.slice(0, 7);
@@ -510,7 +517,7 @@ export function clearMonthlyDutyRosterOverrides(
 }
 
 export function dutyFatigueByStaff(
-  state: AppState,
+  state: DutyRosterFacts,
   date: string
 ): Map<string, number> {
   const dutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;

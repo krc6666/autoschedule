@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Flight, Staff } from "../../model";
+import type { Assignment, Flight, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { diagnoseAutomaticAssignmentEligibility } from "./assignment-eligibility";
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import { durationHours, intervalsOverlap } from "../shared/time";
@@ -41,7 +42,7 @@ export function scarceQualificationPriority(
 export function priorityPositionScarceQualification(
   person: Staff,
   task: AssignmentTask,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   tasks: AssignmentTask[],
   processedTasks: Set<string>,

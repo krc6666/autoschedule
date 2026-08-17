@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  CANDIDATE_PRIORITY_ORDER,
-  type CandidatePriority,
-} from "../../src/domain/candidates/candidate-priority";
+import type { CandidatePriority } from "../../src/domain/candidates/candidate-priority";
 import {
   compareCandidateRulePlan,
   createCandidateRulePlan,
@@ -13,10 +10,10 @@ import { createDefaultScheduleSettings } from "../../src/domain/rules/schedule-s
 import type { AssignmentTask } from "../../src/domain/flights/schedule-tasks";
 import type { Staff } from "../../src/model";
 import {
-  RULE_FEEDBACK_ORDER,
   SCHEDULING_RULES,
   SCHEDULING_STAGE_ORDER,
 } from "../../src/domain/rules/schedule-rule-contract";
+import { compileSchedulingPlan } from "../../src/domain/rules/scheduling-execution-plan";
 import {
   isHighFatigueOrdinaryRotationPosition,
   isPriorityRotationPosition,
@@ -24,6 +21,10 @@ import {
 import { ROTATION_REVIEW_POLICIES } from "../../src/domain/reviews/reassignment-safety-policy";
 
 const comparisonPlan = createCandidateRulePlan(createDefaultScheduleSettings());
+const candidatePriorityOrder = comparisonPlan.map((rule) => rule.id);
+const ruleFeedbackOrder = compileSchedulingPlan(
+  createDefaultScheduleSettings()
+).feedbackKeys;
 const comparisonTask = {} as AssignmentTask;
 const leftStaff = { id: "left" } as Staff;
 const rightStaff = { id: "right" } as Staff;
@@ -181,8 +182,8 @@ describe("scheduling policy contract", () => {
   });
 
   it("keeps reserved assignments ahead of protection and fairness rules", () => {
-    expect(CANDIDATE_PRIORITY_ORDER.indexOf("ke166-supervisor")).toBeLessThan(
-      CANDIDATE_PRIORITY_ORDER.indexOf("duty-position")
+    expect(candidatePriorityOrder.indexOf("ke166-supervisor")).toBeLessThan(
+      candidatePriorityOrder.indexOf("duty-position")
     );
     expect(
       SCHEDULING_RULES.find((rule) => rule.id === "ke166-supervisor")
@@ -190,7 +191,7 @@ describe("scheduling policy contract", () => {
       stage: "reserved-assignment",
       label: "KE166独立督导优先保留与缺员兼任",
     });
-    expect(CANDIDATE_PRIORITY_ORDER.slice(3, 8)).toEqual([
+    expect(candidatePriorityOrder.slice(3, 8)).toEqual([
       "position-transition",
       "late-priority-aggregate-rotation",
       "late-priority-frequency",
@@ -207,9 +208,9 @@ describe("scheduling policy contract", () => {
       "cross-workday-load",
       "workload-balance",
     ] as const) {
-      expect(
-        CANDIDATE_PRIORITY_ORDER.indexOf("position-frequency")
-      ).toBeLessThan(CANDIDATE_PRIORITY_ORDER.indexOf(softRule));
+      expect(candidatePriorityOrder.indexOf("position-frequency")).toBeLessThan(
+        candidatePriorityOrder.indexOf(softRule)
+      );
     }
   });
 
@@ -323,7 +324,7 @@ describe("scheduling policy contract", () => {
     const registered = SCHEDULING_RULES.map((rule) => rule.id);
     expect(new Set(registered).size).toBe(registered.length);
     expect(
-      CANDIDATE_PRIORITY_ORDER.every((ruleId) => registered.includes(ruleId))
+      candidatePriorityOrder.every((ruleId) => registered.includes(ruleId))
     ).toBe(true);
   });
 
@@ -336,14 +337,14 @@ describe("scheduling policy contract", () => {
     const dedicatedKeys = SCHEDULING_RULES.flatMap((rule) =>
       rule.feedbackMode === "dedicated" ? [rule.feedbackKey] : []
     );
-    expect(new Set(RULE_FEEDBACK_ORDER)).toEqual(new Set(dedicatedKeys));
+    expect(new Set(ruleFeedbackOrder)).toEqual(new Set(dedicatedKeys));
   });
 
   it("keeps every candidate rule inside the declared stage sequence", () => {
     const stageByRule = new Map(
       SCHEDULING_RULES.map((rule) => [rule.id, rule.stage])
     );
-    const stageIndexes = CANDIDATE_PRIORITY_ORDER.map((ruleId) =>
+    const stageIndexes = candidatePriorityOrder.map((ruleId) =>
       SCHEDULING_STAGE_ORDER.indexOf(stageByRule.get(ruleId)!)
     );
     expect(stageIndexes).toEqual(
@@ -501,8 +502,8 @@ describe("scheduling policy contract", () => {
     );
     expect(frequencyReview?.stage).toBe("protection");
     expect(rotation?.stage).toBe("post-schedule-review");
-    expect(CANDIDATE_PRIORITY_ORDER).not.toContain("position-frequency-review");
-    expect(CANDIDATE_PRIORITY_ORDER).not.toContain("position-rotation");
+    expect(candidatePriorityOrder).not.toContain("position-frequency-review");
+    expect(candidatePriorityOrder).not.toContain("position-rotation");
     expect(
       ROTATION_REVIEW_POLICIES.frequency.protectLatePriorityFrequency
     ).toBe(true);

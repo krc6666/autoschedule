@@ -1,13 +1,8 @@
 import { DirectedGraph } from "graphology";
 import { hasCycle, topologicalGenerations } from "graphology-dag";
 
-import type {
-  AppState,
-  Assignment,
-  Flight,
-  PositionRule,
-  Staff,
-} from "../../model";
+import type { Assignment, Flight, PositionRule, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import {
   SCHEDULING_STAGE_ORDER,
   type SchedulingRuleStage,
@@ -18,7 +13,6 @@ import type {
 } from "../candidates/assignment-eligibility";
 import type { CandidatePriority } from "../candidates/candidate-priority";
 import type { ScheduleLedger } from "../kernel/schedule-ledger";
-import type { ScheduleProgressStage } from "../kernel/schedule-progress";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import type { SolverPort } from "../solver/solver-port";
@@ -33,7 +27,7 @@ export interface CandidateComparisonContext {
 
 export interface ScheduleMutationContext {
   solver: SolverPort;
-  state: AppState;
+  state: ScheduleGenerationFacts;
   ledger: ScheduleLedger;
   date: string;
   lockedAssignmentIds: Set<string>;
@@ -74,11 +68,6 @@ export interface ScheduleMutationExecutor {
   kind: "coverage" | "post-schedule";
   id: string;
   pass: "primary" | "ke166-finalize" | "after-ke166";
-  progress?: {
-    stage: ScheduleProgressStage;
-    percent: number;
-    label: string;
-  };
   execute(
     context: ScheduleMutationContext
   ): ScheduleMutationProposal | Promise<ScheduleMutationProposal>;
@@ -105,7 +94,7 @@ export interface SchedulingHook {
 export interface RulePreference {
   id: string;
   enabled: boolean;
-  order: number;
+  order?: number;
 }
 
 export interface PlannedSchedulingHook extends SchedulingHook {

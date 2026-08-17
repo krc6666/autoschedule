@@ -1,7 +1,8 @@
-import type { AppState, Assignment, Staff, StaffStatus } from "../../model";
+import type { Assignment, Staff, StaffStatus } from "../../model";
+import type { StaffAssignmentFacts } from "../shared/scheduling-facts";
 
 function linkedStaff(
-  state: AppState,
+  state: StaffAssignmentFacts,
   assignment: Assignment
 ): Staff | undefined {
   return assignment.staffId
@@ -12,14 +13,16 @@ function linkedStaff(
 }
 
 export function assignmentUsesUnavailableStaff(
-  state: AppState,
+  state: StaffAssignmentFacts,
   assignment: Assignment
 ): boolean {
   const person = linkedStaff(state, assignment);
   return Boolean(person && person.status !== "正常");
 }
 
-export function removeUnavailableStaffAssignments(state: AppState): void {
+export function removeUnavailableStaffAssignments(
+  state: StaffAssignmentFacts
+): void {
   state.assignments.forEach((assignment) => {
     if (!assignmentUsesUnavailableStaff(state, assignment)) return;
     const rule = assignment.positionRuleId
@@ -41,7 +44,7 @@ export function removeUnavailableStaffAssignments(state: AppState): void {
 }
 
 export function applyStaffStatusChange(
-  state: AppState,
+  state: StaffAssignmentFacts,
   staffId: string,
   status: StaffStatus
 ): boolean {

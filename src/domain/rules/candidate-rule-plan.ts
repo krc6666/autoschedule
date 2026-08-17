@@ -1,45 +1,17 @@
-import type { ScheduleSettings, Staff } from "../../model";
-import type {
-  SchedulingRuleId,
-  SchedulingRuleStage,
-} from "./schedule-rule-contract";
 import {
-  BUILT_IN_RULE_REGISTRY,
-  builtInRulePreferences,
-} from "./built-in-rule-registry";
+  compileSchedulingPlan,
+  type CompiledCandidateRule,
+} from "./scheduling-execution-plan";
 import type { CandidatePriority } from "../candidates/candidate-priority";
-import type { CandidatePriorityExecutor } from "./rule-registry";
 import type { AssignmentTask } from "../flights/schedule-tasks";
+import type { ScheduleSettings, Staff } from "../../model";
 
-export interface CandidateRulePlanItem {
-  id: SchedulingRuleId;
-  label: string;
-  stage: SchedulingRuleStage;
-  source: "built-in";
-  execute: CandidatePriorityExecutor["execute"];
-}
+export type CandidateRulePlanItem = CompiledCandidateRule;
 
 export function createCandidateRulePlan(
   settings: ScheduleSettings
 ): CandidateRulePlanItem[] {
-  return BUILT_IN_RULE_REGISTRY.executionPlan(
-    builtInRulePreferences(settings)
-  ).flatMap((hook) => {
-    if (!hook.enabled) return [];
-    return hook.execute.flatMap<CandidateRulePlanItem>((executor) =>
-      executor.kind === "candidate-priority"
-        ? [
-            {
-              id: hook.id as SchedulingRuleId,
-              label: hook.label,
-              stage: hook.stage,
-              source: hook.source,
-              execute: executor.execute,
-            },
-          ]
-        : []
-    );
-  });
+  return [...compileSchedulingPlan(settings).candidateRules];
 }
 
 interface CandidatePair {

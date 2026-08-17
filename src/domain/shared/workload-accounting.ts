@@ -1,7 +1,8 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { WorkloadAccountingFacts } from "./scheduling-facts";
 
 export function isCountedWorkloadAssignment(
-  state: AppState,
+  state: WorkloadAccountingFacts,
   assignment: Assignment
 ): boolean {
   const person = assignment.staffId
@@ -15,7 +16,7 @@ export function isCountedWorkloadAssignment(
 }
 
 export function countedWorkloadAssignments(
-  state: AppState,
+  state: WorkloadAccountingFacts,
   assignments = state.assignments
 ): Assignment[] {
   return assignments.filter((assignment) =>

@@ -1,4 +1,5 @@
-import type { AppState, ScheduleResult } from "../../model";
+import type { ScheduleResult } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { finalizeKe166Supervisors } from "../assignments/ke166-supervisor-finalizer";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import type { SolverPort } from "../solver/solver-port";
@@ -26,7 +27,7 @@ export interface GenerateScheduleOptions {
 }
 
 interface FinalizePlanOptions {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   solver: SolverPort;
   preparation: SchedulePreparation;
@@ -100,7 +101,7 @@ async function finalizeDailyPlan({
 }
 
 export async function generateSchedule(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   options: GenerateScheduleOptions
 ): Promise<ScheduleResult> {

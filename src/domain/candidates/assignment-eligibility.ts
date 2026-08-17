@@ -1,10 +1,5 @@
-import type {
-  AppState,
-  Assignment,
-  Flight,
-  PositionRule,
-  Staff,
-} from "../../model";
+import type { Assignment, Flight, PositionRule, Staff } from "../../model";
+import type { AssignmentEligibilityFacts } from "../shared/scheduling-facts";
 import {
   minimumFlightTransitionMessage,
   minimumFlightTransitionViolationsForInsertion,
@@ -45,7 +40,7 @@ export interface AssignmentEligibilityDiagnostic {
 }
 
 export interface AutomaticAssignmentEligibilityOptions {
-  state: AppState;
+  state: AssignmentEligibilityFacts;
   assignments: Assignment[];
   flight: Flight;
   rule: PositionRule;
@@ -56,7 +51,7 @@ export interface AutomaticAssignmentEligibilityOptions {
 }
 
 export interface AutomaticEligibilityPoolOptions {
-  state: AppState;
+  state: AssignmentEligibilityFacts;
   assignments: Assignment[];
   flight: Flight;
   rule: PositionRule;
@@ -83,7 +78,7 @@ function success(): AssignmentEligibilityDiagnostic {
 }
 
 export function diagnoseBaseAssignmentEligibility(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   flight: Pick<Flight, "startTime" | "endTime">,
   rule: PositionRule,
   person: Staff
@@ -282,7 +277,7 @@ export function analyzeAutomaticEligibilityPool({
 }
 
 export function eligibleStaffForRule(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   flight: Flight,
   rule: PositionRule
 ): Staff[] {
@@ -293,7 +288,7 @@ export function eligibleStaffForRule(
 }
 
 export function diagnoseManualAssignmentEligibility(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   assignmentId: string,
   staffId: string,
   ignoreAssignmentId?: string
@@ -457,7 +452,7 @@ export function diagnoseManualAssignmentEligibility(
 }
 
 export function canAssignStaff(
-  state: AppState,
+  state: AssignmentEligibilityFacts,
   assignmentId: string,
   staffId: string,
   ignoreAssignmentId?: string

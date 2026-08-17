@@ -13,6 +13,7 @@ import { analyzeManualSwap } from "../../domain/reviews/manual-swap-analysis";
 import {
   buildNextWorkdayFlightCandidates,
   materializeNextWorkdayFlights,
+  updateNextWorkdayFlightBookedPassengers,
 } from "../../domain/flights/next-workday-flight-plan";
 import {
   flightNumbersForDate,
@@ -112,6 +113,12 @@ export class ScheduleController implements UiCommandController {
         return true;
       case "update-next-workday-flight-picker-selection":
         this.updateNextWorkdayFlightSelection(command.selectedIds);
+        return true;
+      case "update-next-workday-flight-picker-passengers":
+        this.updateNextWorkdayFlightPassengers(
+          command.candidateId,
+          command.bookedPassengers
+        );
         return true;
       case "confirm-next-workday-flight-picker":
         await this.confirmNextWorkdayFlightPicker(command.selectedIds);
@@ -307,6 +314,24 @@ export class ScheduleController implements UiCommandController {
         ...dialog,
         selectedIds: [...new Set(selectedIds)].filter((id) =>
           candidateIds.has(id)
+        ),
+      },
+    });
+  }
+
+  private updateNextWorkdayFlightPassengers(
+    candidateId: string,
+    bookedPassengers: number
+  ): void {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "next-workday-flight-picker") return;
+    this.context.updateView({
+      dialog: {
+        ...dialog,
+        candidates: updateNextWorkdayFlightBookedPassengers(
+          dialog.candidates,
+          candidateId,
+          bookedPassengers
         ),
       },
     });

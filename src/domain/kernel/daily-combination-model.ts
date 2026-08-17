@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { createAssignedPosition } from "../assignments/assignment-factory";
 import { canReleaseForFlight } from "../assignments/assignment-timing";
 import { minimumFlightTransitionViolationBetweenTasks } from "../assignments/minimum-flight-transition";
@@ -162,7 +163,7 @@ function choiceAssignment(choice: DailyCombinationChoice): Assignment {
 }
 
 function choiceConflictKind(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   left: DailyCombinationChoice,
   right: DailyCombinationChoice
 ): ChoiceConflictKind | null {
@@ -199,7 +200,7 @@ function choiceConflictKind(
 }
 
 function choicesCanShareStaff(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   left: DailyCombinationChoice,
   right: DailyCombinationChoice
 ): boolean {
@@ -207,7 +208,7 @@ function choicesCanShareStaff(
 }
 
 function incompatibilityConstraints(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffChoices: readonly DailyCombinationChoice[]
 ): LinearConstraint[] {
   const constraints: LinearConstraint[] = [];
@@ -295,7 +296,7 @@ function incompatibilityConstraints(
 }
 
 function combinationTaskPairIndex(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffChoices: readonly DailyCombinationChoice[]
 ): ReadonlyMap<string, readonly CombinationTaskPair[]> {
   const representativeByTaskKey = new Map<string, DailyCombinationChoice>();
@@ -433,7 +434,7 @@ function combinationTaskPairIndex(
 }
 
 export function buildDailyCombinationModel(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   staffChoices: readonly DailyCombinationChoice[],
   enabledObjectiveIds: ReadonlySet<string>
 ): DailyCombinationModel {

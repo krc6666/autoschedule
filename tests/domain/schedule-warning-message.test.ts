@@ -46,6 +46,16 @@ describe("user-facing schedule warnings", () => {
     expect(message).not.toMatch(TECHNICAL_TERMS);
   });
 
+  it("keeps actionable flight and configuration facts for an infeasible day", () => {
+    const message = dailyScheduleFailureMessage("infeasible", [
+      "CX937/G18：严格次班恢复禁止空缺，基础合格的 1 人全部被上一班末班重点岗位避让排除。可检查严格/优先模式。",
+    ]);
+
+    expect(message).toContain("CX937/G18");
+    expect(message).toContain("严格/优先模式");
+    expect(message).not.toMatch(TECHNICAL_TERMS);
+  });
+
   it("reports the confirmed 150-second daily schedule limit", () => {
     expect(dailyScheduleFailureMessage("timed-out")).toBe(
       "当天排班计算超过150秒，请重试"

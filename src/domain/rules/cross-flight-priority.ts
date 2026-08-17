@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { HistoryRuleFacts } from "../shared/scheduling-facts";
 import type { CrossFlightPriorityPolicy } from "./structured-policy-contract";
 import { intervalsOverlap } from "../shared/time";
 import {
@@ -12,7 +13,7 @@ function normalizePosition(value: string): string {
   return value.trim().replace(/^HO(?=\d)/i, "H0");
 }
 
-export function enabledCrossFlightPriorityPolicies(state: AppState) {
+export function enabledCrossFlightPriorityPolicies(state: HistoryRuleFacts) {
   return state.settings.crossFlightPriorityPolicies.filter(
     (policy) =>
       policy.enabled && policy.flightNo.trim() && policy.positions.length
@@ -20,7 +21,7 @@ export function enabledCrossFlightPriorityPolicies(state: AppState) {
 }
 
 export function isCrossFlightPriorityAssignment(
-  state: AppState,
+  state: HistoryRuleFacts,
   assignment: Pick<Assignment, "flightNo" | "position">
 ): boolean {
   const flightNo = assignment.flightNo.trim().toUpperCase();
@@ -43,7 +44,7 @@ export function crossFlightPriorityPolicyMatches(
 }
 
 export function crossFlightPriorityReassignmentReasons(
-  state: AppState,
+  state: HistoryRuleFacts,
   original: readonly Assignment[],
   planned: readonly Assignment[],
   date: string,
@@ -128,7 +129,7 @@ export function crossFlightPriorityReassignmentReasons(
 }
 
 export function crossFlightPriorityCandidateScore(
-  state: AppState,
+  state: HistoryRuleFacts,
   assignment: Pick<Assignment, "flightNo" | "position">
 ): number {
   return isCrossFlightPriorityAssignment(state, assignment) ? 1 : 0;

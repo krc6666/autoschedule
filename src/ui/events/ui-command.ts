@@ -126,6 +126,11 @@ export type UiCommand =
       type: "update-next-workday-flight-picker-selection";
       selectedIds: string[];
     }
+  | {
+      type: "update-next-workday-flight-picker-passengers";
+      candidateId: string;
+      bookedPassengers: number;
+    }
   | { type: "confirm-next-workday-flight-picker"; selectedIds: string[] }
   | { type: "set-schedule-zoom"; value: number }
   | {

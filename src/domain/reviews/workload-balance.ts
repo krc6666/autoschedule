@@ -1,10 +1,5 @@
-import type {
-  AppState,
-  Assignment,
-  Flight,
-  PositionRule,
-  Staff,
-} from "../../model";
+import type { Assignment, Flight, PositionRule, Staff } from "../../model";
+import type { WorkloadFacts } from "../shared/scheduling-facts";
 import { eligibleStaffForRule } from "../candidates/assignment-eligibility";
 import { recentHistory } from "../statistics/fatigue";
 import { getDutyRosterForDate } from "../duty-roster/roster";
@@ -86,7 +81,7 @@ function operationalRange(
   return [start, end];
 }
 
-export function buildWorkloadTasks(state: AppState): WorkloadTask[] {
+export function buildWorkloadTasks(state: WorkloadFacts): WorkloadTask[] {
   return state.flights.flatMap((flight) =>
     activeFlightRules(state, flight)
       .filter(
@@ -136,7 +131,7 @@ function peakPressure(tasks: WorkloadTask[]): {
 }
 
 export function analyzeWorkloadPressure(
-  state: AppState,
+  state: WorkloadFacts,
   tasks = buildWorkloadTasks(state)
 ): WorkloadPressureFacts {
   const regular = state.staff.filter(
@@ -187,7 +182,7 @@ export interface WorkloadBalanceLoadSnapshot {
 }
 
 export function workloadBalanceLoadSnapshots(
-  state: AppState,
+  state: WorkloadFacts,
   assignments: Assignment[],
   date: string,
   dutyStaffId: string | null
@@ -224,7 +219,7 @@ export function workloadBalanceLoadSnapshots(
 }
 
 export function evaluateWorkloadBalance(
-  state: AppState,
+  state: WorkloadFacts,
   date: string,
   assignments = state.assignments,
   knownDutyStaffId?: string | null
@@ -272,7 +267,7 @@ export function evaluateWorkloadBalance(
 export function workloadBalancePriority(
   person: Staff,
   assignments: Assignment[],
-  state: AppState,
+  state: WorkloadFacts,
   targetHours: number,
   targetFatigue: number,
   dutyStaffId: string | null,

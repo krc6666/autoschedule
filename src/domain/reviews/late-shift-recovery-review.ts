@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import {
   rebuildAutomaticAssignmentEvidence,
@@ -17,7 +18,7 @@ import type { SolverPort } from "../solver/solver-port";
 import { assignmentWarningMessage } from "./schedule-warning-message";
 
 function applyRecoveryPlan(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   primary: Assignment,
   changes: readonly RotationStaffChange[]
@@ -57,7 +58,7 @@ function recoveryFallback(primary: Assignment, reasons: string[]): string {
 
 export async function reviewLateShiftRecovery(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   lockedAssignmentIds: ReadonlySet<string>,

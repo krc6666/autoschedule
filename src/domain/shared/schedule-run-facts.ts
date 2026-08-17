@@ -1,4 +1,4 @@
-import type { AppState } from "../../model";
+import type { ScheduleGenerationFacts } from "./scheduling-facts";
 import {
   createCrossDayRecoveryFacts,
   type CrossDayRecoveryFacts,
@@ -28,7 +28,7 @@ export interface ScheduleRunFacts {
 }
 
 export function createScheduleRunFacts(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string
 ): ScheduleRunFacts {
   const currentDutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;

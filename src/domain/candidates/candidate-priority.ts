@@ -1,5 +1,5 @@
-import type { AppState, Assignment, Staff } from "../../model";
-import type { SchedulingRuleId } from "../rules/schedule-rule-contract";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import {
   priorityPositionScarceQualification,
   scarceQualificationPriority,
@@ -45,29 +45,6 @@ import {
   workloadBalancePriority,
   type WorkloadBalanceLoadSnapshot,
 } from "../reviews/workload-balance";
-
-export const CANDIDATE_PRIORITY_ORDER = [
-  "ke166-supervisor",
-  "duty-position",
-  "scarce-qualification",
-  "position-transition",
-  "late-priority-aggregate-rotation",
-  "late-priority-frequency",
-  "position-frequency",
-  "priority-position-consecutive",
-  "late-shift-recovery",
-  "late-shift-cutoff",
-  "high-fatigue-position-consecutive",
-  "preferred-position-transition",
-  "staff-coverage",
-  "rolling-load",
-  "high-load-recovery",
-  "cross-workday-load",
-  "workload-balance",
-  "historical-fatigue",
-] as const satisfies readonly SchedulingRuleId[];
-
-export type CandidatePriorityId = (typeof CANDIDATE_PRIORITY_ORDER)[number];
 
 export interface CandidatePriority {
   ke166ReservationConflict: boolean;
@@ -341,7 +318,7 @@ export function comparePreferredPositionTransition(
 }
 
 export interface CandidatePriorityContext {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   assignments: Assignment[];
   tasks: AssignmentTask[];
   processedTasks: Set<string>;

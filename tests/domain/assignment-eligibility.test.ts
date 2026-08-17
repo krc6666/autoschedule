@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultState } from "../../src/defaults";
 import type { Assignment, PositionRule, Staff } from "../../src/model";
 import {
   analyzeAutomaticEligibilityPool,
@@ -8,10 +7,11 @@ import {
   diagnoseManualAssignmentEligibility,
   eligibleStaffForRule,
 } from "../../src/domain/candidates/assignment-eligibility";
+import { createSchedulingScenario } from "../helpers/scheduling-scenario";
 
 describe("assignment eligibility diagnostics", () => {
   it("uses the same hard facts for automatic and manual decisions", () => {
-    const state = createDefaultState();
+    const state = createSchedulingScenario();
     const person: Staff = {
       ...state.staff[0]!,
       id: "worker",
@@ -127,7 +127,7 @@ describe("assignment eligibility diagnostics", () => {
   });
 
   it("enforces the global minimum flight transition for automatic and manual assignments", () => {
-    const state = createDefaultState();
+    const state = createSchedulingScenario();
     const person = {
       ...state.staff[0]!,
       id: "worker",
@@ -229,7 +229,7 @@ describe("assignment eligibility diagnostics", () => {
   });
 
   it("uses configured early release when checking a diversion transition", () => {
-    const state = createDefaultState();
+    const state = createSchedulingScenario();
     const person = {
       ...state.staff[0]!,
       id: "worker",
@@ -321,7 +321,7 @@ describe("assignment eligibility diagnostics", () => {
   });
 
   it("exempts only a valid afternoon diversion transfer from the global transition gap", () => {
-    const state = createDefaultState();
+    const state = createSchedulingScenario();
     const person: Staff = {
       ...state.staff[0]!,
       id: "worker",
@@ -502,7 +502,7 @@ describe("assignment eligibility diagnostics", () => {
   });
 
   it("uses one staged diagnosis for filtering and shortage evidence", () => {
-    const state = createDefaultState();
+    const state = createSchedulingScenario();
     const flight = state.flights.find((item) => item.flightNo === "TR121")!;
     const rule = state.positionRules.find(
       (item) => item.flightNo === "TR121" && item.name === "H02"
@@ -584,7 +584,7 @@ describe("assignment eligibility diagnostics", () => {
   });
 
   it("keeps the base qualification pool independent from current assignments and work-hour capacity", () => {
-    const state = createDefaultState();
+    const state = createSchedulingScenario();
     const person = state.staff.find(
       (item) => item.status === "正常" && item.nightShift
     )!;
@@ -609,7 +609,7 @@ describe("assignment eligibility diagnostics", () => {
   });
 
   it("allows administrative fallback when the only regular worker fails the hard flight transition", () => {
-    const state = createDefaultState();
+    const state = createSchedulingScenario();
     const regular = {
       ...state.staff[0]!,
       id: "regular",

@@ -1,4 +1,5 @@
-import type { AppState, Assignment, HistoryRecord, Staff } from "../../model";
+import type { Assignment, HistoryRecord, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { eligibleStaffForRule } from "../candidates/assignment-eligibility";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { recentArchivedWorkdays } from "../statistics/fatigue";
@@ -38,7 +39,7 @@ function spread(values: readonly number[]): number {
 }
 
 export function assessPositionFrequencyAlert(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   date: string
 ): PositionFrequencyAlertAssessment | null {

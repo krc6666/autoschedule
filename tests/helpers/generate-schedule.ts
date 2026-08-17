@@ -1,4 +1,4 @@
-import type { AppState } from "../../src/model";
+import type { ScheduleGenerationFacts } from "../../src/domain/shared/scheduling-facts";
 import {
   generateSchedule as runSchedulingKernel,
   type GenerateScheduleOptions,
@@ -8,7 +8,7 @@ import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver
 type TestScheduleOptions = Omit<GenerateScheduleOptions, "solver">;
 
 export function generateSchedule(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   options: TestScheduleOptions = {}
 ) {

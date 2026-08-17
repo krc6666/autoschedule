@@ -1,9 +1,10 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
 import { hasDutyMorningAssignment } from "../assignments/duty-assignment";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
 import { canAssignStaff } from "../candidates/assignment-eligibility";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { intervalsOverlap } from "../shared/time";
 import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
 import { latePriorityFrequencyRegressionReasons } from "./late-priority-frequency-balance";
@@ -19,7 +20,7 @@ import { crossWorkdayReservationStatuses } from "./cross-workday-qualification-r
 import { crossFlightPriorityReassignmentReasons } from "../rules/cross-flight-priority";
 
 export function isRotationLocked(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   lockedAssignmentIds: ReadonlySet<string>
 ): boolean {
@@ -39,7 +40,7 @@ export function isRotationLocked(
 export function rotationCandidateAssignments(
   assignments: Assignment[],
   primary: Assignment,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   lockedAssignmentIds: ReadonlySet<string>
 ): Assignment[] {
   const available = assignments.filter(
@@ -73,7 +74,7 @@ export function rotationCycleReason(reason: string): string {
 }
 
 function plannedAssignmentSafetyReasons(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   planned: Assignment[],
   changedAssignmentIds: ReadonlySet<string>,
@@ -97,7 +98,10 @@ function plannedAssignmentSafetyReasons(
   );
   planned = planned.map((assignment) => ({ ...assignment }));
   applyConfiguredEarlyReleases(planned, state, changedStaffIds);
-  const plannedState: AppState = { ...state, assignments: planned };
+  const plannedState: ScheduleGenerationFacts = {
+    ...state,
+    assignments: planned,
+  };
   const policy = ROTATION_REVIEW_POLICIES[review];
   const primaryAssignment = originalById.get(primaryAssignmentId)!;
   const reasons: string[] = [];
@@ -298,7 +302,7 @@ export interface RotationStaffChange {
 }
 
 interface ReassignmentSafetyOptionsBase {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   assignments: Assignment[];
   date: string;
   facts?: ScheduleRunFacts;

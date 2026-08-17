@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { buildAssignmentDecisionTrace } from "../assignments/assignment-decision-trace";
 import { createAssignedPosition } from "../assignments/assignment-factory";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
@@ -51,7 +52,7 @@ function choiceAssignment(choice: DailyScheduleStaffChoice): Assignment {
 }
 
 function attachDecisionTraces(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   preparation: SchedulePreparation,
   model: DailyScheduleModel,
@@ -145,7 +146,7 @@ function attachDecisionTraces(
 }
 
 function attachVacancyEvidence(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   preparation: SchedulePreparation,
   model: DailyScheduleModel,
   assignments: Assignment[]
@@ -214,7 +215,7 @@ function attachVacancyEvidence(
 }
 
 function attachCrossFlightPriorityEvidence(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   model: DailyScheduleModel,
   assignments: Assignment[]
 ): void {
@@ -282,7 +283,7 @@ export function materializeDailySchedulePlan({
   model,
   selectedVariableIds,
 }: {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   preparation: SchedulePreparation;
   model: DailyScheduleModel;
@@ -324,7 +325,7 @@ export function materializeDailySchedulePlan({
 }
 
 export function materializeValidatedDailySchedulePlan(options: {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   preparation: SchedulePreparation;
   model: DailyScheduleModel;

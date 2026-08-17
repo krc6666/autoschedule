@@ -1,9 +1,8 @@
+import type { Assignment, HistoryRecord, PositionRule } from "../../model";
 import type {
-  AppState,
-  Assignment,
-  HistoryRecord,
-  PositionRule,
-} from "../../model";
+  HistoryRuleFacts,
+  PositionFrequencyFacts,
+} from "../shared/scheduling-facts";
 import { recentArchivedWorkdays } from "./fatigue";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { normalizedPolicyValue } from "../reviews/schedule-protection";
@@ -31,7 +30,7 @@ function positionHistoryKey(
 }
 
 export function createScheduleFrequencyFacts(
-  state: AppState,
+  state: HistoryRuleFacts,
   date: string
 ): ScheduleFrequencyFacts {
   const recordsByPosition = new Map<string, HistoryRecord[]>();
@@ -74,7 +73,7 @@ export function createScheduleFrequencyFacts(
 }
 
 function frequencyFactsFor(
-  state: AppState,
+  state: HistoryRuleFacts,
   date: string,
   facts?: ScheduleFrequencyFacts
 ): ScheduleFrequencyFacts {
@@ -84,7 +83,7 @@ function frequencyFactsFor(
 }
 
 export function consecutivePositionAssignments(
-  state: AppState,
+  state: HistoryRuleFacts,
   staffId: string,
   flightNo: string,
   position: string,
@@ -114,7 +113,7 @@ export interface PositionFrequencyProfile {
 }
 
 export function samePositionFrequencyProfile(
-  state: AppState,
+  state: HistoryRuleFacts,
   staffId: string,
   flightNo: string,
   position: string,
@@ -140,7 +139,7 @@ export function samePositionFrequencyProfile(
 }
 
 export function positionFrequencyProfileForRule(
-  state: AppState,
+  state: HistoryRuleFacts,
   staffId: string,
   flightNo: string,
   rule: Pick<PositionRule, "category" | "name" | "remark">,
@@ -160,7 +159,7 @@ export function positionFrequencyProfileForRule(
 }
 
 export function positionFrequencyProfileForAssignment(
-  state: AppState,
+  state: PositionFrequencyFacts,
   assignment: Assignment,
   staffId: string,
   date: string,

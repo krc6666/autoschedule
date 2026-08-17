@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { appendAssignmentDecision } from "../assignments/assignment-evidence";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
@@ -13,7 +14,7 @@ import {
 
 async function buildCandidates(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   lockedAssignmentIds: ReadonlySet<string>,
@@ -87,7 +88,7 @@ async function buildCandidates(
 }
 
 function applyCandidate(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   candidate: ConcurrentSupervisionCandidate,
   lockedAssignmentIds: Set<string>
 ): string {
@@ -145,7 +146,7 @@ function applyCandidate(
 
 export async function fillVacancyWithTeamLeaderConcurrentSupervision(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   lockedAssignmentIds: Set<string>,

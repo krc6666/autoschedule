@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Flight, PositionRule } from "../../model";
+import type { Assignment, Flight, PositionRule } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import type { CrossWorkdayQualificationReservation } from "../rules/structured-policy-contract";
 import {
   operationalAssignmentInterval,
@@ -25,7 +26,7 @@ function normalized(value: string): string {
 }
 
 function matchingPositionRules(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   reservation: CrossWorkdayQualificationReservation
 ): PositionRule[] {
   const flightNo = normalized(reservation.flightNo);
@@ -39,7 +40,10 @@ function matchingPositionRules(
   });
 }
 
-function targetFlight(state: AppState, flightNo: string): Flight | undefined {
+function targetFlight(
+  state: ScheduleGenerationFacts,
+  flightNo: string
+): Flight | undefined {
   const normalizedFlightNo = normalized(flightNo);
   const current = state.flights.find(
     (flight) => normalized(flight.flightNo) === normalizedFlightNo
@@ -52,7 +56,7 @@ function targetFlight(state: AppState, flightNo: string): Flight | undefined {
 }
 
 function targetInterval(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   reservation: CrossWorkdayQualificationReservation,
   rules: readonly PositionRule[]
 ): OperationalWorkInterval | null {
@@ -62,7 +66,7 @@ function targetInterval(
 }
 
 export function crossWorkdayReservationTargets(
-  state: AppState
+  state: ScheduleGenerationFacts
 ): CrossWorkdayReservationTarget[] {
   return state.settings.crossWorkdayQualificationReservations
     .filter((reservation) => reservation.enabled)
@@ -90,14 +94,14 @@ export function crossWorkdayReservationTargets(
     });
 }
 
-function operationalCutoff(state: AppState): number {
+function operationalCutoff(state: ScheduleGenerationFacts): number {
   const cutoff = timeToMinutes(state.settings.lateShiftEndTime);
   const boundary = timeToMinutes(state.settings.nightEnd);
   return cutoff < boundary ? cutoff + 24 * 60 : cutoff;
 }
 
 export function assignmentConsumesCrossWorkdayReservation(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment
 ): boolean {
   return (
@@ -110,7 +114,7 @@ export function assignmentConsumesCrossWorkdayReservation(
 }
 
 export function taskConsumesCrossWorkdayReservation(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   flight: Flight,
   rule: PositionRule
 ): boolean {
@@ -256,7 +260,7 @@ function reservationAllocation(
 }
 
 export function crossWorkdayReservationStatuses(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: readonly Assignment[] = state.assignments
 ): CrossWorkdayReservationStatus[] {
   const targets = crossWorkdayReservationTargets(state);

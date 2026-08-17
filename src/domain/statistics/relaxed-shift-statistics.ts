@@ -1,6 +1,7 @@
 import { getDutyRosterForDate } from "../duty-roster/roster";
 import { timeToMinutes } from "../shared/time";
-import type { AppState, Assignment, HistoryRecord, Staff } from "../../model";
+import type { Assignment, HistoryRecord, Staff } from "../../model";
+import type { SchedulingFacts } from "../shared/scheduling-facts";
 import { isCountedWorkloadAssignment } from "../shared/workload-accounting";
 
 interface ActualTask {
@@ -109,7 +110,7 @@ function uniqueTasks(tasks: ActualTask[]): ActualTask[] {
 }
 
 function dutyStaffIdForDate(
-  state: AppState,
+  state: SchedulingFacts,
   date: string,
   useCurrentRoster: boolean
 ): string | null {
@@ -138,7 +139,7 @@ function overlapsWindow(
 }
 
 export function buildMonthlyRelaxedShiftStatistics(
-  state: AppState,
+  state: SchedulingFacts,
   date: string
 ): MonthlyRelaxedShiftStatistics {
   const month = date.slice(0, 7);
@@ -272,4 +273,46 @@ export function buildMonthlyRelaxedShiftStatistics(
         }))
     ),
   };
+}
+
+export function currentEarlyDepartureLastAssignmentIds(
+  state: SchedulingFacts,
+  date: string
+): ReadonlySet<string> {
+  const statistics = buildMonthlyRelaxedShiftStatistics(state, date);
+  const earlyDepartureStaffIds = new Set(
+    statistics.currentEarlyDepartures.map((item) => item.staffId)
+  );
+  const assignmentIds = new Set<string>();
+
+  for (const staffId of earlyDepartureStaffIds) {
+    const assignments = state.assignments
+      .filter(
+        (assignment) =>
+          assignment.staffId === staffId &&
+          assignment.status === "assigned" &&
+          isCountedWorkloadAssignment(state, assignment)
+      )
+      .map((assignment) => ({
+        assignment,
+        endMinute: operationalInterval(
+          assignment.startTime,
+          assignment.endTime,
+          state.settings.nightEnd
+        )?.[1],
+      }))
+      .filter(
+        (item): item is { assignment: Assignment; endMinute: number } =>
+          item.endMinute !== undefined
+      );
+    const lastEndMinute = Math.max(
+      ...assignments.map((item) => item.endMinute)
+    );
+    for (const item of assignments) {
+      if (item.endMinute === lastEndMinute)
+        assignmentIds.add(item.assignment.id);
+    }
+  }
+
+  return assignmentIds;
 }

@@ -107,6 +107,9 @@ export class ScheduleGridElement extends LightDomElement {
     const administrative = rule?.category === "行政支援";
     const diversion = rule?.category === "分流";
     const auxiliary = administrative || !rule;
+    const earlyDepartureLast = this.view.earlyDepartureLastAssignmentIds.has(
+      assignment.id
+    );
     const warning = assignment.decisionTrace?.find(
       (decision) =>
         decision.outcome === "fallback" &&
@@ -118,6 +121,12 @@ export class ScheduleGridElement extends LightDomElement {
       administrative ? "is-admin-support" : "",
       diversion ? "is-diversion" : "",
       warning ? "is-soft-rule-warning" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const personStateClasses = [
+      stateClasses,
+      earlyDepartureLast ? "is-early-departure-last" : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -161,7 +170,9 @@ export class ScheduleGridElement extends LightDomElement {
       </td>`,
       html`<td class="schedule-grid-slot schedule-person-slot">
         <article
-          class="schedule-cell schedule-person-cell ${stateClasses}"
+          class="schedule-cell schedule-person-cell ${personStateClasses}"
+          data-assignment-id=${assignment.id}
+          title=${earlyDepartureLast ? "今日提前下班人员的最后岗位" : ""}
           @dragover=${(event: DragEvent) => event.preventDefault()}
           @drop=${(event: DragEvent) => this.drop(event, assignment.id)}
           @pointerenter=${() => this.pointerTarget(assignment.id)}
@@ -182,10 +193,10 @@ export class ScheduleGridElement extends LightDomElement {
                     title="${warning.message}。点击分析人员调换"
                     aria-label="分析这个岗位的调换方案"
                     @click=${() =>
-                dispatchUiCommand(this, {
-                  type: "open-swap-analysis",
-                  assignmentId: assignment.id,
-                })}
+                      dispatchUiCommand(this, {
+                        type: "open-swap-analysis",
+                        assignmentId: assignment.id,
+                      })}
                   >
                     <i
                       class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"

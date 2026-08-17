@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import {
   rebuildAutomaticAssignmentEvidence,
@@ -42,7 +43,7 @@ function hasSelectedDutyLock(assignment: Assignment): boolean {
 }
 
 function configuredForAssignment(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   staffId: string
 ): boolean {
@@ -57,7 +58,7 @@ function configuredForAssignment(
 }
 
 function previousRuns(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignment: Assignment,
   staffId: string,
   date: string,
@@ -74,7 +75,7 @@ function previousRuns(
 }
 
 function applyRotationPlan(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   primaryRole: Ke166RotationRole,
   repeatedAssignment: Assignment,
@@ -141,7 +142,7 @@ function unresolvedMessage(
 
 export async function reviewKe166GroupRotation(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   lockedAssignmentIds: ReadonlySet<string>,

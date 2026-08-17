@@ -1,5 +1,6 @@
 import { dutyFatigueByStaff } from "../../domain/duty-roster/roster";
 import { buildStaffLoads } from "../../domain/statistics/fatigue";
+import { currentEarlyDepartureLastAssignmentIds } from "../../domain/statistics/relaxed-shift-statistics";
 import { buildScheduleFeedback } from "../../domain/feedback/schedule-feedback";
 import {
   assignmentRule,
@@ -114,6 +115,10 @@ export function buildSchedulePageModel(
   });
   return {
     groups,
+    earlyDepartureLastAssignmentIds: currentEarlyDepartureLastAssignmentIds(
+      state,
+      date
+    ),
     loads,
     feedback: buildScheduleFeedback(state, date),
     primaryRowCount:

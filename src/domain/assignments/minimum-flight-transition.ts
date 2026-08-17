@@ -1,4 +1,5 @@
-import type { AppState, Assignment, Flight, PositionRule } from "../../model";
+import type { Assignment, Flight, PositionRule } from "../../model";
+import type { AssignmentTimingFacts } from "../shared/scheduling-facts";
 import { timeToMinutes } from "../shared/time";
 import { isValidDiversionTransfer } from "./assignment-timing";
 
@@ -24,14 +25,14 @@ export interface MinimumFlightTransitionViolation {
   relationToCandidate: "previous" | "next";
 }
 
-function operationalStart(time: string, state: AppState): number {
+function operationalStart(time: string, state: AssignmentTimingFacts): number {
   const minutes = timeToMinutes(time);
   const operationalBoundary = timeToMinutes(state.settings.nightEnd);
   return minutes < operationalBoundary ? minutes + 24 * 60 : minutes;
 }
 
 function intervalForWork(
-  state: AppState,
+  state: AssignmentTimingFacts,
   work: TransitionWork
 ): OperationalWorkInterval {
   const rawStart = timeToMinutes(work.startTime);
@@ -47,7 +48,7 @@ function intervalForWork(
 }
 
 function assignmentWork(
-  state: AppState,
+  state: AssignmentTimingFacts,
   assignment: Assignment
 ): TransitionWork {
   const flight = state.flights.find((item) => item.id === assignment.flightId);
@@ -80,7 +81,7 @@ function participatesInTransition(work: TransitionWork): boolean {
 }
 
 function transitionViolation(
-  state: AppState,
+  state: AssignmentTimingFacts,
   existing: TransitionWork,
   candidate: TransitionWork
 ): MinimumFlightTransitionViolation | null {
@@ -113,14 +114,14 @@ function transitionViolation(
 }
 
 export function operationalAssignmentInterval(
-  state: AppState,
+  state: AssignmentTimingFacts,
   assignment: Assignment
 ): OperationalWorkInterval {
   return intervalForWork(state, assignmentWork(state, assignment));
 }
 
 export function operationalTaskInterval(
-  state: AppState,
+  state: AssignmentTimingFacts,
   flight: Flight,
   rule: PositionRule
 ): OperationalWorkInterval {
@@ -128,7 +129,7 @@ export function operationalTaskInterval(
 }
 
 export function minimumFlightTransitionViolationBetweenTasks(
-  state: AppState,
+  state: AssignmentTimingFacts,
   leftFlight: Flight,
   leftRule: PositionRule,
   rightFlight: Flight,
@@ -142,7 +143,7 @@ export function minimumFlightTransitionViolationBetweenTasks(
 }
 
 export function minimumFlightTransitionViolationsForInsertion(
-  state: AppState,
+  state: AssignmentTimingFacts,
   assignments: readonly Assignment[],
   staffId: string,
   flight: Flight,

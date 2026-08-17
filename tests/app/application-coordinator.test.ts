@@ -285,6 +285,11 @@ describe("manual swap analysis workflow", () => {
 });
 
 describe("next workday flight picker workflow", () => {
+  const nextWorkdayPreferences: ApplicationPreferences = {
+    ...preferences,
+    loadScheduleDate: () => "2026-08-15",
+  };
+
   function stateWithCurrentSchedule() {
     const state = createDefaultState();
     state.weeklyFlightPlans = replaceWeeklyFlightPlan(
@@ -325,7 +330,7 @@ describe("next workday flight picker workflow", () => {
     const state = stateWithCurrentSchedule();
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
-      { preferences, confirm: () => true }
+      { preferences: nextWorkdayPreferences, confirm: () => true }
     );
     const calculate = vi.fn();
     Object.defineProperty(coordinator, "scheduleRunner", {
@@ -351,9 +356,20 @@ describe("next workday flight picker workflow", () => {
       type: "update-next-workday-flight-picker-selection",
       selectedIds: dialog.candidates.map((candidate) => candidate.id),
     });
+    await coordinator.handle({
+      type: "update-next-workday-flight-picker-passengers",
+      candidateId: dialog.candidates[0]!.id,
+      bookedPassengers: 128,
+    });
     expect(coordinator.model().weeklyFlightPlans).toEqual(
       weeklyBeforeTemporaryChange
     );
+    const updatedDialog = coordinator.view().dialog;
+    expect(
+      updatedDialog?.kind === "next-workday-flight-picker"
+        ? updatedDialog.candidates[0]!.bookedPassengers
+        : null
+    ).toBe(128);
     expect(coordinator.model().history).toHaveLength(0);
     expect(coordinator.model().activeScheduleDate).toBeNull();
     expect(calculate).not.toHaveBeenCalled();
@@ -365,7 +381,7 @@ describe("next workday flight picker workflow", () => {
     const original = structuredClone(state);
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
-      { preferences, confirm: () => true }
+      { preferences: nextWorkdayPreferences, confirm: () => true }
     );
     Object.defineProperty(coordinator, "scheduleRunner", {
       value: {
@@ -393,7 +409,7 @@ describe("next workday flight picker workflow", () => {
     const original = structuredClone(state);
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
-      { preferences, confirm: () => true }
+      { preferences: nextWorkdayPreferences, confirm: () => true }
     );
     Object.defineProperty(coordinator, "scheduleRunner", {
       value: {
@@ -434,7 +450,7 @@ describe("next workday flight picker workflow", () => {
       createAutoscheduleStore(state),
       {
         preferences: {
-          ...preferences,
+          ...nextWorkdayPreferences,
           saveScheduleDate: (date) => (savedDate = date),
         },
         confirm: () => true,
@@ -457,6 +473,11 @@ describe("next workday flight picker workflow", () => {
     )?.id;
     if (!selectedId) throw new Error("缺少本地模板航班");
     await coordinator.handle({
+      type: "update-next-workday-flight-picker-passengers",
+      candidateId: selectedId,
+      bookedPassengers: 186,
+    });
+    await coordinator.handle({
       type: "confirm-next-workday-flight-picker",
       selectedIds: [selectedId],
     });
@@ -464,7 +485,10 @@ describe("next workday flight picker workflow", () => {
     expect(calculate).toHaveBeenCalledWith(
       expect.objectContaining({
         flights: [
-          expect.objectContaining({ flightNo: "KE166", bookedPassengers: 0 }),
+          expect.objectContaining({
+            flightNo: "KE166",
+            bookedPassengers: 186,
+          }),
         ],
         assignments: [],
       }),

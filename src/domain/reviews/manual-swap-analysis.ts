@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { reassignmentSafetyReasons } from "./rotation-review-safety";
 
 export type ManualSwapOutcome = "safe" | "soft-tradeoff" | "blocked";
@@ -93,7 +94,7 @@ function improvementMessages(source: Assignment, target: Assignment): string[] {
 }
 
 export function analyzeManualSwap(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   date: string,
   sourceAssignmentId: string,
   targetAssignmentId: string

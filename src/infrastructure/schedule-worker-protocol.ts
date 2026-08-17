@@ -1,8 +1,9 @@
-import type { AppState, ScheduleResult } from "../model";
+import type { ScheduleResult } from "../model";
 import type { ScheduleProgressStage } from "../domain/kernel/scheduling-kernel";
+import type { ScheduleGenerationFacts } from "../domain/shared/scheduling-facts";
 
 export interface ScheduleWorkerRequest {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
 }
 

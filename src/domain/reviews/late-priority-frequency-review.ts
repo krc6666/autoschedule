@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { replaceAssignmentDecisions } from "../assignments/assignment-evidence";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
@@ -31,7 +32,7 @@ import { assignmentRule } from "../flights/schedule-position-rules";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
 
 function applyChanges(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   changes: readonly RotationStaffChange[]
 ): Assignment[] {
@@ -114,7 +115,7 @@ function warningFact(
 
 export async function reviewLatePriorityFrequency(
   solver: SolverPort,
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   date: string,
   lockedAssignmentIds: ReadonlySet<string>,

@@ -1,0 +1,85 @@
+import { describe, expect, it } from "vitest";
+
+import { createDefaultScheduleSettings } from "../../src/domain/rules/schedule-settings";
+import { SCHEDULING_RULES } from "../../src/domain/rules/schedule-rule-contract";
+import {
+  compileSchedulingPlan,
+  dailyObjectiveIsBestEffort,
+  dailyObjectiveRuleId,
+} from "../../src/domain/rules/scheduling-execution-plan";
+
+describe("compiled scheduling execution plan", () => {
+  it("uses the central contract order for every registered hook", () => {
+    const plan = compileSchedulingPlan(createDefaultScheduleSettings());
+
+    expect(plan.hooks.map((hook) => hook.id)).toEqual(
+      SCHEDULING_RULES.map((rule) => rule.id)
+    );
+  });
+
+  it("projects candidates and post reviews without a second order list", () => {
+    const plan = compileSchedulingPlan(createDefaultScheduleSettings());
+
+    expect(plan.candidateRules.map((rule) => rule.id)).toEqual([
+      "ke166-supervisor",
+      "duty-position",
+      "scarce-qualification",
+      "position-transition",
+      "late-priority-aggregate-rotation",
+      "late-priority-frequency",
+      "position-frequency",
+      "priority-position-consecutive",
+      "late-shift-recovery",
+      "late-shift-cutoff",
+      "high-fatigue-position-consecutive",
+      "preferred-position-transition",
+      "staff-coverage",
+      "rolling-load",
+      "high-load-recovery",
+      "cross-workday-load",
+      "workload-balance",
+      "historical-fatigue",
+    ]);
+    expect(plan.postScheduleMutations.map((item) => item.stage)).toEqual([
+      "late-priority-frequency",
+      "position-frequency",
+      "late-shift-recovery",
+      "late-shift-cutoff",
+      "position-rotation",
+      "ke166-supervisor-finalize",
+      "post-ke166-late-priority-frequency-validation",
+      "post-ke166-frequency-validation",
+      "post-ke166-rotation-validation",
+    ]);
+  });
+
+  it("derives objective policy and feedback order from rule definitions", () => {
+    const plan = compileSchedulingPlan(createDefaultScheduleSettings());
+
+    expect(
+      plan.candidateRules.find((rule) => rule.id === "scarce-qualification")
+    ).toMatchObject({ deferAfterCoverage: true, optimization: "required" });
+    expect(
+      dailyObjectiveRuleId("candidate:workload-balance:today-fatigue-excess")
+    ).toBe("workload-balance");
+    expect(
+      dailyObjectiveIsBestEffort(
+        "candidate:workload-balance:today-fatigue-excess"
+      )
+    ).toBe(true);
+    expect(dailyObjectiveIsBestEffort("candidate:position-frequency")).toBe(
+      false
+    );
+    expect(plan.feedbackKeys).toEqual([
+      "morning-priority",
+      "cross-workday-qualification-reservation",
+      "high-load",
+      "cross-workday-load",
+      "position-frequency-review",
+      "position-rotation",
+      "previous-late",
+      "current-late",
+      "duty-roster",
+    ]);
+  });
+});

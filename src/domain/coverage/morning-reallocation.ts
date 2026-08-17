@@ -1,4 +1,4 @@
-import type { AppState, Assignment, PositionRule, Staff } from "../../model";
+import type { Assignment, PositionRule, Staff } from "../../model";
 import type {
   AssignmentEligibilityDiagnostic,
   AutomaticAssignmentEligibilityOptions,
@@ -6,6 +6,7 @@ import type {
 import { assignmentRule } from "../flights/schedule-position-rules";
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import { isPreNoonFlight } from "../flights/schedule-tasks";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 
 export interface MorningReallocation {
   person: Staff;
@@ -13,7 +14,7 @@ export interface MorningReallocation {
 }
 
 export function findMorningReallocation(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   assignments: Assignment[],
   task: AssignmentTask,
   workHours: number,

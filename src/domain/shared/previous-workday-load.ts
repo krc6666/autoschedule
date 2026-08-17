@@ -1,4 +1,5 @@
-import type { AppState, HistoryRecord } from "../../model";
+import type { HistoryRecord } from "../../model";
+import type { HistoryRuleFacts } from "./scheduling-facts";
 import { recentArchivedWorkdays } from "../statistics/fatigue";
 import type {
   PreviousWorkdayLoad,
@@ -28,7 +29,7 @@ function recordEndMinutes(record: HistoryRecord): number {
 }
 
 export function createPreviousWorkdayLoadFacts(
-  state: AppState,
+  state: HistoryRuleFacts,
   date: string
 ): PreviousWorkdayLoadFacts {
   const records = recentArchivedWorkdays(state.history, date, 1);

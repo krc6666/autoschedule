@@ -1,4 +1,5 @@
-import type { AppState, Assignment } from "../../model";
+import type { Assignment } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import type {
   AssignmentEligibilityDiagnostic,
   AutomaticAssignmentEligibilityOptions,
@@ -19,7 +20,7 @@ import {
 } from "../coverage/team-leader-concurrent-plan";
 
 export interface DailyScheduleSafetyOptions {
-  state: AppState;
+  state: ScheduleGenerationFacts;
   date: string;
   assignments: readonly Assignment[];
   tasks: readonly AssignmentTask[];
@@ -168,7 +169,7 @@ export function assertDailyScheduleSafety({
 }
 
 function isControlledConcurrentPair(
-  state: AppState,
+  state: ScheduleGenerationFacts,
   tasks: readonly AssignmentTask[],
   left: Assignment,
   right: Assignment

@@ -1,6 +1,7 @@
-import type { AppState, Assignment, Flight, PositionRule } from "../../model";
+import type { Assignment, Flight, PositionRule } from "../../model";
 import { createId } from "../../utils";
 import { durationHours } from "../shared/time";
+import type { FlightRuleFacts } from "../shared/scheduling-facts";
 
 export function isAuxiliaryCategory(
   category: PositionRule["category"] | undefined
@@ -17,7 +18,7 @@ export function isSupervisorPosition(position: string): boolean {
 }
 
 export function assignmentRule(
-  state: AppState,
+  state: Pick<FlightRuleFacts, "positionRules">,
   assignment: Assignment
 ): PositionRule | undefined {
   return assignment.positionRuleId
@@ -26,14 +27,14 @@ export function assignmentRule(
 }
 
 export function isGuideAssignment(
-  state: AppState,
+  state: Pick<FlightRuleFacts, "positionRules">,
   assignment: Assignment
 ): boolean {
   return assignmentRule(state, assignment)?.category === "引导";
 }
 
 export function isReusableAssignment(
-  state: AppState,
+  state: Pick<FlightRuleFacts, "positionRules">,
   assignment: Assignment
 ): boolean {
   return isGuideAssignment(state, assignment);
@@ -67,7 +68,7 @@ export function makeUnfilled(
 }
 
 export function activeFlightRules(
-  state: AppState,
+  state: Pick<FlightRuleFacts, "positionRules" | "settings">,
   flight: Flight
 ): PositionRule[] {
   const flightRules = state.positionRules.filter(
@@ -109,7 +110,7 @@ export function activeFlightRules(
 }
 
 export function activeFlightPositions(
-  state: AppState,
+  state: Pick<FlightRuleFacts, "positionRules" | "settings">,
   flight: Flight
 ): string[] {
   return activeFlightRules(state, flight).map((rule) => rule.name);

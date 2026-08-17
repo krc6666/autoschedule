@@ -1,4 +1,5 @@
 import type { AppState, ScheduleResult } from "../model";
+import { createScheduleGenerationFacts } from "../domain/shared/scheduling-facts";
 import {
   generateSchedule,
   type ScheduleProgressStage,
@@ -31,13 +32,14 @@ export function runScheduleInBackground(
   onProgress: ScheduleProgressListener,
   onSafeResultAvailable: () => void = () => undefined
 ): ActiveScheduleRun {
+  const schedulingFacts = createScheduleGenerationFacts(state);
   if (typeof Worker === "undefined") {
     let stopped = false;
     let latestSafeResult: ScheduleResult | undefined;
     const result = (async (): Promise<ScheduleRunOutcome> => {
       const { defaultHighsSolver, HighsSolver } =
         await import("./solver/highs-solver");
-      const completed = await generateSchedule(state, date, {
+      const completed = await generateSchedule(schedulingFacts, date, {
         solver: defaultHighsSolver,
         checkpointSolver: new HighsSolver(),
         onProgress,
@@ -108,7 +110,10 @@ export function runScheduleInBackground(
     );
   };
   try {
-    worker.postMessage({ state, date } satisfies ScheduleWorkerRequest);
+    worker.postMessage({
+      state: schedulingFacts,
+      date,
+    } satisfies ScheduleWorkerRequest);
   } catch (error) {
     finish();
     rejectResult(error);

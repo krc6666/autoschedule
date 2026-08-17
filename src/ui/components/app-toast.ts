@@ -37,7 +37,11 @@ export class AppToastElement extends LightDomElement {
 
   protected override updated(changed: PropertyValues<this>): void {
     if (!changed.has("toast") || !this.toast || !this.toastRef.value) return;
-    Toast.getOrCreateInstance(this.toastRef.value, { delay: 3600 }).show();
+    Toast.getInstance(this.toastRef.value)?.dispose();
+    Toast.getOrCreateInstance(this.toastRef.value, {
+      autohide: this.toast.tone !== "danger",
+      delay: 3600,
+    }).show();
   }
 
   private dismiss(): void {

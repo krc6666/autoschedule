@@ -1,4 +1,5 @@
-import type { AppState, Flight, HistoryRecord } from "../../model";
+import type { Flight, HistoryRecord } from "../../model";
+import type { HistoryRuleFacts } from "../shared/scheduling-facts";
 import type { LateShiftRecoveryPositionRule } from "../rules/structured-policy-contract";
 import { recentArchivedWorkdays } from "../statistics/fatigue";
 import { timeToMinutes } from "../shared/time";
@@ -7,7 +8,7 @@ import { latePriorityFlightInScope } from "../statistics/late-priority-flight-sc
 
 export function isLateEndingWork(
   target: Pick<Flight, "startTime" | "endTime">,
-  state: AppState
+  state: HistoryRuleFacts
 ): boolean {
   return endsAfterLateShiftThreshold(target, state.settings.lateShiftEndTime);
 }
@@ -30,14 +31,14 @@ function normalized(value: string): string {
 }
 
 export function matchesLateShiftRecoveryPosition(
-  state: AppState,
+  state: HistoryRuleFacts,
   target: Pick<Flight, "flightNo"> & { position: string; remark: string }
 ): boolean {
   return matchingLateShiftRecoveryPositionRules(state, target).length > 0;
 }
 
 export function matchingLateShiftRecoveryPositionRules(
-  state: AppState,
+  state: HistoryRuleFacts,
   target: Pick<Flight, "flightNo"> & { position: string; remark: string }
 ): LateShiftRecoveryPositionRule[] {
   const flightNo = normalized(target.flightNo);
@@ -52,7 +53,7 @@ export function matchingLateShiftRecoveryPositionRules(
 }
 
 export function previousWorkdayLateProtection(
-  state: AppState,
+  state: HistoryRuleFacts,
   date: string
 ): PreviousWorkdayLateProtection {
   const previousWorkday = recentArchivedWorkdays(state.history, date, 1);
@@ -83,7 +84,7 @@ export function previousWorkdayLateProtection(
 }
 
 function cutoffProtectionFromPreviousWorkday(
-  state: AppState,
+  state: HistoryRuleFacts,
   staffId: string,
   protection: PreviousWorkdayLateProtection
 ): NextWorkdayCutoffProtection | null {
@@ -111,7 +112,7 @@ function cutoffProtectionFromPreviousWorkday(
 }
 
 export function createCrossDayRecoveryFacts(
-  state: AppState,
+  state: HistoryRuleFacts,
   date: string
 ): CrossDayRecoveryFacts {
   const previousWorkday = previousWorkdayLateProtection(state, date);
@@ -128,7 +129,7 @@ export function createCrossDayRecoveryFacts(
 }
 
 export function matchesNextWorkdayRecoveryTarget(
-  state: AppState,
+  state: HistoryRuleFacts,
   target: Pick<Flight, "flightNo"> & { position: string; remark: string }
 ): boolean {
   const flightNo = normalized(target.flightNo);
@@ -143,7 +144,7 @@ export function matchesNextWorkdayRecoveryTarget(
 }
 
 export function isStrictNextWorkdayRecoveryTarget(
-  state: AppState,
+  state: HistoryRuleFacts,
   target: Pick<Flight, "flightNo"> & { position: string; remark: string }
 ): boolean {
   return (
@@ -166,7 +167,7 @@ export interface NextWorkdayCutoffProtection {
   sourceRecords: HistoryRecord[];
 }
 
-function operationalMinutes(value: string, state: AppState): number {
+function operationalMinutes(value: string, state: HistoryRuleFacts): number {
   const minutes = timeToMinutes(value);
   const nightEnd = timeToMinutes(state.settings.nightEnd);
   return minutes < nightEnd ? minutes + 24 * 60 : minutes;
@@ -180,7 +181,7 @@ function recordEndMinutes(record: HistoryRecord): number {
 }
 
 export function nextWorkdayCutoffProtection(
-  state: AppState,
+  state: HistoryRuleFacts,
   staffId: string,
   date: string | null,
   facts?: CrossDayRecoveryFacts
@@ -195,7 +196,7 @@ export function nextWorkdayCutoffProtection(
 }
 
 export function isNextWorkdayCutoffConflict(
-  state: AppState,
+  state: HistoryRuleFacts,
   staffId: string,
   targetStartTime: string,
   date: string | null,
@@ -209,7 +210,7 @@ export function isNextWorkdayCutoffConflict(
 }
 
 export function crossDayRecoveryRisk(
-  state: AppState,
+  state: HistoryRuleFacts,
   staffId: string,
   target: Pick<Flight, "flightNo" | "startTime" | "endTime"> & {
     position: string;
