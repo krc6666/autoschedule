@@ -24,7 +24,7 @@ describe("人员资格检查职责边界", () => {
     expect(eligibility).not.toContain("projectedAssignedHours(");
     expect(eligibility).not.toContain("intervalsOverlap(");
     expect(facts).not.toContain('from "./assignment-eligibility"');
-    expect(scheduleActions).toContain("canAssignStaff");
+    expect(scheduleActions).toContain("evaluateManualAssignment");
     expect(scheduleActions).not.toContain("assignment-eligibility-facts");
   });
 });

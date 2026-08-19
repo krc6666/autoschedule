@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   comparePreviousWorkdayLoad,
+  createPreviousWorkdayLoadFacts,
   type PreviousWorkdayLoad,
 } from "../../src/domain/shared/previous-workday-load";
+import { createDefaultState } from "../../src/defaults";
 
 function load(
   overrides: Partial<PreviousWorkdayLoad> = {}
@@ -91,5 +93,31 @@ describe("previous workday load ordering", () => {
         })
       )
     ).toBeLessThan(0);
+  });
+
+  it("does not treat scoped late-priority hours as a complete-day rolling load", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.history = [
+      {
+        id: "legacy-history-load",
+        date: "2026-07-18",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 10,
+        remark: "一号",
+        historyCoverage: "late-priority-only",
+      },
+    ];
+
+    const facts = createPreviousWorkdayLoadFacts(state, "2026-07-19");
+
+    expect(facts.byStaffId.get(person.id)?.fatiguePoints).toBe(10);
+    expect(facts.byStaffId.get(person.id)?.workHours).toBe(0);
   });
 });

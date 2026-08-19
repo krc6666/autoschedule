@@ -10,6 +10,7 @@ import {
 import type { HistoryRecord } from "../../src/model";
 import "../../src/ui/components/statistics-page";
 import { mountElement } from "./lit-test-helpers";
+import type { UiCommandEvent } from "../../src/ui/events/ui-command";
 
 describe("statistics page", () => {
   it("keeps monthly roster, relaxed shifts, position counts, and roster actions", async () => {
@@ -66,6 +67,86 @@ describe("statistics page", () => {
     expect(
       element.querySelector('select[aria-label*="值班人员"]')
     ).not.toBeNull();
+    const commands: UiCommandEvent["detail"][] = [];
+    element.addEventListener("autoschedule-command", (event) =>
+      commands.push((event as UiCommandEvent).detail)
+    );
+    const adjustmentRow = element.querySelector<HTMLElement>(
+      `.late-priority-adjustment-row[data-staff-id="${person.id}"][data-late-priority-category="一号"]`
+    );
+    const adjustmentDetails = adjustmentRow?.closest<HTMLDetailsElement>(
+      ".late-priority-count-detail"
+    );
+    expect(adjustmentRow).not.toBeNull();
+    expect(adjustmentDetails?.open).toBe(false);
+    expect(
+      adjustmentDetails?.querySelector(
+        ":scope > div > .late-priority-adjustment-row"
+      )
+    ).toBe(adjustmentRow);
+    adjustmentDetails!.open = true;
+    adjustmentRow
+      ?.querySelector<HTMLButtonElement>(
+        'button[aria-label="TR121一号增加一次"]'
+      )
+      ?.click();
+    expect(commands).toContainEqual({
+      type: "adjust-late-priority-frequency",
+      month: "2026-07",
+      staffId: person.id,
+      flightNo: "TR121",
+      kind: "number-one",
+      delta: 1,
+    });
+    expect(
+      element.querySelector<HTMLInputElement>(
+        'input[aria-label="末班重点岗位统计月份"]'
+      )?.value
+    ).toBe("2026-07");
+  });
+
+  it("switches late-priority statistics between natural months", async () => {
+    const state = createDefaultState();
+    const rule = state.positionRules.find(
+      (item) =>
+        item.flightNo === "TR121" &&
+        item.name === "H02" &&
+        item.category === "常规"
+    )!;
+    const person = state.staff.find(
+      (item) => item.id === rule.qualifiedStaffIds[0]
+    )!;
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    state.history = [
+      {
+        id: "july-number-one",
+        date: "2026-07-16",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 10,
+        remark: "一号",
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-08-18" });
+    const monthInput = element.querySelector<HTMLInputElement>(
+      'input[aria-label="末班重点岗位统计月份"]'
+    )!;
+
+    expect(monthInput.value).toBe("2026-08");
+    expect(element.textContent).not.toContain("07-16");
+    monthInput.value = "2026-07";
+    monthInput.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    expect(element.textContent).toContain("2026-07");
+    expect(element.textContent).toContain("07-16");
   });
 
   it("shows the persisted duty-roster person when it is not the first option", async () => {
@@ -96,6 +177,52 @@ describe("statistics page", () => {
         `select[aria-label="${rosterDate} 值班人员"]`
       )?.value
     ).toBe(selected.id);
+  });
+
+  it("keeps the opened adjustment attached to the same person after a count update", async () => {
+    const state = createDefaultState();
+    const rule = state.positionRules.find(
+      (item) =>
+        item.flightNo === "TR121" &&
+        item.name === "H02" &&
+        item.category === "常规"
+    )!;
+    const person = state.staff.find(
+      (item) => item.id === rule.qualifiedStaffIds[0]
+    )!;
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    const element = await mountElement<
+      HTMLElement & {
+        updateComplete: Promise<unknown>;
+        requestUpdate(): void;
+      }
+    >("autoschedule-statistics-page", { model: state, date: "2026-07-18" });
+    const selector = `.late-priority-adjustment-row[data-staff-id="${person.id}"][data-late-priority-category="一号"]`;
+    const initialDetails = element
+      .querySelector(selector)
+      ?.closest<HTMLDetailsElement>(".late-priority-count-detail");
+
+    expect(initialDetails?.open).toBe(false);
+    initialDetails!.open = true;
+    initialDetails!.dispatchEvent(new Event("toggle"));
+    state.latePriorityFrequencyAdjustments.push({
+      month: "2026-07",
+      staffId: person.id,
+      flightNo: "TR121",
+      kind: "number-one",
+      delta: 1,
+    });
+    element.requestUpdate();
+    await element.updateComplete;
+
+    const reorderedRow = element.querySelector(selector);
+    const reorderedDetails = reorderedRow?.closest<HTMLDetailsElement>(
+      ".late-priority-count-detail"
+    );
+    expect(reorderedDetails?.open).toBe(true);
+    expect(reorderedDetails?.textContent?.replace(/\s+/g, " ")).toContain(
+      "修正 +1"
+    );
   });
 
   it("summarizes all selected late-priority flights in one table", async () => {

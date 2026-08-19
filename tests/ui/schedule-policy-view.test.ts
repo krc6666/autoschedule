@@ -33,6 +33,12 @@ describe("rules page", () => {
       )
     ).toBeNull();
     expect(text).toContain("普通岗位最小衔接间隔");
+    expect(text).toContain("每日工时上限");
+    expect(
+      element.querySelector<HTMLInputElement>(
+        'input[data-policy-setting="maxDailyHours"]'
+      )?.value
+    ).toBe(String(state.settings.maxDailyHours));
     expect(text).toContain("跨工作日资质预留");
     expect(text).not.toContain("下班次值班人员预休");
     expect(text).toContain("机动督导兼任范围");

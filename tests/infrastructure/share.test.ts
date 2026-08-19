@@ -15,6 +15,9 @@ describe("share export projection", () => {
     state.assignments = (
       await generateSchedule(state, "2026-07-18")
     ).assignments;
+    state.assignments[0]!.manualOverrideWarnings = [
+      { code: "time-conflict", message: "人员A 在该时段已有排班" },
+    ];
     const sheet = buildShareSheet(
       state,
       "2026-07-18",
@@ -27,6 +30,7 @@ describe("share export projection", () => {
     );
     expect(sheet.textContent).toContain("国际航班保障排班");
     expect(sheet.textContent).toContain("人员排班一览");
+    expect(sheet.textContent).toContain("人工调整提醒：人员A 在该时段已有排班");
     expect(sheet.querySelectorAll("table")).toHaveLength(
       state.flights.length + 1
     );

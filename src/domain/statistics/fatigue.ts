@@ -92,7 +92,11 @@ export function historyFatigue(
       (sum, record) => sum + (record.fatiguePoints || record.workHours),
       0
     );
-  const consecutive = consecutiveWorkDays(recent, staffId, date);
+  const consecutive = consecutiveWorkDays(
+    recent.filter((record) => record.historyCoverage !== "late-priority-only"),
+    staffId,
+    date
+  );
   return points + Math.max(0, consecutive - 1) * settings.consecutiveDayPenalty;
 }
 

@@ -1,8 +1,5 @@
 import { currentScheduleHistory } from "../history-actions";
-import {
-  installArchivedNextWorkdaySchedule,
-  manualAssignmentConfirmation,
-} from "../schedule-actions";
+import { installArchivedNextWorkdaySchedule } from "../schedule-actions";
 import { addIsoDays } from "../../domain/shared/time";
 import type { UiCommand } from "../../ui/events/ui-command";
 import type {
@@ -63,34 +60,33 @@ export class ScheduleController implements UiCommandController {
           command.sourceAssignmentId
         );
       case "update-assignment": {
-        if (command.field === "staffName") {
-          const person = this.context
-            .model()
-            .staff.find(
-              (item) => item.name.trim() === String(command.value).trim()
-            );
-          if (person && !this.confirmCutoff(command.id, person.id)) return true;
-        }
         const result = schedule.updateAssignment(
           command.id,
           command.field,
           command.value
         );
         if (result.error) this.context.toast(result.error, "danger");
-        else if (result.changed) this.context.commit(result.message);
+        else if (result.changed) {
+          this.context.commit(result.message);
+          if (result.warning) this.context.toast(result.warning, "warning");
+        }
         return true;
       }
       case "create-temporary-assignment":
-        if (
-          schedule.createTemporary(
+        {
+          const result = schedule.createTemporary(
             command.flightId,
             command.position,
             command.staffName,
             command.layoutGroup,
             command.layoutIndex
-          )
-        )
-          this.context.commit("已增加临时岗位");
+          );
+          if (result.error) this.context.toast(result.error, "danger");
+          else if (result.changed) {
+            this.context.commit(result.message ?? "已增加临时岗位");
+            if (result.warning) this.context.toast(result.warning, "warning");
+          }
+        }
         return true;
       case "delete-temporary-assignment":
         if (schedule.deleteTemporary(command.id))
@@ -173,12 +169,14 @@ export class ScheduleController implements UiCommandController {
     staffId: string,
     sourceAssignmentId?: string
   ): boolean {
-    if (staffId && !this.confirmCutoff(assignmentId, staffId)) return true;
     const result = this.context.store
       .getState()
       .schedule.assignStaff(assignmentId, staffId, sourceAssignmentId);
     if (result.error) this.context.toast(result.error, "danger");
-    else if (result.changed) this.context.commit(result.message);
+    else if (result.changed) {
+      this.context.commit(result.message);
+      if (result.warning) this.context.toast(result.warning, "warning");
+    }
     return true;
   }
 
@@ -212,13 +210,6 @@ export class ScheduleController implements UiCommandController {
       this.context.toast(`不能交换：${analysis.blockers.join("；")}`, "danger");
       return true;
     }
-    if (
-      analysis.outcome === "soft-tradeoff" &&
-      !this.context.confirm(
-        `这次交换会带来以下取舍：${analysis.tradeoffs.join("；")}。仍要确认交换吗？`
-      )
-    )
-      return true;
     const source = this.context
       .model()
       .assignments.find(
@@ -243,18 +234,9 @@ export class ScheduleController implements UiCommandController {
     if (result.changed) {
       this.context.updateView({ dialog: null });
       this.context.commit("人员岗位已按分析结果交换");
+      if (result.warning) this.context.toast(result.warning, "warning");
     }
     return true;
-  }
-
-  private confirmCutoff(assignmentId: string, staffId: string): boolean {
-    const message = manualAssignmentConfirmation(
-      this.context.model(),
-      assignmentId,
-      staffId,
-      this.context.view().date
-    );
-    return !message || this.context.confirm(message);
   }
 
   private archive(): void {

@@ -1,5 +1,6 @@
 import type { WorkbookImport } from "../infrastructure/excel";
 import type { DutyRosterImportPreview } from "../infrastructure/duty-roster-excel";
+import type { LegacyScheduleImportPreview } from "../infrastructure/legacy-schedule-excel";
 import {
   clearUnqualifiedStandbyOverrides,
   getDutyRosterForDate,
@@ -19,6 +20,57 @@ export type ImportMode = "all" | "config" | "history";
 export interface AppliedWorkbookImport {
   changedConfig: boolean;
   recognized: string;
+}
+
+export function applyLegacyScheduleImport(
+  state: AppState,
+  preview: LegacyScheduleImportPreview,
+  targetDate?: string
+): { imported: number; skipped: number } {
+  const existing = new Map(
+    state.history.map((record) => [
+      `${record.date}|${record.flightNo}|${record.position}|${record.staffName}`,
+      record,
+    ])
+  );
+  const incoming = preview.records.filter(
+    (record) => record.status === "ready" && record.staffId && record.staffName
+  );
+  let imported = 0;
+  for (const record of incoming) {
+    const date = targetDate || record.date;
+    const {
+      rawText: _rawText,
+      sourceSheet: _sourceSheet,
+      sourceCell: _sourceCell,
+      status: _status,
+      issue: _issue,
+      ...historyRecord
+    } = record;
+    const key = `${date}|${record.flightNo}|${record.position}|${record.staffName}`;
+    const existingRecord = existing.get(key);
+    if (existingRecord) {
+      if (existingRecord.id.startsWith("legacy-history-")) {
+        Object.assign(existingRecord, {
+          ...historyRecord,
+          date,
+          historyCoverage: "late-priority-only" as const,
+        });
+      }
+      continue;
+    }
+    state.history.push({
+      ...historyRecord,
+      date,
+      historyCoverage: "late-priority-only",
+    });
+    existing.set(key, state.history.at(-1)!);
+    imported += 1;
+  }
+  return {
+    imported,
+    skipped: preview.records.length - imported,
+  };
 }
 
 export function validateDutyRosterImport(
@@ -87,20 +139,27 @@ export function applyWorkbookImport(
 ): AppliedWorkbookImport {
   const importConfig = mode !== "history";
   const importHistory = mode !== "config";
-  if (importConfig && imported.staff?.length) {
+  if (importConfig && imported.staff !== undefined) {
     state.staff = imported.staff;
     clearUnqualifiedStandbyOverrides(state);
   }
-  if (importConfig && imported.positionRules?.length)
+  if (importConfig && imported.positionRules !== undefined)
     state.positionRules = orderPositionRules(imported.positionRules);
-  if (importConfig && imported.templates?.length)
+  if (importConfig && imported.templates !== undefined)
     state.templates = imported.templates;
   if (importConfig && imported.settings)
     state.settings = applyScheduleSettingsPatch(
       state.settings,
       imported.settings
     );
-  if (importConfig && imported.flights?.length && !imported.templates?.length) {
+  if (importConfig && imported.latePriorityFrequencyAdjustments !== undefined)
+    state.latePriorityFrequencyAdjustments =
+      imported.latePriorityFrequencyAdjustments;
+  if (
+    importConfig &&
+    imported.flights !== undefined &&
+    imported.templates === undefined
+  ) {
     state.templates = imported.flights.map(
       ({ id, bookedPassengers: _bookedPassengers, ...flight }) => ({
         ...structuredClone(flight),
@@ -126,7 +185,7 @@ export function applyWorkbookImport(
       createEmptyWeeklyFlightPlans()
     );
   }
-  if (mode === "all" && imported.flights?.length)
+  if (mode === "all" && imported.flights !== undefined)
     state.flights = imported.flights;
   if (importHistory && imported.history) {
     const incomingKeys = new Set(
@@ -148,29 +207,35 @@ export function applyWorkbookImport(
   const changedConfig =
     importConfig &&
     Boolean(
-      imported.staff?.length ||
-      imported.flights?.length ||
-      imported.templates?.length ||
+      imported.staff !== undefined ||
+      imported.flights !== undefined ||
+      imported.templates !== undefined ||
       imported.weeklyFlightPlans ||
-      imported.positionRules?.length ||
-      imported.settings
+      imported.positionRules !== undefined ||
+      imported.settings ||
+      imported.latePriorityFrequencyAdjustments !== undefined
     );
   if (changedConfig) {
     clearActiveSchedule(state);
   }
   const recognized = [
-    importConfig && imported.staff?.length && `${imported.staff.length} 人`,
     importConfig &&
-      imported.flights?.length &&
+      imported.staff !== undefined &&
+      `${imported.staff.length} 人`,
+    importConfig &&
+      imported.flights !== undefined &&
       `${imported.flights.length} 个航班计划`,
     importConfig &&
-      imported.templates?.length &&
+      imported.templates !== undefined &&
       `${imported.templates.length} 个航班模板`,
     importConfig && imported.weeklyFlightPlans && "每周航班计划",
     importConfig &&
-      imported.positionRules?.length &&
+      imported.positionRules !== undefined &&
       `${imported.positionRules.length} 条岗位规则`,
     importConfig && imported.settings && "规则配置",
+    importConfig &&
+      imported.latePriorityFrequencyAdjustments &&
+      "末班重点次数修正",
     importHistory &&
       imported.history?.length &&
       `${imported.history.length} 条历史负荷`,

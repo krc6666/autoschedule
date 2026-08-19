@@ -8,6 +8,7 @@ import type {
   Flight,
   FlightTemplate,
   HistoryRecord,
+  LatePriorityFrequencyAdjustment,
   PositionRule,
   ScheduleSettings,
   Staff,
@@ -20,16 +21,58 @@ import {
   type SchedulingRuleId,
 } from "../domain/rules/schedule-rule-contract";
 import { orderPositionRules } from "../utils";
+import {
+  normalizeLatePriorityFlightNumber,
+  normalizeLatePriorityPositionReference,
+} from "../domain/reviews/late-priority-policy";
 import { latePriorityFlightScopeCandidates } from "../domain/statistics/late-priority-flight-scope";
 import {
   createEmptyWeeklyFlightPlans,
   replaceWeeklyFlightPlan,
 } from "../domain/flights/weekly-flight-plan";
+import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
 
 type PersistedSettings = Partial<ScheduleSettings>;
 type PersistedAppState = Record<string, unknown> & {
   version: 1 | 2 | 3 | 4 | 5;
 };
+
+const LATE_PRIORITY_KINDS = new Set([
+  "supervisor",
+  "number-one",
+  "declaration",
+  "delivery",
+]);
+function restoreLatePriorityFrequencyAdjustments(
+  value: unknown
+): LatePriorityFrequencyAdjustment[] {
+  if (!Array.isArray(value)) return [];
+  return mergeLatePriorityFrequencyAdjustments(
+    value
+      .flatMap((item): LatePriorityFrequencyAdjustment[] => {
+        if (
+          !isRecord(item) ||
+          !/^\d{4}-\d{2}$/.test(String(item.month)) ||
+          typeof item.staffId !== "string" ||
+          typeof item.flightNo !== "string" ||
+          !LATE_PRIORITY_KINDS.has(String(item.kind)) ||
+          typeof item.delta !== "number" ||
+          !Number.isFinite(item.delta)
+        )
+          return [];
+        return [
+          {
+            month: String(item.month),
+            staffId: item.staffId,
+            flightNo: normalizeLatePriorityFlightNumber(item.flightNo),
+            kind: item.kind as LatePriorityFrequencyAdjustment["kind"],
+            delta: Math.trunc(item.delta),
+          },
+        ];
+      })
+      .filter((item) => item.delta !== 0)
+  );
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -267,6 +310,11 @@ function restoreHistory(value: unknown[]): HistoryRecord[] {
       typeof item.remark !== "string"
     )
       return [];
+    const historyCoverage =
+      item.historyCoverage === "complete" ||
+      item.historyCoverage === "late-priority-only"
+        ? item.historyCoverage
+        : undefined;
     return [
       {
         id: item.id,
@@ -280,8 +328,35 @@ function restoreHistory(value: unknown[]): HistoryRecord[] {
         workHours: item.workHours,
         fatiguePoints: item.fatiguePoints,
         remark: item.remark,
+        ...(historyCoverage ? { historyCoverage } : {}),
       },
     ];
+  });
+}
+
+function migrateLegacyHistoryMetadata(
+  history: HistoryRecord[],
+  positionRules: readonly PositionRule[]
+): HistoryRecord[] {
+  return history.map((record) => {
+    if (!record.id.startsWith("legacy-history-")) return record;
+    const rule = positionRules.find(
+      (candidate) =>
+        normalizeLatePriorityFlightNumber(candidate.flightNo) ===
+          normalizeLatePriorityFlightNumber(record.flightNo) &&
+        normalizeLatePriorityPositionReference(candidate.name) ===
+          normalizeLatePriorityPositionReference(record.position)
+    );
+    return {
+      ...record,
+      historyCoverage: "late-priority-only" as const,
+      ...(rule
+        ? {
+            remark: rule.remark,
+            fatiguePoints: rule.fatiguePoints,
+          }
+        : {}),
+    };
   });
 }
 
@@ -363,6 +438,19 @@ function restoredAssignment(value: unknown): Assignment | null {
   if (Array.isArray(value.decisionTrace)) {
     assignment.decisionTrace = value.decisionTrace.filter(validDecision);
   }
+  if (Array.isArray(value.manualOverrideWarnings)) {
+    const warnings = value.manualOverrideWarnings.flatMap((item) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        typeof item.code !== "string" ||
+        typeof item.message !== "string"
+      )
+        return [];
+      return [{ code: item.code, message: item.message }];
+    });
+    if (warnings.length) assignment.manualOverrideWarnings = warnings;
+  }
   const supervisorSourceAssignmentId =
     typeof value.supervisorSourceAssignmentId === "string"
       ? value.supervisorSourceAssignmentId
@@ -443,6 +531,10 @@ export function restorePersistedState(
     fallback.positionRules,
     (items) => restorePositionRules(items, value.version === 1)
   );
+  const restoredHistory = migrateLegacyHistoryMetadata(
+    restoredCollection(value.history, fallback.history, restoreHistory),
+    positionRules
+  );
   const next: AppState = {
     version: 5,
     staff: restoredCollection(value.staff, fallback.staff, restoreStaff),
@@ -461,15 +553,14 @@ export function restorePersistedState(
         ? createEmptyWeeklyFlightPlans()
         : restoreWeeklyFlightPlans(value.weeklyFlightPlans),
     positionRules,
-    history: restoredCollection(
-      value.history,
-      fallback.history,
-      restoreHistory
-    ),
+    history: restoredHistory,
     dutyRosterOverrides: restoredCollection(
       value.dutyRosterOverrides,
       fallback.dutyRosterOverrides,
       restoreDutyRosterOverrides
+    ),
+    latePriorityFrequencyAdjustments: restoreLatePriorityFrequencyAdjustments(
+      value.latePriorityFrequencyAdjustments
     ),
     assignments: [],
     activeScheduleDate:

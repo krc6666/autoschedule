@@ -8,6 +8,7 @@ import type {
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
 } from "./domain/rules/structured-policy-contract";
+import type { LatePriorityFrequencyKind } from "./domain/reviews/late-priority-policy";
 
 export type StaffStatus = "正常" | "病假" | "休假";
 export type StaffType = "常规" | "行政支援";
@@ -74,6 +75,8 @@ export interface HistoryRecord {
   workHours: number;
   fatiguePoints: number;
   remark: string;
+  /** Whether this record represents a complete day or a scoped legacy import. */
+  historyCoverage?: "complete" | "late-priority-only";
 }
 
 export interface Assignment {
@@ -93,6 +96,7 @@ export interface Assignment {
   status: "assigned" | "unfilled" | "manual";
   systemNotes?: string[];
   decisionTrace?: SchedulingDecision[];
+  manualOverrideWarnings?: Array<{ code: string; message: string }>;
   supervisorSourceAssignmentId?: string;
   layoutGroup?: "primary" | "bottom";
   layoutIndex?: number;
@@ -103,6 +107,14 @@ export interface DutyRosterOverride {
   cxPreflightStaffId: string | null;
   dutyStaffId: string | null;
   standbyStaffIds: [string | null, string | null];
+}
+
+export interface LatePriorityFrequencyAdjustment {
+  month: string;
+  staffId: string;
+  flightNo: string;
+  kind: LatePriorityFrequencyKind;
+  delta: number;
 }
 
 export interface ScheduleSettings {
@@ -151,6 +163,7 @@ export interface AppState {
   positionRules: PositionRule[];
   history: HistoryRecord[];
   dutyRosterOverrides: DutyRosterOverride[];
+  latePriorityFrequencyAdjustments: LatePriorityFrequencyAdjustment[];
   assignments: Assignment[];
   activeScheduleDate: string | null;
   schedulePolicyStale: boolean;

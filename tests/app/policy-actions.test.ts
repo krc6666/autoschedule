@@ -26,6 +26,7 @@ import {
 } from "../../src/app/policy-actions";
 
 const input: SchedulePolicyInput = {
+  maxDailyHours: 10.5,
   minimumRegularTransitionMinutes: 90,
   highLoadProtectionEnabled: true,
   highLoadFatigueThreshold: Number.NaN,
@@ -97,6 +98,7 @@ describe("policy actions", () => {
     expect(state.schedulePolicyStale).toBe(true);
     expect(state.assignments).toHaveLength(1);
     expect(state.settings).toMatchObject({
+      maxDailyHours: 10.5,
       highLoadFatigueThreshold: 4,
       highLoadRecoveryMinutes: 1440,
       lateShiftEndTime: "23:00",

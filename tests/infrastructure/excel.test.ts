@@ -10,8 +10,27 @@ import {
   parseWorkbook,
 } from "../../src/infrastructure/excel";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
+import { SCHEDULE_SETTING_DEFINITIONS } from "../../src/domain/rules/schedule-settings";
 
 describe("workbook boundary", () => {
+  it("round-trips manual late-priority frequency corrections by flight and category", () => {
+    const state = createDefaultState();
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: state.staff[0]!.id,
+        flightNo: "TR121",
+        kind: "number-one",
+        delta: 2,
+      },
+    ];
+    const workbook = buildConfigWorkbook(state);
+    expect(workbook.SheetNames).toContain("末班重点次数修正");
+    expect(
+      parseWorkbook(workbook, state.staff).latePriorityFrequencyAdjustments
+    ).toEqual(state.latePriorityFrequencyAdjustments);
+  });
+
   it("maps workbook rows into stable domain models", () => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
@@ -57,6 +76,9 @@ describe("workbook boundary", () => {
     const state = createDefaultState();
     const assignments = (await generateSchedule(state, "2026-07-18"))
       .assignments;
+    assignments[0]!.manualOverrideWarnings = [
+      { code: "daily-hours", message: "人员A 将超过每日工时上限" },
+    ];
     const workbook = buildScheduleWorkbook(assignments, "2026-07-18");
     expect(workbook.SheetNames).toHaveLength(3);
     expect(workbook.Sheets[workbook.SheetNames[0]!]!["!ref"]).toBeTruthy();
@@ -69,6 +91,9 @@ describe("workbook boundary", () => {
       (row) => row[1] === "CX937" && row[2] === "G20"
     );
     expect(onePosition?.[8]).toBe("一号");
+    expect(machineRows.flat().join(" ")).toContain(
+      "人工调整提醒：人员A 将超过每日工时上限"
+    );
   }, 30_000);
 
   it("imports a flight configuration sheet as reusable templates", () => {
@@ -245,8 +270,19 @@ describe("workbook boundary", () => {
     )[0];
 
     expect(headers).toContain("备勤资质");
-    expect(workbook.SheetNames).toContain("跨工作日资质预留");
-    expect(workbook.SheetNames).toContain("末班重点航班范围");
+    expect(workbook.SheetNames).toEqual(
+      expect.arrayContaining([
+        "每周航班计划",
+        "岗位衔接规则",
+        "值班岗位优先",
+        "次班恢复目标",
+        "末班重点岗位",
+        "机动督导范围",
+        "跨工作日资质预留",
+        "跨航班重点岗位优先",
+        "末班重点航班范围",
+      ])
+    );
     const settingCodes = XLSX.utils
       .sheet_to_json<unknown[]>(workbook.Sheets["规则参数"]!, {
         header: 1,
@@ -255,7 +291,15 @@ describe("workbook boundary", () => {
       })
       .slice(1)
       .map((row) => row[0]);
-    expect(settingCodes).toContain("minimumRegularTransitionMinutes");
+    expect(settingCodes).toEqual(
+      SCHEDULE_SETTING_DEFINITIONS.map((definition) => definition.key)
+    );
+    const imported = parseWorkbook(workbook, []);
+    const defaultState = createDefaultState();
+    const { adminSupportEnabled: _adminSupportEnabled, ...defaultSettings } =
+      defaultState.settings;
+    expect(imported.settings).toEqual(defaultSettings);
+    expect(imported.weeklyFlightPlans).toEqual(defaultState.weeklyFlightPlans);
   });
 
   it("round-trips every editable scheduling setting and rule table", () => {
@@ -378,6 +422,64 @@ describe("workbook boundary", () => {
     expect(
       parseWorkbook(workbook, []).settings?.dutyPositionPriorities
     ).toEqual([]);
+  });
+
+  it("keeps present empty configuration sheets distinguishable from missing sheets", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["编号", "姓名", "是否可上夜班", "状态", "备注"],
+      ]),
+      "人员信息"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["航班号", "开始时间", "结束时间", "涉及岗位", "备注"],
+      ]),
+      "航班配置"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["航班号", "项目分类", "岗位名称", "备注", "可胜任人员"],
+      ]),
+      "岗位配置"
+    );
+
+    const imported = parseWorkbook(workbook, createDefaultState().staff);
+
+    expect(imported.staff).toEqual([]);
+    expect(imported.templates).toEqual([]);
+    expect(imported.positionRules).toEqual([]);
+    expect(imported.warnings).toEqual([]);
+  });
+
+  it("does not bind imported history to old-device staff after an explicit staff clear", () => {
+    const current = createDefaultState();
+    const person = current.staff[0]!;
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["编号", "姓名", "是否可上夜班", "状态", "备注"],
+      ]),
+      "人员信息"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["日期", "航班号", "岗位", "姓名", "开始时间", "结束时间"],
+        ["2026-08-19", "CX937", "G20", person.name, "08:00", "10:00"],
+      ]),
+      "历史排班"
+    );
+
+    const imported = parseWorkbook(workbook, current.staff);
+
+    expect(imported.staff).toEqual([]);
+    expect(imported.history?.[0]?.staffId).toBe("");
   });
 
   it("rejects one invalid rule sheet without blocking another valid sheet", () => {

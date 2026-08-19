@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as XLSX from "xlsx-js-style";
 
 import { createDefaultState } from "../../src/defaults";
 import type { HistoryRecord } from "../../src/model";
@@ -9,8 +10,113 @@ import {
   validateDutyRosterImport,
 } from "../../src/app/workbook-actions";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
+import {
+  buildConfigWorkbook,
+  parseWorkbook,
+} from "../../src/infrastructure/excel";
 
 describe("workbook actions", () => {
+  it("restores every exported long-term configuration on a fresh device", () => {
+    const source = createDefaultState();
+    source.settings.adminSupportEnabled = true;
+    source.settings.maxDailyHours = 9.5;
+    source.settings.nextWorkdayRecoveryMode = "forbid";
+    source.settings.positionTransitionPolicies[0]!.mode = "forbid";
+    source.settings.positionTransitionPolicies[0]!.minimumGapMinutes = 240;
+    source.settings.crossFlightPriorityPolicies = [
+      {
+        id: "imported-priority",
+        enabled: false,
+        flightNo: "KE166",
+        positions: ["督导", "H02"],
+      },
+    ];
+    source.staff[0]!.standbyQualified = false;
+    source.positionRules[0]!.fatiguePoints = 9;
+    source.weeklyFlightPlans = replaceWeeklyFlightPlan(
+      source.weeklyFlightPlans,
+      1,
+      [source.templates[0]!.flightNo]
+    );
+    source.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: source.staff[0]!.id,
+        flightNo: "TR121",
+        kind: "supervisor",
+        delta: 2,
+      },
+    ];
+
+    const target = createDefaultState();
+    const preservedAdminMode = target.settings.adminSupportEnabled;
+    target.dutyRosterOverrides = [
+      {
+        date: "2026-08-01",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    const preservedRoster = structuredClone(target.dutyRosterOverrides);
+    const exportedBytes = XLSX.write(buildConfigWorkbook(source), {
+      bookType: "xlsx",
+      type: "buffer",
+    });
+    const imported = parseWorkbook(
+      XLSX.read(exportedBytes, { type: "buffer" }),
+      target.staff
+    );
+
+    applyWorkbookImport(target, imported, "config");
+
+    const { adminSupportEnabled: _sourceAdminMode, ...sourceSettings } =
+      source.settings;
+    const { adminSupportEnabled: targetAdminMode, ...targetSettings } =
+      target.settings;
+    expect(targetSettings).toEqual(sourceSettings);
+    expect(targetAdminMode).toBe(preservedAdminMode);
+    expect(target.staff).toEqual(source.staff);
+    expect(target.latePriorityFrequencyAdjustments).toEqual(
+      source.latePriorityFrequencyAdjustments
+    );
+    expect(target.templates).toEqual(imported.templates);
+    expect(target.positionRules).toEqual(imported.positionRules);
+    expect(target.weeklyFlightPlans).toEqual(source.weeklyFlightPlans);
+    expect(target.dutyRosterOverrides).toEqual(preservedRoster);
+    expect(target.settings.positionTransitionPolicies[0]!.mode).toBe("forbid");
+  });
+
+  it("applies recognized empty configuration sheets as explicit clears", () => {
+    const state = createDefaultState();
+    const importedFlight = {
+      ...state.flights[0]!,
+      id: "imported-flight",
+      flightNo: "ONLY100",
+    };
+
+    const result = applyWorkbookImport(
+      state,
+      {
+        staff: [],
+        flights: [importedFlight],
+        templates: [],
+        positionRules: [],
+        warnings: [],
+      },
+      "config"
+    );
+
+    expect(result.changedConfig).toBe(true);
+    expect(result.recognized).toContain("0 人");
+    expect(result.recognized).toContain("0 个航班模板");
+    expect(result.recognized).toContain("0 条岗位规则");
+    expect(state.staff).toEqual([]);
+    expect(state.templates).toEqual([]);
+    expect(state.positionRules).toEqual([]);
+    expect(state.flights).not.toEqual([importedFlight]);
+  });
+
   it("replaces an imported weekly plan, filters missing templates, and preserves it when omitted", () => {
     const state = createDefaultState();
     state.weeklyFlightPlans = replaceWeeklyFlightPlan(

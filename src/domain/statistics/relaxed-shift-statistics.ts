@@ -82,6 +82,7 @@ function fromAssignment(
 
 function fromHistory(record: HistoryRecord): ActualTask | null {
   if (
+    record.historyCoverage === "late-priority-only" ||
     !record.staffId ||
     !record.staffName ||
     record.flightNo === "轮值" ||

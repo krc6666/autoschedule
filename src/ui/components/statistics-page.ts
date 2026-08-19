@@ -7,10 +7,15 @@ import {
   type LatePriorityStatisticsDetail,
   type LatePriorityStatisticsCategory,
 } from "../../domain/statistics/monthly-late-priority-statistics";
+import {
+  latePriorityFrequencyKinds,
+  latePriorityKindForLabel,
+} from "../../domain/reviews/late-priority-policy";
 import { buildMonthlyRelaxedShiftStatistics } from "../../domain/statistics/relaxed-shift-statistics";
 import type { AppState } from "../../model";
 import { LightDomElement } from "./light-dom-element";
 import "./duty-roster-details";
+import { dispatchUiCommand } from "../events/ui-command";
 
 export class StatisticsPageElement extends LightDomElement {
   static override properties = {
@@ -19,6 +24,9 @@ export class StatisticsPageElement extends LightDomElement {
   };
   model!: AppState;
   date = "";
+  private readonly selectedAdjustmentFlights = new Map<string, string>();
+  private readonly expandedLatePriorityCells = new Set<string>();
+  private selectedLatePriorityStatisticsMonth = "";
 
   protected override render() {
     return html`
@@ -108,7 +116,7 @@ export class StatisticsPageElement extends LightDomElement {
     const flightNumbers = latePriorityStatisticsFlightNumbers(this.model);
     const statistics = buildMonthlyLatePriorityStatistics(
       this.model,
-      this.date
+      this.latePriorityStatisticsDate()
     );
     return html`<section
       class="workspace-section late-priority-statistics"
@@ -123,6 +131,19 @@ export class StatisticsPageElement extends LightDomElement {
             实际结束晚于 ${this.model.settings.lateShiftEndTime}</span
           >
         </div>
+        <label class="d-inline-flex align-items-center gap-2 mb-0">
+          <span class="small text-body-secondary">统计月份</span>
+          <input
+            class="form-control form-control-sm"
+            type="month"
+            aria-label="末班重点岗位统计月份"
+            .value=${this.latePriorityStatisticsMonth()}
+            @change=${(event: Event) =>
+              this.selectLatePriorityStatisticsMonth(
+                (event.currentTarget as HTMLInputElement).value
+              )}
+          />
+        </label>
       </div>
       ${
         flightNumbers.length
@@ -146,35 +167,54 @@ export class StatisticsPageElement extends LightDomElement {
                             <td><strong>${row.staff.name}</strong></td>
                             <td>
                               ${this.latePriorityDetailCell(
-                            row.totalCount,
-                            LATE_PRIORITY_STATISTICS_CATEGORIES.flatMap(
-                              (category) =>
-                                row.categories[category].details.map(
-                                  (detail) => ({ ...detail, category })
+                                row.totalCount,
+                                row.staff.id,
+                                statistics.month,
+                                flightNumbers,
+                                undefined,
+                                LATE_PRIORITY_STATISTICS_CATEGORIES.reduce(
+                                  (sum, category) =>
+                                    sum +
+                                    row.categories[category].manualCorrection,
+                                  0
+                                ),
+                                LATE_PRIORITY_STATISTICS_CATEGORIES.flatMap(
+                                  (category) =>
+                                    row.categories[category].details.map(
+                                      (detail) => ({ ...detail, category })
+                                    )
                                 )
-                            )
-                          )}
+                              )}
                             </td>
                             ${LATE_PRIORITY_STATISTICS_CATEGORIES.map(
-                            (category) => {
-                              const own = row.categories[category];
-                              return html`<td>
-                                ${
-                                  own.qualified
-                                    ? this.latePriorityDetailCell(
-                                        own.details.length,
-                                        own.details.map((detail) => ({
-                                          ...detail,
+                              (category) => {
+                                const own = row.categories[category];
+                                return html`<td>
+                                  ${
+                                    own.qualified
+                                      ? this.latePriorityDetailCell(
+                                          own.effectiveCount,
+                                          row.staff.id,
+                                          statistics.month,
+                                          this.categoryFlightNumbers(
+                                            row.staff.id,
+                                            flightNumbers,
+                                            category
+                                          ),
                                           category,
-                                        }))
-                                      )
-                                    : html`<span class="text-body-secondary"
-                                        >-</span
-                                      >`
-                                }
-                              </td>`;
-                            }
-                          )}
+                                          own.manualCorrection,
+                                          own.details.map((detail) => ({
+                                            ...detail,
+                                            category,
+                                          }))
+                                        )
+                                      : html`<span class="text-body-secondary"
+                                          >-</span
+                                        >`
+                                  }
+                                </td>`;
+                              }
+                            )}
                           </tr>`
                       )}
                     </tbody>
@@ -217,26 +257,197 @@ export class StatisticsPageElement extends LightDomElement {
 
   private latePriorityDetailCell(
     count: number,
+    staffId: string,
+    month: string,
+    flightNumbers: readonly string[],
+    categoryFallback: LatePriorityStatisticsCategory | undefined,
+    manualCorrection: number,
     details: readonly (LatePriorityStatisticsDetail & {
       category: LatePriorityStatisticsCategory;
     })[]
   ) {
-    return html`<details class="late-priority-count-detail">
-      <summary title="查看航班和日期">${count}</summary>
+    const selectedFlight = categoryFallback
+      ? this.selectedAdjustmentFlight(staffId, categoryFallback, flightNumbers)
+      : "";
+    const selectedCorrection =
+      categoryFallback && selectedFlight
+        ? this.flightCorrection(
+            staffId,
+            month,
+            selectedFlight,
+            categoryFallback
+          )
+        : 0;
+    const detailKey = `${staffId}\u0000${categoryFallback ?? "total"}`;
+    return html`<details
+      class="late-priority-count-detail"
+      .open=${this.expandedLatePriorityCells.has(detailKey)}
+      @toggle=${(event: Event) => this.trackLatePriorityDetailToggle(detailKey, (event.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary
+        title=${categoryFallback ? "查看明细并调整次数" : "查看航班和日期"}
+      >
+        ${count}
+      </summary>
       <div>
         ${
-          details.length
-            ? details.map(
-                (detail) =>
-                  html`<span
-                    ><strong>${detail.date.slice(5)}</strong> ${detail.flightNo}
-                    / ${detail.position} / ${detail.category}</span
-                  >`
-              )
-            : html`<span class="text-body-secondary">本月暂无记录</span>`
-        }
+            categoryFallback && selectedFlight
+              ? html`<div
+                  class="late-priority-adjustment-row"
+                  data-staff-id=${staffId}
+                  data-late-priority-category=${categoryFallback}
+                >
+                  <select
+                    class="form-select form-select-sm"
+                    aria-label="选择${categoryFallback}修正航班"
+                    .value=${selectedFlight}
+                    @change=${(event: Event) => this.selectAdjustmentFlight(staffId, categoryFallback, (event.currentTarget as HTMLSelectElement).value)}
+                  >
+                    ${flightNumbers.map((flightNo) => html`<option value=${flightNo}>${flightNo}</option>`)}
+                  </select>
+                  <small
+                    >修正
+                    ${selectedCorrection >= 0 ? "+" : ""}${selectedCorrection}</small
+                  >
+                  ${this.adjustmentButtons(staffId, month, selectedFlight, categoryFallback)}
+                  <small
+                    >实际 ${Math.max(0, count - manualCorrection)} · 最终
+                    ${count}</small
+                  >
+                </div>`
+              : ""
+          }
+        ${
+            details.length
+              ? details.map(
+                  (detail) =>
+                    html`<span
+                      ><strong>${detail.date.slice(5)}</strong>
+                      ${detail.flightNo} / ${detail.position} /
+                      ${detail.category}</span
+                    >`
+                )
+              : html`<span class="text-body-secondary">本月暂无记录</span>`
+          }
       </div>
     </details>`;
+  }
+
+  private latePriorityStatisticsMonth(): string {
+    return this.selectedLatePriorityStatisticsMonth || this.date.slice(0, 7);
+  }
+
+  private latePriorityStatisticsDate(): string {
+    const month = this.latePriorityStatisticsMonth();
+    if (this.model.activeScheduleDate?.startsWith(month))
+      return this.model.activeScheduleDate;
+    if (this.date.startsWith(month)) return this.date;
+    return `${month}-01`;
+  }
+
+  private selectLatePriorityStatisticsMonth(month: string): void {
+    if (!/^\d{4}-\d{2}$/.test(month)) return;
+    this.selectedLatePriorityStatisticsMonth = month;
+    this.requestUpdate();
+  }
+
+  private adjustmentButtons(
+    staffId: string,
+    month: string,
+    flightNo: string,
+    category: LatePriorityStatisticsCategory
+  ) {
+    const kind = (
+      {
+        督导: "supervisor",
+        一号: "number-one",
+        申报: "declaration",
+        送资料: "delivery",
+      } as const
+    )[category];
+    return html`<span class="late-priority-adjustments">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        aria-label="${flightNo}${category}减少一次"
+        @click=${() => dispatchUiCommand(this, { type: "adjust-late-priority-frequency", month, staffId, flightNo, kind, delta: -1 })}
+      >
+        −
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        aria-label="${flightNo}${category}增加一次"
+        @click=${() => dispatchUiCommand(this, { type: "adjust-late-priority-frequency", month, staffId, flightNo, kind, delta: 1 })}
+      >
+        +
+      </button>
+    </span>`;
+  }
+
+  private categoryFlightNumbers(
+    staffId: string,
+    flightNumbers: readonly string[],
+    category: LatePriorityStatisticsCategory
+  ): string[] {
+    const kind = latePriorityKindForLabel(category);
+    return flightNumbers.filter((flightNo) =>
+      this.model.positionRules.some(
+        (rule) =>
+          rule.category === "常规" &&
+          rule.flightNo.trim().toUpperCase().replaceAll(/\s+/g, "") ===
+            flightNo &&
+          rule.qualifiedStaffIds.includes(staffId) &&
+          latePriorityFrequencyKinds(rule).includes(kind)
+      )
+    );
+  }
+
+  private flightCorrection(
+    staffId: string,
+    month: string,
+    flightNo: string,
+    category: LatePriorityStatisticsCategory
+  ): number {
+    const kind = latePriorityKindForLabel(category);
+    return this.model.latePriorityFrequencyAdjustments
+      .filter(
+        (item) =>
+          item.staffId === staffId &&
+          item.month === month &&
+          item.flightNo === flightNo &&
+          item.kind === kind
+      )
+      .reduce((sum, item) => sum + item.delta, 0);
+  }
+
+  private selectedAdjustmentFlight(
+    staffId: string,
+    category: LatePriorityStatisticsCategory,
+    flightNumbers: readonly string[]
+  ): string {
+    const key = `${staffId}\u0000${category}`;
+    const selected = this.selectedAdjustmentFlights.get(key);
+    return selected && flightNumbers.includes(selected)
+      ? selected
+      : (flightNumbers[0] ?? "");
+  }
+
+  private selectAdjustmentFlight(
+    staffId: string,
+    category: LatePriorityStatisticsCategory,
+    flightNo: string
+  ): void {
+    this.selectedAdjustmentFlights.set(`${staffId}\u0000${category}`, flightNo);
+    this.requestUpdate();
+  }
+
+  private trackLatePriorityDetailToggle(key: string, open: boolean): void {
+    if (open) {
+      this.expandedLatePriorityCells.add(key);
+    } else {
+      this.expandedLatePriorityCells.delete(key);
+    }
   }
 }
 

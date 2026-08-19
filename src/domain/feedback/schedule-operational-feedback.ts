@@ -252,6 +252,32 @@ function connectionFeedback(
   );
 }
 
+function manualOverrideFeedback(
+  state: ScheduleGenerationFacts
+): ScheduleFeedbackItem {
+  const warnings = state.assignments.flatMap((assignment) =>
+    (assignment.manualOverrideWarnings ?? []).map(
+      (warning) =>
+        `${assignment.flightNo}/${assignment.position} ${assignment.staffName}：${warning.message}`
+    )
+  );
+  return warnings.length
+    ? feedbackItem(
+        "flight-staff",
+        "manual-overrides",
+        "人工调整提醒",
+        "attention",
+        warnings.join("；")
+      )
+    : feedbackItem(
+        "flight-staff",
+        "manual-overrides",
+        "人工调整提醒",
+        "ok",
+        "当前班表没有人工突破自动排班限制的岗位。"
+      );
+}
+
 export function buildOperationalScheduleFeedback(
   state: ScheduleGenerationFacts,
   date: string
@@ -260,5 +286,6 @@ export function buildOperationalScheduleFeedback(
     coverageFeedback(state, date),
     fatigueFeedback(state, date),
     connectionFeedback(state),
+    manualOverrideFeedback(state),
   ];
 }

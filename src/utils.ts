@@ -90,6 +90,19 @@ export function persistedAssignmentRemark(
     .join("；");
 }
 
+export function assignmentWarningRemark(
+  positionRemark: unknown,
+  manualRemark: unknown,
+  warnings: readonly { message: string }[] | undefined
+): string {
+  return persistedAssignmentRemark(
+    persistedAssignmentRemark(positionRemark, manualRemark),
+    warnings?.length
+      ? `人工调整提醒：${warnings.map((warning) => warning.message).join("；")}`
+      : ""
+  );
+}
+
 export function todayIso(): string {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);

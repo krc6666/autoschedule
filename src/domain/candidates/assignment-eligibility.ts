@@ -77,6 +77,12 @@ function success(): AssignmentEligibilityDiagnostic {
   return { eligible: true, violations: [] };
 }
 
+function diagnostic(
+  violations: AssignmentEligibilityViolation[]
+): AssignmentEligibilityDiagnostic {
+  return { eligible: violations.length === 0, violations };
+}
+
 export function diagnoseBaseAssignmentEligibility(
   state: AssignmentEligibilityFacts,
   flight: Pick<Flight, "startTime" | "endTime">,
@@ -331,11 +337,12 @@ export function diagnoseManualAssignmentEligibility(
   if (administrativeStaff && !state.settings.adminSupportEnabled) {
     return violation("admin-support-disabled", "行政支援模式尚未启用");
   }
+  const violations: AssignmentEligibilityViolation[] = [];
   if (administrativeStaff && (!rule || !staffFacts.positionQualified)) {
-    return violation(
-      "position-qualification",
-      `${person.name} 不具备该岗位资质`
-    );
+    violations.push({
+      code: "position-qualification",
+      message: `${person.name} 不具备该岗位资质`,
+    });
   }
   if (
     rule &&
@@ -343,10 +350,10 @@ export function diagnoseManualAssignmentEligibility(
     !rule.manual &&
     !staffFacts.positionQualified
   ) {
-    return violation(
-      "position-qualification",
-      `${person.name} 不具备该岗位资质`
-    );
+    violations.push({
+      code: "position-qualification",
+      message: `${person.name} 不具备该岗位资质`,
+    });
   }
   if (administrativeStaff && rule) {
     const otherAssignments = state.assignments.filter(
@@ -378,7 +385,11 @@ export function diagnoseManualAssignmentEligibility(
     }
   }
   if (!staffFacts.nightCapable) {
-    return violation("night-shift", `${person.name} 不可上夜班`);
+    violations.push({
+      code: "night-shift",
+      message: `${person.name} 不可上夜班`,
+    });
+    return diagnostic(violations);
   }
   const reuse = rule?.category === "引导";
   const others = state.assignments.filter(
@@ -411,13 +422,16 @@ export function diagnoseManualAssignmentEligibility(
       : ("allow-reusable" as const),
   };
   if (assignmentConflictFacts(factOptions).blockingConflicts.length) {
-    return violation("time-conflict", `${person.name} 在该时段已有排班`);
+    violations.push({
+      code: "time-conflict",
+      message: `${person.name} 在该时段已有排班`,
+    });
   }
   if (!assignmentHoursFacts(factOptions).withinDailyHours) {
-    return violation(
-      "daily-hours",
-      `${person.name} 将超过每日 ${state.settings.maxDailyHours} 小时上限`
-    );
+    violations.push({
+      code: "daily-hours",
+      message: `${person.name} 将超过每日 ${state.settings.maxDailyHours} 小时上限`,
+    });
   }
   const minimumTransition = minimumFlightTransitionViolationsForInsertion(
     state,
@@ -427,10 +441,10 @@ export function diagnoseManualAssignmentEligibility(
     factRule
   )[0];
   if (minimumTransition) {
-    return violation(
-      "minimum-flight-transition",
-      minimumFlightTransitionMessage(person.name, minimumTransition)
-    );
+    violations.push({
+      code: "minimum-flight-transition",
+      message: minimumFlightTransitionMessage(person.name, minimumTransition),
+    });
   }
   if (
     positionTransitionCost(
@@ -443,12 +457,12 @@ export function diagnoseManualAssignmentEligibility(
       "forbid"
     ) > 0
   ) {
-    return violation(
-      "position-transition",
-      `${person.name} 不满足该岗位的最小衔接间隔`
-    );
+    violations.push({
+      code: "position-transition",
+      message: `${person.name} 不满足该岗位的最小衔接间隔`,
+    });
   }
-  return success();
+  return diagnostic(violations);
 }
 
 export function canAssignStaff(

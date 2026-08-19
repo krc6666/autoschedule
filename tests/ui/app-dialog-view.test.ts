@@ -8,6 +8,70 @@ import "../../src/ui/components/app-dialog";
 import { mountElement } from "./lit-test-helpers";
 
 describe("application dialog", () => {
+  it("counts every structured rule collection in configuration import preview", async () => {
+    const model = createDefaultState();
+    model.settings.crossFlightPriorityPolicies = [
+      {
+        id: "preview-priority",
+        enabled: true,
+        flightNo: "KE166",
+        positions: ["督导"],
+      },
+    ];
+    const expectedCount =
+      model.settings.positionTransitionPolicies.length +
+      model.settings.dutyPositionPriorities.length +
+      model.settings.nextWorkdayRecoveryTargets.length +
+      model.settings.lateShiftRecoveryPositionRules.length +
+      model.settings.mobileSupervisorCoverageRules.length +
+      model.settings.crossWorkdayQualificationReservations.length +
+      model.settings.crossFlightPriorityPolicies.length;
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-app-dialog", {
+      model,
+      dialog: {
+        kind: "workbook-import",
+        mode: "config",
+        importedState: model,
+        recognized: "规则配置",
+        warnings: [],
+      },
+    });
+
+    expect(element.textContent).toContain("结构化规则");
+    expect(element.textContent).toContain(`${expectedCount} 条`);
+  });
+
+  it("gives legacy schedule import content a constrained scrolling host", async () => {
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-app-dialog", {
+      model: createDefaultState(),
+      dialog: {
+        kind: "legacy-schedule-import",
+        date: "2026-08-19",
+        preview: {
+          records: [],
+          sheets: 1,
+          recognizedSheets: 1,
+          readyRecords: 0,
+          reviewRecords: 0,
+          warnings: [],
+        },
+      },
+    });
+
+    expect(
+      element
+        .querySelector("autoschedule-legacy-schedule-import-dialog")
+        ?.classList.contains("modal-content-stack")
+    ).toBe(true);
+    expect(
+      element.querySelector<HTMLInputElement>("#legacy-import-date")?.value
+    ).toBe("2026-08-19");
+  });
+
   it("gives online flight query content a constrained scrolling host", async () => {
     const element = await mountElement<
       HTMLElement & { updateComplete: Promise<unknown> }

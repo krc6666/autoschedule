@@ -1,5 +1,5 @@
 import type { AppState, Assignment } from "../model";
-import { combinedAssignmentRemark, downloadBlob } from "../utils";
+import { assignmentWarningRemark, downloadBlob } from "../utils";
 
 const shareStyles = `
   *{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#1f2328;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei UI",sans-serif}
@@ -109,7 +109,11 @@ function flightSection(
         ),
         textCell(
           owner,
-          combinedAssignmentRemark(assignment.remark, assignment.manualRemark)
+          assignmentWarningRemark(
+            assignment.remark,
+            assignment.manualRemark,
+            assignment.manualOverrideWarnings
+          )
         )
       );
       body.append(row);

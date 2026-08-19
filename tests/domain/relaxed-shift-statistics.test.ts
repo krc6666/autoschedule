@@ -149,4 +149,59 @@ describe("monthly relaxed shift statistics", () => {
     ]);
     expect(row.afternoonRestDates).toEqual(["2026-07-16", "2026-07-18"]);
   });
+
+  it("does not treat a late-priority-only history import as a complete afternoon record", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.staff = [person];
+    state.history = [
+      {
+        id: "partial-late-history",
+        date: "2026-07-17",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "20:00",
+        endTime: "23:30",
+        workHours: 3.5,
+        fatiguePoints: 3,
+        remark: "",
+        historyCoverage: "late-priority-only",
+      } as HistoryRecord & { historyCoverage: "late-priority-only" },
+    ];
+
+    const row = buildMonthlyRelaxedShiftStatistics(state, "2026-07-18")
+      .rows[0]!;
+
+    expect(row.afternoonRestDates).toEqual([]);
+    expect(row.earlyDepartures).toEqual([]);
+  });
+
+  it("keeps complete history eligible for relaxed-shift statistics", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.staff = [person];
+    state.history = [
+      {
+        id: "complete-history",
+        date: "2026-07-17",
+        flightNo: "AM123",
+        position: "G01",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        historyCoverage: "complete",
+      },
+    ];
+
+    const row = buildMonthlyRelaxedShiftStatistics(state, "2026-07-18")
+      .rows[0]!;
+
+    expect(row.afternoonRestDates).toEqual(["2026-07-17"]);
+  });
 });

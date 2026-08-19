@@ -1,6 +1,7 @@
 import type { Assignment } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { reassignmentSafetyReasons } from "./rotation-review-safety";
+import { isManualOverrideSafetyReason } from "../candidates/manual-assignment-override";
 
 export type ManualSwapOutcome = "safe" | "soft-tradeoff" | "blocked";
 
@@ -136,8 +137,12 @@ export function analyzeManualSwap(
       { assignmentId: target.id, staffId: source.staffId },
     ],
   });
-  const tradeoffs = reasons.filter(isSoftTradeoff);
-  const blockers = reasons.filter((reason) => !isSoftTradeoff(reason));
+  const tradeoffs = reasons.filter(
+    (reason) => isSoftTradeoff(reason) || isManualOverrideSafetyReason(reason)
+  );
+  const blockers = reasons.filter(
+    (reason) => !isSoftTradeoff(reason) && !isManualOverrideSafetyReason(reason)
+  );
   const changes = [
     assignmentChange(source, target),
     assignmentChange(target, source),

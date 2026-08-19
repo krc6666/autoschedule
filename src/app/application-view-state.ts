@@ -5,6 +5,7 @@ import type {
 import type { ScheduleProgressOutcome } from "../ui/projections/schedule-progress-tasks";
 import type { FlightPlanReconciliation } from "../domain/flights/flight-plan-reconciliation";
 import type { DutyRosterImportPreview } from "../infrastructure/duty-roster-excel";
+import type { LegacyScheduleImportPreview } from "../infrastructure/legacy-schedule-excel";
 import type { OnlineFlight } from "../infrastructure/flight-query";
 import type { AppSection, AppState, IsoWeekday } from "../model";
 import type { ManualSwapAnalysis } from "../domain/reviews/manual-swap-analysis";
@@ -29,6 +30,11 @@ export type ApplicationDialog =
       error: string;
     }
   | { kind: "duty-roster-import"; preview: DutyRosterImportPreview }
+  | {
+      kind: "legacy-schedule-import";
+      date: string;
+      preview: LegacyScheduleImportPreview;
+    }
   | {
       kind: "workbook-import";
       mode: "all" | "config" | "history";

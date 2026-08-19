@@ -41,7 +41,7 @@ describe("schedule page", () => {
       enabled: true,
     });
     expect(input.checked).toBe(false);
-  });
+  }, 30_000);
 
   it("toggles the nearest earlier archived workday above the current schedule", async () => {
     const state = createDefaultState();
@@ -618,5 +618,36 @@ describe("schedule page", () => {
 
     expect(element.querySelector(".schedule-soft-warning-icon")).toBeNull();
     expect(comparisonOnlyAssignment.decisionTrace).toHaveLength(1);
+  }, 30_000);
+
+  it("shows a persistent yellow warning icon for a manual override", async () => {
+    const state = createDefaultState();
+    state.assignments = (
+      await generateSchedule(state, "2026-07-18")
+    ).assignments;
+    const assignment = state.assignments[0]!;
+    assignment.manualOverrideWarnings = [
+      {
+        code: "position-qualification",
+        message: `${assignment.staffName || "人员A"} 不具备该岗位资质`,
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { model: typeof state; updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-07-18",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+    });
+
+    const icon = element.querySelector(".schedule-manual-warning-icon");
+    expect(icon?.getAttribute("title")).toContain("不具备该岗位资质");
+    expect(
+      icon
+        ?.closest(".schedule-cell")
+        ?.classList.contains("is-manual-override-warning")
+    ).toBe(true);
   }, 30_000);
 });

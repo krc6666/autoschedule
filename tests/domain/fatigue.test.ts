@@ -59,4 +59,20 @@ describe("fatigue domain", () => {
     expect(consecutiveWorkDays(records, "2", "2026-07-18")).toBe(3);
     expect(historyFatigue(records, "2", "2026-07-18", state.settings)).toBe(16);
   });
+
+  it("uses scoped late-priority fatigue without pretending it proves a full workday", () => {
+    const state = createDefaultState();
+    const records = [
+      {
+        ...record("2026-07-15", "2", 10),
+        historyCoverage: "late-priority-only" as const,
+      },
+      {
+        ...record("2026-07-16", "2", 10),
+        historyCoverage: "late-priority-only" as const,
+      },
+    ];
+
+    expect(historyFatigue(records, "2", "2026-07-17", state.settings)).toBe(20);
+  });
 });

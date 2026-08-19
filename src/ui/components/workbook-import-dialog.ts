@@ -40,7 +40,8 @@ export class WorkbookImportDialogElement extends LightDomElement {
               settings.nextWorkdayRecoveryTargets.length +
               settings.lateShiftRecoveryPositionRules.length +
               settings.mobileSupervisorCoverageRules.length +
-              settings.crossWorkdayQualificationReservations.length
+              settings.crossWorkdayQualificationReservations.length +
+              settings.crossFlightPriorityPolicies.length
             } 条`
           )}
         </div>

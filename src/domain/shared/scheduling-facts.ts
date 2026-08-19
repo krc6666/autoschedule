@@ -5,6 +5,7 @@ import type {
   Flight,
   FlightTemplate,
   HistoryRecord,
+  LatePriorityFrequencyAdjustment,
   PositionRule,
   ScheduleSettings,
   Staff,
@@ -21,6 +22,7 @@ export interface SchedulingFacts {
   positionRules: PositionRule[];
   history: HistoryRecord[];
   dutyRosterOverrides: DutyRosterOverride[];
+  latePriorityFrequencyAdjustments: LatePriorityFrequencyAdjustment[];
   assignments: Assignment[];
   settings: ScheduleSettings;
   activeScheduleDate: string | null;
@@ -34,6 +36,7 @@ export type ScheduleGenerationFacts = Pick<
   | "positionRules"
   | "history"
   | "dutyRosterOverrides"
+  | "latePriorityFrequencyAdjustments"
   | "assignments"
   | "settings"
 >;
@@ -100,6 +103,7 @@ export function createScheduleGenerationFacts(
     | "positionRules"
     | "history"
     | "dutyRosterOverrides"
+    | "latePriorityFrequencyAdjustments"
     | "assignments"
     | "settings"
   >
@@ -111,6 +115,7 @@ export function createScheduleGenerationFacts(
     positionRules: state.positionRules,
     history: state.history,
     dutyRosterOverrides: state.dutyRosterOverrides,
+    latePriorityFrequencyAdjustments: state.latePriorityFrequencyAdjustments,
     assignments: state.assignments,
     settings: state.settings,
   };
@@ -125,6 +130,7 @@ export function createSchedulingFacts(
     | "positionRules"
     | "history"
     | "dutyRosterOverrides"
+    | "latePriorityFrequencyAdjustments"
     | "assignments"
     | "settings"
     | "activeScheduleDate"

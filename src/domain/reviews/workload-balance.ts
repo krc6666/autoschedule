@@ -204,7 +204,11 @@ export function workloadBalanceLoadSnapshots(
         )
         .reduce((sum, assignment) => sum + assignment.workHours, 0),
       rollingHours: history
-        .filter((record) => record.staffId === person.id)
+        .filter(
+          (record) =>
+            record.staffId === person.id &&
+            record.historyCoverage !== "late-priority-only"
+        )
         .reduce((sum, record) => sum + record.workHours, 0),
       todayFatigue:
         countedAssignments

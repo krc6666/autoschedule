@@ -85,6 +85,18 @@ export class RecordsController implements UiCommandController {
         }
         return true;
       }
+      case "adjust-late-priority-frequency":
+        if (
+          records.adjustLatePriorityFrequency(
+            command.month,
+            command.staffId,
+            command.flightNo,
+            command.kind,
+            command.delta
+          )
+        )
+          this.context.commit();
+        return true;
       default:
         return false;
     }

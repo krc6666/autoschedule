@@ -12,6 +12,7 @@ import "./qualification-dialog";
 import "./template-picker-dialog";
 import "./next-workday-flight-picker-dialog";
 import "./workbook-import-dialog";
+import "./legacy-schedule-import-dialog";
 import "./swap-analysis-dialog";
 import { weekdayLabel } from "../../domain/flights/weekly-flight-plan";
 
@@ -70,6 +71,8 @@ export class AppDialogElement extends LightDomElement {
     if (dialog?.kind === "flight-query") return "在线查询航班";
     if (dialog?.kind === "duty-roster-import") return "值班备勤表导入预览";
     if (dialog?.kind === "workbook-import") return "配置导入预览";
+    if (dialog?.kind === "legacy-schedule-import")
+      return "旧版手工排班导入预览";
     if (dialog?.kind === "swap-analysis") return "调整原因分析";
     return "";
   }
@@ -109,6 +112,12 @@ export class AppDialogElement extends LightDomElement {
         .model=${this.model}
         .dialog=${dialog}
       ></autoschedule-workbook-import-dialog>`;
+    if (dialog?.kind === "legacy-schedule-import")
+      return html`<autoschedule-legacy-schedule-import-dialog
+        class="modal-content-stack"
+        .date=${dialog.date}
+        .preview=${dialog.preview}
+      ></autoschedule-legacy-schedule-import-dialog>`;
     if (dialog?.kind === "swap-analysis")
       return html`<autoschedule-swap-analysis-dialog
         class="modal-content-stack"

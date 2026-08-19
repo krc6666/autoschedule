@@ -2,7 +2,7 @@ import { getDutyRosterForDate } from "../domain/duty-roster/roster";
 import { assignmentUsesUnavailableStaff } from "../domain/kernel/schedule-state";
 import { isCountedWorkloadAssignment } from "../domain/shared/workload-accounting";
 import type { AppState, HistoryRecord } from "../model";
-import { createId, persistedAssignmentRemark } from "../utils";
+import { assignmentWarningRemark, createId } from "../utils";
 
 export function currentScheduleHistory(
   state: AppState,
@@ -23,7 +23,11 @@ export function currentScheduleHistory(
       endTime: item.endTime,
       workHours: item.workHours,
       fatiguePoints: item.fatiguePoints,
-      remark: persistedAssignmentRemark(item.remark, item.manualRemark),
+      remark: assignmentWarningRemark(
+        item.remark,
+        item.manualRemark,
+        item.manualOverrideWarnings
+      ),
     }));
   const roster = getDutyRosterForDate(state, date);
   const dutyPerson = roster.dutyStaffId

@@ -1054,6 +1054,11 @@ select {
   min-width: 640px;
   margin: 0;
 }
+.late-priority-summary-table th:first-child,
+.late-priority-summary-table td:first-child {
+  min-width: 96px;
+  white-space: nowrap;
+}
 .late-priority-summary-table th:not(:first-child),
 .late-priority-summary-table td:not(:first-child) {
   width: 112px;
@@ -1103,6 +1108,42 @@ select {
 }
 .late-priority-count-detail > div span {
   overflow-wrap: anywhere;
+}
+
+.late-priority-adjustments {
+  display: inline-flex;
+  gap: 0.15rem;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
+.late-priority-adjustments .btn {
+  min-width: 1.35rem;
+  padding: 0 0.25rem;
+  line-height: 1.25;
+}
+
+.late-priority-adjustment-row {
+  display: grid;
+  grid-template-columns: minmax(5.25rem, 1fr) auto auto;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 9.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.late-priority-adjustment-row > small:last-child {
+  grid-column: 1 / -1;
+  color: var(--bs-secondary-color);
+  white-space: nowrap;
+}
+
+.late-priority-adjustment-row > small {
+  white-space: nowrap;
+}
+
+.late-priority-adjustment-row .late-priority-adjustments {
+  margin-left: 0;
 }
 
 .schedule-workspace {
@@ -1726,11 +1767,20 @@ autoschedule-schedule-grid {
   background: #fff7df;
   box-shadow: inset 3px 0 0 #d88a00;
 }
+.schedule-cell.is-manual-override-warning {
+  background: #fff7df;
+  box-shadow: inset 3px 0 0 #d88a00;
+}
 .schedule-person-cell.is-early-departure-last {
   background: #e8f5e9;
   box-shadow: inset 3px 0 0 #2e7d32;
 }
 .schedule-soft-warning-icon {
+  flex: 0 0 auto;
+  color: #ad6800;
+  font-size: var(--schedule-small-size);
+}
+.schedule-manual-warning-icon {
   flex: 0 0 auto;
   color: #ad6800;
   font-size: var(--schedule-small-size);

@@ -44,7 +44,8 @@ export function createPreviousWorkdayLoadFacts(
       current.latestEndMinutes,
       recordEndMinutes(record)
     );
-    current.workHours += record.workHours;
+    if (record.historyCoverage !== "late-priority-only")
+      current.workHours += record.workHours;
     if (
       isPriorityRotationPosition({
         category: "常规",

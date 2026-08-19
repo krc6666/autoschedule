@@ -21,7 +21,10 @@ export class PreviousScheduleComparisonElement extends LightDomElement {
             ${this.view.recordCount} 个岗位</span
           >
         </div>
-        <span>${this.view.totalHours.toFixed(1)} 总工时</span>
+        <span
+          >${this.view.totalHours.toFixed(1)}
+          ${this.view.hasPartialHistory ? "已知工时（仅末班重点记录）" : "总工时"}</span
+        >
       </div>
       <autoschedule-archived-schedule-board
         .view=${this.view}

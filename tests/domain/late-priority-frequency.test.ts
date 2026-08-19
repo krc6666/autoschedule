@@ -52,6 +52,43 @@ function rule(name: string, remark: string): PositionRule {
 }
 
 describe("late priority frequency statistics", () => {
+  it("uses manual corrections in the existing monthly balance profile", () => {
+    const state = createDefaultState();
+    const targetRule = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.remark === "申报"
+    )!;
+    const [adjusted, other] = targetRule.qualifiedStaffIds;
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: adjusted!,
+        flightNo: "TR121",
+        kind: "declaration",
+        delta: 2,
+      },
+    ];
+    const flight = state.flights.find((item) => item.flightNo === "TR121")!;
+    expect(
+      latePriorityFrequencyProfileForRule(
+        state,
+        adjusted!,
+        flight,
+        targetRule,
+        DATE
+      ).counts.declaration.currentMonthCount
+    ).toBe(2);
+    expect(
+      latePriorityFrequencyProfileForRule(
+        state,
+        other!,
+        flight,
+        targetRule,
+        DATE
+      ).counts.declaration.currentMonthCount
+    ).toBe(0);
+  });
+
   it("avoids someone who carried any selected late-priority role on the previous workday before comparing aggregate totals", () => {
     const state = createDefaultState();
     const [previousWorker, historicallyBusierWorker] = state.staff.slice(0, 2);

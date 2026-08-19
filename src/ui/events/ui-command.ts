@@ -17,6 +17,8 @@ export type UiCommand =
     }
   | { type: "close-dialog" }
   | { type: "apply-workbook-import" }
+  | { type: "apply-legacy-schedule-import" }
+  | { type: "update-legacy-schedule-import-date"; date: string }
   | { type: "dismiss-toast" }
   | { type: "export-config" }
   | { type: "export-schedule" }
@@ -148,6 +150,14 @@ export type UiCommand =
     }
   | { type: "reset-duty-roster"; date: string }
   | { type: "rebalance-duty-roster-month"; date: string }
+  | {
+      type: "adjust-late-priority-frequency";
+      month: string;
+      staffId: string;
+      flightNo: string;
+      kind: import("../../domain/reviews/late-priority-policy").LatePriorityFrequencyKind;
+      delta: number;
+    }
   | { type: "download-duty-roster-template"; date: string }
   | { type: "apply-duty-roster-import" }
   | { type: "reset-all" };

@@ -6,7 +6,7 @@ import { schedulingDecision } from "../../src/domain/rules/schedule-rule-contrac
 import type { AppState, Assignment } from "../../src/model";
 import {
   assignStaff,
-  manualAssignmentConfirmation,
+  createTemporaryAssignment,
   updateAssignmentField,
 } from "../../src/app/schedule-actions";
 
@@ -156,6 +156,246 @@ describe("督导机动补位编辑", () => {
 });
 
 describe("人工调整后的规则证据", () => {
+  it("临时岗位只接受已配置人员并保留人员编号用于统计", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    const flight = state.flights[0]!;
+
+    expect(
+      createTemporaryAssignment(
+        state,
+        flight.id,
+        "临时柜台",
+        person.name,
+        "primary",
+        0
+      )
+    ).toMatchObject({ changed: true });
+    expect(state.assignments[0]).toMatchObject({
+      staffId: person.id,
+      staffName: person.name,
+      status: "assigned",
+    });
+
+    const count = state.assignments.length;
+    expect(
+      createTemporaryAssignment(
+        state,
+        flight.id,
+        "临时柜台",
+        "系统外人员",
+        "primary",
+        1
+      )
+    ).toMatchObject({
+      changed: false,
+      error: "人员不存在：系统外人员",
+    });
+    expect(state.assignments).toHaveLength(count);
+  });
+
+  it("人工突破次班截止保护时直接落位并持续警告", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    const flight = state.flights[0]!;
+    flight.startTime = "15:00";
+    flight.endTime = "17:00";
+    const rule = {
+      ...state.positionRules.find((item) => item.flightNo === flight.flightNo)!,
+      id: "cutoff-target",
+      category: "常规" as const,
+      qualifiedStaffIds: [person.id],
+    };
+    state.staff = [person];
+    state.positionRules = [rule];
+    state.activeScheduleDate = "2026-08-23";
+    state.assignments = [
+      {
+        id: "cutoff-assignment",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: null,
+        staffName: "",
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "unfilled",
+      },
+    ];
+    state.settings.lateShiftRecoveryPositionRules = [
+      {
+        id: "late-number-one",
+        enabled: true,
+        flightNo: "TR121",
+        matchField: "remark",
+        keyword: "一号",
+        nextWorkdayCutoffTime: "12:00",
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-late",
+        date: "2026-08-21",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 10,
+        remark: "一号",
+      },
+    ];
+
+    expect(assignStaff(state, "cutoff-assignment", person.id)).toMatchObject({
+      changed: true,
+      warning: expect.stringContaining("12:00 截止保护"),
+    });
+    expect(
+      state.assignments[0]?.manualOverrideWarnings?.[0]?.message
+    ).toContain("12:00 截止保护");
+  });
+
+  it("允许人工安排无资质人员并保留持续警告，病休人员仍被拒绝", () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => item.status === "正常")!;
+    const flight = state.flights[0]!;
+    const rule = {
+      ...state.positionRules.find((item) => item.flightNo === flight.flightNo)!,
+      id: "manual-override-target",
+      qualifiedStaffIds: [],
+    };
+    state.staff = [person];
+    state.positionRules = [rule];
+    state.assignments = [
+      {
+        id: "manual-override-assignment",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: null,
+        staffName: "",
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "unfilled",
+      },
+    ];
+
+    expect(
+      assignStaff(state, state.assignments[0]!.id, person.id)
+    ).toMatchObject({
+      changed: true,
+      warning: expect.stringContaining("不具备该岗位资质"),
+    });
+    expect(state.assignments[0]).toMatchObject({
+      staffId: person.id,
+      manualOverrideWarnings: [
+        expect.objectContaining({ code: "position-qualification" }),
+      ],
+    });
+
+    person.status = "病假";
+    expect(
+      assignStaff(state, state.assignments[0]!.id, person.id)
+    ).toMatchObject({
+      changed: false,
+      error: expect.stringContaining("病假"),
+    });
+  });
+
+  it("双向换位存在阻止项时保持原岗位不变", () => {
+    const state = createDefaultState();
+    const [first, second] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    first!.nightShift = true;
+    second!.nightShift = false;
+    const dayFlight = {
+      ...state.flights[0]!,
+      id: "day",
+      flightNo: "DAY",
+      startTime: "08:00",
+      endTime: "10:00",
+    };
+    const nightFlight = {
+      ...dayFlight,
+      id: "night",
+      flightNo: "NIGHT",
+      startTime: "22:00",
+      endTime: "23:00",
+    };
+    const base = state.positionRules[0]!;
+    const dayRule = {
+      ...base,
+      id: "day-rule",
+      flightNo: "DAY",
+      qualifiedStaffIds: [first!.id, second!.id],
+    };
+    const nightRule = {
+      ...base,
+      id: "night-rule",
+      flightNo: "NIGHT",
+      qualifiedStaffIds: [first!.id, second!.id],
+    };
+    state.staff = [first!, second!];
+    state.flights = [dayFlight, nightFlight];
+    state.positionRules = [dayRule, nightRule];
+    state.assignments = [
+      {
+        id: "day-assignment",
+        flightId: "day",
+        flightNo: "DAY",
+        positionRuleId: dayRule.id,
+        position: dayRule.name,
+        staffId: second!.id,
+        staffName: second!.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "night-assignment",
+        flightId: "night",
+        flightNo: "NIGHT",
+        positionRuleId: nightRule.id,
+        position: nightRule.name,
+        staffId: first!.id,
+        staffName: first!.name,
+        startTime: "22:00",
+        endTime: "23:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    const before = structuredClone(state.assignments);
+
+    expect(
+      assignStaff(state, "night-assignment", second!.id, "day-assignment")
+    ).toMatchObject({
+      changed: false,
+      error: expect.stringContaining("不可上夜班"),
+    });
+    expect(state.assignments).toEqual(before);
+  });
+
   it("允许人工把已承担两次的人员继续拖到TR121一号", () => {
     const state = createDefaultState();
     const person = state.staff.find((item) => item.status === "正常")!;
@@ -406,7 +646,12 @@ describe("人工调整后的规则证据", () => {
     });
 
     expect(
-      updateAssignmentField(state, "temporary", "staffName", "临时支援").changed
+      updateAssignmentField(
+        state,
+        "temporary",
+        "staffName",
+        state.staff[0]!.name
+      ).changed
     ).toBe(true);
     for (const assignment of [supervisor, boundCounter]) {
       expect(assignment.decisionTrace).toEqual(
@@ -422,77 +667,6 @@ describe("人工调整后的规则证据", () => {
         assignment.decisionTrace?.map((decision) => decision.message)
       ).not.toContain("旧KE166异常");
     }
-  });
-});
-
-describe("人工改派前的规则确认", () => {
-  it("由排班编辑模块返回次班截止保护提示，界面无需理解恢复规则", () => {
-    const state = createDefaultState();
-    const person = state.staff[0]!;
-    const flight = state.flights[0]!;
-    const baseRule = state.positionRules.find(
-      (item) => item.flightNo === flight.flightNo
-    )!;
-    state.positionRules = [
-      {
-        ...baseRule,
-        id: "regular-position",
-        category: "常规",
-        qualifiedStaffIds: [person.id],
-      },
-    ];
-    state.assignments = [
-      {
-        id: "assignment",
-        flightId: flight.id,
-        flightNo: flight.flightNo,
-        positionRuleId: "regular-position",
-        position: baseRule.name,
-        staffId: null,
-        staffName: "",
-        startTime: "15:00",
-        endTime: "17:00",
-        workHours: 2,
-        fatiguePoints: baseRule.fatiguePoints,
-        remark: baseRule.remark,
-        manualRemark: "",
-        status: "unfilled",
-      },
-    ];
-    state.settings.lateShiftRecoveryPositionRules = [
-      {
-        id: "late-number-one",
-        enabled: true,
-        flightNo: "TR121",
-        matchField: "remark",
-        keyword: "一号",
-        nextWorkdayCutoffTime: "12:00",
-      },
-    ];
-    state.history = [
-      {
-        id: "previous-late",
-        date: "2026-08-21",
-        flightNo: "TR121",
-        position: "H02",
-        staffId: person.id,
-        staffName: person.name,
-        startTime: "21:55",
-        endTime: "23:55",
-        workHours: 2,
-        fatiguePoints: 10,
-        remark: "一号",
-      },
-    ];
-
-    expect(
-      manualAssignmentConfirmation(state, "assignment", person.id, "2026-08-23")
-    ).toBe(
-      `${person.name}属于上一班末班重点岗位人员，本次安排会突破次班截止保护。确认仍安排到${flight.flightNo}/${baseRule.name}？`
-    );
-    expect(
-      manualAssignmentConfirmation(state, "assignment", person.id, "2026-08-21")
-    ).toBeNull();
   });
 });
 

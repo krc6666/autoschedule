@@ -28,11 +28,12 @@ describe("schedule feedback", () => {
       await generateSchedule(state, "2026-07-20")
     ).assignments;
     const feedback = buildScheduleFeedback(state, "2026-07-20");
-    expect(feedback).toHaveLength(12);
+    expect(feedback).toHaveLength(13);
     expect(feedback.map((item) => item.label)).toEqual([
       "人员覆盖",
       "负荷均衡",
       "航班衔接",
+      "人工调整提醒",
       "12点前岗位完整性",
       "跨工作日资质预留",
       "连续高负荷",
@@ -47,7 +48,7 @@ describe("schedule feedback", () => {
       feedback.slice(0, 3).every((item) => item.group === "flight-staff")
     ).toBe(true);
     expect(
-      feedback.slice(3).every((item) => item.group === "rule-execution")
+      feedback.slice(4).every((item) => item.group === "rule-execution")
     ).toBe(true);
     expect(
       feedback.every((item) =>

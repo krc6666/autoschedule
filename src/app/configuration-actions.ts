@@ -241,6 +241,10 @@ export function deleteStaff(state: AppState, id: string): boolean {
       (staffId) => staffId !== id
     );
   });
+  state.latePriorityFrequencyAdjustments =
+    state.latePriorityFrequencyAdjustments.filter(
+      (adjustment) => adjustment.staffId !== id
+    );
   state.dutyRosterOverrides = state.dutyRosterOverrides.map((item) => ({
     ...item,
     cxPreflightStaffId:

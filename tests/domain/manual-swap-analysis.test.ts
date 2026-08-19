@@ -117,7 +117,7 @@ describe("manual swap analysis", () => {
     expect(state.assignments).toEqual(before);
   });
 
-  it("blocks a swap when the incoming worker lacks the target qualification", () => {
+  it("reports missing target qualification as an executable manual tradeoff", () => {
     const { state, target, candidate } = swapFixture();
     state.positionRules.find(
       (item) => item.id === target.positionRuleId
@@ -130,8 +130,9 @@ describe("manual swap analysis", () => {
       candidate.id
     );
 
-    expect(analysis.outcome).toBe("blocked");
-    expect(analysis.blockers.join(" ")).toContain("资质");
+    expect(analysis.outcome).toBe("soft-tradeoff");
+    expect(analysis.blockers).toEqual([]);
+    expect(analysis.tradeoffs.join(" ")).toContain("资质");
   });
 
   it("does not claim an old warning is improved when the proposed job is not earlier or lighter", () => {

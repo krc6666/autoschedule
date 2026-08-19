@@ -6,6 +6,7 @@ import type {
   Flight,
   FlightTemplate,
   HistoryRecord,
+  LatePriorityFrequencyAdjustment,
   PositionRule,
   ScheduleSettings,
   Staff,
@@ -13,13 +14,14 @@ import type {
 } from "../model";
 import {
   combinedAssignmentRemark,
+  assignmentWarningRemark,
   createId,
   normalizeText,
   orderPositionRules,
-  persistedAssignmentRemark,
   splitList,
 } from "../utils";
 import { durationHours, normalizeTime } from "../domain/shared/time";
+import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
 import {
   createEmptyWeeklyFlightPlans,
   replaceWeeklyFlightPlan,
@@ -28,6 +30,11 @@ import {
   appendScheduleRuleSheets,
   parseScheduleRuleSettings,
 } from "./excel-rule-settings";
+import {
+  parseLegacyScheduleWorkbook,
+  type LegacyScheduleImportPreview,
+  type LegacyScheduleParseOptions,
+} from "./legacy-schedule-excel";
 import {
   append,
   findSheet,
@@ -45,7 +52,69 @@ export interface WorkbookImport {
   positionRules?: PositionRule[];
   history?: HistoryRecord[];
   settings?: Partial<ScheduleSettings>;
+  latePriorityFrequencyAdjustments?: LatePriorityFrequencyAdjustment[];
+  legacySchedule?: LegacyScheduleImportPreview;
   warnings: string[];
+}
+
+function parseLatePriorityFrequencyAdjustments(
+  workbook: XLSX.WorkBook
+): LatePriorityFrequencyAdjustment[] | undefined {
+  if (!workbook.SheetNames.includes("末班重点次数修正")) return undefined;
+  const data = rows(workbook, "末班重点次数修正");
+  const header = data[0] ?? [];
+  const index = (names: string[], fallback: number) =>
+    headerIndex(header, names, fallback);
+  const kindIndex = index(["类别", "岗位类别"], 3);
+  const kinds = new Set([
+    "supervisor",
+    "number-one",
+    "declaration",
+    "delivery",
+  ]);
+  return mergeLatePriorityFrequencyAdjustments(
+    data.slice(1).flatMap((row): LatePriorityFrequencyAdjustment[] => {
+      const month = normalizeText(row[index(["月份"], 0)]);
+      const staffId = normalizeText(row[index(["人员编号", "编号"], 1)]);
+      const flightNo = normalizeText(row[index(["航班号"], 2)]).toUpperCase();
+      const kind = normalizeText(row[kindIndex]);
+      const delta = Number(row[index(["修正次数", "修正值"], 4)]);
+      if (
+        !/^\d{4}-\d{2}$/.test(month) ||
+        !staffId ||
+        !flightNo ||
+        !kinds.has(kind) ||
+        !Number.isFinite(delta) ||
+        !Number.isInteger(delta) ||
+        delta === 0
+      )
+        return [];
+      return [
+        {
+          month,
+          staffId,
+          flightNo,
+          kind: kind as LatePriorityFrequencyAdjustment["kind"],
+          delta,
+        },
+      ];
+    })
+  );
+}
+
+export interface WorkbookImportOptions {
+  legacySchedule?: LegacyScheduleParseOptions;
+}
+
+function sheetHasDataRows(
+  workbook: XLSX.WorkBook,
+  candidates: string[]
+): boolean {
+  const sheetName = findSheet(workbook, candidates);
+  if (!sheetName) return false;
+  return rows(workbook, sheetName)
+    .slice(1)
+    .some((row) => row.some((value) => normalizeText(value)));
 }
 
 function parseStaff(workbook: XLSX.WorkBook): Staff[] | undefined {
@@ -377,23 +446,53 @@ function parseHistory(
 
 export function parseWorkbook(
   workbook: XLSX.WorkBook,
-  currentStaff: Staff[]
+  currentStaff: Staff[],
+  options: WorkbookImportOptions = {}
 ): WorkbookImport {
   const staff = parseStaff(workbook);
-  const effectiveStaff = staff?.length ? staff : currentStaff;
+  const effectiveStaff = staff !== undefined ? staff : currentStaff;
   const flights = parseFlights(workbook);
   const templates = parseTemplates(workbook);
   const weeklyFlightPlans = parseWeeklyFlightPlans(workbook);
   const positionRules = parsePositions(workbook);
   const history = parseHistory(workbook, effectiveStaff);
   const parsedRules = parseScheduleRuleSettings(workbook);
+  const latePriorityFrequencyAdjustments =
+    parseLatePriorityFrequencyAdjustments(workbook);
   const warnings = [...parsedRules.warnings];
-  if (staff && staff.length === 0) warnings.push("人员信息工作表没有有效数据");
-  if (flights && flights.length === 0)
+  const hasStandardSheet = Boolean(
+    staff ||
+    flights ||
+    templates ||
+    weeklyFlightPlans ||
+    positionRules ||
+    history ||
+    parsedRules.recognized ||
+    latePriorityFrequencyAdjustments !== undefined
+  );
+  const legacySchedule = hasStandardSheet
+    ? undefined
+    : parseLegacyScheduleWorkbook(workbook, effectiveStaff, {
+        year: new Date().getFullYear(),
+        ...options.legacySchedule,
+      });
+  if (legacySchedule?.recognizedSheets)
+    warnings.push(
+      `识别到旧版横向排班：${legacySchedule.recognizedSheets} 个工作日、${legacySchedule.readyRecords} 条可导入、${legacySchedule.reviewRecords} 条待确认`
+    );
+  if (
+    staff?.length === 0 &&
+    sheetHasDataRows(workbook, ["人员信息", "员工信息"])
+  )
+    warnings.push("人员信息工作表没有有效数据");
+  if (flights?.length === 0 && sheetHasDataRows(workbook, ["航班计划"]))
     warnings.push("航班计划工作表没有有效数据");
-  if (templates && templates.length === 0)
+  if (
+    templates?.length === 0 &&
+    sheetHasDataRows(workbook, ["航班配置", "航班模板"])
+  )
     warnings.push("航班配置工作表没有有效数据");
-  if (positionRules && positionRules.length === 0)
+  if (positionRules?.length === 0 && sheetHasDataRows(workbook, ["岗位配置"]))
     warnings.push("岗位配置工作表没有有效数据");
   if (
     !staff &&
@@ -402,7 +501,9 @@ export function parseWorkbook(
     !weeklyFlightPlans &&
     !positionRules &&
     !history &&
-    !parsedRules.recognized
+    !parsedRules.recognized &&
+    latePriorityFrequencyAdjustments === undefined &&
+    !legacySchedule?.recognizedSheets
   )
     warnings.push("未识别到受支持的工作表");
   return {
@@ -412,20 +513,23 @@ export function parseWorkbook(
     weeklyFlightPlans,
     positionRules,
     history,
+    legacySchedule,
     settings: parsedRules.settings,
+    latePriorityFrequencyAdjustments,
     warnings,
   };
 }
 
 export async function importWorkbook(
   file: File,
-  currentStaff: Staff[]
+  currentStaff: Staff[],
+  options: WorkbookImportOptions = {}
 ): Promise<WorkbookImport> {
   const workbook = XLSX.read(await file.arrayBuffer(), {
     type: "array",
     cellDates: false,
   });
-  return parseWorkbook(workbook, currentStaff);
+  return parseWorkbook(workbook, currentStaff, options);
 }
 
 export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
@@ -539,6 +643,21 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
     [12, 18, 16, 24, 48, 12, 18, 18]
   );
   appendScheduleRuleSheets(workbook, state);
+  append(
+    workbook,
+    "末班重点次数修正",
+    [
+      ["月份", "人员编号", "航班号", "类别", "修正次数"],
+      ...state.latePriorityFrequencyAdjustments.map((item) => [
+        item.month,
+        item.staffId,
+        item.flightNo,
+        item.kind,
+        item.delta,
+      ]),
+    ],
+    [12, 14, 14, 16, 12]
+  );
   return workbook;
 }
 
@@ -633,7 +752,11 @@ export function buildScheduleWorkbook(
         item.endTime,
         item.workHours,
         item.fatiguePoints,
-        persistedAssignmentRemark(item.remark, item.manualRemark),
+        assignmentWarningRemark(
+          item.remark,
+          item.manualRemark,
+          item.manualOverrideWarnings
+        ),
         item.status === "assigned"
           ? "已排"
           : item.status === "manual"

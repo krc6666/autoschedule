@@ -8,6 +8,7 @@ import { LightDomElement } from "./light-dom-element";
 import { latePriorityFlightScopeCandidates } from "../../domain/statistics/late-priority-flight-scope";
 
 const POLICY_FIELDS: readonly (keyof SchedulePolicyInput)[] = [
+  "maxDailyHours",
   "minimumRegularTransitionMinutes",
   "highLoadProtectionEnabled",
   "highLoadFatigueThreshold",
@@ -33,6 +34,7 @@ const POLICY_FIELDS: readonly (keyof SchedulePolicyInput)[] = [
 const POLICY_SETTING_SEARCH_TEXT = [
   "核心保护与公平参数",
   "保存后当前班表会标记为需要重新生成",
+  "每日工时上限",
   "普通岗位最小衔接间隔（分钟）",
   "高负荷岗位恢复",
   "优先避开恢复期内人员",
@@ -106,6 +108,7 @@ export class PolicySettingsFormElement extends LightDomElement {
         </summary>
         <div class="policy-rule-content">
           <div class="schedule-policy-controls">
+            ${this.number("maxDailyHours", "每日工时上限", 1, 24, 0.5)}
             ${this.number("minimumRegularTransitionMinutes", "普通岗位最小衔接间隔（分钟）", 0, 1440, 1)}
             ${this.toggle("highLoadProtectionEnabled", "高负荷岗位恢复", "优先避开恢复期内人员")}
             ${this.number("highLoadFatigueThreshold", "高负荷疲劳阈值", 0.5, 50, 0.5)}
@@ -171,6 +174,7 @@ export class PolicySettingsFormElement extends LightDomElement {
     return html`<label class="form-label"
       >${label}<input
         class="form-control"
+        data-policy-setting=${field}
         type="number"
         min=${min}
         max=${max}

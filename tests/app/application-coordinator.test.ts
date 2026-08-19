@@ -5,7 +5,9 @@ import type { ApplicationPreferences } from "../../src/app/application-preferenc
 import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
 import { createDefaultState } from "../../src/defaults";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
+import { buildMonthlyLatePriorityStatistics } from "../../src/domain/statistics/monthly-late-priority-statistics";
 import type { ScheduleResult } from "../../src/model";
+import { generateSchedule } from "../helpers/generate-schedule";
 
 const preferences: ApplicationPreferences = {
   loadScheduleDate: () => null,
@@ -276,9 +278,9 @@ describe("manual swap analysis workflow", () => {
     ];
     await coordinator.handle({ type: "apply-swap-analysis" });
 
-    expect(coordinator.model().assignments[0]!.staffId).toBe(people[0]!.id);
+    expect(coordinator.model().assignments[0]!.staffId).toBe(people[1]!.id);
     expect(coordinator.view().toast).toMatchObject({
-      tone: "danger",
+      tone: "warning",
       message: expect.stringContaining("资质"),
     });
   });
@@ -324,6 +326,146 @@ describe("next workday flight picker workflow", () => {
     ];
     return state;
   }
+
+  it("keeps manual late-priority balance through repeated archive-and-next-workday runs", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    const qualified = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = qualified;
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
+    state.flights = [
+      {
+        id: "late-declaration",
+        flightNo: "LATE100",
+        startTime: "21:00",
+        endTime: "23:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    state.templates = [
+      {
+        id: "template-late-declaration",
+        flightNo: "LATE100",
+        startTime: "21:00",
+        endTime: "23:30",
+        positions: ["H04"],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "late-declaration-rule",
+        flightNo: "LATE100",
+        name: "H04",
+        remark: "申报",
+        category: "常规",
+        qualifiedStaffIds: qualified.map((person) => person.id),
+        minPassengers: 0,
+        fatiguePoints: 1,
+      },
+    ];
+    state.settings.latePriorityFlightNumbers = ["LATE100"];
+    state.settings.minimumRegularTransitionMinutes = 0;
+    state.settings.workloadBalanceEnabled = false;
+    for (const weekday of [1, 3, 4, 6] as const) {
+      state.weeklyFlightPlans = replaceWeeklyFlightPlan(
+        state.weeklyFlightPlans,
+        weekday,
+        ["LATE100"]
+      );
+    }
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-18",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: qualified[0]!.id,
+        flightNo: "LATE100",
+        kind: "declaration",
+        delta: 1,
+      },
+    ];
+    const initialDate = "2026-08-18";
+    const initialResult = await generateSchedule(state, initialDate);
+    state.assignments = initialResult.assignments;
+    state.activeScheduleDate = initialDate;
+    let savedDate = initialDate;
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      {
+        preferences: {
+          ...preferences,
+          loadScheduleDate: () => initialDate,
+          saveScheduleDate: (date) => (savedDate = date),
+        },
+        confirm: () => true,
+      }
+    );
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: {
+        calculate: async (
+          model: ReturnType<typeof coordinator.model>,
+          date: string
+        ) => ({
+          kind: "completed" as const,
+          result: await generateSchedule(model, date),
+        }),
+        isRunning: () => false,
+      },
+    });
+    const assignedStaffIds = [state.assignments[0]!.staffId];
+
+    for (let round = 0; round < 4; round += 1) {
+      await coordinator.handle({ type: "archive-next-duty-day" });
+      const dialog = coordinator.view().dialog;
+      if (dialog?.kind !== "next-workday-flight-picker")
+        throw new Error("缺少选择窗口");
+      expect(dialog.selectedIds).toHaveLength(1);
+      await coordinator.handle({
+        type: "confirm-next-workday-flight-picker",
+        selectedIds: dialog.selectedIds,
+      });
+      expect(coordinator.view().toast?.tone).not.toBe("danger");
+      assignedStaffIds.push(coordinator.model().assignments[0]!.staffId);
+    }
+
+    expect(savedDate).toBe("2026-08-26");
+    expect([
+      ...new Set(coordinator.model().history.map((item) => item.date)),
+    ]).toEqual(["2026-08-18", "2026-08-20", "2026-08-22", "2026-08-24"]);
+    expect(coordinator.model().latePriorityFrequencyAdjustments).toEqual(
+      state.latePriorityFrequencyAdjustments
+    );
+    expect(new Set(assignedStaffIds)).toEqual(
+      new Set(qualified.map((person) => person.id))
+    );
+    const statistics = buildMonthlyLatePriorityStatistics(
+      coordinator.model(),
+      savedDate
+    );
+    expect(
+      qualified.map(
+        (person) =>
+          statistics.rows.find((row) => row.staff.id === person.id)!.categories
+            .申报.effectiveCount
+      )
+    ).toEqual([3, 3]);
+  });
 
   it("opens local flight selection before changing history or starting calculation", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });

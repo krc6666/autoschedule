@@ -115,12 +115,14 @@ export class ScheduleGridElement extends LightDomElement {
         decision.outcome === "fallback" &&
         decision.ruleId !== "cross-workday-load"
     );
+    const manualWarning = assignment.manualOverrideWarnings?.[0];
     const stateClasses = [
       assignment.staffName ? "is-assigned" : "is-unfilled",
       guide ? "is-guide" : "",
       administrative ? "is-admin-support" : "",
       diversion ? "is-diversion" : "",
       warning ? "is-soft-rule-warning" : "",
+      manualWarning ? "is-manual-override-warning" : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -186,25 +188,35 @@ export class ScheduleGridElement extends LightDomElement {
           >
             ${assignment.staffId ? html`<i class="bi bi-grip-vertical assignment-drag-handle" aria-hidden="true"></i>` : null}
             ${
-              warning
-                ? html`<button
-                    class="schedule-soft-warning-button"
-                    type="button"
-                    title="${warning.message}。点击分析人员调换"
-                    aria-label="分析这个岗位的调换方案"
-                    @click=${() =>
-                      dispatchUiCommand(this, {
-                        type: "open-swap-analysis",
-                        assignmentId: assignment.id,
-                      })}
-                  >
-                    <i
-                      class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"
-                      title=${warning.message}
-                      aria-hidden="true"
-                    ></i>
-                  </button>`
-                : null
+              manualWarning
+                ? html`<i
+                    class="bi bi-exclamation-triangle-fill schedule-manual-warning-icon"
+                    title=${
+                      assignment.manualOverrideWarnings
+                        ?.map((item) => item.message)
+                        .join("；") ?? "人工调整提醒"
+                    }
+                    aria-label="人工调整提醒"
+                  ></i>`
+                : warning
+                  ? html`<button
+                      class="schedule-soft-warning-button"
+                      type="button"
+                      title="${warning.message}。点击分析人员调换"
+                      aria-label="分析这个岗位的调换方案"
+                      @click=${() =>
+                        dispatchUiCommand(this, {
+                          type: "open-swap-analysis",
+                          assignmentId: assignment.id,
+                        })}
+                    >
+                      <i
+                        class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"
+                        title=${warning.message}
+                        aria-hidden="true"
+                      ></i>
+                    </button>`
+                  : null
             }
             <input
               class="schedule-name-input"

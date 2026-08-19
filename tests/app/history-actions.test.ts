@@ -60,6 +60,24 @@ describe("history actions", () => {
     expect(records[1]?.fatiguePoints).toBe(state.settings.dutyFatiguePoints);
   });
 
+  it("archives manual override reasons without losing configured or manual remarks", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    const item = assignment("manual-override", person.id, person.name);
+    item.manualOverrideWarnings = [
+      {
+        code: "position-qualification",
+        message: `${person.name} 不具备该岗位资质`,
+      },
+      { code: "daily-hours", message: `${person.name} 将超过每日工时上限` },
+    ];
+    state.assignments = [item];
+
+    expect(currentScheduleHistory(state, "2026-07-25")[0]?.remark).toBe(
+      `配置备注；临时备注；人工调整提醒：${person.name} 不具备该岗位资质；${person.name} 将超过每日工时上限`
+    );
+  });
+
   it("does not archive administrative support staff or administrative positions as workload", () => {
     const state = createDefaultState();
     state.settings.dutyFatiguePoints = 0;

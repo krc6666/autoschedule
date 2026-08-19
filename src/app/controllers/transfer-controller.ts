@@ -3,6 +3,7 @@ import { queryInternationalFlights } from "../../infrastructure/flight-query";
 import { exportShareHtml, exportSharePng } from "../../infrastructure/share";
 import type { UiCommand } from "../../ui/events/ui-command";
 import { prepareWorkbookImport } from "../workbook-import-controller";
+import { applyLegacyScheduleImport } from "../workbook-actions";
 import type {
   ApplicationContext,
   UiCommandController,
@@ -22,6 +23,10 @@ export class TransferController implements UiCommandController {
         return true;
       case "apply-workbook-import":
         return this.applyWorkbookImport();
+      case "apply-legacy-schedule-import":
+        return this.applyLegacyScheduleImport();
+      case "update-legacy-schedule-import-date":
+        return this.updateLegacyScheduleImportDate(command.date);
       case "export-config": {
         const { buildConfigWorkbook, writeWorkbook } =
           await import("../../infrastructure/excel");
@@ -97,6 +102,16 @@ export class TransferController implements UiCommandController {
         });
         return;
       }
+      if (prepared.kind === "legacy-schedule") {
+        this.context.updateView({
+          dialog: {
+            kind: "legacy-schedule-import",
+            date,
+            preview: prepared.preview,
+          },
+        });
+        return;
+      }
       this.context.updateView({
         dialog: {
           kind: "workbook-import",
@@ -129,6 +144,41 @@ export class TransferController implements UiCommandController {
     this.context.commit(`已导入 ${dialog.recognized}；请重新排班`);
     if (dialog.warnings.length)
       this.context.toast(dialog.warnings.join("；"), "warning");
+    return true;
+  }
+
+  private applyLegacyScheduleImport(): boolean {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "legacy-schedule-import") return false;
+    const result = applyLegacyScheduleImport(
+      this.context.store.getState().model,
+      dialog.preview,
+      dialog.date
+    );
+    this.context.updateView({ dialog: null });
+    this.context.commit(
+      `旧版排班已导入 ${result.imported} 条历史记录，${dialog.preview.reviewRecords} 条待确认记录未写入`
+    );
+    return true;
+  }
+
+  private updateLegacyScheduleImportDate(date: string): boolean {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "legacy-schedule-import") return false;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return true;
+    this.context.updateView({
+      dialog: {
+        ...dialog,
+        date,
+        preview: {
+          ...dialog.preview,
+          records: dialog.preview.records.map((record) => ({
+            ...record,
+            date,
+          })),
+        },
+      },
+    });
     return true;
   }
 

@@ -1,5 +1,6 @@
 import type { DutyRosterImportPreview } from "../infrastructure/duty-roster-excel";
 import type { AppState } from "../model";
+import type { LegacyScheduleImportPreview } from "../infrastructure/legacy-schedule-excel";
 import {
   applyWorkbookImport,
   validateDutyRosterImport,
@@ -9,6 +10,10 @@ export type WorkbookImportMode = "all" | "config" | "history" | "duty-roster";
 
 export type PreparedWorkbookImport =
   | { kind: "duty-roster"; preview: DutyRosterImportPreview }
+  | {
+      kind: "legacy-schedule";
+      preview: LegacyScheduleImportPreview;
+    }
   | { kind: "workbook"; recognized: string; warnings: string[] };
 
 export async function prepareWorkbookImport(
@@ -31,7 +36,17 @@ export async function prepareWorkbookImport(
     };
   }
   const { importWorkbook } = await import("../infrastructure/excel");
-  const imported = await importWorkbook(file, state.staff);
+  const imported = await importWorkbook(file, state.staff, {
+    legacySchedule: {
+      targetDate: dutyRosterReferenceDate,
+      latePriorityOnly: true,
+      latePriorityFlightNumbers: state.settings.latePriorityFlightNumbers,
+      positionRules: state.positionRules,
+      lateShiftEndTime: state.settings.lateShiftEndTime,
+    },
+  });
+  if (imported.legacySchedule?.recognizedSheets)
+    return { kind: "legacy-schedule", preview: imported.legacySchedule };
   const { recognized } = applyWorkbookImport(state, imported, mode);
   return { kind: "workbook", recognized, warnings: imported.warnings };
 }

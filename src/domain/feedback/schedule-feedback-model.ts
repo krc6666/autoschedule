@@ -4,7 +4,7 @@ export type ScheduleFeedbackLevel = "ok" | "attention" | "info";
 export type ScheduleFeedbackGroup = "flight-staff" | "rule-execution";
 export type ScheduleFeedbackStatus = "已执行" | "需复核" | "无基准";
 export type ScheduleFeedbackKey =
-  "coverage" | "fatigue" | "connections" | RuleFeedbackKey;
+  "coverage" | "fatigue" | "connections" | "manual-overrides" | RuleFeedbackKey;
 
 export interface ScheduleFeedbackItem {
   key: ScheduleFeedbackKey;

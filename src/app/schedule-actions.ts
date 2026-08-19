@@ -1,4 +1,8 @@
-import { canAssignStaff } from "../domain/candidates/assignment-eligibility";
+import {
+  evaluateManualAssignment,
+  manualOverrideWarningMessage,
+  replaceManualOverrideWarnings,
+} from "../domain/candidates/manual-assignment-override";
 import {
   applyEarlyReleaseForStaff,
   isDiversionTransfer,
@@ -29,6 +33,7 @@ export interface ScheduleEditResult {
   changed: boolean;
   message?: string;
   error?: string;
+  warning?: string;
 }
 
 export function installArchivedNextWorkdaySchedule(
@@ -48,26 +53,39 @@ function refreshManualRuleEvidence(state: AppState): void {
   refreshPositionRotationEvidence(state, state.activeScheduleDate);
 }
 
-export function manualAssignmentConfirmation(
+function finalManualWarnings(
   state: AppState,
   assignmentId: string,
   staffId: string,
-  date: string
-): string | null {
+  ignoreAssignmentId?: string
+) {
+  const warnings = evaluateManualAssignment(
+    state,
+    assignmentId,
+    staffId,
+    ignoreAssignmentId
+  ).warnings;
   const assignment = state.assignments.find((item) => item.id === assignmentId);
-  const rule = assignment
+  const rule = assignment?.positionRuleId
     ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
     : undefined;
+  const date = state.activeScheduleDate;
   if (
-    !assignment ||
-    rule?.category !== "常规" ||
-    !isNextWorkdayCutoffConflict(state, staffId, assignment.startTime, date)
-  )
-    return null;
-  const person = state.staff.find((item) => item.id === staffId);
-  const protection = nextWorkdayCutoffProtection(state, staffId, date);
-  if (!person || !protection) return null;
-  return `${person.name}属于上一班末班重点岗位人员，本次安排会突破次班截止保护。确认仍安排到${assignment.flightNo}/${assignment.position}？`;
+    assignment &&
+    rule?.category === "常规" &&
+    date &&
+    isNextWorkdayCutoffConflict(state, staffId, assignment.startTime, date)
+  ) {
+    const person = state.staff.find((item) => item.id === staffId);
+    const protection = nextWorkdayCutoffProtection(state, staffId, date);
+    if (person && protection) {
+      warnings.push({
+        code: "position-transition",
+        message: `${person.name}属于上一班末班重点岗位人员，本次人工安排突破次班 ${protection.cutoffTime} 截止保护`,
+      });
+    }
+  }
+  return warnings;
 }
 
 export function createTemporaryAssignment(
@@ -77,28 +95,42 @@ export function createTemporaryAssignment(
   staffName: string,
   layoutGroup: "primary" | "bottom",
   layoutIndex: number
-): boolean {
+): ScheduleEditResult {
   const flight = state.flights.find((item) => item.id === flightId);
-  if (!flight) return false;
-  state.assignments.push({
+  if (!flight) return { changed: false, error: "航班不存在" };
+  const normalizedStaffName = normalizeText(staffName);
+  const person = normalizedStaffName
+    ? state.staff.find((item) => item.name === normalizedStaffName)
+    : undefined;
+  if (normalizedStaffName && !person)
+    return { changed: false, error: `人员不存在：${normalizedStaffName}` };
+  const assignment = {
     id: createId("assignment"),
     flightId: flight.id,
     flightNo: flight.flightNo,
     positionRuleId: null,
     position: normalizeText(position) || "临时岗位",
     staffId: null,
-    staffName: normalizeText(staffName),
+    staffName: "",
     startTime: flight.startTime,
     endTime: flight.endTime,
     workHours: 0,
     fatiguePoints: 0,
     remark: "",
     manualRemark: "",
-    status: normalizeText(staffName) ? "assigned" : "manual",
+    status: "manual" as const,
     layoutGroup,
     layoutIndex,
-  });
-  return true;
+  };
+  state.assignments.push(assignment);
+  if (!person) return { changed: true, message: "已增加临时岗位" };
+  const result = assignStaff(state, assignment.id, person.id);
+  if (!result.changed) {
+    state.assignments = state.assignments.filter(
+      (item) => item.id !== assignment.id
+    );
+  }
+  return result;
 }
 
 function refreshSameFlightGuides(state: AppState, flightIds: string[]): void {
@@ -195,6 +227,7 @@ export function assignStaff(
         ? "manual"
         : "unfilled";
     clearAutomaticAssignmentEvidence(assignment);
+    delete assignment.manualOverrideWarnings;
     refreshSameFlightGuides(state, [assignment.flightId]);
     refreshManualRuleEvidence(state);
     return { changed: true, message: "岗位已设为待补位" };
@@ -226,24 +259,26 @@ export function assignStaff(
       (!targetStaffId &&
         isDiversionTransfer(state, sourceAssignmentId, assignmentId)))
   );
-  const error = canAssignStaff(
+  const evaluation = evaluateManualAssignment(
     state,
     assignmentId,
     staffId,
     copySource ? undefined : sourceAssignmentId
   );
-  if (error) return { changed: false, error };
+  const blocker = evaluation.blockers[0];
+  if (blocker) return { changed: false, error: blocker.message };
   const person = state.staff.find((item) => item.id === staffId);
   if (!person) return { changed: false };
   if (source && !copySource && targetStaffId) {
-    const reverseError = canAssignStaff(
+    const reverseEvaluation = evaluateManualAssignment(
       state,
       source.id,
       targetStaffId,
       assignment.id
     );
-    if (reverseError)
-      return { changed: false, error: `无法交换：${reverseError}` };
+    const reverseBlocker = reverseEvaluation.blockers[0];
+    if (reverseBlocker)
+      return { changed: false, error: `无法交换：${reverseBlocker.message}` };
   }
   clearSupervisorLink(state, assignment);
   assignment.staffId = person.id;
@@ -280,11 +315,33 @@ export function assignStaff(
   applyEarlyReleaseForStaff(state, assignment.id, person.id);
   if (source && targetStaffId && !copySource)
     applyEarlyReleaseForStaff(state, source.id, targetStaffId);
+  replaceManualOverrideWarnings(
+    assignment,
+    finalManualWarnings(
+      state,
+      assignment.id,
+      person.id,
+      copySource ? undefined : sourceAssignmentId
+    )
+  );
+  if (source && !copySource) {
+    if (targetStaffId) {
+      replaceManualOverrideWarnings(
+        source,
+        finalManualWarnings(state, source.id, targetStaffId, assignment.id)
+      );
+    } else {
+      delete source.manualOverrideWarnings;
+    }
+  }
   refreshSameFlightGuides(state, [
     assignment.flightId,
     ...(source ? [source.flightId] : []),
   ]);
   refreshManualRuleEvidence(state);
+  const warning = manualOverrideWarningMessage(
+    source && !copySource ? [assignment, source] : [assignment]
+  );
   return {
     changed: true,
     message:
@@ -295,6 +352,7 @@ export function assignStaff(
             ? "引导人员已复用"
             : "分流人员已转派"
           : "人员分配已更新",
+    warning,
   };
 }
 
@@ -328,19 +386,7 @@ export function updateAssignmentField(
       error: "引导岗位只能复用同一航班中已排常规岗位的常规人员",
     };
   }
-  if (
-    !person ||
-    (person.staffType !== "行政支援" &&
-      (isAuxiliaryCategory(rule?.category) || !assignment.positionRuleId))
-  ) {
-    clearSupervisorLink(state, assignment);
-    assignment.staffId = null;
-    assignment.staffName = staffName;
-    assignment.status = "assigned";
-    clearAutomaticAssignmentEvidence(assignment);
-    refreshManualRuleEvidence(state);
-    return { changed: true };
-  }
+  if (!person) return { changed: false, error: `人员不存在：${staffName}` };
   return assignStaff(state, id, person.id);
 }
 

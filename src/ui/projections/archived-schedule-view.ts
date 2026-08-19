@@ -14,6 +14,7 @@ export interface ArchivedScheduleDayView {
   recordCount: number;
   rowCount: number;
   totalHours: number;
+  hasPartialHistory: boolean;
 }
 
 function positionOrderKey(flightNo: string, position: string): string {
@@ -82,6 +83,9 @@ function dayView(
     recordCount: records.length,
     rowCount: Math.max(0, ...groups.map((group) => group.records.length)),
     totalHours: records.reduce((sum, record) => sum + record.workHours, 0),
+    hasPartialHistory: records.some(
+      (record) => record.historyCoverage === "late-priority-only"
+    ),
   };
 }
 

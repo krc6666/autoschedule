@@ -22,6 +22,39 @@ import {
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { latePriorityFlightInScope } from "./late-priority-flight-scope";
 
+function manualAdjustmentCount(
+  state: ScheduleGenerationFacts,
+  staffId: string,
+  month: string,
+  flightNo: string | undefined,
+  kind: LatePriorityFrequencyKind
+): number {
+  const normalizedFlight =
+    flightNo && normalizeLatePriorityFlightNumber(flightNo);
+  return (state.latePriorityFrequencyAdjustments ?? [])
+    .filter((item) => {
+      const itemFlight = normalizeLatePriorityFlightNumber(item.flightNo);
+      return (
+        item.month === month &&
+        item.staffId === staffId &&
+        item.kind === kind &&
+        (normalizedFlight
+          ? itemFlight === normalizedFlight
+          : latePriorityFlightInScope(
+              state.settings.latePriorityFlightNumbers,
+              itemFlight
+            )) &&
+        state.positionRules.some(
+          (rule) =>
+            rule.category === "常规" &&
+            normalizeLatePriorityFlightNumber(rule.flightNo) === itemFlight &&
+            latePriorityFrequencyKinds(rule).includes(kind)
+        )
+      );
+    })
+    .reduce((sum, item) => sum + item.delta, 0);
+}
+
 export interface LatePriorityFrequencyCount {
   currentMonthCount: number;
   recentWorkdayCount: number;
@@ -158,11 +191,14 @@ function currentMonthKindCount(
   facts: ScheduleFrequencyFacts
 ): number {
   const month = date.slice(0, 7);
-  return countForKind(
-    scopedRecordsForStaff(state, staffId, date, facts).filter((record) =>
-      record.date.startsWith(month)
-    ),
-    kind
+  return Math.max(
+    0,
+    countForKind(
+      scopedRecordsForStaff(state, staffId, date, facts).filter((record) =>
+        record.date.startsWith(month)
+      ),
+      kind
+    ) + manualAdjustmentCount(state, staffId, month, undefined, kind)
   );
 }
 
@@ -275,6 +311,13 @@ export function latePriorityFrequencyProfileForRule(
       currentMonthCount: countForKind(currentMonthRecords, kind),
       recentWorkdayCount: countForKind(recentRecords, kind),
     };
+  }
+  for (const kind of LATE_PRIORITY_FREQUENCY_ORDER) {
+    counts[kind].currentMonthCount = Math.max(
+      0,
+      counts[kind].currentMonthCount +
+        manualAdjustmentCount(state, staffId, currentMonth, undefined, kind)
+    );
   }
   const previousDate = scheduleFacts.recentConsecutiveWorkdays[0];
   return {
@@ -486,20 +529,23 @@ export function tr121NumberOneCurrentMonthCount(
   const scheduleFacts =
     facts?.date === date ? facts : createScheduleFrequencyFacts(state, date);
   const month = date.slice(0, 7);
-  return new Set(
-    (scheduleFacts.recordsByStaffId.get(staffId) ?? [])
-      .filter(
-        (record) =>
-          record.date < date &&
-          record.date.startsWith(month) &&
-          normalizeLatePriorityFlightNumber(record.flightNo) === "TR121" &&
-          latePriorityFrequencyKinds({
-            name: record.position,
-            remark: record.remark,
-          }).includes("number-one")
-      )
-      .map((record) => record.date)
-  ).size;
+  return Math.max(
+    0,
+    new Set(
+      (scheduleFacts.recordsByStaffId.get(staffId) ?? [])
+        .filter(
+          (record) =>
+            record.date < date &&
+            record.date.startsWith(month) &&
+            normalizeLatePriorityFlightNumber(record.flightNo) === "TR121" &&
+            latePriorityFrequencyKinds({
+              name: record.position,
+              remark: record.remark,
+            }).includes("number-one")
+        )
+        .map((record) => record.date)
+    ).size + manualAdjustmentCount(state, staffId, month, "TR121", "number-one")
+  );
 }
 
 export const TR121_NUMBER_ONE_MONTHLY_AUTOMATIC_LIMIT = 2;

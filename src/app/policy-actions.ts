@@ -29,6 +29,7 @@ export type PolicyEntity =
 export type PolicyFieldUpdateResult = "not-policy" | "missing" | "saved";
 
 export interface SchedulePolicyInput {
+  maxDailyHours: number;
   minimumRegularTransitionMinutes: number;
   highLoadProtectionEnabled: boolean;
   highLoadFatigueThreshold: number;

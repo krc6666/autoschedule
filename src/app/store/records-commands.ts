@@ -18,6 +18,7 @@ import type { WorkbookImport } from "../../infrastructure/excel";
 import type { HistoryRecord } from "../../model";
 import type { WorkbookImportMode } from "../workbook-import-controller";
 import type { StateCommand } from "./store-command";
+import { updateLatePriorityFrequencyAdjustment } from "../statistics-actions";
 
 export function createRecordsCommands(command: StateCommand) {
   return {
@@ -31,6 +32,23 @@ export function createRecordsCommands(command: StateCommand) {
       command((state) => clearMonthlyDutyRosterOverrides(state, date)),
     updateDutyRoster: (date: string, slot: DutyRosterSlot, staffId: string) =>
       command((state) => updateDutyRosterSlot(state, date, slot, staffId)),
+    adjustLatePriorityFrequency: (
+      month: string,
+      staffId: string,
+      flightNo: string,
+      kind: import("../../domain/reviews/late-priority-policy").LatePriorityFrequencyKind,
+      delta: number
+    ) =>
+      command((state) =>
+        updateLatePriorityFrequencyAdjustment(
+          state,
+          month,
+          staffId,
+          flightNo,
+          kind,
+          delta
+        )
+      ),
     applyDutyRosterImport: (preview: DutyRosterImportPreview) =>
       command((state) => applyDutyRosterImport(state, preview)),
     applyWorkbookImport: (

@@ -35,6 +35,8 @@ export interface LatePriorityStatisticsDetail {
 export interface MonthlyLatePriorityCategoryStatistics {
   qualified: boolean;
   details: LatePriorityStatisticsDetail[];
+  manualCorrection: number;
+  effectiveCount: number;
 }
 
 export interface MonthlyLatePriorityStatisticsRow {
@@ -95,7 +97,7 @@ function emptyCategories(): MonthlyLatePriorityStatisticsRow["categories"] {
   return Object.fromEntries(
     LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => [
       category,
-      { qualified: false, details: [] },
+      { qualified: false, details: [], manualCorrection: 0, effectiveCount: 0 },
     ])
   ) as unknown as MonthlyLatePriorityStatisticsRow["categories"];
 }
@@ -130,7 +132,7 @@ function statisticsRange(
 ): MonthlyLatePriorityStatistics["ranges"][LatePriorityStatisticsCategory] {
   const counts = rows
     .filter((row) => row.categories[category].qualified)
-    .map((row) => row.categories[category].details.length);
+    .map((row) => row.categories[category].effectiveCount);
   const min = counts.length ? Math.min(...counts) : 0;
   const max = counts.length ? Math.max(...counts) : 0;
   return {
@@ -140,6 +142,13 @@ function statisticsRange(
     allowedDifference:
       LATE_PRIORITY_ALLOWED_DIFFERENCE[latePriorityKindForLabel(category)],
   };
+}
+
+function actualTotalCount(row: MonthlyLatePriorityStatisticsRow): number {
+  return LATE_PRIORITY_STATISTICS_CATEGORIES.reduce(
+    (sum, category) => sum + row.categories[category].details.length,
+    0
+  );
 }
 
 export function latePriorityStatisticsFlightNumbers(
@@ -169,6 +178,29 @@ export function buildMonthlyLatePriorityStatistics(
       { staff, totalCount: 0, categories: emptyCategories() },
     ])
   );
+  for (const row of rowByStaffId.values()) {
+    for (const category of LATE_PRIORITY_STATISTICS_CATEGORIES) {
+      const kind = latePriorityKindForLabel(category);
+      row.categories[category].manualCorrection = (
+        state.latePriorityFrequencyAdjustments ?? []
+      )
+        .filter((item) => {
+          const itemFlight = normalizeLatePriorityFlightNumber(item.flightNo);
+          return (
+            item.month === month &&
+            item.staffId === row.staff.id &&
+            item.kind === kind &&
+            flightNumbers.includes(itemFlight) &&
+            rules.some(
+              (rule) =>
+                normalizeLatePriorityFlightNumber(rule.flightNo) ===
+                  itemFlight && latePriorityFrequencyKinds(rule).includes(kind)
+            )
+          );
+        })
+        .reduce((sum, item) => sum + item.delta, 0);
+    }
+  }
   for (const row of rowByStaffId.values()) {
     for (const category of LATE_PRIORITY_STATISTICS_CATEGORIES) {
       row.categories[category].qualified = rules.some(
@@ -251,15 +283,22 @@ export function buildMonthlyLatePriorityStatistics(
           row.categories[category].details
         );
       }
+      for (const category of LATE_PRIORITY_STATISTICS_CATEGORIES) {
+        row.categories[category].effectiveCount = Math.max(
+          0,
+          row.categories[category].details.length +
+            row.categories[category].manualCorrection
+        );
+      }
       row.totalCount = LATE_PRIORITY_STATISTICS_CATEGORIES.reduce(
-        (sum, category) => sum + row.categories[category].details.length,
+        (sum, category) => sum + row.categories[category].effectiveCount,
         0
       );
       return row;
     })
     .sort(
       (left, right) =>
-        left.totalCount - right.totalCount ||
+        actualTotalCount(left) - actualTotalCount(right) ||
         (staffOrder.get(left.staff.id) ?? Number.MAX_SAFE_INTEGER) -
           (staffOrder.get(right.staff.id) ?? Number.MAX_SAFE_INTEGER)
     );

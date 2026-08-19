@@ -204,6 +204,7 @@ export function createDefaultState(): AppState {
     positionRules,
     history: [],
     dutyRosterOverrides: [],
+    latePriorityFrequencyAdjustments: [],
     assignments: [],
     activeScheduleDate: null,
     schedulePolicyStale: false,

@@ -79,7 +79,8 @@ export class HistoryPageElement extends LightDomElement {
           ><strong>${day.date}</strong
           ><small
             >${day.groups.length} 个航班 · ${day.recordCount} 个岗位 ·
-            ${day.totalHours.toFixed(1)} 总工时</small
+            ${day.totalHours.toFixed(1)}
+            ${day.hasPartialHistory ? "已知工时（仅末班重点记录）" : "总工时"}</small
           ></span
         ><i class="bi bi-chevron-down"></i>
       </summary>

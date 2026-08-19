@@ -9,6 +9,61 @@ import {
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 
 describe("state persistence", () => {
+  it("round-trips manual late-priority frequency corrections", () => {
+    const state = createDefaultState();
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: state.staff[0]!.id,
+        flightNo: "TR121",
+        kind: "number-one",
+        delta: 1,
+      },
+    ];
+    let value = "";
+    saveState(state, { setItem: (_key, next) => (value = next) });
+    expect(
+      loadState({ getItem: () => value }).latePriorityFrequencyAdjustments
+    ).toEqual(state.latePriorityFrequencyAdjustments);
+  });
+
+  it("preserves manual override warnings on the active schedule", () => {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === flight.flightNo
+    )!;
+    state.assignments = [
+      {
+        id: "manual-override",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: state.staff[0]!.id,
+        staffName: state.staff[0]!.name,
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    state.assignments[0]!.manualOverrideWarnings = [
+      { code: "time-conflict", message: "人员A 在该时段已有排班" },
+    ];
+    let value = "";
+    saveState(state, { setItem: (_key, next) => (value = next) });
+
+    const restored = loadState({ getItem: () => value });
+
+    expect(restored.assignments[0]?.manualOverrideWarnings).toEqual(
+      state.assignments[0]?.manualOverrideWarnings
+    );
+  });
+
   it("falls back to valid defaults for corrupt persisted data", () => {
     const state = loadState({ getItem: () => "not-json" });
     expect(state.version).toBe(5);
@@ -83,6 +138,41 @@ describe("state persistence", () => {
     expect(loaded.history.map((record) => record.id)).toEqual([
       "valid-history",
     ]);
+  });
+
+  it("migrates persisted legacy history into scoped metadata and configured fatigue", () => {
+    const persisted = JSON.parse(JSON.stringify(createDefaultState()));
+    const rule = persisted.positionRules.find(
+      (item: { flightNo: string; name: string }) =>
+        item.flightNo === "TR121" && item.name === "H02"
+    );
+    const person = persisted.staff.find(
+      (item: { id: string }) => item.id === rule.qualifiedStaffIds[0]
+    );
+    persisted.history = [
+      {
+        id: "legacy-history-old",
+        date: "2026-07-20",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 2,
+        remark: "人员A",
+      },
+    ];
+
+    const loaded = loadState({ getItem: () => JSON.stringify(persisted) });
+    const record = loaded.history[0]!;
+
+    expect(record).toMatchObject({
+      historyCoverage: "late-priority-only",
+      remark: "一号",
+      fatiguePoints: 10,
+    });
   });
 
   it("falls back only the missing collection instead of resetting unrelated persisted state", () => {

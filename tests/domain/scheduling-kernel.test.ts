@@ -13,6 +13,79 @@ import { getDutyRosterForDate } from "../../src/domain/duty-roster/roster";
 import { buildScheduleFeedback } from "../../src/domain/feedback/schedule-feedback";
 
 describe("scheduler domain", { timeout: 15_000 }, () => {
+  it("uses a manual late-priority correction to select the lower-count qualified worker", async () => {
+    const state = createDefaultState();
+    const qualified = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = qualified;
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
+    state.flights = [
+      {
+        id: "late-declaration",
+        flightNo: "LATE100",
+        startTime: "21:00",
+        endTime: "23:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "late-declaration-rule",
+        flightNo: "LATE100",
+        name: "H04",
+        remark: "申报",
+        category: "常规",
+        qualifiedStaffIds: qualified.map((person) => person.id),
+        minPassengers: 0,
+        fatiguePoints: 1,
+      },
+    ];
+    state.settings.latePriorityFlightNumbers = ["LATE100"];
+    state.settings.minimumRegularTransitionMinutes = 0;
+    state.settings.workloadBalanceEnabled = false;
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-18",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+
+    const baseline = await generateSchedule(state, "2026-08-18");
+    const baselineStaffId = baseline.assignments.find(
+      (assignment) => assignment.positionRuleId === "late-declaration-rule"
+    )?.staffId;
+    expect(baselineStaffId).toBeTruthy();
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: baselineStaffId!,
+        flightNo: "LATE100",
+        kind: "declaration",
+        delta: 1,
+      },
+    ];
+
+    const adjusted = await generateSchedule(state, "2026-08-18");
+    const adjustedStaffId = adjusted.assignments.find(
+      (assignment) => assignment.positionRuleId === "late-declaration-rule"
+    )?.staffId;
+
+    expect(adjusted.unfilledCount).toBe(0);
+    expect(adjustedStaffId).toBe(
+      qualified.find((person) => person.id !== baselineStaffId)?.id
+    );
+  });
+
   it("shares compatible late-priority work instead of concentrating it on one person", async () => {
     const state = createDefaultState();
     const qualified = state.staff

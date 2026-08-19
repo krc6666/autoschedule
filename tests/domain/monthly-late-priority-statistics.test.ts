@@ -52,7 +52,8 @@ function history(
   remark: string,
   staffId: string,
   date = "2026-08-10",
-  endTime = "23:55"
+  endTime = "23:55",
+  historyCoverage?: HistoryRecord["historyCoverage"]
 ): HistoryRecord {
   return {
     id,
@@ -66,10 +67,73 @@ function history(
     workHours: 2,
     fatiguePoints: 5,
     remark,
+    ...(historyCoverage ? { historyCoverage } : {}),
   };
 }
 
 describe("monthly late priority statistics", () => {
+  it("applies manual correction by staff, flight and category", () => {
+    const state = createDefaultState();
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.remark === "申报"
+    )!;
+    const staffId = rule.qualifiedStaffIds[0]!;
+    addLateFlight(state, "TW616", staffId);
+    state.settings.latePriorityFlightNumbers = ["TR121", "TW616"];
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId,
+        flightNo: "TW616",
+        kind: "declaration",
+        delta: 2,
+      },
+      {
+        month: "2026-08",
+        staffId,
+        flightNo: "TR121",
+        kind: "delivery",
+        delta: 1,
+      },
+    ];
+    const row = buildMonthlyLatePriorityStatistics(state, DATE).rows.find(
+      (item) => item.staff.id === staffId
+    )!;
+    expect(row.categories.申报.effectiveCount).toBe(2);
+    expect(row.categories.申报.manualCorrection).toBe(2);
+    expect(row.categories.送资料.effectiveCount).toBe(1);
+    expect(row.categories.督导.effectiveCount).toBe(0);
+  });
+
+  it("keeps the personnel order stable when only manual corrections change", () => {
+    const state = createDefaultState();
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.remark === "一号"
+    )!;
+    const staffId = rule.qualifiedStaffIds[0]!;
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    const before = buildMonthlyLatePriorityStatistics(state, DATE).rows.map(
+      (row) => row.staff.id
+    );
+
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId,
+        flightNo: "TR121",
+        kind: "number-one",
+        delta: 1,
+      },
+    ];
+    const statistics = buildMonthlyLatePriorityStatistics(state, DATE);
+
+    expect(statistics.rows.map((row) => row.staff.id)).toEqual(before);
+    expect(
+      statistics.rows.find((row) => row.staff.id === staffId)?.categories.一号
+        .effectiveCount
+    ).toBe(1);
+  });
+
   it("combines selected flights into one staff table and keeps flight details", () => {
     const state = createDefaultState();
     const trRule = state.positionRules.find(
@@ -385,5 +449,32 @@ describe("monthly late priority statistics", () => {
       statistics.rows.find((row) => row.staff.id === supervisorId)?.categories
         .申报.qualified
     ).toBe(true);
+  });
+
+  it("keeps late-priority-only imports in late-priority statistics", () => {
+    const state = createDefaultState();
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.name === "H02"
+    )!;
+    const staffId = rule.qualifiedStaffIds[0]!;
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    state.history = [
+      history(
+        "partial-late",
+        "TR121",
+        "H02",
+        rule.remark,
+        staffId,
+        "2026-08-10",
+        "23:55",
+        "late-priority-only"
+      ),
+    ];
+
+    const row = buildMonthlyLatePriorityStatistics(state, DATE).rows.find(
+      (item) => item.staff.id === staffId
+    )!;
+
+    expect(row.totalCount).toBe(1);
   });
 });
