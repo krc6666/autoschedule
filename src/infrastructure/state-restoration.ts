@@ -67,10 +67,16 @@ function restoreLatePriorityFrequencyAdjustments(
             flightNo: normalizeLatePriorityFlightNumber(item.flightNo),
             kind: item.kind as LatePriorityFrequencyAdjustment["kind"],
             delta: Math.trunc(item.delta),
+            resetBaseline:
+              typeof item.resetBaseline === "number" &&
+              Number.isFinite(item.resetBaseline) &&
+              item.resetBaseline > 0
+                ? Math.trunc(item.resetBaseline)
+                : undefined,
           },
         ];
       })
-      .filter((item) => item.delta !== 0)
+      .filter((item) => item.delta !== 0 || (item.resetBaseline ?? 0) > 0)
   );
 }
 

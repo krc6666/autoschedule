@@ -35,6 +35,7 @@ export interface LatePriorityStatisticsDetail {
 export interface MonthlyLatePriorityCategoryStatistics {
   qualified: boolean;
   details: LatePriorityStatisticsDetail[];
+  visibleDetails: LatePriorityStatisticsDetail[];
   manualCorrection: number;
   effectiveCount: number;
 }
@@ -97,7 +98,13 @@ function emptyCategories(): MonthlyLatePriorityStatisticsRow["categories"] {
   return Object.fromEntries(
     LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => [
       category,
-      { qualified: false, details: [], manualCorrection: 0, effectiveCount: 0 },
+      {
+        qualified: false,
+        details: [],
+        visibleDetails: [],
+        manualCorrection: 0,
+        effectiveCount: 0,
+      },
     ])
   ) as unknown as MonthlyLatePriorityStatisticsRow["categories"];
 }
@@ -198,7 +205,7 @@ export function buildMonthlyLatePriorityStatistics(
             )
           );
         })
-        .reduce((sum, item) => sum + item.delta, 0);
+        .reduce((sum, item) => sum + item.delta + (item.resetBaseline ?? 0), 0);
     }
   }
   for (const row of rowByStaffId.values()) {
@@ -282,11 +289,41 @@ export function buildMonthlyLatePriorityStatistics(
         row.categories[category].details = sortedDetails(
           row.categories[category].details
         );
+        const kind = latePriorityKindForLabel(category);
+        const remainingBaseline = new Map<string, number>();
+        for (const adjustment of state.latePriorityFrequencyAdjustments ?? []) {
+          if (
+            adjustment.month !== month ||
+            adjustment.staffId !== row.staff.id ||
+            adjustment.kind !== kind ||
+            !flightNumbers.includes(
+              normalizeLatePriorityFlightNumber(adjustment.flightNo)
+            )
+          )
+            continue;
+          const flightNo = normalizeLatePriorityFlightNumber(
+            adjustment.flightNo
+          );
+          remainingBaseline.set(
+            flightNo,
+            (remainingBaseline.get(flightNo) ?? 0) +
+              (adjustment.resetBaseline ?? 0)
+          );
+        }
+        row.categories[category].visibleDetails = row.categories[
+          category
+        ].details.filter((detail) => {
+          const flightNo = normalizeLatePriorityFlightNumber(detail.flightNo);
+          const remaining = remainingBaseline.get(flightNo) ?? 0;
+          if (remaining <= 0) return true;
+          remainingBaseline.set(flightNo, remaining - 1);
+          return false;
+        });
       }
       for (const category of LATE_PRIORITY_STATISTICS_CATEGORIES) {
         row.categories[category].effectiveCount = Math.max(
           0,
-          row.categories[category].details.length +
+          row.categories[category].visibleDetails.length +
             row.categories[category].manualCorrection
         );
       }

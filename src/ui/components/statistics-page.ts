@@ -144,6 +144,23 @@ export class StatisticsPageElement extends LightDomElement {
               )}
           />
         </label>
+        ${
+          flightNumbers.length && statistics.rows.length
+            ? html`<button
+                class="btn btn-sm btn-outline-secondary"
+                type="button"
+                title="清零当前统计月份的末班重点岗位次数；其他月份和历史记录保留"
+                @click=${() =>
+                  dispatchUiCommand(this, {
+                    type: "reset-monthly-late-priority-frequency-counts",
+                    month: statistics.month,
+                    date: this.latePriorityStatisticsDate(),
+                  })}
+              >
+                <i class="bi bi-arrow-counterclockwise me-1"></i>当月次数清零
+              </button>`
+            : ""
+        }
       </div>
       ${
         flightNumbers.length
@@ -180,7 +197,7 @@ export class StatisticsPageElement extends LightDomElement {
                                 ),
                                 LATE_PRIORITY_STATISTICS_CATEGORIES.flatMap(
                                   (category) =>
-                                    row.categories[category].details.map(
+                                    row.categories[category].visibleDetails.map(
                                       (detail) => ({ ...detail, category })
                                     )
                                 )
@@ -203,7 +220,7 @@ export class StatisticsPageElement extends LightDomElement {
                                           ),
                                           category,
                                           own.manualCorrection,
-                                          own.details.map((detail) => ({
+                                          own.visibleDetails.map((detail) => ({
                                             ...detail,
                                             category,
                                           }))
@@ -291,44 +308,43 @@ export class StatisticsPageElement extends LightDomElement {
       </summary>
       <div>
         ${
-            categoryFallback && selectedFlight
-              ? html`<div
-                  class="late-priority-adjustment-row"
-                  data-staff-id=${staffId}
-                  data-late-priority-category=${categoryFallback}
+          categoryFallback && selectedFlight
+            ? html`<div
+                class="late-priority-adjustment-row"
+                data-staff-id=${staffId}
+                data-late-priority-category=${categoryFallback}
+              >
+                <select
+                  class="form-select form-select-sm"
+                  aria-label="选择${categoryFallback}修正航班"
+                  .value=${selectedFlight}
+                  @change=${(event: Event) => this.selectAdjustmentFlight(staffId, categoryFallback, (event.currentTarget as HTMLSelectElement).value)}
                 >
-                  <select
-                    class="form-select form-select-sm"
-                    aria-label="选择${categoryFallback}修正航班"
-                    .value=${selectedFlight}
-                    @change=${(event: Event) => this.selectAdjustmentFlight(staffId, categoryFallback, (event.currentTarget as HTMLSelectElement).value)}
-                  >
-                    ${flightNumbers.map((flightNo) => html`<option value=${flightNo}>${flightNo}</option>`)}
-                  </select>
-                  <small
-                    >修正
-                    ${selectedCorrection >= 0 ? "+" : ""}${selectedCorrection}</small
-                  >
-                  ${this.adjustmentButtons(staffId, month, selectedFlight, categoryFallback)}
-                  <small
-                    >实际 ${Math.max(0, count - manualCorrection)} · 最终
-                    ${count}</small
-                  >
-                </div>`
-              : ""
-          }
+                  ${flightNumbers.map((flightNo) => html`<option value=${flightNo}>${flightNo}</option>`)}
+                </select>
+                <small
+                  >修正
+                  ${selectedCorrection >= 0 ? "+" : ""}${selectedCorrection}</small
+                >
+                ${this.adjustmentButtons(staffId, month, selectedFlight, categoryFallback)}
+                <small
+                  >实际 ${Math.max(0, count - manualCorrection)} · 最终
+                  ${count}</small
+                >
+              </div>`
+            : ""
+        }
         ${
-            details.length
-              ? details.map(
-                  (detail) =>
-                    html`<span
-                      ><strong>${detail.date.slice(5)}</strong>
-                      ${detail.flightNo} / ${detail.position} /
-                      ${detail.category}</span
-                    >`
-                )
-              : html`<span class="text-body-secondary">本月暂无记录</span>`
-          }
+          details.length
+            ? details.map(
+                (detail) =>
+                  html`<span
+                    ><strong>${detail.date.slice(5)}</strong> ${detail.flightNo}
+                    / ${detail.position} / ${detail.category}</span
+                  >`
+              )
+            : html`<span class="text-body-secondary">本月暂无记录</span>`
+        }
       </div>
     </details>`;
   }
@@ -418,7 +434,7 @@ export class StatisticsPageElement extends LightDomElement {
           item.flightNo === flightNo &&
           item.kind === kind
       )
-      .reduce((sum, item) => sum + item.delta, 0);
+      .reduce((sum, item) => sum + item.delta + (item.resetBaseline ?? 0), 0);
   }
 
   private selectedAdjustmentFlight(

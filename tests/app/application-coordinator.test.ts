@@ -19,6 +19,71 @@ const preferences: ApplicationPreferences = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("application persistence feedback", () => {
+  it("confirms monthly late-priority reset before committing the zero baseline", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.remark === "一号"
+    )!;
+    const staffId = rule.qualifiedStaffIds[0]!;
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    state.history = [
+      {
+        id: "reset-controller-history",
+        date: "2026-08-10",
+        flightNo: "TR121",
+        position: rule.name,
+        staffId,
+        staffName: state.staff.find((person) => person.id === staffId)!.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: rule.remark,
+      },
+    ];
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId,
+        flightNo: "TR121",
+        kind: "number-one",
+        delta: 2,
+      },
+    ];
+    let confirmed = false;
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences, confirm: () => confirmed }
+    );
+
+    await coordinator.handle({
+      type: "reset-monthly-late-priority-frequency-counts",
+      month: "2026-08",
+      date: "2026-08-18",
+    });
+    expect(coordinator.model().latePriorityFrequencyAdjustments[0]?.delta).toBe(
+      2
+    );
+
+    confirmed = true;
+    await coordinator.handle({
+      type: "reset-monthly-late-priority-frequency-counts",
+      month: "2026-08",
+      date: "2026-08-18",
+    });
+    expect(coordinator.model().latePriorityFrequencyAdjustments).toEqual([
+      {
+        month: "2026-08",
+        staffId,
+        flightNo: "TR121",
+        kind: "number-one",
+        delta: -1,
+        resetBaseline: 1,
+      },
+    ]);
+  });
+
   it("shows an important warning when saved data approaches browser capacity", () => {
     const state = createDefaultState();
     state.staff[0]!.remark = "a".repeat(4 * 1024 * 1024);

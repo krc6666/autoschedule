@@ -97,6 +97,15 @@ export class RecordsController implements UiCommandController {
         )
           this.context.commit();
         return true;
+      case "reset-monthly-late-priority-frequency-counts":
+        if (
+          this.context.confirm(
+            `确认将 ${command.month} 当前统计月份的末班重点岗位次数清零？只影响该月份，历史排班不会删除。`
+          ) &&
+          records.resetMonthlyLatePriorityFrequencyCounts(command.date)
+        )
+          this.context.commit(`${command.month} 末班重点岗位次数已清零`);
+        return true;
       default:
         return false;
     }

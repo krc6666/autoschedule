@@ -158,6 +158,11 @@ export type UiCommand =
       kind: import("../../domain/reviews/late-priority-policy").LatePriorityFrequencyKind;
       delta: number;
     }
+  | {
+      type: "reset-monthly-late-priority-frequency-counts";
+      month: string;
+      date: string;
+    }
   | { type: "download-duty-roster-template"; date: string }
   | { type: "apply-duty-roster-import" }
   | { type: "reset-all" };

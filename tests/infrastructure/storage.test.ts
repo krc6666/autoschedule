@@ -17,7 +17,8 @@ describe("state persistence", () => {
         staffId: state.staff[0]!.id,
         flightNo: "TR121",
         kind: "number-one",
-        delta: 1,
+        delta: -1,
+        resetBaseline: 1,
       },
     ];
     let value = "";

@@ -18,7 +18,10 @@ import type { WorkbookImport } from "../../infrastructure/excel";
 import type { HistoryRecord } from "../../model";
 import type { WorkbookImportMode } from "../workbook-import-controller";
 import type { StateCommand } from "./store-command";
-import { updateLatePriorityFrequencyAdjustment } from "../statistics-actions";
+import {
+  resetMonthlyLatePriorityFrequencyCounts,
+  updateLatePriorityFrequencyAdjustment,
+} from "../statistics-actions";
 
 export function createRecordsCommands(command: StateCommand) {
   return {
@@ -49,6 +52,8 @@ export function createRecordsCommands(command: StateCommand) {
           delta
         )
       ),
+    resetMonthlyLatePriorityFrequencyCounts: (date: string) =>
+      command((state) => resetMonthlyLatePriorityFrequencyCounts(state, date)),
     applyDutyRosterImport: (preview: DutyRosterImportPreview) =>
       command((state) => applyDutyRosterImport(state, preview)),
     applyWorkbookImport: (

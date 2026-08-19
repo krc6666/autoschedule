@@ -103,6 +103,14 @@ describe("statistics page", () => {
         'input[aria-label="末班重点岗位统计月份"]'
       )?.value
     ).toBe("2026-07");
+    element
+      .querySelector<HTMLButtonElement>('button[title*="清零当前统计月份"]')
+      ?.click();
+    expect(commands).toContainEqual({
+      type: "reset-monthly-late-priority-frequency-counts",
+      month: "2026-07",
+      date: "2026-07-18",
+    });
   });
 
   it("switches late-priority statistics between natural months", async () => {
@@ -147,6 +155,56 @@ describe("statistics page", () => {
 
     expect(element.textContent).toContain("2026-07");
     expect(element.textContent).toContain("07-16");
+  });
+
+  it("shows correction, actual, and final as zero after a monthly reset", async () => {
+    const state = createDefaultState();
+    const rule = state.positionRules.find(
+      (item) =>
+        item.flightNo === "TR121" &&
+        item.name === "H02" &&
+        item.category === "常规"
+    )!;
+    const person = state.staff.find(
+      (item) => item.id === rule.qualifiedStaffIds[0]
+    )!;
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    state.history = [
+      {
+        id: "august-number-one",
+        date: "2026-08-16",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 10,
+        remark: "一号",
+      },
+    ];
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: person.id,
+        flightNo: "TR121",
+        kind: "number-one",
+        delta: -1,
+        resetBaseline: 1,
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-08-18" });
+    const row = element.querySelector<HTMLElement>(
+      `.late-priority-adjustment-row[data-staff-id="${person.id}"][data-late-priority-category="一号"]`
+    )!;
+
+    const text = row.textContent?.replace(/\s+/g, " ") ?? "";
+    expect(text).toContain("修正 +0");
+    expect(text).toContain("实际 0 · 最终 0");
+    expect(row.closest("details")?.textContent?.includes("08-16")).toBe(false);
   });
 
   it("shows the persisted duty-roster person when it is not the first option", async () => {

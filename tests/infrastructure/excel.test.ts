@@ -21,7 +21,8 @@ describe("workbook boundary", () => {
         staffId: state.staff[0]!.id,
         flightNo: "TR121",
         kind: "number-one",
-        delta: 2,
+        delta: -2,
+        resetBaseline: 2,
       },
     ];
     const workbook = buildConfigWorkbook(state);

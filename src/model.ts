@@ -115,6 +115,7 @@ export interface LatePriorityFrequencyAdjustment {
   flightNo: string;
   kind: LatePriorityFrequencyKind;
   delta: number;
+  resetBaseline?: number;
 }
 
 export interface ScheduleSettings {

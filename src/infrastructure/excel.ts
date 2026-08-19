@@ -79,6 +79,7 @@ function parseLatePriorityFrequencyAdjustments(
       const flightNo = normalizeText(row[index(["航班号"], 2)]).toUpperCase();
       const kind = normalizeText(row[kindIndex]);
       const delta = Number(row[index(["修正次数", "修正值"], 4)]);
+      const resetBaseline = Number(row[index(["清零基准次数"], 5)] ?? 0);
       if (
         !/^\d{4}-\d{2}$/.test(month) ||
         !staffId ||
@@ -86,7 +87,10 @@ function parseLatePriorityFrequencyAdjustments(
         !kinds.has(kind) ||
         !Number.isFinite(delta) ||
         !Number.isInteger(delta) ||
-        delta === 0
+        (delta === 0 && resetBaseline <= 0) ||
+        !Number.isFinite(resetBaseline) ||
+        !Number.isInteger(resetBaseline) ||
+        resetBaseline < 0
       )
         return [];
       return [
@@ -96,6 +100,7 @@ function parseLatePriorityFrequencyAdjustments(
           flightNo,
           kind: kind as LatePriorityFrequencyAdjustment["kind"],
           delta,
+          resetBaseline: resetBaseline || undefined,
         },
       ];
     })
@@ -647,16 +652,17 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
     workbook,
     "末班重点次数修正",
     [
-      ["月份", "人员编号", "航班号", "类别", "修正次数"],
+      ["月份", "人员编号", "航班号", "类别", "修正次数", "清零基准次数"],
       ...state.latePriorityFrequencyAdjustments.map((item) => [
         item.month,
         item.staffId,
         item.flightNo,
         item.kind,
         item.delta,
+        item.resetBaseline ?? 0,
       ]),
     ],
-    [12, 14, 14, 16, 12]
+    [12, 14, 14, 16, 12, 16]
   );
   return workbook;
 }
