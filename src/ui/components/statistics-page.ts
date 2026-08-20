@@ -4,13 +4,9 @@ import {
   buildMonthlyLatePriorityStatistics,
   LATE_PRIORITY_STATISTICS_CATEGORIES,
   latePriorityStatisticsFlightNumbers,
-  type LatePriorityStatisticsDetail,
   type LatePriorityStatisticsCategory,
+  type MonthlyLatePriorityFlightStatistics,
 } from "../../domain/statistics/monthly-late-priority-statistics";
-import {
-  latePriorityFrequencyKinds,
-  latePriorityKindForLabel,
-} from "../../domain/reviews/late-priority-policy";
 import { buildMonthlyRelaxedShiftStatistics } from "../../domain/statistics/relaxed-shift-statistics";
 import type { AppState } from "../../model";
 import { LightDomElement } from "./light-dom-element";
@@ -24,7 +20,6 @@ export class StatisticsPageElement extends LightDomElement {
   };
   model!: AppState;
   date = "";
-  private readonly selectedAdjustmentFlights = new Map<string, string>();
   private readonly expandedLatePriorityCells = new Set<string>();
   private selectedLatePriorityStatisticsMonth = "";
 
@@ -131,36 +126,64 @@ export class StatisticsPageElement extends LightDomElement {
             实际结束晚于 ${this.model.settings.lateShiftEndTime}</span
           >
         </div>
-        <label class="d-inline-flex align-items-center gap-2 mb-0">
-          <span class="small text-body-secondary">统计月份</span>
-          <input
-            class="form-control form-control-sm"
-            type="month"
-            aria-label="末班重点岗位统计月份"
-            .value=${this.latePriorityStatisticsMonth()}
-            @change=${(event: Event) =>
-              this.selectLatePriorityStatisticsMonth(
-                (event.currentTarget as HTMLInputElement).value
-              )}
-          />
-        </label>
-        ${
-          flightNumbers.length && statistics.rows.length
-            ? html`<button
-                class="btn btn-sm btn-outline-secondary"
-                type="button"
-                title="清零当前统计月份的末班重点岗位次数；其他月份和历史记录保留"
-                @click=${() =>
-                  dispatchUiCommand(this, {
-                    type: "reset-monthly-late-priority-frequency-counts",
-                    month: statistics.month,
-                    date: this.latePriorityStatisticsDate(),
-                  })}
-              >
-                <i class="bi bi-arrow-counterclockwise me-1"></i>当月次数清零
-              </button>`
-            : ""
-        }
+        <div class="late-priority-toolbar">
+          <label class="d-inline-flex align-items-center gap-2 mb-0">
+            <span class="small text-body-secondary">统计月份</span>
+            <input
+              class="form-control form-control-sm"
+              type="month"
+              aria-label="末班重点岗位统计月份"
+              .value=${this.latePriorityStatisticsMonth()}
+              @change=${(event: Event) =>
+                this.selectLatePriorityStatisticsMonth(
+                  (event.currentTarget as HTMLInputElement).value
+                )}
+            />
+          </label>
+          ${
+            flightNumbers.length && statistics.rows.length
+              ? html`<button
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    title="导入当前月份末班重点岗位次数"
+                    @click=${() =>
+                      dispatchUiCommand(this, {
+                        type: "open-import",
+                        mode: "late-priority-counts",
+                        date: this.latePriorityStatisticsDate(),
+                      })}
+                  >
+                    <i class="bi bi-file-earmark-arrow-up me-1"></i>导入次数
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    title="导出当前月份末班重点岗位次数"
+                    @click=${() =>
+                      dispatchUiCommand(this, {
+                        type: "export-late-priority-counts",
+                        date: this.latePriorityStatisticsDate(),
+                      })}
+                  >
+                    <i class="bi bi-file-earmark-arrow-down me-1"></i>导出次数
+                  </button>
+                  <button
+                    class="btn btn-sm btn-outline-secondary"
+                    type="button"
+                    title="清零当前统计月份的末班重点岗位次数；其他月份和历史记录保留"
+                    @click=${() =>
+                      dispatchUiCommand(this, {
+                        type: "reset-monthly-late-priority-frequency-counts",
+                        month: statistics.month,
+                        date: this.latePriorityStatisticsDate(),
+                      })}
+                  >
+                    <i class="bi bi-arrow-counterclockwise me-1"></i
+                    >当月次数清零
+                  </button>`
+              : ""
+          }
+        </div>
       </div>
       ${
         flightNumbers.length
@@ -174,63 +197,28 @@ export class StatisticsPageElement extends LightDomElement {
                       <tr>
                         <th>人员</th>
                         <th>四类合计</th>
-                        ${LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => html`<th>${category}</th>`)}
+                        ${flightNumbers.map((flightNo) => html`<th>${flightNo}</th>`)}
                       </tr>
                     </thead>
                     <tbody>
                       ${statistics.rows.map(
                         (row) =>
                           html`<tr>
-                            <td><strong>${row.staff.name}</strong></td>
-                            <td>
-                              ${this.latePriorityDetailCell(
-                                row.totalCount,
-                                row.staff.id,
-                                statistics.month,
-                                flightNumbers,
-                                undefined,
-                                LATE_PRIORITY_STATISTICS_CATEGORIES.reduce(
-                                  (sum, category) =>
-                                    sum +
-                                    row.categories[category].manualCorrection,
-                                  0
-                                ),
-                                LATE_PRIORITY_STATISTICS_CATEGORIES.flatMap(
-                                  (category) =>
-                                    row.categories[category].visibleDetails.map(
-                                      (detail) => ({ ...detail, category })
-                                    )
-                                )
-                              )}
+                            <td data-label="人员">
+                              <strong>${row.staff.name}</strong>
                             </td>
-                            ${LATE_PRIORITY_STATISTICS_CATEGORIES.map(
-                              (category) => {
-                                const own = row.categories[category];
-                                return html`<td>
-                                  ${
-                                    own.qualified
-                                      ? this.latePriorityDetailCell(
-                                          own.effectiveCount,
-                                          row.staff.id,
-                                          statistics.month,
-                                          this.categoryFlightNumbers(
-                                            row.staff.id,
-                                            flightNumbers,
-                                            category
-                                          ),
-                                          category,
-                                          own.manualCorrection,
-                                          own.visibleDetails.map((detail) => ({
-                                            ...detail,
-                                            category,
-                                          }))
-                                        )
-                                      : html`<span class="text-body-secondary"
-                                          >-</span
-                                        >`
-                                  }
-                                </td>`;
-                              }
+                            <td data-label="四类合计">
+                              <strong>${row.totalCount}</strong>
+                            </td>
+                            ${flightNumbers.map(
+                              (flightNo) =>
+                                html`<td data-label=${flightNo}>
+                                  ${this.latePriorityFlightCell(
+                                    row.staff.id,
+                                    statistics.month,
+                                    row.flights[flightNo]!
+                                  )}
+                                </td>`
                             )}
                           </tr>`
                       )}
@@ -272,79 +260,58 @@ export class StatisticsPageElement extends LightDomElement {
     </div>`;
   }
 
-  private latePriorityDetailCell(
-    count: number,
+  private latePriorityFlightCell(
     staffId: string,
     month: string,
-    flightNumbers: readonly string[],
-    categoryFallback: LatePriorityStatisticsCategory | undefined,
-    manualCorrection: number,
-    details: readonly (LatePriorityStatisticsDetail & {
-      category: LatePriorityStatisticsCategory;
-    })[]
+    flight: MonthlyLatePriorityFlightStatistics
   ) {
-    const selectedFlight = categoryFallback
-      ? this.selectedAdjustmentFlight(staffId, categoryFallback, flightNumbers)
-      : "";
-    const selectedCorrection =
-      categoryFallback && selectedFlight
-        ? this.flightCorrection(
-            staffId,
-            month,
-            selectedFlight,
-            categoryFallback
-          )
-        : 0;
-    const detailKey = `${staffId}\u0000${categoryFallback ?? "total"}`;
+    const detailKey = `${staffId}\u0000${flight.flightNo}`;
     return html`<details
       class="late-priority-count-detail"
+      data-staff-id=${staffId}
+      data-flight-no=${flight.flightNo}
       .open=${this.expandedLatePriorityCells.has(detailKey)}
       @toggle=${(event: Event) => this.trackLatePriorityDetailToggle(detailKey, (event.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary
-        title=${categoryFallback ? "查看明细并调整次数" : "查看航班和日期"}
-      >
-        ${count}
-      </summary>
-      <div>
-        ${
-          categoryFallback && selectedFlight
-            ? html`<div
-                class="late-priority-adjustment-row"
-                data-staff-id=${staffId}
-                data-late-priority-category=${categoryFallback}
-              >
-                <select
-                  class="form-select form-select-sm"
-                  aria-label="选择${categoryFallback}修正航班"
-                  .value=${selectedFlight}
-                  @change=${(event: Event) => this.selectAdjustmentFlight(staffId, categoryFallback, (event.currentTarget as HTMLSelectElement).value)}
-                >
-                  ${flightNumbers.map((flightNo) => html`<option value=${flightNo}>${flightNo}</option>`)}
-                </select>
-                <small
-                  >修正
-                  ${selectedCorrection >= 0 ? "+" : ""}${selectedCorrection}</small
-                >
-                ${this.adjustmentButtons(staffId, month, selectedFlight, categoryFallback)}
-                <small
-                  >实际 ${Math.max(0, count - manualCorrection)} · 最终
-                  ${count}</small
-                >
-              </div>`
-            : ""
-        }
-        ${
-          details.length
-            ? details.map(
-                (detail) =>
-                  html`<span
-                    ><strong>${detail.date.slice(5)}</strong> ${detail.flightNo}
-                    / ${detail.position} / ${detail.category}</span
+      <summary title="展开四类岗位次数">${flight.totalCount}</summary>
+      <div class="late-priority-flight-breakdown">
+        ${LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => {
+          const own = flight.categories[category];
+          return html`<div
+            class="late-priority-adjustment-row"
+            data-staff-id=${staffId}
+            data-late-priority-category=${category}
+          >
+            <strong>${category}</strong>
+            ${
+              own.qualified
+                ? html`${this.adjustmentButtons(
+                      staffId,
+                      month,
+                      flight.flightNo,
+                      category,
+                      own.effectiveCount
+                    )}<small
+                      >实际 ${own.visibleDetails.length} · 修正
+                      ${
+                        own.manualCorrection >= 0 ? "+" : ""
+                      }${own.manualCorrection}</small
+                    >`
+                : html`<span class="text-body-secondary">无资质</span>`
+            }
+            ${
+              own.visibleDetails.length
+                ? html`<small class="late-priority-detail-list"
+                    >${own.visibleDetails
+                      .map(
+                        (detail) => `${detail.date.slice(5)} ${detail.position}`
+                      )
+                      .join("、")}</small
                   >`
-              )
-            : html`<span class="text-body-secondary">本月暂无记录</span>`
-        }
+                : ""
+            }
+          </div>`;
+        })}
       </div>
     </details>`;
   }
@@ -371,7 +338,8 @@ export class StatisticsPageElement extends LightDomElement {
     staffId: string,
     month: string,
     flightNo: string,
-    category: LatePriorityStatisticsCategory
+    category: LatePriorityStatisticsCategory,
+    count: number
   ) {
     const kind = (
       {
@@ -390,6 +358,7 @@ export class StatisticsPageElement extends LightDomElement {
       >
         −
       </button>
+      <output aria-label="${flightNo}${category}最终次数">${count}</output>
       <button
         type="button"
         class="btn btn-sm btn-outline-secondary"
@@ -399,63 +368,6 @@ export class StatisticsPageElement extends LightDomElement {
         +
       </button>
     </span>`;
-  }
-
-  private categoryFlightNumbers(
-    staffId: string,
-    flightNumbers: readonly string[],
-    category: LatePriorityStatisticsCategory
-  ): string[] {
-    const kind = latePriorityKindForLabel(category);
-    return flightNumbers.filter((flightNo) =>
-      this.model.positionRules.some(
-        (rule) =>
-          rule.category === "常规" &&
-          rule.flightNo.trim().toUpperCase().replaceAll(/\s+/g, "") ===
-            flightNo &&
-          rule.qualifiedStaffIds.includes(staffId) &&
-          latePriorityFrequencyKinds(rule).includes(kind)
-      )
-    );
-  }
-
-  private flightCorrection(
-    staffId: string,
-    month: string,
-    flightNo: string,
-    category: LatePriorityStatisticsCategory
-  ): number {
-    const kind = latePriorityKindForLabel(category);
-    return this.model.latePriorityFrequencyAdjustments
-      .filter(
-        (item) =>
-          item.staffId === staffId &&
-          item.month === month &&
-          item.flightNo === flightNo &&
-          item.kind === kind
-      )
-      .reduce((sum, item) => sum + item.delta + (item.resetBaseline ?? 0), 0);
-  }
-
-  private selectedAdjustmentFlight(
-    staffId: string,
-    category: LatePriorityStatisticsCategory,
-    flightNumbers: readonly string[]
-  ): string {
-    const key = `${staffId}\u0000${category}`;
-    const selected = this.selectedAdjustmentFlights.get(key);
-    return selected && flightNumbers.includes(selected)
-      ? selected
-      : (flightNumbers[0] ?? "");
-  }
-
-  private selectAdjustmentFlight(
-    staffId: string,
-    category: LatePriorityStatisticsCategory,
-    flightNo: string
-  ): void {
-    this.selectedAdjustmentFlights.set(`${staffId}\u0000${category}`, flightNo);
-    this.requestUpdate();
   }
 
   private trackLatePriorityDetailToggle(key: string, open: boolean): void {

@@ -58,6 +58,7 @@ describe("statistics page", () => {
     expect(text).not.toContain("TR121 / H02 月度承担次数");
     expect(text).toContain(person.name);
     expect(text).toContain("07-16");
+    expect(text).toContain("07-16");
     expect(
       element.querySelector(".late-priority-summary-table")
     ).not.toBeNull();
@@ -72,7 +73,7 @@ describe("statistics page", () => {
       commands.push((event as UiCommandEvent).detail)
     );
     const adjustmentRow = element.querySelector<HTMLElement>(
-      `.late-priority-adjustment-row[data-staff-id="${person.id}"][data-late-priority-category="一号"]`
+      `.late-priority-count-detail[data-staff-id="${person.id}"][data-flight-no="TR121"] .late-priority-adjustment-row[data-late-priority-category="一号"]`
     );
     const adjustmentDetails = adjustmentRow?.closest<HTMLDetailsElement>(
       ".late-priority-count-detail"
@@ -80,10 +81,8 @@ describe("statistics page", () => {
     expect(adjustmentRow).not.toBeNull();
     expect(adjustmentDetails?.open).toBe(false);
     expect(
-      adjustmentDetails?.querySelector(
-        ":scope > div > .late-priority-adjustment-row"
-      )
-    ).toBe(adjustmentRow);
+      adjustmentRow?.closest(".late-priority-flight-breakdown")
+    ).not.toBeNull();
     adjustmentDetails!.open = true;
     adjustmentRow
       ?.querySelector<HTMLButtonElement>(
@@ -154,7 +153,13 @@ describe("statistics page", () => {
     await element.updateComplete;
 
     expect(element.textContent).toContain("2026-07");
-    expect(element.textContent).toContain("07-16");
+    expect(
+      element
+        .querySelector<HTMLDetailsElement>(
+          `[data-staff-id="${person.id}"][data-flight-no="TR121"]`
+        )
+        ?.querySelector('output[aria-label="TR121一号最终次数"]')?.textContent
+    ).toBe("1");
   });
 
   it("shows correction, actual, and final as zero after a monthly reset", async () => {
@@ -202,9 +207,8 @@ describe("statistics page", () => {
     )!;
 
     const text = row.textContent?.replace(/\s+/g, " ") ?? "";
-    expect(text).toContain("修正 +0");
-    expect(text).toContain("实际 0 · 最终 0");
-    expect(row.closest("details")?.textContent?.includes("08-16")).toBe(false);
+    expect(text).toContain("0");
+    expect(text).toContain("实际 0 · 修正 +0");
   });
 
   it("shows the persisted duty-roster person when it is not the first option", async () => {
@@ -255,7 +259,7 @@ describe("statistics page", () => {
         requestUpdate(): void;
       }
     >("autoschedule-statistics-page", { model: state, date: "2026-07-18" });
-    const selector = `.late-priority-adjustment-row[data-staff-id="${person.id}"][data-late-priority-category="一号"]`;
+    const selector = `.late-priority-count-detail[data-staff-id="${person.id}"][data-flight-no="TR121"] .late-priority-adjustment-row[data-late-priority-category="一号"]`;
     const initialDetails = element
       .querySelector(selector)
       ?.closest<HTMLDetailsElement>(".late-priority-count-detail");
@@ -279,7 +283,7 @@ describe("statistics page", () => {
     );
     expect(reorderedDetails?.open).toBe(true);
     expect(reorderedDetails?.textContent?.replace(/\s+/g, " ")).toContain(
-      "修正 +1"
+      "实际 0 · 修正 +1"
     );
   });
 
@@ -347,8 +351,15 @@ describe("statistics page", () => {
       workspace?.querySelectorAll(".late-priority-summary-table")
     ).toHaveLength(1);
     expect(workspaceText).toContain("当前统计航班：TR121、TW616");
-    expect(workspaceText).toContain("07-16");
-    expect(workspaceText).toContain("TW616 / T03 / 送资料");
+    const headers = [...workspace!.querySelectorAll("th")].map((cell) =>
+      cell.textContent?.trim()
+    );
+    expect(headers).toEqual(["人员", "四类合计", "TR121", "TW616"]);
+    expect(
+      workspace?.querySelector(
+        `[data-staff-id="${staffId}"][data-flight-no="TW616"]`
+      )
+    ).not.toBeNull();
   });
 
   it("shows explicit missing configuration and monthly rebalancing states", async () => {

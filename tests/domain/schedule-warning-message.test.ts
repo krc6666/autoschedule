@@ -56,9 +56,9 @@ describe("user-facing schedule warnings", () => {
     expect(message).not.toMatch(TECHNICAL_TERMS);
   });
 
-  it("reports the confirmed 150-second daily schedule limit", () => {
+  it("reports the bounded adaptive daily schedule limit", () => {
     expect(dailyScheduleFailureMessage("timed-out")).toBe(
-      "当天排班计算超过150秒，请重试"
+      "当天排班计算超过允许时间（最长5分钟），请重试"
     );
   });
 });

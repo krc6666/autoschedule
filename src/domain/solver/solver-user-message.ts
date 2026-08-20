@@ -4,7 +4,8 @@ export function dailyScheduleFailureMessage(
   termination: SolverTermination,
   diagnostics: readonly string[] = []
 ): string {
-  if (termination === "timed-out") return "当天排班计算超过150秒，请重试";
+  if (termination === "timed-out")
+    return "当天排班计算超过允许时间（最长5分钟），请重试";
   if (termination === "infeasible" && diagnostics.length)
     return `当天无法生成完整班表。${diagnostics.join(" ")}`;
   if (termination === "infeasible")

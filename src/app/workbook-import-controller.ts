@@ -6,7 +6,8 @@ import {
   validateDutyRosterImport,
 } from "./workbook-actions";
 
-export type WorkbookImportMode = "all" | "config" | "history" | "duty-roster";
+export type WorkbookImportMode =
+  "all" | "config" | "history" | "duty-roster" | "late-priority-counts";
 
 export type PreparedWorkbookImport =
   | { kind: "duty-roster"; preview: DutyRosterImportPreview }
@@ -22,6 +23,8 @@ export async function prepareWorkbookImport(
   mode: WorkbookImportMode,
   dutyRosterReferenceDate: string
 ): Promise<PreparedWorkbookImport> {
+  if (mode === "late-priority-counts")
+    throw new Error("末班重点岗位次数使用专用导入入口");
   if (mode === "duty-roster") {
     const { importDutyRosterWorkbook } =
       await import("../infrastructure/duty-roster-excel");

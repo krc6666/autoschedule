@@ -72,6 +72,44 @@ function history(
 }
 
 describe("monthly late priority statistics", () => {
+  it("projects final counts by flight and category", () => {
+    const state = createDefaultState();
+    state.settings.latePriorityFlightNumbers = ["TR121", "TW616"];
+    const staff = state.staff[0]!;
+    state.positionRules = state.positionRules.map((rule) =>
+      rule.flightNo === "TR121" && rule.name === "一号"
+        ? { ...rule, qualifiedStaffIds: [staff.id] }
+        : rule.flightNo === "TW616" && rule.name === "申报"
+          ? { ...rule, qualifiedStaffIds: [staff.id] }
+          : rule
+    );
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: staff.id,
+        flightNo: "TR121",
+        kind: "number-one",
+        delta: 2,
+      },
+      {
+        month: "2026-08",
+        staffId: staff.id,
+        flightNo: "TW616",
+        kind: "declaration",
+        delta: 1,
+      },
+    ];
+
+    const row = buildMonthlyLatePriorityStatistics(
+      state,
+      "2026-08-20"
+    ).rows.find((item) => item.staff.id === staff.id)!;
+
+    expect(row.flights["TR121"]?.categories["一号"].effectiveCount).toBe(2);
+    expect(row.flights["TW616"]?.categories["申报"].effectiveCount).toBe(1);
+    expect(row.flights["TR121"]?.categories["申报"].effectiveCount).toBe(0);
+  });
+
   it("applies manual correction by staff, flight and category", () => {
     const state = createDefaultState();
     const rule = state.positionRules.find(

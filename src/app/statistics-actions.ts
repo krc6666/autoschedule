@@ -1,14 +1,102 @@
 import { markActiveScheduleStale } from "../domain/kernel/schedule-lifecycle";
 import {
+  latePriorityKindForLabel,
   latePriorityKindLabel,
   type LatePriorityFrequencyKind,
 } from "../domain/reviews/late-priority-policy";
 import { buildMonthlyLatePriorityStatistics } from "../domain/statistics/monthly-late-priority-statistics";
+import { LATE_PRIORITY_STATISTICS_CATEGORIES } from "../domain/statistics/monthly-late-priority-statistics";
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
 import type { AppState } from "../model";
+import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
 
 function normalizedFlightNo(flightNo: string): string {
   return flightNo.trim().toUpperCase().replaceAll(/\s+/g, "");
+}
+
+export function applyLatePriorityCountsImport(
+  state: AppState,
+  preview: LatePriorityCountsImportPreview
+): boolean {
+  if (!preview.canApply || preview.errors.length || !preview.targets.length)
+    return false;
+  const statistics = buildMonthlyLatePriorityStatistics(
+    state,
+    preview.referenceDate
+  );
+  const rowByStaffId = new Map(
+    statistics.rows.map((row) => [row.staff.id, row])
+  );
+  if (
+    preview.month !== statistics.month ||
+    preview.flightNumbers.length !== statistics.flightNumbers.length ||
+    preview.flightNumbers.some(
+      (flightNo, index) =>
+        normalizedFlightNo(flightNo) !== statistics.flightNumbers[index]
+    )
+  )
+    return false;
+  const expectedKeys = new Set(
+    statistics.rows.flatMap((row) =>
+      statistics.flightNumbers.flatMap((flightNo) =>
+        LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) =>
+          [row.staff.id, flightNo, category].join("\u0000")
+        )
+      )
+    )
+  );
+  const targetKeys = new Set(
+    preview.targets.map((target) =>
+      [
+        target.staffId,
+        normalizedFlightNo(target.flightNo),
+        target.category,
+      ].join("\u0000")
+    )
+  );
+  if (
+    targetKeys.size !== preview.targets.length ||
+    targetKeys.size !== expectedKeys.size ||
+    [...expectedKeys].some((key) => !targetKeys.has(key))
+  )
+    return false;
+  const importedFlights = new Set(
+    preview.flightNumbers.map(normalizedFlightNo)
+  );
+  const preserved = state.latePriorityFrequencyAdjustments.filter(
+    (item) =>
+      item.month !== preview.month ||
+      !importedFlights.has(normalizedFlightNo(item.flightNo))
+  );
+  const imported = preview.targets.flatMap((target) => {
+    const actualCount =
+      rowByStaffId.get(target.staffId)?.flights[target.flightNo]?.categories[
+        target.category
+      ].details.length ?? 0;
+    const delta = target.finalCount - actualCount;
+    if (!delta) return [];
+    return [
+      {
+        month: preview.month,
+        staffId: target.staffId,
+        flightNo: target.flightNo,
+        kind: latePriorityKindForLabel(target.category),
+        delta,
+      },
+    ];
+  });
+  const next = mergeLatePriorityFrequencyAdjustments([
+    ...preserved,
+    ...imported,
+  ]);
+  if (
+    JSON.stringify(next) ===
+    JSON.stringify(state.latePriorityFrequencyAdjustments)
+  )
+    return false;
+  state.latePriorityFrequencyAdjustments = next;
+  markActiveScheduleStale(state);
+  return true;
 }
 
 export function updateLatePriorityFrequencyAdjustment(

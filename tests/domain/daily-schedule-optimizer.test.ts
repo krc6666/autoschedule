@@ -167,6 +167,43 @@ describe("daily schedule module interfaces", () => {
     }
   });
 
+  it("uses the bounded five-minute deadline for the current manual late-priority ledger", async () => {
+    const state = modelState([
+      flight("late", "LATE100", "21:00", "23:30", ["H04"]),
+    ]);
+    state.settings.latePriorityFlightNumbers = ["LATE100"];
+    state.positionRules[0]!.remark = "申报";
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: state.staff[0]!.id,
+        flightNo: "LATE100",
+        kind: "declaration",
+        delta: 10,
+      },
+      {
+        month: "2026-07",
+        staffId: state.staff[0]!.id,
+        flightNo: "LATE100",
+        kind: "declaration",
+        delta: 10,
+      },
+    ];
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      const problem = await captureProblem(state);
+      expect(problem.timeoutMs).toBe(300_000);
+      state.latePriorityFrequencyAdjustments =
+        state.latePriorityFrequencyAdjustments.filter(
+          (adjustment) => adjustment.month === "2026-07"
+        );
+      const historicalOnlyProblem = await captureProblem(state);
+      expect(historicalOnlyProblem.timeoutMs).toBe(150_000);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("turns configured next-workday recovery targets into strict model constraints", () => {
     const date = "2026-08-03";
     const state = modelState(

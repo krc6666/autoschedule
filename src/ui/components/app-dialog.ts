@@ -13,6 +13,7 @@ import "./template-picker-dialog";
 import "./next-workday-flight-picker-dialog";
 import "./workbook-import-dialog";
 import "./legacy-schedule-import-dialog";
+import "./late-priority-counts-import-dialog";
 import "./swap-analysis-dialog";
 import { weekdayLabel } from "../../domain/flights/weekly-flight-plan";
 
@@ -70,6 +71,8 @@ export class AppDialogElement extends LightDomElement {
     }
     if (dialog?.kind === "flight-query") return "在线查询航班";
     if (dialog?.kind === "duty-roster-import") return "值班备勤表导入预览";
+    if (dialog?.kind === "late-priority-counts-import")
+      return "末班重点岗位次数导入预览";
     if (dialog?.kind === "workbook-import") return "配置导入预览";
     if (dialog?.kind === "legacy-schedule-import")
       return "旧版手工排班导入预览";
@@ -106,6 +109,11 @@ export class AppDialogElement extends LightDomElement {
         .model=${this.model}
         .preview=${dialog.preview}
       ></autoschedule-duty-roster-import-dialog>`;
+    if (dialog?.kind === "late-priority-counts-import")
+      return html`<autoschedule-late-priority-counts-import-dialog
+        class="modal-content-stack"
+        .dialog=${dialog}
+      ></autoschedule-late-priority-counts-import-dialog>`;
     if (dialog?.kind === "workbook-import")
       return html`<autoschedule-workbook-import-dialog
         class="modal-content-stack"

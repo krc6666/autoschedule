@@ -47,6 +47,16 @@ export interface MonthlyLatePriorityStatisticsRow {
     LatePriorityStatisticsCategory,
     MonthlyLatePriorityCategoryStatistics
   >;
+  flights: Record<string, MonthlyLatePriorityFlightStatistics>;
+}
+
+export interface MonthlyLatePriorityFlightStatistics {
+  flightNo: string;
+  totalCount: number;
+  categories: Record<
+    LatePriorityStatisticsCategory,
+    MonthlyLatePriorityCategoryStatistics
+  >;
 }
 
 export interface MonthlyLatePriorityStatistics {
@@ -182,7 +192,7 @@ export function buildMonthlyLatePriorityStatistics(
   const rowByStaffId = new Map<string, MonthlyLatePriorityStatisticsRow>(
     eligibleStaff.map((staff) => [
       staff.id,
-      { staff, totalCount: 0, categories: emptyCategories() },
+      { staff, totalCount: 0, categories: emptyCategories(), flights: {} },
     ])
   );
   for (const row of rowByStaffId.values()) {
@@ -327,6 +337,72 @@ export function buildMonthlyLatePriorityStatistics(
             row.categories[category].manualCorrection
         );
       }
+      row.flights = Object.fromEntries(
+        flightNumbers.map((flightNo) => {
+          const categories = Object.fromEntries(
+            LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => {
+              const categoryStatistics = row.categories[category];
+              const kind = latePriorityKindForLabel(category);
+              const qualified = rules.some(
+                (rule) =>
+                  normalizeLatePriorityFlightNumber(rule.flightNo) ===
+                    flightNo &&
+                  categoryKinds(rule).includes(category) &&
+                  rule.qualifiedStaffIds.includes(row.staff.id)
+              );
+              const details = categoryStatistics.details.filter(
+                (detail) =>
+                  normalizeLatePriorityFlightNumber(detail.flightNo) ===
+                  flightNo
+              );
+              const visibleDetails = categoryStatistics.visibleDetails.filter(
+                (detail) =>
+                  normalizeLatePriorityFlightNumber(detail.flightNo) ===
+                  flightNo
+              );
+              const manualCorrection = (
+                state.latePriorityFrequencyAdjustments ?? []
+              )
+                .filter(
+                  (item) =>
+                    item.month === month &&
+                    item.staffId === row.staff.id &&
+                    item.kind === kind &&
+                    normalizeLatePriorityFlightNumber(item.flightNo) ===
+                      flightNo
+                )
+                .reduce(
+                  (sum, item) => sum + item.delta + (item.resetBaseline ?? 0),
+                  0
+                );
+              return [
+                category,
+                {
+                  qualified,
+                  details,
+                  visibleDetails,
+                  manualCorrection,
+                  effectiveCount: Math.max(
+                    0,
+                    visibleDetails.length + manualCorrection
+                  ),
+                },
+              ];
+            })
+          ) as unknown as MonthlyLatePriorityFlightStatistics["categories"];
+          return [
+            flightNo,
+            {
+              flightNo,
+              categories,
+              totalCount: LATE_PRIORITY_STATISTICS_CATEGORIES.reduce(
+                (sum, category) => sum + categories[category].effectiveCount,
+                0
+              ),
+            },
+          ];
+        })
+      ) as Record<string, MonthlyLatePriorityFlightStatistics>;
       row.totalCount = LATE_PRIORITY_STATISTICS_CATEGORIES.reduce(
         (sum, category) => sum + row.categories[category].effectiveCount,
         0

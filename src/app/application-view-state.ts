@@ -10,6 +10,7 @@ import type { OnlineFlight } from "../infrastructure/flight-query";
 import type { AppSection, AppState, IsoWeekday } from "../model";
 import type { ManualSwapAnalysis } from "../domain/reviews/manual-swap-analysis";
 import type { NextWorkdayFlightCandidate } from "../domain/flights/next-workday-flight-plan";
+import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
 
 export type ApplicationDialog =
   | { kind: "templates" }
@@ -30,6 +31,10 @@ export type ApplicationDialog =
       error: string;
     }
   | { kind: "duty-roster-import"; preview: DutyRosterImportPreview }
+  | {
+      kind: "late-priority-counts-import";
+      preview: LatePriorityCountsImportPreview;
+    }
   | {
       kind: "legacy-schedule-import";
       date: string;

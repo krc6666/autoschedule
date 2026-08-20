@@ -15,6 +15,13 @@ export class TransferController implements UiCommandController {
   async handle(command: UiCommand): Promise<boolean> {
     switch (command.type) {
       case "import-file":
+        if (command.mode === "late-priority-counts") {
+          await this.importLatePriorityCounts(
+            command.file,
+            command.date ?? this.context.view().date
+          );
+          return true;
+        }
         await this.importWorkbook(
           command.file,
           command.mode ?? "all",
@@ -33,6 +40,19 @@ export class TransferController implements UiCommandController {
         writeWorkbook(
           buildConfigWorkbook(this.context.model()),
           "排班工具配置.xlsx"
+        );
+        return true;
+      }
+      case "export-late-priority-counts": {
+        const [{ buildLatePriorityCountsWorkbook }, { writeWorkbook }] =
+          await Promise.all([
+            import("../../infrastructure/late-priority-counts-excel"),
+            import("../../infrastructure/excel"),
+          ]);
+        const month = command.date.slice(0, 7);
+        writeWorkbook(
+          buildLatePriorityCountsWorkbook(this.context.model(), command.date),
+          `末班重点岗位次数_${month}.xlsx`
         );
         return true;
       }
@@ -124,6 +144,29 @@ export class TransferController implements UiCommandController {
     } catch (error) {
       this.context.toast(
         `导入失败：${error instanceof Error ? error.message : String(error)}`,
+        "danger"
+      );
+    }
+  }
+
+  private async importLatePriorityCounts(
+    file: File,
+    date: string
+  ): Promise<void> {
+    try {
+      const { importLatePriorityCountsWorkbook } =
+        await import("../../infrastructure/late-priority-counts-excel");
+      const preview = await importLatePriorityCountsWorkbook(
+        file,
+        this.context.model(),
+        date
+      );
+      this.context.updateView({
+        dialog: { kind: "late-priority-counts-import", preview },
+      });
+    } catch (error) {
+      this.context.toast(
+        `次数导入失败：${error instanceof Error ? error.message : String(error)}`,
         "danger"
       );
     }

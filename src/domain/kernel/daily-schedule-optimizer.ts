@@ -10,7 +10,7 @@ import {
 } from "./daily-schedule-result";
 import { assertTimeLimitedResultIsEligible } from "./daily-schedule-safety";
 import type { SchedulePreparation } from "./schedule-preparation";
-const DAILY_SCHEDULE_TIMEOUT_MS = 150_000;
+import { dailyScheduleTimeoutMs } from "./daily-schedule-time-budget";
 export interface OptimizeDailyScheduleOptions {
   solver: SolverPort;
   state: ScheduleGenerationFacts;
@@ -27,12 +27,13 @@ export async function optimizeDailySchedule({
   onRequiredPlan,
   onImprovedPlan,
 }: OptimizeDailyScheduleOptions): Promise<DailySchedulePlan> {
-  const deadline = Date.now() + DAILY_SCHEDULE_TIMEOUT_MS;
+  const timeoutMs = dailyScheduleTimeoutMs(state, date);
+  const deadline = Date.now() + timeoutMs;
   const model = buildDailyScheduleModel({
     state,
     date,
     preparation,
-    timeoutMs: DAILY_SCHEDULE_TIMEOUT_MS,
+    timeoutMs,
   });
   if (!model)
     return {
@@ -42,7 +43,8 @@ export async function optimizeDailySchedule({
       optimizationQuality: "all-objectives-optimal",
     };
   const remainingMs = deadline - Date.now();
-  if (remainingMs <= 0) throw new Error("当天整体排班计算超过150秒，请重试");
+  if (remainingMs <= 0)
+    throw new Error("当天整体排班计算超过允许时间（最长5分钟），请重试");
   const materializePlan = (
     selectedVariableIds: ReadonlySet<string>,
     optimizationQuality: DailySchedulePlan["optimizationQuality"]

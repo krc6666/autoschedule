@@ -8,6 +8,32 @@ import "../../src/ui/components/app-dialog";
 import { mountElement } from "./lit-test-helpers";
 
 describe("application dialog", () => {
+  it("shows late-priority count scope and blocks an invalid preview", async () => {
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-app-dialog", {
+      model: createDefaultState(),
+      dialog: {
+        kind: "late-priority-counts-import",
+        preview: {
+          month: "2026-08",
+          referenceDate: "2026-08-20",
+          flightNumbers: ["TR121"],
+          targets: [],
+          errors: ["文件缺少 1 项记录"],
+          canApply: false,
+        },
+      },
+    });
+
+    expect(element.textContent).toContain("末班重点岗位次数导入预览");
+    expect(element.textContent).toContain("TR121");
+    expect(element.textContent).toContain("文件缺少 1 项记录");
+    expect(
+      element.querySelector<HTMLButtonElement>("button.btn-primary")?.disabled
+    ).toBe(true);
+  });
+
   it("counts every structured rule collection in configuration import preview", async () => {
     const model = createDefaultState();
     model.settings.crossFlightPriorityPolicies = [

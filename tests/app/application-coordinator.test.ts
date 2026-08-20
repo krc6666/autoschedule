@@ -8,6 +8,10 @@ import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-
 import { buildMonthlyLatePriorityStatistics } from "../../src/domain/statistics/monthly-late-priority-statistics";
 import type { ScheduleResult } from "../../src/model";
 import { generateSchedule } from "../helpers/generate-schedule";
+import {
+  buildLatePriorityCountsWorkbook,
+  parseLatePriorityCountsWorkbook,
+} from "../../src/infrastructure/late-priority-counts-excel";
 
 const preferences: ApplicationPreferences = {
   loadScheduleDate: () => null,
@@ -19,6 +23,52 @@ const preferences: ApplicationPreferences = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("application persistence feedback", () => {
+  it("applies a validated late-priority count preview through the records controller", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.remark === "一号"
+    )!;
+    const staffId = rule.qualifiedStaffIds[0]!;
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId,
+        flightNo: "TR121",
+        kind: "number-one",
+        delta: 3,
+      },
+    ];
+    const workbook = buildLatePriorityCountsWorkbook(state, "2026-08-20");
+    const targetState = createDefaultState();
+    targetState.settings.latePriorityFlightNumbers = ["TR121"];
+    const preview = parseLatePriorityCountsWorkbook(
+      workbook,
+      targetState,
+      "2026-08-20"
+    );
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(targetState),
+      { preferences }
+    );
+    coordinator.updateView({
+      dialog: { kind: "late-priority-counts-import", preview },
+    });
+
+    await coordinator.handle({ type: "apply-late-priority-counts-import" });
+
+    expect(coordinator.view().dialog).toBeNull();
+    expect(
+      buildMonthlyLatePriorityStatistics(
+        coordinator.model(),
+        "2026-08-20"
+      ).rows.find((row) => row.staff.id === staffId)!.flights.TR121!.categories
+        .一号.effectiveCount
+    ).toBe(3);
+    expect(coordinator.view().toast?.message).toContain("已导入 2026-08");
+  });
+
   it("confirms monthly late-priority reset before committing the zero baseline", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();

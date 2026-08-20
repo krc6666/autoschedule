@@ -106,6 +106,25 @@ export class RecordsController implements UiCommandController {
         )
           this.context.commit(`${command.month} 末班重点岗位次数已清零`);
         return true;
+      case "apply-late-priority-counts-import": {
+        const dialog = this.context.view().dialog;
+        if (
+          dialog?.kind !== "late-priority-counts-import" ||
+          !dialog.preview.canApply
+        ) {
+          this.context.toast("当前次数文件存在阻止导入的问题", "danger");
+          return true;
+        }
+        if (!records.applyLatePriorityCountsImport(dialog.preview)) {
+          this.context.toast("导入内容与当前次数相同，没有变化", "warning");
+          return true;
+        }
+        this.context.updateView({ dialog: null });
+        this.context.commit(
+          `已导入 ${dialog.preview.month} 末班重点岗位次数：${dialog.preview.targets.length} 项`
+        );
+        return true;
+      }
       default:
         return false;
     }

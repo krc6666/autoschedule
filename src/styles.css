@@ -1051,7 +1051,7 @@ select {
   font-size: 12px;
 }
 .late-priority-summary-table {
-  min-width: 640px;
+  min-width: max(640px, 100%);
   margin: 0;
 }
 .late-priority-summary-table th:first-child,
@@ -1097,7 +1097,7 @@ select {
 .late-priority-count-detail > div {
   display: grid;
   gap: 3px;
-  min-width: 190px;
+  min-width: 250px;
   margin-top: 5px;
   padding: 7px 8px;
   border-left: 2px solid #68737e;
@@ -1118,14 +1118,23 @@ select {
 }
 
 .late-priority-adjustments .btn {
-  min-width: 1.35rem;
-  padding: 0 0.25rem;
-  line-height: 1.25;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  line-height: 1;
+}
+
+.late-priority-adjustments output {
+  display: inline-flex;
+  min-width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
 }
 
 .late-priority-adjustment-row {
   display: grid;
-  grid-template-columns: minmax(5.25rem, 1fr) auto auto;
+  grid-template-columns: 3.25rem auto minmax(5.5rem, 1fr);
   align-items: center;
   gap: 0.25rem;
   min-width: 9.5rem;
@@ -1133,7 +1142,6 @@ select {
 }
 
 .late-priority-adjustment-row > small:last-child {
-  grid-column: 1 / -1;
   color: var(--bs-secondary-color);
   white-space: nowrap;
 }
@@ -1142,8 +1150,22 @@ select {
   white-space: nowrap;
 }
 
+.late-priority-detail-list {
+  grid-column: 1 / -1;
+  color: var(--as-muted);
+  overflow-wrap: anywhere;
+}
+
 .late-priority-adjustment-row .late-priority-adjustments {
   margin-left: 0;
+}
+
+.late-priority-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
 }
 
 .schedule-workspace {
@@ -2756,6 +2778,48 @@ autoschedule-previous-schedule-comparison {
   }
   .late-priority-statistics > .section-heading {
     flex-direction: column;
+  }
+  .late-priority-toolbar {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .late-priority-summary-table {
+    min-width: 0;
+  }
+  .late-priority-summary-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .late-priority-summary-table tbody,
+  .late-priority-summary-table tr {
+    display: grid;
+  }
+  .late-priority-summary-table tr {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-bottom: 1px solid var(--as-border);
+  }
+  .late-priority-summary-table td,
+  .late-priority-summary-table td:not(:first-child) {
+    display: grid;
+    grid-template-columns: minmax(4rem, auto) 1fr;
+    width: auto;
+    min-width: 0;
+    align-items: center;
+    gap: 0.4rem;
+    text-align: right;
+  }
+  .late-priority-summary-table td::before {
+    content: attr(data-label);
+    color: var(--as-muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: left;
+  }
+  .late-priority-count-detail > div {
+    min-width: min(250px, calc(100vw - 3rem));
   }
   .late-priority-flight-scope legend {
     align-items: flex-start;

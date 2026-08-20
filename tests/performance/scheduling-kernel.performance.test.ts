@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx-js-style";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,6 +6,11 @@ import {
   replaceHistoryForDate,
 } from "../../src/app/history-actions";
 import { createDefaultState } from "../../src/defaults";
+import { applyLatePriorityCountsImport } from "../../src/app/statistics-actions";
+import {
+  buildLatePriorityCountsWorkbook,
+  parseLatePriorityCountsWorkbook,
+} from "../../src/infrastructure/late-priority-counts-excel";
 import type {
   AppState,
   Assignment,
@@ -74,6 +80,39 @@ function createDenseScheduleState(): AppState {
   state.settings.positionTransitionPolicies = [];
   state.settings.maxDailyHours = 12;
   return state;
+}
+
+function createImportedLatePriorityPressureState(): AppState {
+  const state = createScheduleScaleState(40);
+  const lateFlights = state.flights.slice(-2);
+  lateFlights.forEach((flight) => {
+    flight.startTime = "22:00";
+    flight.endTime = "23:55";
+  });
+  state.settings.latePriorityFlightNumbers = lateFlights.map(
+    (flight) => flight.flightNo
+  );
+  return state;
+}
+
+function importedLatePriorityWorkbook(state: AppState, date: string) {
+  const workbook = buildLatePriorityCountsWorkbook(state, date);
+  const worksheet = workbook.Sheets["末班重点岗位次数"]!;
+  const data = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+    header: 1,
+    raw: false,
+    defval: "",
+  });
+  const staffIndexById = new Map(
+    state.staff.map((person, index) => [person.id, index])
+  );
+  for (const row of data.slice(1)) {
+    if (row[4] !== "一号") continue;
+    const staffIndex = staffIndexById.get(String(row[1]))!;
+    row[5] = staffIndex === 0 ? 0 : staffIndex === 1 ? 1 : 10 + staffIndex;
+  }
+  workbook.Sheets["末班重点岗位次数"] = XLSX.utils.aoa_to_sheet(data);
+  return workbook;
 }
 
 function operationalMinutes(time: string): number {
@@ -285,6 +324,49 @@ function createDeepRotationDeadEnd(): {
 }
 
 describe("scheduler performance safeguards", () => {
+  it("runs complete schedules repeatedly after importing substantial late-priority counts", async () => {
+    const date = "2026-08-20";
+    const state = createImportedLatePriorityPressureState();
+    const workbook = importedLatePriorityWorkbook(state, date);
+    const preview = parseLatePriorityCountsWorkbook(workbook, state, date);
+
+    expect(preview.canApply).toBe(true);
+    expect(preview.targets).toHaveLength(
+      state.staff.length * state.settings.latePriorityFlightNumbers.length * 4
+    );
+    expect(applyLatePriorityCountsImport(state, preview)).toBe(true);
+    expect(state.latePriorityFrequencyAdjustments).toHaveLength(
+      (state.staff.length - 1) * state.settings.latePriorityFlightNumbers.length
+    );
+
+    const elapsedRuns: number[] = [];
+    for (let run = 0; run < 4; run += 1) {
+      const started = performance.now();
+      const result = await generateSchedule(state, date);
+      elapsedRuns.push(performance.now() - started);
+
+      expect(result.assignments).toHaveLength(40);
+      expect(result.unfilledCount).toBe(0);
+      const lateStaffIds = result.assignments
+        .filter((assignment) =>
+          state.settings.latePriorityFlightNumbers.includes(assignment.flightNo)
+        )
+        .filter((assignment) => assignment.position === "G01")
+        .map((assignment) => assignment.staffId);
+      expect(lateStaffIds.sort()).toEqual(
+        state.staff
+          .slice(0, 2)
+          .map((person) => person.id)
+          .sort()
+      );
+    }
+
+    expect(elapsedRuns.every((elapsed) => elapsed < 30_000)).toBe(true);
+    expect(elapsedRuns.reduce((sum, elapsed) => sum + elapsed, 0)).toBeLessThan(
+      90_000
+    );
+  }, 120_000);
+
   it("finishes a ten-flight schedule for fifteen staff within twenty seconds", async () => {
     const state = createScheduleScaleState(40);
 

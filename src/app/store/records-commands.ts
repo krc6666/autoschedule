@@ -19,9 +19,11 @@ import type { HistoryRecord } from "../../model";
 import type { WorkbookImportMode } from "../workbook-import-controller";
 import type { StateCommand } from "./store-command";
 import {
+  applyLatePriorityCountsImport,
   resetMonthlyLatePriorityFrequencyCounts,
   updateLatePriorityFrequencyAdjustment,
 } from "../statistics-actions";
+import type { LatePriorityCountsImportPreview } from "../../infrastructure/late-priority-counts-excel";
 
 export function createRecordsCommands(command: StateCommand) {
   return {
@@ -54,11 +56,13 @@ export function createRecordsCommands(command: StateCommand) {
       ),
     resetMonthlyLatePriorityFrequencyCounts: (date: string) =>
       command((state) => resetMonthlyLatePriorityFrequencyCounts(state, date)),
+    applyLatePriorityCountsImport: (preview: LatePriorityCountsImportPreview) =>
+      command((state) => applyLatePriorityCountsImport(state, preview)),
     applyDutyRosterImport: (preview: DutyRosterImportPreview) =>
       command((state) => applyDutyRosterImport(state, preview)),
     applyWorkbookImport: (
       imported: WorkbookImport,
-      mode: Exclude<WorkbookImportMode, "duty-roster">
+      mode: Exclude<WorkbookImportMode, "duty-roster" | "late-priority-counts">
     ) => command((state) => applyWorkbookImport(state, imported, mode)),
   };
 }
