@@ -16,6 +16,7 @@ import {
   combinedAssignmentRemark,
   assignmentWarningRemark,
   createId,
+  downloadBlob,
   normalizeText,
   orderPositionRules,
   splitList,
@@ -809,5 +810,15 @@ export function buildScheduleWorkbook(
 }
 
 export function writeWorkbook(workbook: XLSX.WorkBook, fileName: string): void {
-  XLSX.writeFile(workbook, fileName, { compression: true });
+  const bytes = XLSX.write(workbook, {
+    bookType: "xlsx",
+    type: "array",
+    compression: true,
+  });
+  downloadBlob(
+    new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    fileName
+  );
 }
