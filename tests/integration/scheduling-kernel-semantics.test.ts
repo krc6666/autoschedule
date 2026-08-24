@@ -87,9 +87,9 @@ describe("scheduler semantic quality", { timeout: 15_000 }, () => {
       maximumFatigue: Math.max(...loads.map((load) => load.fatigue)),
     }).toMatchInlineSnapshot(`
       {
-        "maximumFatigue": 13,
+        "maximumFatigue": 15,
         "maximumHours": 6,
-        "minimumFatigue": 4.5,
+        "minimumFatigue": 3,
         "minimumHours": 2,
         "totalFatigue": 125.5,
         "totalHours": 70,

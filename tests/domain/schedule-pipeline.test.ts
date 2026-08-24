@@ -19,6 +19,7 @@ describe("schedule pipeline contract", () => {
     ).toEqual([
       "late-priority-frequency",
       "position-frequency",
+      "same-day-cross-flight-priority",
       "late-shift-recovery",
       "late-shift-cutoff",
       "position-rotation",

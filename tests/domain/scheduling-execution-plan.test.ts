@@ -6,6 +6,7 @@ import {
   compileSchedulingPlan,
   dailyObjectiveIsBestEffort,
   dailyObjectiveRuleId,
+  orderDailyObjectiveBuckets,
 } from "../../src/domain/rules/scheduling-execution-plan";
 
 describe("compiled scheduling execution plan", () => {
@@ -43,6 +44,7 @@ describe("compiled scheduling execution plan", () => {
     expect(plan.postScheduleMutations.map((item) => item.stage)).toEqual([
       "late-priority-frequency",
       "position-frequency",
+      "same-day-cross-flight-priority",
       "late-shift-recovery",
       "late-shift-cutoff",
       "position-rotation",
@@ -80,6 +82,52 @@ describe("compiled scheduling execution plan", () => {
       "previous-late",
       "current-late",
       "duty-roster",
+    ]);
+  });
+
+  it("orders duty relief as rest, priority-position avoidance, then fatigue", () => {
+    const plan = orderDailyObjectiveBuckets({
+      ke166Reservation: [{ id: "ke166", direction: "minimize", terms: [] }],
+      duty: [{ id: "duty", direction: "maximize", terms: [] }],
+      coverage: [{ id: "coverage", direction: "minimize", terms: [] }],
+      crossWorkdayReservation: [],
+      strictTransition: [{ id: "strict", direction: "minimize", terms: [] }],
+      crossFlightPriority: [],
+      protectedFairness: [
+        {
+          id: "candidate:late-priority-frequency",
+          direction: "minimize",
+          terms: [],
+        },
+      ],
+      dutyRelief: [
+        { id: "duty:between-target-rest", direction: "minimize", terms: [] },
+        {
+          id: "duty:avoid-additional-priority",
+          direction: "minimize",
+          terms: [],
+        },
+        {
+          id: "duty:between-target-fatigue",
+          direction: "minimize",
+          terms: [],
+        },
+      ],
+      remainingCandidate: [
+        { id: "candidate:workload", direction: "minimize", terms: [] },
+      ],
+    });
+
+    expect(plan.map((objective) => objective.id)).toEqual([
+      "ke166",
+      "duty",
+      "coverage",
+      "strict",
+      "candidate:late-priority-frequency",
+      "duty:between-target-rest",
+      "duty:avoid-additional-priority",
+      "duty:between-target-fatigue",
+      "candidate:workload",
     ]);
   });
 });

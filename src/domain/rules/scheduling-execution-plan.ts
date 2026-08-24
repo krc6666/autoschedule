@@ -41,7 +41,8 @@ export interface DailyObjectiveBuckets {
   readonly crossWorkdayReservation: readonly LexicographicObjective[];
   readonly strictTransition: readonly LexicographicObjective[];
   readonly crossFlightPriority: readonly LexicographicObjective[];
-  readonly dutyAdditional: readonly LexicographicObjective[];
+  readonly protectedFairness: readonly LexicographicObjective[];
+  readonly dutyRelief: readonly LexicographicObjective[];
   readonly remainingCandidate: readonly LexicographicObjective[];
 }
 
@@ -201,7 +202,8 @@ export function orderDailyObjectiveBuckets(
     ...buckets.crossWorkdayReservation,
     ...buckets.strictTransition,
     ...buckets.crossFlightPriority,
-    ...buckets.dutyAdditional,
+    ...buckets.protectedFairness,
+    ...buckets.dutyRelief,
     ...buckets.remainingCandidate,
   ];
 }

@@ -547,7 +547,9 @@ export function buildDailyCombinationModel(
     "candidate:late-priority-aggregate-rotation:recent-eight-workdays";
   for (const ownChoices of choicesByStaffId.values()) {
     const applicableChoices = ownChoices.filter(
-      (choice) => choice.priority.latePriorityFrequency.applies
+      (choice) =>
+        choice.priority.latePriorityFrequency.applies &&
+        choice.priority.dutyPosition !== "reserved-target"
     );
     for (
       let leftIndex = 0;
@@ -594,6 +596,7 @@ export function buildDailyCombinationModel(
         const applicable = ownChoices.filter(
           (choice) =>
             choice.priority.latePriorityFrequency.applies &&
+            choice.priority.dutyPosition !== "reserved-target" &&
             choice.priority.latePriorityFrequency.targetKinds.includes(kind)
         );
         if (!applicable.length) continue;

@@ -18,6 +18,25 @@ export function isPriorityRotationPosition(
   );
 }
 
+export function isSameDayCxPriorityPosition(
+  rule: Pick<PositionRule, "category" | "name" | "remark">
+): boolean {
+  if (rule.category !== "常规") return false;
+  return (
+    isPriorityRotationPosition(rule) || /^(?:G18|G20)$/i.test(rule.name.trim())
+  );
+}
+
+export function isDutyReliefPriorityPosition(
+  flightNo: string,
+  rule: Pick<PositionRule, "category" | "name" | "remark">
+): boolean {
+  return (
+    isPriorityRotationPosition(rule) ||
+    (/^CX(?:\s|\d)/i.test(flightNo.trim()) && isSameDayCxPriorityPosition(rule))
+  );
+}
+
 export function isHighFatigueOrdinaryRotationPosition(
   rule: Pick<PositionRule, "category" | "name" | "remark" | "fatiguePoints">,
   fatigueThreshold: number

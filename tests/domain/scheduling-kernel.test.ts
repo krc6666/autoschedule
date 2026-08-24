@@ -4441,7 +4441,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(feedback.text).toContain("当前连续第2次");
   });
 
-  it("keeps the duty identity but moves the worker to another configured priority position after a repeated duty target", async () => {
+  it("keeps the duty identity on the first configured priority position after a repeated duty target", async () => {
     const state = createDefaultState();
     const [dutyWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
@@ -4552,11 +4552,11 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(
       assignments.find((item) => item.positionRuleId === "second-priority")
         ?.staffId
-    ).toBe(dutyWorker!.id);
+    ).toBe(alternate!.id);
     expect(
       assignments.find((item) => item.positionRuleId === "first-priority")
         ?.staffId
-    ).toBe(alternate!.id);
+    ).toBe(dutyWorker!.id);
   });
 
   it("does not change KE166 mobile supervisor reuse when a worker is marked as team leader", async () => {
@@ -5868,6 +5868,238 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     );
   });
 
+  it("rests the duty person between the required morning and late targets when another worker can cover", async () => {
+    const state = createDefaultState();
+    const [duty, alternate] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = [duty!, alternate!];
+    state.staff.forEach((person) => {
+      person.dutyQualified = true;
+    });
+    state.flights = [
+      {
+        id: "morning",
+        flightNo: "MORNING",
+        startTime: "08:30",
+        endTime: "10:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "middle",
+        flightNo: "MIDDLE",
+        startTime: "14:00",
+        endTime: "16:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "late",
+        flightNo: "TR121",
+        startTime: "21:30",
+        endTime: "23:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    const qualifiedStaffIds = [duty!.id, alternate!.id];
+    state.positionRules = [
+      {
+        ...base,
+        id: "morning-position",
+        flightNo: "MORNING",
+        name: "G12",
+        category: "常规",
+        qualifiedStaffIds,
+      },
+      {
+        ...base,
+        id: "middle-position",
+        flightNo: "MIDDLE",
+        name: "G01",
+        category: "常规",
+        qualifiedStaffIds,
+        fatiguePoints: 5,
+      },
+      {
+        ...base,
+        id: "late-position",
+        flightNo: "TR121",
+        name: "H02",
+        remark: "一号",
+        category: "常规",
+        qualifiedStaffIds,
+        fatiguePoints: 8,
+      },
+    ];
+    state.settings.dutyPositionPriorities = [
+      {
+        id: "late-target",
+        enabled: true,
+        flightNo: "TR121",
+        positionKeyword: "H02",
+      },
+    ];
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-07-20",
+        cxPreflightStaffId: null,
+        dutyStaffId: duty!.id,
+        standbyStaffIds: [null, null],
+      },
+    ];
+
+    const assignments = (await generateSchedule(state, "2026-07-20"))
+      .assignments;
+
+    expect(
+      assignments.find((item) => item.positionRuleId === "morning-position")
+        ?.staffId
+    ).toBe(duty!.id);
+    expect(
+      assignments.find((item) => item.positionRuleId === "late-position")
+        ?.staffId
+    ).toBe(duty!.id);
+    expect(
+      assignments.find((item) => item.positionRuleId === "middle-position")
+        ?.staffId
+    ).toBe(alternate!.id);
+  });
+
+  it("keeps the duty person off a CX priority position before comparing middle-flight fatigue", async () => {
+    const state = createDefaultState();
+    const [duty, alternate] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = [duty!, alternate!];
+    state.staff.forEach((person) => {
+      person.dutyQualified = true;
+    });
+    state.flights = [
+      {
+        id: "morning",
+        flightNo: "MORNING",
+        startTime: "08:30",
+        endTime: "10:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "middle-cx",
+        flightNo: "CX931",
+        startTime: "14:00",
+        endTime: "16:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "late",
+        flightNo: "TR121",
+        startTime: "21:30",
+        endTime: "23:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    const qualifiedStaffIds = [duty!.id, alternate!.id];
+    state.positionRules = [
+      {
+        ...base,
+        id: "morning-position",
+        flightNo: "MORNING",
+        name: "G12",
+        category: "常规",
+        qualifiedStaffIds,
+      },
+      {
+        ...base,
+        id: "cx-priority-position",
+        flightNo: "CX931",
+        name: "G20",
+        remark: "一号",
+        category: "常规",
+        qualifiedStaffIds,
+        fatiguePoints: 1,
+      },
+      {
+        ...base,
+        id: "cx-ordinary-position",
+        flightNo: "CX931",
+        name: "G14",
+        remark: "",
+        category: "常规",
+        qualifiedStaffIds,
+        fatiguePoints: 5,
+      },
+      {
+        ...base,
+        id: "late-position",
+        flightNo: "TR121",
+        name: "H02",
+        remark: "一号",
+        category: "常规",
+        qualifiedStaffIds,
+        fatiguePoints: 8,
+      },
+    ];
+    state.settings.dutyPositionPriorities = [
+      {
+        id: "late-target",
+        enabled: true,
+        flightNo: "TR121",
+        positionKeyword: "H02",
+      },
+    ];
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-26",
+        cxPreflightStaffId: null,
+        dutyStaffId: duty!.id,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    state.history = ["2026-08-22", "2026-08-24"].map((date, index) => ({
+      id: `cx931-g20-${index}`,
+      date,
+      flightNo: "CX931",
+      position: "G20",
+      staffId: alternate!.id,
+      staffName: alternate!.name,
+      startTime: "17:50",
+      endTime: "19:50",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "一号",
+    }));
+
+    const result = await generateSchedule(state, "2026-08-26");
+
+    expect(result.unfilledCount).toBe(0);
+    expect(
+      result.assignments.find(
+        (item) => item.positionRuleId === "cx-priority-position"
+      )?.staffId
+    ).toBe(alternate!.id);
+    expect(
+      result.assignments.find(
+        (item) => item.positionRuleId === "cx-ordinary-position"
+      )?.staffId
+    ).toBe(duty!.id);
+    expect(
+      result.assignments.find((item) => item.positionRuleId === "late-position")
+        ?.staffId
+    ).toBe(duty!.id);
+  });
+
   it("allows the duty morning assignment to use a flight starting after 08:30 and before noon", async () => {
     const state = createDefaultState();
     const [dutyWorker, otherWorker] = state.staff
@@ -6878,7 +7110,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     ).not.toBe(duty!.id);
   });
 
-  it("uses the next duty target when the first would widen number-one frequency beyond one", async () => {
+  it("keeps the configured duty target even when late-priority frequency would prefer another person", async () => {
     const state = createDefaultState();
     const [duty, other] = state.staff
       .filter((person) => person.status === "正常")
@@ -6967,10 +7199,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
     expect(
       assignments.find((assignment) => assignment.positionRuleId === "tr-h02")
-    ).toMatchObject({ staffId: other!.id, position: "H02" });
+    ).toMatchObject({ staffId: duty!.id, position: "H02" });
     expect(
       assignments.find((assignment) => assignment.positionRuleId === "tw-one")
-    ).toMatchObject({ staffId: duty!.id, position: "G20" });
+    ).toMatchObject({ staffId: other!.id, position: "G20" });
   });
 
   it("keeps KE166 ordinary positions available while selecting the lower-frequency priority-position worker", async () => {

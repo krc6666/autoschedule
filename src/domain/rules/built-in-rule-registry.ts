@@ -44,6 +44,7 @@ import {
 } from "./rule-registry";
 import { compactRegularAssignments } from "../coverage/schedule-coverage";
 import { fillVacancyWithTeamLeaderConcurrentSupervision } from "../coverage/team-leader-concurrent-supervision";
+import { reviewSameDayCrossFlightPriority } from "../reviews/same-day-cross-flight-priority-review";
 
 export const CONFIGURABLE_RULE_SETTINGS: Partial<
   Record<
@@ -183,6 +184,19 @@ const positionRotationReview = async (context: ScheduleMutationContext) => {
   };
 };
 
+const sameDayCrossFlightPriorityReview = (context: ScheduleMutationContext) => {
+  const assignments = mutableAssignments(context);
+  return {
+    assignments,
+    warnings: reviewSameDayCrossFlightPriority(
+      context.state,
+      assignments,
+      context.date,
+      context.lockedAssignmentIds
+    ),
+  };
+};
+
 const RULE_EXECUTION: Readonly<
   Record<
     SchedulingRuleId,
@@ -300,6 +314,13 @@ const RULE_EXECUTION: Readonly<
       kind: "daily-model",
       id: "same-day-late-obligation",
     },
+  ],
+  "same-day-cross-flight-priority": [
+    review(
+      "same-day-cross-flight-priority",
+      "primary",
+      sameDayCrossFlightPriorityReview
+    ),
   ],
   "late-shift-position-relief": [
     {

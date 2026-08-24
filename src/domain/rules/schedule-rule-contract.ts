@@ -136,6 +136,13 @@ export const SCHEDULING_RULES = [
     feedbackMode: "aggregated",
   },
   {
+    id: "same-day-cross-flight-priority",
+    stage: "protection",
+    label: "同日早晚CX重点岗位分散",
+    feedbackMode: "aggregated",
+    optimization: "best-effort",
+  },
+  {
     id: "late-shift-recovery",
     stage: "protection",
     label: "跨工作日恢复保护",

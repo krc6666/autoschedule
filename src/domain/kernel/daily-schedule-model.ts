@@ -36,7 +36,10 @@ import {
   workloadBalanceLoadSnapshots,
   WORKLOAD_BALANCE_MIN_FLIGHTS,
 } from "../reviews/workload-balance";
-import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
+import {
+  isDutyReliefPriorityPosition,
+  isPriorityRotationPosition,
+} from "../reviews/position-rotation-policy";
 import { LATE_PRIORITY_FREQUENCY_ORDER } from "../reviews/late-priority-policy";
 import {
   isLateEndingWork,
@@ -181,14 +184,17 @@ function staffChoicesForTasks(
       (person) =>
         diagnoseBaseAssignmentEligibility(state, task.flight, task.rule, person)
           .eligible &&
-        !exceedsTr121NumberOneAutomaticLimit(
-          state,
-          person.id,
-          task.flight.flightNo,
-          task.rule,
-          date,
-          preparation.runFacts.scheduleFrequency
-        )
+        (dutyTargetTaskKeys.has(task.key) &&
+        person.id === preparation.dutyStaffId
+          ? true
+          : !exceedsTr121NumberOneAutomaticLimit(
+              state,
+              person.id,
+              task.flight.flightNo,
+              task.rule,
+              date,
+              preparation.runFacts.scheduleFrequency
+            ))
     );
     const priorities = new Map(
       candidates.map((person) => [
@@ -255,10 +261,11 @@ function dutyModel(
 ): {
   constraints: LinearConstraint[];
   objectives: LexicographicObjective[];
-  additionalPriorityObjective?: LexicographicObjective;
+  reliefObjectives: LexicographicObjective[];
 } {
   const dutyStaffId = preparation.dutyStaffId;
-  if (!dutyStaffId) return { constraints: [], objectives: [] };
+  if (!dutyStaffId)
+    return { constraints: [], objectives: [], reliefObjectives: [] };
   const dutyTargetTaskKeys = new Set([
     ...(preparation.preferredDutyMorningTaskKey
       ? [preparation.preferredDutyMorningTaskKey]
@@ -306,6 +313,11 @@ function dutyModel(
       upperBound: 1,
     });
   }
+  const extraDutyChoices = staffChoices.filter(
+    (choice) =>
+      choice.person.id === dutyStaffId &&
+      !dutyTargetTaskKeys.has(choice.task.key)
+  );
   return {
     constraints,
     objectives: [
@@ -333,17 +345,36 @@ function dutyModel(
           ]
         : []),
     ],
-    additionalPriorityObjective: {
-      id: "duty:avoid-additional-priority",
-      direction: "minimize",
-      terms: staffChoices.flatMap((choice) =>
-        choice.person.id === dutyStaffId &&
-        !dutyTargetTaskKeys.has(choice.task.key) &&
-        isPriorityRotationPosition(choice.task.rule)
-          ? [{ variableId: choice.id, coefficient: 1 }]
-          : []
-      ),
-    },
+    reliefObjectives: [
+      {
+        id: "duty:between-target-rest",
+        direction: "minimize",
+        terms: extraDutyChoices.map((choice) => ({
+          variableId: choice.id,
+          coefficient: 1,
+        })),
+      },
+      {
+        id: "duty:avoid-additional-priority",
+        direction: "minimize",
+        terms: extraDutyChoices.flatMap((choice) =>
+          isDutyReliefPriorityPosition(
+            choice.task.flight.flightNo,
+            choice.task.rule
+          )
+            ? [{ variableId: choice.id, coefficient: 1 }]
+            : []
+        ),
+      },
+      {
+        id: "duty:between-target-fatigue",
+        direction: "minimize",
+        terms: extraDutyChoices.map((choice) => ({
+          variableId: choice.id,
+          coefficient: Math.max(0, choice.task.rule.fatiguePoints),
+        })),
+      },
+    ],
   };
 }
 
@@ -1182,7 +1213,25 @@ export function buildDailyScheduleModel({
   const remainingCandidateObjectives = candidateObjectives.filter(
     (objective) =>
       objective.id !== "candidate:ke166-supervisor" &&
-      objective.id !== "candidate:position-transition"
+      objective.id !== "candidate:position-transition" &&
+      ![
+        "candidate:late-priority-aggregate-rotation",
+        "candidate:late-priority-frequency",
+      ].some(
+        (protectedId) =>
+          objective.id === protectedId ||
+          objective.id.startsWith(`${protectedId}:`)
+      )
+  );
+  const protectedFairnessObjectives = candidateObjectives.filter((objective) =>
+    [
+      "candidate:late-priority-aggregate-rotation",
+      "candidate:late-priority-frequency",
+    ].some(
+      (protectedId) =>
+        objective.id === protectedId ||
+        objective.id.startsWith(`${protectedId}:`)
+    )
   );
   const objectives = applyDailyObjectiveOptimality(
     simplifyLexicographicObjectives(
@@ -1193,9 +1242,8 @@ export function buildDailyScheduleModel({
         crossWorkdayReservation: crossWorkdayReservation.objectives,
         strictTransition: strictTransitionObjectives,
         crossFlightPriority,
-        dutyAdditional: duty.additionalPriorityObjective?.terms.length
-          ? [duty.additionalPriorityObjective]
-          : [],
+        protectedFairness: protectedFairnessObjectives,
+        dutyRelief: duty.reliefObjectives,
         remainingCandidate: remainingCandidateObjectives,
       })
     )

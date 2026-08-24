@@ -73,6 +73,8 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "高疲劳普通岗位连续由同一人承担时优先换人。",
   "same-day-late-obligation":
     "整体判断受保护人员是否必须承担后续晚班；晚班不可避免时，在不制造岗位空缺的前提下优先安全撤掉其截止前岗位，多人冲突时先保护截止更早的人。",
+  "same-day-cross-flight-priority":
+    "同一天存在早晚两个CX航班时，早班已承担G18、G20或控制等重点岗位的人员，晚班同类重点岗位优先换给其他合格人员；无替代人员时不突破岗位完整性和硬约束。",
   "late-shift-position-relief":
     "上一班做过已勾选末班重点岗位、这班又必须上晚班时，优先选择该人员可胜任的最低疲劳晚班岗位。",
   "preferred-position-transition":

@@ -18,6 +18,48 @@ import {
 import { evaluateWorkloadBalance } from "./workload-balance";
 import { crossWorkdayReservationStatuses } from "./cross-workday-qualification-reservation";
 import { crossFlightPriorityReassignmentReasons } from "../rules/cross-flight-priority";
+import { isDutyReliefPriorityPosition } from "./position-rotation-policy";
+
+function dutyReliefProfile(
+  state: ScheduleGenerationFacts,
+  assignments: readonly Assignment[],
+  dutyStaffId: string
+): readonly [assignmentCount: number, priorityCount: number, fatigue: number] {
+  const dutyAssignments = assignments.filter(
+    (assignment) =>
+      assignment.status === "assigned" &&
+      assignment.staffId === dutyStaffId &&
+      assignment.workHours > 0
+  );
+  return [
+    dutyAssignments.length,
+    dutyAssignments.filter((assignment) => {
+      const rule = assignmentRule(state, assignment);
+      return Boolean(
+        rule && isDutyReliefPriorityPosition(assignment.flightNo, rule)
+      );
+    }).length,
+    dutyAssignments.reduce(
+      (total, assignment) => total + Math.max(0, assignment.fatiguePoints),
+      0
+    ),
+  ];
+}
+
+function worsensDutyRelief(
+  state: ScheduleGenerationFacts,
+  assignments: readonly Assignment[],
+  planned: readonly Assignment[],
+  dutyStaffId: string
+): boolean {
+  const before = dutyReliefProfile(state, assignments, dutyStaffId);
+  const after = dutyReliefProfile(state, planned, dutyStaffId);
+  for (let index = 0; index < before.length; index += 1) {
+    if (after[index]! === before[index]!) continue;
+    return after[index]! > before[index]!;
+  }
+  return false;
+}
 
 export function isRotationLocked(
   state: ScheduleGenerationFacts,
@@ -240,6 +282,13 @@ function plannedAssignmentSafetyReasons(
     !hasDutyMorningAssignment(plannedState, planned, facts.currentDutyStaffId)
   ) {
     reasons.push("交换后值班人员没有12点前开始的航班");
+  }
+  if (
+    review !== "coverage" &&
+    facts?.currentDutyStaffId &&
+    worsensDutyRelief(state, assignments, planned, facts.currentDutyStaffId)
+  ) {
+    reasons.push("调整会增加值班人员的额外航班、重点岗位或疲劳");
   }
   if (policy.protectWorkloadBalance && !allowWorkloadBalanceRegression) {
     const before = evaluateWorkloadBalance(

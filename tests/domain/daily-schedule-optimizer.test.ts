@@ -12,6 +12,7 @@ import type {
 import type { Flight, PositionRule } from "../../src/model";
 import type { ScheduleGenerationFacts } from "../../src/domain/shared/scheduling-facts";
 import { createSchedulingScenario } from "../helpers/scheduling-scenario";
+import { generateSchedule } from "../helpers/generate-schedule";
 
 class ModelCaptured extends Error {}
 
@@ -811,6 +812,55 @@ describe("daily schedule solver performance model", () => {
     expect(beforeCutoffAccessIndex).toBeLessThan(preferredTransitionIndex);
     expect(sameDayIndex).toBeLessThan(preferredTransitionIndex);
     expect(sameDayIndex).toBeLessThan(staffCoverageIndex);
+  });
+
+  it("splits actual morning and evening CX priority assignments when safe", async () => {
+    const state = modelState([
+      flight("morning-cx", "CX100", "08:00", "10:00", ["G20"]),
+      flight("evening-cx", "CX200", "20:00", "22:00", ["G20"]),
+    ]);
+    const alternate = {
+      ...state.staff[0]!,
+      id: "alternate-worker",
+      name: "替代人员",
+    };
+    state.staff.push(alternate);
+    state.positionRules[0]!.qualifiedStaffIds.push(alternate.id);
+    state.positionRules[1]!.qualifiedStaffIds.push(alternate.id);
+
+    const result = await generateSchedule(state, "2026-08-03");
+    const morning = result.assignments.find(
+      (assignment) => assignment.flightNo === "CX100"
+    );
+    const evening = result.assignments.find(
+      (assignment) => assignment.flightNo === "CX200"
+    );
+
+    expect(result.unfilledCount).toBe(0);
+    expect(morning?.staffId).toBeTruthy();
+    expect(evening?.staffId).toBeTruthy();
+    expect(morning?.staffId).not.toBe(evening?.staffId);
+  });
+
+  it("keeps a CX priority position covered when no alternate is qualified", async () => {
+    const state = modelState([
+      flight("morning-cx", "CX100", "08:00", "10:00", ["G20"]),
+      flight("evening-cx", "CX200", "20:00", "22:00", ["G20"]),
+    ]);
+    const alternate = {
+      ...state.staff[0]!,
+      id: "alternate-worker",
+      name: "替代人员",
+    };
+    state.staff.push(alternate);
+    const result = await generateSchedule(state, "2026-08-03");
+
+    expect(result.unfilledCount).toBe(0);
+    expect(
+      result.assignments.filter((assignment) =>
+        ["CX100", "CX200"].includes(assignment.flightNo)
+      )
+    ).toHaveLength(2);
   });
 
   it("places cross-workday qualification reservation after vacancies and before late-position fairness", async () => {
