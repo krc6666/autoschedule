@@ -1208,7 +1208,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         endTime: "10:00",
         workHours: 2,
         fatiguePoints: 1,
-        remark: "",
+        remark: "一号",
       }))
       .concat(
         ["2026-09-20", "2026-09-22", "2026-09-24", "2026-09-26"].map(
@@ -1223,7 +1223,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
             endTime: "10:00",
             workHours: 2,
             fatiguePoints: 1,
-            remark: "",
+            remark: "一号",
           })
         ),
         [
@@ -1760,7 +1760,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
           endTime: "10:30",
           workHours: 2,
           fatiguePoints: 1,
-          remark: "",
+          remark: "一号",
         },
         {
           id: `release-target-${index}`,
@@ -1773,7 +1773,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
           endTime: "10:30",
           workHours: 2,
           fatiguePoints: 1,
-          remark: "",
+          remark: "一号",
         },
       ])
       .concat(
@@ -2347,7 +2347,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         endTime: "10:00",
         workHours: 2,
         fatiguePoints: 1,
-        remark: "",
+        remark: "一号",
       },
       {
         id: "other-load",
@@ -7269,7 +7269,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         endTime: "10:30",
         workHours: 2,
         fatiguePoints: 1,
-        remark: "",
+        remark: "一号",
       }))
       .concat([
         {
@@ -7538,7 +7538,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         endTime: "10:30",
         workHours: 2,
         fatiguePoints: 1,
-        remark: "",
+        remark: "一号",
       },
     ];
 
@@ -9147,7 +9147,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         endTime: "10:30",
         workHours: 2,
         fatiguePoints: 1,
-        remark: "",
+        remark: "一号",
       },
     ];
 
@@ -9479,7 +9479,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       endTime: "10:30",
       workHours: 2,
       fatiguePoints: 1,
-      remark: "",
+      remark: "一号",
     }));
 
     const assignments = (await generateSchedule(state, "2026-10-24"))

@@ -78,12 +78,13 @@ src/app.ts
 - `statistics/`：疲劳、末班重点岗位次数、同岗频率、月度统计和工作负荷。
 - `shared/`：排班事实、时间、跨工作日负荷和统一领域共享模型。
 
-当前同日 CX 重点岗位规则位于：
+当前同日同航司重点岗位规则位于：
 
-- `reviews/same-day-cross-flight-priority-review.ts`：只对最终实际发生的早晚同人冲突尝试安全换人。
-- `reviews/position-rotation-policy.ts`：识别现有重点岗位关键词及严格的 `G18`、`G20` 岗位名。
-- `rules/schedule-rule-contract.ts`：中央规则 ID、阶段和 best-effort 合同。
-- `rules/built-in-rule-registry.ts`：把规则接入排班后复核管线。
+- `rules/airline-rotation.ts`：统一解析航空公司、规范岗位和 `航空公司 + 规范岗位` 轮换键；业务备注优先于物理柜台名。
+- `kernel/daily-combination-model.ts`：在 HiGHS 模型中加入同航司控制/一号人员交叉互斥硬约束。
+- `candidates/assignment-eligibility.ts`：自动补位、后置安全重排和人工调整共用的资格诊断。
+- `kernel/daily-schedule-safety.ts`：最终班表的防御性硬约束复核。
+- `rules/schedule-rule-contract.ts`、`rules/built-in-rule-registry.ts`：中央硬约束合同和执行入口。
 
 ### `src/infrastructure/`：外部边界
 

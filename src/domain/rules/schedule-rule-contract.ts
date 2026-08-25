@@ -49,6 +49,12 @@ export const SCHEDULING_RULES = [
     feedbackMode: "aggregated",
   },
   {
+    id: "same-day-cross-flight-priority",
+    stage: "hard-constraint",
+    label: "同日同航司控制与一号岗位互斥",
+    feedbackMode: "aggregated",
+  },
+  {
     id: "ke166-supervisor",
     stage: "reserved-assignment",
     label: "KE166独立督导优先保留与缺员兼任",
@@ -134,13 +140,6 @@ export const SCHEDULING_RULES = [
     stage: "protection",
     label: "重点岗位连续承担保护",
     feedbackMode: "aggregated",
-  },
-  {
-    id: "same-day-cross-flight-priority",
-    stage: "protection",
-    label: "同日早晚CX重点岗位分散",
-    feedbackMode: "aggregated",
-    optimization: "best-effort",
   },
   {
     id: "late-shift-recovery",

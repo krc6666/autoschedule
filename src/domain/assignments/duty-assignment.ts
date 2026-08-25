@@ -24,6 +24,7 @@ function repeatsPriorityPosition(
       staffId,
       task.flight.flightNo,
       task.rule.name,
+      task.rule.remark,
       date
     ) > 0
   );

@@ -39,6 +39,7 @@ export function refreshPositionRotationEvidence(
         assignment.staffId,
         assignment.flightNo,
         assignment.position,
+        assignment.remark,
         date
       );
       if (previousRuns >= 1) {
@@ -79,6 +80,7 @@ export function refreshPositionRotationEvidence(
       assignment.staffId,
       assignment.flightNo,
       assignment.position,
+      assignment.remark,
       date
     );
     if (priority ? previousRuns < 1 : previousRuns < 2) continue;

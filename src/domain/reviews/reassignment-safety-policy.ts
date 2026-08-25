@@ -249,6 +249,7 @@ export function reassignmentCandidateSafetyReasons({
           originalAssignment.staffId,
           originalAssignment.flightNo,
           originalAssignment.position,
+          originalAssignment.remark,
           date,
           frequencyFacts
         )
@@ -258,6 +259,7 @@ export function reassignmentCandidateSafetyReasons({
       assignment.staffId,
       assignment.flightNo,
       assignment.position,
+      assignment.remark,
       date,
       frequencyFacts
     );

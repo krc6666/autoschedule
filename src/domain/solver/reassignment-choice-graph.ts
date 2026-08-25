@@ -1,7 +1,10 @@
 import type { Assignment, Staff } from "../../model";
 import { isDutyMorningFlight } from "../assignments/duty-assignment";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
-import { diagnoseBaseAssignmentEligibility } from "../candidates/assignment-eligibility";
+import {
+  diagnoseBaseAssignmentEligibility,
+  diagnoseSameAirlinePriorityEligibility,
+} from "../candidates/assignment-eligibility";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import {
   reassignmentCandidateSafetyReasons,
@@ -142,6 +145,20 @@ function createChoices(
       )
       .filter(
         (person) => options.candidateAllowed?.(assignment, person) ?? true
+      )
+      .filter(
+        (person) =>
+          person.id === assignment.staffId ||
+          diagnoseSameAirlinePriorityEligibility(
+            {
+              state: options.state,
+              assignments: options.assignments,
+              flight,
+              rule,
+              person,
+            },
+            new Set([assignment.id])
+          ).eligible
       )
       .filter(
         (person) =>

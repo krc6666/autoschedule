@@ -8,8 +8,130 @@ import {
   eligibleStaffForRule,
 } from "../../src/domain/candidates/assignment-eligibility";
 import { createSchedulingScenario } from "../helpers/scheduling-scenario";
+import { evaluateManualAssignment } from "../../src/domain/candidates/manual-assignment-override";
 
 describe("assignment eligibility diagnostics", () => {
+  it.each([
+    ["控制", "控制"],
+    ["控制", "一号"],
+    ["一号", "控制"],
+    ["一号", "一号"],
+  ])(
+    "blocks same-airline %s then %s for automatic and manual assignment",
+    (sourceRemark, targetRemark) => {
+      const state = createSchedulingScenario();
+      const person = {
+        ...state.staff[0]!,
+        id: "priority-worker",
+        name: "重点岗位人员",
+        status: "正常" as const,
+        staffType: "常规" as const,
+        nightShift: true,
+      };
+      const sourceFlight = {
+        ...state.flights[0]!,
+        id: "fd-morning",
+        flightNo: "FD101",
+        startTime: "08:00",
+        endTime: "10:00",
+      };
+      const targetFlight = {
+        ...sourceFlight,
+        id: "fd-later",
+        flightNo: "FD202",
+        startTime: "15:00",
+        endTime: "17:00",
+      };
+      const sourceRule: PositionRule = {
+        ...state.positionRules[0]!,
+        id: "fd-source-rule",
+        flightNo: sourceFlight.flightNo,
+        name: "G08",
+        remark: sourceRemark,
+        category: "常规",
+        qualifiedStaffIds: [person.id],
+      };
+      const targetRule: PositionRule = {
+        ...sourceRule,
+        id: "fd-target-rule",
+        flightNo: targetFlight.flightNo,
+        name: "G17",
+        remark: targetRemark,
+      };
+      const sourceAssignment: Assignment = {
+        id: "fd-source-assignment",
+        flightId: sourceFlight.id,
+        flightNo: sourceFlight.flightNo,
+        positionRuleId: sourceRule.id,
+        position: sourceRule.name,
+        staffId: person.id,
+        staffName: person.name,
+        startTime: sourceFlight.startTime,
+        endTime: sourceFlight.endTime,
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: sourceRule.remark,
+        manualRemark: "",
+        status: "assigned",
+      };
+      const targetAssignment: Assignment = {
+        ...sourceAssignment,
+        id: "fd-target-assignment",
+        flightId: targetFlight.id,
+        flightNo: targetFlight.flightNo,
+        positionRuleId: targetRule.id,
+        position: targetRule.name,
+        staffId: null,
+        staffName: "",
+        startTime: targetFlight.startTime,
+        endTime: targetFlight.endTime,
+        remark: targetRule.remark,
+        status: "unfilled",
+      };
+      state.staff = [person];
+      state.flights = [sourceFlight, targetFlight];
+      state.positionRules = [sourceRule, targetRule];
+      state.assignments = [sourceAssignment, targetAssignment];
+      state.settings.minimumRegularTransitionMinutes = 0;
+
+      expect(
+        diagnoseAutomaticAssignmentEligibility({
+          state,
+          assignments: [sourceAssignment],
+          flight: targetFlight,
+          rule: targetRule,
+          person,
+          workHours: targetAssignment.workHours,
+        }).violations[0]?.code
+      ).toBe("same-airline-priority");
+      expect(
+        diagnoseManualAssignmentEligibility(
+          state,
+          targetAssignment.id,
+          person.id
+        ).violations[0]?.code
+      ).toBe("same-airline-priority");
+      expect(
+        evaluateManualAssignment(state, targetAssignment.id, person.id)
+      ).toMatchObject({ allowed: false, warnings: [] });
+
+      targetFlight.flightNo =
+        targetRule.flightNo =
+        targetAssignment.flightNo =
+          "CX202";
+      expect(
+        diagnoseAutomaticAssignmentEligibility({
+          state,
+          assignments: [sourceAssignment],
+          flight: targetFlight,
+          rule: targetRule,
+          person,
+          workHours: targetAssignment.workHours,
+        }).eligible
+      ).toBe(true);
+    }
+  );
+
   it("uses the same hard facts for automatic and manual decisions", () => {
     const state = createSchedulingScenario();
     const person: Staff = {

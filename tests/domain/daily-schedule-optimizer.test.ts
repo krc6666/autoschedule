@@ -377,6 +377,55 @@ describe("daily schedule module interfaces", () => {
     ).toBe(false);
   });
 
+  it("adds hard same-airline control/number-one separation across all later flights", () => {
+    const state = modelState(
+      [
+        flight("morning", "FD101", "08:00", "10:00", ["P1"]),
+        flight("afternoon", "FD202", "15:00", "17:00", ["P1"]),
+      ],
+      (rule) => ({
+        ...rule,
+        remark: "控制",
+        qualifiedStaffIds: ["worker", "worker-2"],
+      })
+    );
+    state.staff.push({ ...state.staff[0]!, id: "worker-2", name: "替代人员" });
+
+    const preparation = prepareSchedule(
+      state,
+      "2026-08-03",
+      evaluateAutomaticHardConstraints
+    );
+    const model = buildDailyScheduleModel({
+      state,
+      date: "2026-08-03",
+      preparation,
+      timeoutMs: 30_000,
+    })!;
+
+    const morningChoice = model.staffChoices.find(
+      (choice) =>
+        choice.task.flight.flightNo === "FD101" && choice.person.id === "worker"
+    )!;
+    const afternoonChoice = model.staffChoices.find(
+      (choice) =>
+        choice.task.flight.flightNo === "FD202" && choice.person.id === "worker"
+    )!;
+    expect(
+      model.problem.constraints.some(
+        (constraint) =>
+          constraint.id.startsWith("same-airline-priority:") &&
+          constraint.terms
+            .map((term) => term.variableId)
+            .includes(morningChoice.id) &&
+          constraint.terms
+            .map((term) => term.variableId)
+            .includes(afternoonChoice.id) &&
+          constraint.upperBound === 1
+      )
+    ).toBe(true);
+  });
+
   it("records why another overlapping flight yielded to a protected position", () => {
     const state = modelState([
       flight("ke", "KE166", "08:00", "10:00", ["H02"]),
@@ -842,7 +891,7 @@ describe("daily schedule solver performance model", () => {
     expect(morning?.staffId).not.toBe(evening?.staffId);
   });
 
-  it("keeps a CX priority position covered when no alternate is qualified", async () => {
+  it("leaves a later same-airline priority position unfilled when no alternate is qualified", async () => {
     const state = modelState([
       flight("morning-cx", "CX100", "08:00", "10:00", ["G20"]),
       flight("evening-cx", "CX200", "20:00", "22:00", ["G20"]),
@@ -855,12 +904,51 @@ describe("daily schedule solver performance model", () => {
     state.staff.push(alternate);
     const result = await generateSchedule(state, "2026-08-03");
 
-    expect(result.unfilledCount).toBe(0);
+    expect(result.unfilledCount).toBe(1);
     expect(
       result.assignments.filter((assignment) =>
         ["CX100", "CX200"].includes(assignment.flightNo)
       )
     ).toHaveLength(2);
+  });
+
+  it("separates priority work across more than two same-airline flights", async () => {
+    const state = modelState(
+      [
+        flight("fd-1", "FD101", "08:00", "10:00", ["G08"]),
+        flight("fd-2", "FD202", "13:00", "15:00", ["G17"]),
+        flight("fd-3", "FD303", "18:00", "20:00", ["G20"]),
+      ],
+      (rule) => ({ ...rule, remark: "控制" })
+    );
+    state.staff.push(
+      { ...state.staff[0]!, id: "worker-2", name: "第二人员" },
+      { ...state.staff[0]!, id: "worker-3", name: "第三人员" }
+    );
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds = state.staff.map((person) => person.id);
+    });
+
+    const result = await generateSchedule(state, "2026-08-03");
+    const assignedStaffIds = result.assignments
+      .filter((assignment) => assignment.status === "assigned")
+      .map((assignment) => assignment.staffId);
+    expect(result.unfilledCount).toBe(0);
+    expect(new Set(assignedStaffIds).size).toBe(3);
+  });
+
+  it("does not separate same-named priority positions across airlines", async () => {
+    const state = modelState([
+      flight("fd", "FD101", "08:00", "10:00", ["G20"]),
+      flight("cx", "CX202", "15:00", "17:00", ["G20"]),
+    ]);
+
+    const result = await generateSchedule(state, "2026-08-03");
+    expect(result.unfilledCount).toBe(0);
+    expect(result.assignments.map((assignment) => assignment.staffId)).toEqual([
+      "worker",
+      "worker",
+    ]);
   });
 
   it("places cross-workday qualification reservation after vacancies and before late-position fairness", async () => {

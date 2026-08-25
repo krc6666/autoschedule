@@ -44,7 +44,6 @@ describe("compiled scheduling execution plan", () => {
     expect(plan.postScheduleMutations.map((item) => item.stage)).toEqual([
       "late-priority-frequency",
       "position-frequency",
-      "same-day-cross-flight-priority",
       "late-shift-recovery",
       "late-shift-cutoff",
       "position-rotation",

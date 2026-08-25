@@ -5,8 +5,8 @@ import type {
 } from "../shared/scheduling-facts";
 import { recentArchivedWorkdays } from "./fatigue";
 import { assignmentRule } from "../flights/schedule-position-rules";
-import { normalizedPolicyValue } from "../reviews/schedule-protection";
 import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
+import { positionRotationGroupKey } from "../rules/airline-rotation";
 
 export interface ScheduleFrequencyFacts {
   date: string;
@@ -20,13 +20,12 @@ export interface ScheduleFrequencyFacts {
 function positionHistoryKey(
   staffId: string,
   flightNo: string,
-  position: string
+  position: string,
+  remark: string
 ): string {
-  return [
-    staffId,
-    normalizedPolicyValue(flightNo),
-    normalizedPolicyValue(position),
-  ].join("\u0000");
+  return [staffId, positionRotationGroupKey(flightNo, position, remark)].join(
+    "\u0000"
+  );
 }
 
 export function createScheduleFrequencyFacts(
@@ -39,7 +38,8 @@ export function createScheduleFrequencyFacts(
     const key = positionHistoryKey(
       record.staffId,
       record.flightNo,
-      record.position
+      record.position,
+      record.remark
     );
     const records = recordsByPosition.get(key) ?? [];
     records.push(record);
@@ -87,6 +87,7 @@ export function consecutivePositionAssignments(
   staffId: string,
   flightNo: string,
   position: string,
+  remark: string,
   date: string,
   facts?: ScheduleFrequencyFacts
 ): number {
@@ -94,7 +95,7 @@ export function consecutivePositionAssignments(
   const scheduleFacts = frequencyFactsFor(state, date, facts);
   const records =
     scheduleFacts.recordsByPosition.get(
-      positionHistoryKey(staffId, flightNo, position)
+      positionHistoryKey(staffId, flightNo, position, remark)
     ) ?? [];
   const recordedDates = new Set(records.map((record) => record.date));
   let count = 0;
@@ -117,6 +118,7 @@ export function samePositionFrequencyProfile(
   staffId: string,
   flightNo: string,
   position: string,
+  remark: string,
   date: string,
   facts?: ScheduleFrequencyFacts
 ): PositionFrequencyProfile {
@@ -125,7 +127,7 @@ export function samePositionFrequencyProfile(
   const scheduleFacts = frequencyFactsFor(state, date, facts);
   const matching =
     scheduleFacts.recordsByPosition.get(
-      positionHistoryKey(staffId, flightNo, position)
+      positionHistoryKey(staffId, flightNo, position, remark)
     ) ?? [];
   const currentMonth = /^\d{4}-\d{2}/.exec(date)?.[0] ?? "";
   return {
@@ -152,6 +154,7 @@ export function positionFrequencyProfileForRule(
         staffId,
         flightNo,
         rule.name,
+        rule.remark,
         date,
         facts
       )

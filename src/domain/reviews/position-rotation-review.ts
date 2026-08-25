@@ -108,6 +108,7 @@ function targetStaffOrder(
         leftId,
         primary.flightNo,
         primary.position,
+        primary.remark,
         date,
         frequencyFacts
       ),
@@ -116,6 +117,7 @@ function targetStaffOrder(
         rightId,
         primary.flightNo,
         primary.position,
+        primary.remark,
         date,
         frequencyFacts
       )
@@ -271,6 +273,7 @@ export async function reviewConsecutivePositionRotation(
         assignment.staffId!,
         assignment.flightNo,
         assignment.position,
+        assignment.remark,
         date,
         frequencyFacts
       ),
@@ -320,6 +323,10 @@ export async function reviewConsecutivePositionRotation(
       compareStaff,
       facts,
       frequencyFacts,
+      timeoutMs:
+        assignments.length > 30 || state.history.length > 1_000
+          ? 250
+          : undefined,
     });
     if (search.plan) {
       const fallback = applyRotationPlan(

@@ -86,6 +86,7 @@ export function crossFlightPriorityReassignmentReasons(
         before.staffId,
         before.flightNo,
         before.position,
+        before.remark,
         date,
         frequencyFacts
       );
@@ -94,6 +95,7 @@ export function crossFlightPriorityReassignmentReasons(
         after.staffId,
         before.flightNo,
         before.position,
+        before.remark,
         date,
         frequencyFacts
       );
@@ -106,6 +108,7 @@ export function crossFlightPriorityReassignmentReasons(
         before.staffId,
         before.flightNo,
         before.position,
+        before.remark,
         date,
         frequencyFacts
       );
@@ -114,6 +117,7 @@ export function crossFlightPriorityReassignmentReasons(
         after.staffId,
         before.flightNo,
         before.position,
+        before.remark,
         date,
         frequencyFacts
       );

@@ -18,6 +18,8 @@ import {
   concurrentOverlapMinutes,
   isConcurrentSupervisor,
 } from "../coverage/team-leader-concurrent-plan";
+import { assignmentRule } from "../flights/schedule-position-rules";
+import { sameAirlinePriorityAssignmentConflict } from "../rules/airline-rotation";
 
 export interface DailyScheduleSafetyOptions {
   state: ScheduleGenerationFacts;
@@ -77,6 +79,39 @@ export function assertDailyScheduleSafety({
   allowFinalizedConcurrency = false,
   preservedAssignments = [],
 }: DailyScheduleSafetyOptions): void {
+  const assigned = assignments.filter(
+    (assignment) => assignment.status === "assigned" && assignment.staffId
+  );
+  for (let leftIndex = 0; leftIndex < assigned.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < assigned.length;
+      rightIndex += 1
+    ) {
+      const left = assigned[leftIndex]!;
+      const right = assigned[rightIndex]!;
+      if (
+        left.staffId !== right.staffId ||
+        left.flightId === right.flightId ||
+        !sameAirlinePriorityAssignmentConflict(
+          {
+            ...left,
+            positionRule: assignmentRule(state, left),
+          },
+          {
+            ...right,
+            positionRule: assignmentRule(state, right),
+          }
+        )
+      )
+        continue;
+      const later =
+        left.startTime.localeCompare(right.startTime) <= 0 ? right : left;
+      throw new Error(
+        `最终安全复核未通过：${left.staffName}已承担同日同航司控制/一号岗位，不得再次承担${later.flightNo}/${later.position}`
+      );
+    }
+  }
   for (const preserved of preservedAssignments) {
     const current = assignments.find(
       (assignment) => assignment.id === preserved.id

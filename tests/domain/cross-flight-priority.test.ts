@@ -15,7 +15,8 @@ function assignment(
   position: string,
   staffId: string,
   startTime = "08:00",
-  endTime = "10:00"
+  endTime = "10:00",
+  remark = ""
 ): Assignment {
   return {
     id,
@@ -29,7 +30,7 @@ function assignment(
     endTime,
     workHours: 2,
     fatiguePoints: 1,
-    remark: "",
+    remark,
     manualRemark: "",
     status: "assigned",
   };
@@ -82,9 +83,11 @@ describe("cross-flight priority", () => {
         remark: "一号",
       }
     );
-    const original = [assignment("ke", "KE166", "H02", "staff-1")];
+    const original = [
+      assignment("ke", "KE166", "H02", "staff-1", "08:00", "10:00", "一号"),
+    ];
     const planned = [
-      assignment("ke", "KE166", "H02", "staff-2"),
+      assignment("ke", "KE166", "H02", "staff-2", "08:00", "10:00", "一号"),
       assignment("cx", "CX931", "G20", "staff-1"),
     ];
     expect(

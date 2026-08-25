@@ -2,6 +2,7 @@ import type { Assignment, Staff } from "../../model";
 import { isLateEndingWork } from "./cross-day-recovery";
 import { isPriorityRotationPosition } from "./position-rotation-policy";
 import { assignmentRule } from "../flights/schedule-position-rules";
+import { diagnoseSameAirlinePriorityEligibility } from "../candidates/assignment-eligibility";
 import {
   consecutivePositionAssignments,
   type ScheduleFrequencyFacts,
@@ -60,6 +61,7 @@ function improvesPrimaryConsecutiveRun(
     primary.staffId!,
     primary.flightNo,
     primary.position,
+    primary.remark,
     date,
     frequencyFacts
   );
@@ -68,6 +70,7 @@ function improvesPrimaryConsecutiveRun(
     staff.id,
     primary.flightNo,
     primary.position,
+    primary.remark,
     date,
     frequencyFacts
   );
@@ -112,6 +115,50 @@ export async function findConsecutiveRotationPlan({
   const attemptedReasons: string[] = [];
   const deadline = Date.now() + timeoutMs;
   const primaryRule = assignmentRule(state, primary)!;
+  const hasHardConstraintSafeReplacement = state.staff.some(
+    (staff) =>
+      staff.id !== primary.staffId &&
+      staff.status === "正常" &&
+      staff.staffType === "常规" &&
+      improvesPrimaryConsecutiveRun(
+        state,
+        primary,
+        staff,
+        date,
+        frequencyFacts
+      ) &&
+      diagnoseSameAirlinePriorityEligibility(
+        {
+          state,
+          assignments,
+          flight: state.flights.find(
+            (flight) => flight.id === primary.flightId
+          ) ?? {
+            id: primary.flightId,
+            flightNo: primary.flightNo,
+            startTime: primary.startTime,
+            endTime: primary.endTime,
+            bookedPassengers: 0,
+            positions: [primary.position],
+            remark: "",
+          },
+          rule: primaryRule,
+          person: staff,
+        },
+        new Set([primary.id])
+      ).eligible
+  );
+  if (!hasHardConstraintSafeReplacement) {
+    return {
+      plan: null,
+      attemptedReasons: [
+        isPriorityRotationPosition(primaryRule)
+          ? "没有满足同航司重点岗位互斥且能降低连续次数的替代人员"
+          : "唯一合格人员或没有可安全接替的人员",
+      ],
+      termination: "infeasible",
+    };
+  }
   const latePriorityReliefApplies =
     isPriorityRotationPosition(primaryRule) && isLateEndingWork(primary, state);
   const run = async (

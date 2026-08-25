@@ -14,6 +14,11 @@ import {
   assignmentHoursFacts,
   staffAssignmentFacts,
 } from "./assignment-eligibility-facts";
+import {
+  airlineCode,
+  isSameAirlinePriorityPosition,
+  sameAirlinePriorityAssignmentConflict,
+} from "../rules/airline-rotation";
 
 export type AssignmentEligibilityViolationCode =
   | "missing-target"
@@ -27,7 +32,8 @@ export type AssignmentEligibilityViolationCode =
   | "daily-hours"
   | "minimum-flight-transition"
   | "position-transition"
-  | "regular-staff-priority";
+  | "regular-staff-priority"
+  | "same-airline-priority";
 
 export interface AssignmentEligibilityViolation {
   code: AssignmentEligibilityViolationCode;
@@ -209,6 +215,38 @@ export function diagnoseMinimumFlightTransitionEligibility(
     : success();
 }
 
+export function diagnoseSameAirlinePriorityEligibility(
+  options: AutomaticAssignmentEligibilityOptions,
+  excludedAssignmentIds: ReadonlySet<string> = new Set()
+): AssignmentEligibilityDiagnostic {
+  if (!isSameAirlinePriorityPosition(options.rule)) return success();
+  const conflict = options.assignments.find((assignment) => {
+    if (
+      excludedAssignmentIds.has(assignment.id) ||
+      assignment.status !== "assigned" ||
+      assignment.staffId !== options.person.id ||
+      assignment.flightId === options.flight.id
+    )
+      return false;
+    const existingRule = assignmentRule(options.state, assignment);
+    return sameAirlinePriorityAssignmentConflict(
+      { ...assignment, positionRule: existingRule },
+      {
+        flightNo: options.flight.flightNo,
+        position: options.rule.name,
+        remark: options.rule.remark,
+        positionRule: options.rule,
+      }
+    );
+  });
+  return conflict
+    ? violation(
+        "same-airline-priority",
+        `${options.person.name}已承担同日${airlineCode(options.flight.flightNo)}航司的控制/一号岗位`
+      )
+    : success();
+}
+
 function diagnoseAutomaticAssignmentEligibilityWithTransitionCheck(
   options: AutomaticAssignmentEligibilityOptions,
   transitionCheck: PositionTransitionCheck
@@ -218,7 +256,9 @@ function diagnoseAutomaticAssignmentEligibilityWithTransitionCheck(
     transitionCheck
   );
   if (!staffEligibility.eligible) return staffEligibility;
-  return diagnoseMinimumFlightTransitionEligibility(options);
+  const minimumTransition = diagnoseMinimumFlightTransitionEligibility(options);
+  if (!minimumTransition.eligible) return minimumTransition;
+  return diagnoseSameAirlinePriorityEligibility(options);
 }
 
 export function diagnoseAutomaticAssignmentEligibility(
@@ -398,6 +438,18 @@ export function diagnoseManualAssignmentEligibility(
       (reuse || item.id !== ignoreAssignmentId) &&
       item.staffId === staffId
   );
+  const sameAirlinePriority = diagnoseSameAirlinePriorityEligibility(
+    {
+      state,
+      assignments: state.assignments,
+      flight,
+      rule: factRule,
+      person,
+      workHours: assignment.workHours,
+    },
+    new Set([assignmentId, ...(ignoreAssignmentId ? [ignoreAssignmentId] : [])])
+  );
+  violations.push(...sameAirlinePriority.violations);
   if (reuse) {
     if (person.staffType !== "常规")
       return violation("staff-type", "引导岗位只能复用常规人员");

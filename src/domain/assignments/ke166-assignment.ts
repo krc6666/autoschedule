@@ -48,6 +48,7 @@ export function compareKe166SupervisorRotation(
         leftStaffId,
         flight.flightNo,
         rule.name,
+        rule.remark,
         date
       ) > 0
     ) -
@@ -57,6 +58,7 @@ export function compareKe166SupervisorRotation(
         rightStaffId,
         flight.flightNo,
         rule.name,
+        rule.remark,
         date
       ) > 0
     )
@@ -121,6 +123,7 @@ function eligibleSupervisorOrder(
           person.id,
           flight.flightNo,
           rule.name,
+          rule.remark,
           date
         ) === 0
     )
@@ -132,6 +135,7 @@ function eligibleSupervisorOrder(
             left.id,
             flight.flightNo,
             rule.name,
+            rule.remark,
             date
           ) > 0
         ) -
@@ -141,6 +145,7 @@ function eligibleSupervisorOrder(
               right.id,
               flight.flightNo,
               rule.name,
+              rule.remark,
               date
             ) > 0
           ) ||
@@ -289,6 +294,7 @@ export async function assignKe166SupervisorByCounterCoverage(
             person.id,
             flight.flightNo,
             rule.name,
+            rule.remark,
             date
           ) === 0
       )
@@ -327,6 +333,7 @@ export async function assignKe166SupervisorByCounterCoverage(
             leftPerson.id,
             flight.flightNo,
             rule.name,
+            rule.remark,
             date
           ) > 0
         ) -
@@ -336,6 +343,7 @@ export async function assignKe166SupervisorByCounterCoverage(
               rightPerson.id,
               flight.flightNo,
               rule.name,
+              rule.remark,
               date
             ) > 0
           ) ||
@@ -398,6 +406,7 @@ export async function assignKe166SupervisorByCounterCoverage(
       regularAssignment.staffId,
       flight.flightNo,
       rule.name,
+      rule.remark,
       date
     ) > 0;
   if (currentRepeated) {
@@ -447,6 +456,7 @@ export async function assignKe166SupervisorByCounterCoverage(
     regularStaffId,
     flight.flightNo,
     rule.name,
+    rule.remark,
     date
   );
   const repeatedMessage =

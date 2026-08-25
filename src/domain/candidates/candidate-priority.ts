@@ -444,6 +444,7 @@ export function buildCandidatePriority(
         person.id,
         flight.flightNo,
         rule.name,
+        rule.remark,
         date,
         runFacts.scheduleFrequency
       ) > 0,
@@ -457,6 +458,7 @@ export function buildCandidatePriority(
         person.id,
         flight.flightNo,
         rule.name,
+        rule.remark,
         date,
         runFacts.scheduleFrequency
       ) > 0,

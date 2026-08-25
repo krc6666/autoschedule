@@ -26,6 +26,10 @@ import type {
   SolverProblem,
 } from "../solver/solver-port";
 import { intervalsOverlap } from "../shared/time";
+import {
+  airlineCode,
+  isSameAirlinePriorityPosition,
+} from "../rules/airline-rotation";
 
 export interface DailyCombinationChoice {
   id: string;
@@ -291,6 +295,36 @@ function incompatibilityConstraints(
         }
       }
     }
+  }
+  return constraints;
+}
+
+function sameAirlinePriorityConstraints(
+  staffChoices: readonly DailyCombinationChoice[]
+): LinearConstraint[] {
+  const constraints: LinearConstraint[] = [];
+  const choicesByStaffAirline = new Map<string, DailyCombinationChoice[]>();
+  for (const choice of staffChoices) {
+    const rule = choice.task.rule;
+    if (!isSameAirlinePriorityPosition(rule)) continue;
+    const key = `${choice.person.id}\u0000${airlineCode(choice.task.flight.flightNo)}`;
+    const own = choicesByStaffAirline.get(key) ?? [];
+    own.push(choice);
+    choicesByStaffAirline.set(key, own);
+  }
+
+  for (const [groupKey, choices] of choicesByStaffAirline) {
+    const uniqueByTask = new Map<string, DailyCombinationChoice>();
+    for (const choice of choices) uniqueByTask.set(choice.task.key, choice);
+    if (uniqueByTask.size < 2) continue;
+    constraints.push({
+      id: `same-airline-priority:${groupKey}:${constraints.length}`,
+      terms: [...uniqueByTask.values()].map(({ id }) => ({
+        variableId: id,
+        coefficient: 1,
+      })),
+      upperBound: 1,
+    });
   }
   return constraints;
 }
@@ -708,7 +742,10 @@ export function buildDailyCombinationModel(
 
   return {
     variables,
-    incompatibilityConstraints: incompatibilityConstraints(state, staffChoices),
+    incompatibilityConstraints: [
+      ...incompatibilityConstraints(state, staffChoices),
+      ...sameAirlinePriorityConstraints(staffChoices),
+    ],
     constraints,
     objectiveTerms,
   };

@@ -89,6 +89,7 @@ export async function finalizeKe166Supervisors({
         selected.id,
         task.flight.flightNo,
         task.rule.name,
+        task.rule.remark,
         date
       ) > 0 &&
       (selected.teamLeader ||

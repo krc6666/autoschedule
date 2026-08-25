@@ -69,6 +69,7 @@ function previousRuns(
     staffId,
     assignment.flightNo,
     assignment.position,
+    assignment.remark,
     date,
     facts?.scheduleFrequency
   );

@@ -142,6 +142,85 @@ function finalSafetyFixture(kind: "ke166" | "team-leader") {
 }
 
 describe("daily schedule final safety review", () => {
+  it("rejects a later same-airline control or number-one assignment after post-review changes", () => {
+    const state = createDefaultState();
+    const person = {
+      ...state.staff[0]!,
+      id: "same-airline-worker",
+      name: "同航司人员",
+      status: "正常" as const,
+      staffType: "常规" as const,
+      nightShift: true,
+    };
+    state.staff = [person];
+    state.flights = [
+      {
+        id: "fd-morning",
+        flightNo: "FD101",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 200,
+        positions: ["G18"],
+        remark: "",
+      },
+      {
+        id: "fd-later",
+        flightNo: "FD202",
+        startTime: "15:00",
+        endTime: "17:00",
+        bookedPassengers: 200,
+        positions: ["G20"],
+        remark: "",
+      },
+    ];
+    state.positionRules = state.flights.map((flight, index) => ({
+      id: `fd-rule-${index}`,
+      flightNo: flight.flightNo,
+      name: flight.positions[0]!,
+      category: "常规" as const,
+      remark: index === 0 ? "控制" : "一号",
+      qualifiedStaffIds: [person.id],
+      manual: false,
+      fatiguePoints: 1,
+      minPassengers: 0,
+      earlyReleaseMinutes: 0,
+    }));
+    const tasks: AssignmentTask[] = state.positionRules.map((rule) => {
+      const flight = state.flights.find(
+        (item) => item.flightNo === rule.flightNo
+      )!;
+      return { key: `${flight.id}:${rule.id}`, flight, rule };
+    });
+    const assignments: Assignment[] = tasks
+      .map<Assignment>((task, index) => ({
+        id: `fd-assignment-${index}`,
+        flightId: task.flight.id,
+        flightNo: task.flight.flightNo,
+        positionRuleId: task.rule.id,
+        position: task.rule.name,
+        staffId: person.id,
+        staffName: person.name,
+        startTime: task.flight.startTime,
+        endTime: task.flight.endTime,
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: task.rule.remark,
+        manualRemark: "",
+        status: "assigned",
+      }))
+      .reverse();
+
+    expect(() =>
+      assertDailyScheduleSafety({
+        state,
+        date: "2026-08-13",
+        tasks,
+        assignments,
+        evaluateEligibility: evaluateAutomaticHardConstraints,
+      })
+    ).toThrow("同航司控制/一号岗位");
+  });
+
   it.each(["ke166", "team-leader"] as const)(
     "accepts the existing %s controlled concurrency after finalization",
     (kind) => {

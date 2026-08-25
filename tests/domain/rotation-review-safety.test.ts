@@ -133,7 +133,7 @@ describe("rotation review safety", () => {
         endTime: "10:00",
         workHours: 2,
         fatiguePoints: 2,
-        remark: "",
+        remark: "一号",
       },
     ];
     const otherWork: Assignment = {
@@ -143,6 +143,7 @@ describe("rotation review safety", () => {
       flightNo: "F200",
       positionRuleId: null,
       position: "G18",
+      remark: "",
       staffId: originalWorker.id,
       staffName: originalWorker.name,
       startTime: "12:00",

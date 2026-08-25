@@ -123,6 +123,7 @@ function candidateFrequencyOrder(
         left.id,
         primary.flightNo,
         primary.position,
+        primary.remark,
         date,
         facts
       ),
@@ -131,6 +132,7 @@ function candidateFrequencyOrder(
         right.id,
         primary.flightNo,
         primary.position,
+        primary.remark,
         date,
         facts
       )
@@ -218,6 +220,7 @@ export async function reviewSamePositionFrequency(
         assignment.staffId!,
         assignment.flightNo,
         assignment.position,
+        assignment.remark,
         date,
         frequencyFacts
       ),
@@ -238,6 +241,7 @@ export async function reviewSamePositionFrequency(
       primary.staffId,
       primary.flightNo,
       primary.position,
+      primary.remark,
       date,
       frequencyFacts
     );
@@ -257,6 +261,7 @@ export async function reviewSamePositionFrequency(
             person.id,
             primary.flightNo,
             primary.position,
+            primary.remark,
             date,
             frequencyFacts
           ),
