@@ -3,6 +3,7 @@ import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { buildAssignmentDecisionTrace } from "../assignments/assignment-decision-trace";
 import { createAssignedPosition } from "../assignments/assignment-factory";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
+import { diversionTransferAssignmentIds } from "../assignments/diversion-release-usage";
 import { preNoonShortageNote } from "../coverage/schedule-coverage";
 import { makeUnfilled } from "../flights/schedule-position-rules";
 import {
@@ -19,7 +20,7 @@ import {
   crossWorkdayReservationWarning,
 } from "../reviews/cross-workday-qualification-reservation";
 import { violatedPositionTransitionPoliciesForInsertion } from "../reviews/schedule-protection";
-import { intervalsOverlap } from "../shared/time";
+import { durationHours, intervalsOverlap } from "../shared/time";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import { isCrossFlightPriorityAssignment } from "../rules/cross-flight-priority";
 import type {
@@ -290,7 +291,22 @@ export function materializeDailySchedulePlan({
   selectedVariableIds: ReadonlySet<string>;
 }): DailySchedulePlan {
   const assignments = decodeAssignments(selectedVariableIds, model);
+  const diversionAssignmentIds = diversionTransferAssignmentIds(
+    assignments,
+    state
+  );
   applyConfiguredEarlyReleases(assignments, state);
+  assignments.forEach((assignment) => {
+    if (
+      assignment.status === "assigned" &&
+      !diversionAssignmentIds.has(assignment.id)
+    ) {
+      assignment.workHours = durationHours(
+        assignment.startTime,
+        assignment.endTime
+      );
+    }
+  });
   attachDecisionTraces(state, date, preparation, model, assignments);
   attachCrossFlightPriorityEvidence(state, model, assignments);
   attachVacancyEvidence(state, preparation, model, assignments);

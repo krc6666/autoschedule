@@ -1,6 +1,6 @@
 # autoschedule 新窗口交接
 
-更新时间：2026-08-24
+更新时间：2026-08-27
 
 ## 新窗口入口
 
@@ -19,7 +19,32 @@ owner 在新窗口可以直接说：
 - 当前未执行 commit、push 或部署。
 - 当前开发地址通常为 `http://127.0.0.1:51127/`，端口是临时状态；新窗口使用前重新检查。当前地址最近一次 HTTP 检查返回 `200`。
 
-## 最近完成：值班人员中间减负优先级
+## 最近完成：分流仅在岗位缺口时启用
+
+业务场景：晚间只有 `AK151` 与 `TW616` 时，如两边岗位可由不同合格人员完整覆盖，`AK151` 的分流人员不应因末班公平、轮岗或疲劳目标继续承担 `TW616`。只有不使用提前撤岗确实会留下岗位空缺时，才允许分流接续。
+
+已完成修复：
+
+- 新增 `src/domain/assignments/diversion-release-usage.ts`，以“关闭提前撤岗后是否产生重叠或最小航班衔接冲突”识别实际分流；统一供整体模型、结果物化、后置复核和 `KE166` 收尾消费。
+- HiGHS 在“全部岗位空缺最小化”后，按现有 `minimum-flight-transition` 规则 ID 最小化分流转派次数；同等岗位完整度时不再为公平、轮岗或负荷启用分流。
+- 排班结果仅对实际发生分流的来源岗位缩短工时；未分流的下午分流岗位保留完整结束时间与工时。
+- 后置末班重点频率、连续轮岗和 `KE166` 独立督导收尾不得新增不必要的分流。
+- `spec.md` 与 `README.md` 已同步新合同；新增“人手足够不分流、缺员仍可分流、后置公平不新增分流、KE166 收尾不新增分流”的回归。
+
+关键文件：
+
+- `src/domain/assignments/diversion-release-usage.ts`
+- `src/domain/kernel/daily-combination-model.ts`
+- `src/domain/kernel/daily-schedule-model.ts`
+- `src/domain/kernel/daily-schedule-result.ts`
+- `src/domain/reviews/rotation-review-safety.ts`
+- `src/domain/assignments/ke166-supervisor-finalizer.ts`
+- `tests/domain/scheduling-kernel.test.ts`
+- `tests/domain/daily-schedule-optimizer.test.ts`
+- `tests/domain/late-priority-frequency-review.test.ts`
+- `spec.md`
+
+## 之前完成：值班人员中间减负优先级
 
 业务场景：`2026-08-26` 值班人员华嘉慧必须承担上午航班和 `TR121/H02`；中间 `CX931` 有 `G20`（重点岗位）和 `G14`（普通岗位）。22 日、24 日历史导入后，模型原本先把华嘉慧放到 `G14`，但后置 `position-frequency-review` 又把她换回 `G20`。
 
@@ -58,24 +83,25 @@ owner 在新窗口可以直接说：
 
 ## 最近真实验证
 
-最近一次修复后的独立验证已完成：
+本次分流修复后的独立验证已完成：
 
-- 目标及相邻规则测试：6 个文件、160 项通过；
-- 全量普通测试：97 个文件、663 项通过；
+- 目标及相邻规则测试：7 个文件、195 项通过；
 - `npm.cmd run typecheck`：通过；
 - `npm.cmd run build`：通过；
 - `npm.cmd run test:performance`：4 个文件、14 项通过；
 - `git diff --check`：通过；
 - 未发现调试输出残留。
 
-注意：最新实现修改后尚未重新运行 `npm.cmd run verify`。按 `AGENTS.md`，在 commit/push 前必须补跑一次并确认退出码为 0；若失败，不得推送。
+`npm.cmd run verify` 已实际运行但退出码为 `1`：普通测试 98 个文件中 97 通过、1 失败，682/683 项通过。失败为 `tests/app/application-coordinator.test.ts` 的“rechecks a proposed swap before applying it”，其预期手工换岗分析为 `safe`，实际为 `soft-tradeoff`。该用例仅交换同一航班两个常规岗位，分流计数为 0；可在本次修改前后的当前工作区独立复现，尚未处理，禁止将完整门禁写成通过，也不得 commit/push。
 
 ## 下一步与风险
 
-- 新窗口先用真实 22 日、24 日、26 日数据点击“重新排班”复核华嘉慧是否保持在 `CX931/G14`，不要只刷新页面；刷新只恢复 localStorage 中的旧班表。
-- 若真实页面仍显示 `G20`，导出当前配置/班表或提供浏览器控制台中的实际 `assignments`，继续对比真实数据与测试夹具。
+- 新窗口如继续排班规则开发，先保留当前未提交分流改动，不得按 `HEAD` 恢复或清理工作区。
+- 可以用真实晚间 `AK151`、`TW616` 数据点击“重新排班”复核：两边有独立合格人员时不得同人分流；缺员时仍应允许提前撤岗接续。不要仅刷新页面，刷新只恢复 localStorage 中旧班表。
+- 若下一任务需要 commit/push，先定位并修复上述手工换岗测试的 `safe`/`soft-tradeoff` 基线差异，再重新运行 `npm.cmd run verify`，必须退出码为 0。
+- 值班人员中间减负的真实页面复核仍有效：22 日、24 日历史导入后，26 日值班人员应保持在 `CX931/G14`，不要只刷新页面。
 - 任何新的排班规则改动都要先核对 `spec.md` 宏观原则和规则合同，先写失败测试，再修改所属职责模块。
-- 当前未授权 commit、push 或部署；即使 owner 后续授权，也必须先通过 `npm.cmd run verify`。
+- 当前未授权 commit、push 或部署。
 
 ## 交接文件边界
 

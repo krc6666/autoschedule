@@ -351,6 +351,7 @@ describe("manual swap analysis workflow", () => {
     h02.qualifiedStaffIds = people.map((person) => person.id);
     h08.qualifiedStaffIds = people.map((person) => person.id);
     state.settings.rollingLoadProtectionEnabled = false;
+    state.settings.workloadBalanceEnabled = false;
     state.assignments = [h02, h08].map((rule, index) => ({
       id: `swap-${index}`,
       flightId: flight.id,

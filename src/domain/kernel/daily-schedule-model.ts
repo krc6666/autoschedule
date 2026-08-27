@@ -1150,6 +1150,14 @@ export function buildDailyScheduleModel({
         coefficient: 1,
       })),
     },
+    {
+      id: "minimum-flight-transition:diversion-usage",
+      direction: "minimize",
+      terms:
+        combinations.objectiveTerms.get(
+          "minimum-flight-transition:diversion-usage"
+        ) ?? [],
+    },
     ...enabledCrossFlightPriorityPolicies(state).map((policy) => ({
       id: `cross-flight-priority-vacancies:${policy.id}`,
       direction: "minimize" as const,

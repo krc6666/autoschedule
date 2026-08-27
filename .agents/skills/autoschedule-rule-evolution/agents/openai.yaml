@@ -1,0 +1,4 @@
+interface:
+  display_name: "Autoschedule Rule Evolution"
+  short_description: "审查排班规则演进冲突与回归风险"
+  default_prompt: "Use $autoschedule-rule-evolution to audit this scheduling rule change before editing."

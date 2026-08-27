@@ -1,6 +1,7 @@
 import type { Assignment } from "../../model";
 import { hasDutyMorningAssignment } from "../assignments/duty-assignment";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
+import { diversionTransferCount } from "../assignments/diversion-release-usage";
 import { canAssignStaff } from "../candidates/assignment-eligibility";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
@@ -241,6 +242,13 @@ function plannedAssignmentSafetyReasons(
   ) {
     reasons.push("交换后会造成其他岗位空缺");
   }
+  if (
+    review !== "coverage" &&
+    diversionTransferCount(planned, state) >
+      diversionTransferCount(assignments, state)
+  ) {
+    reasons.push("调整会在岗位无需补缺时增加分流转派");
+  }
   if (policy.preventStaffWithoutWork) {
     const changedIds = new Set(
       planned
@@ -290,7 +298,11 @@ function plannedAssignmentSafetyReasons(
   ) {
     reasons.push("调整会增加值班人员的额外航班、重点岗位或疲劳");
   }
-  if (policy.protectWorkloadBalance && !allowWorkloadBalanceRegression) {
+  if (
+    policy.protectWorkloadBalance &&
+    state.settings.workloadBalanceEnabled &&
+    !allowWorkloadBalanceRegression
+  ) {
     const before = evaluateWorkloadBalance(
       state,
       date,

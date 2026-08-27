@@ -608,6 +608,32 @@ describe("daily schedule module interfaces", () => {
 });
 
 describe("daily schedule conflict constraints", () => {
+  it("minimizes diversion usage after completing all configured positions", async () => {
+    const problem = await captureProblem(
+      modelState(
+        [
+          flight("left", "AA100", "21:05", "23:05", ["P1"]),
+          flight("right", "BB200", "22:10", "00:10", ["P2"]),
+        ],
+        (rule) =>
+          rule.name === "P1"
+            ? { ...rule, category: "分流", earlyReleaseMinutes: 60 }
+            : rule
+      )
+    );
+    const diversionIndex = problem.objectives.findIndex(
+      (objective) =>
+        objective.id === "minimum-flight-transition:diversion-usage"
+    );
+    const vacancyIndex = problem.objectives.findIndex(
+      (objective) => objective.id === "all-vacancies"
+    );
+
+    expect(diversionIndex).toBeGreaterThan(vacancyIndex);
+    expect(problem.objectives[diversionIndex]!.direction).toBe("minimize");
+    expect(problem.objectives[diversionIndex]!.terms.length).toBeGreaterThan(0);
+  });
+
   it("adds one hard incompatibility for flight groups below the global transition gap", async () => {
     const state = modelState([
       flight("left", "AA100", "08:00", "10:00", ["A1", "A2"]),

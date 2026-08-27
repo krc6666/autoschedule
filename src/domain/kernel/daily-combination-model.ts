@@ -3,6 +3,7 @@ import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { createAssignedPosition } from "../assignments/assignment-factory";
 import { canReleaseForFlight } from "../assignments/assignment-timing";
 import { minimumFlightTransitionViolationBetweenTasks } from "../assignments/minimum-flight-transition";
+import { tasksRequireDiversionRelease } from "../assignments/diversion-release-usage";
 import type { CandidatePriority } from "../candidates/candidate-priority";
 import { isConcurrentSupervisor } from "../coverage/team-leader-concurrent-plan";
 import {
@@ -571,6 +572,72 @@ export function buildDailyCombinationModel(
             pair.rollingExcess
           );
         }
+      }
+    }
+  }
+
+  // Diversion is a coverage fallback: when several complete schedules exist,
+  // prefer the one that uses fewer diversion transfers.
+  for (const ownChoices of choicesByStaffId.values()) {
+    for (let leftIndex = 0; leftIndex < ownChoices.length; leftIndex += 1) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < ownChoices.length;
+        rightIndex += 1
+      ) {
+        const left = ownChoices[leftIndex]!;
+        const right = ownChoices[rightIndex]!;
+        if (
+          left.task.flight.id === right.task.flight.id ||
+          !tasksRequireDiversionRelease(
+            state,
+            left.task.flight,
+            left.task.rule,
+            right.task.flight,
+            right.task.rule
+          )
+        ) {
+          continue;
+        }
+        const variableId = `diversion:${left.id}:${right.id}`;
+        variables.push({
+          id: variableId,
+          type: "continuous",
+          lowerBound: 0,
+          upperBound: 1,
+        });
+        constraints.push(
+          {
+            id: `${variableId}:active`,
+            terms: [
+              { variableId, coefficient: 1 },
+              { variableId: left.id, coefficient: -1 },
+              { variableId: right.id, coefficient: -1 },
+            ],
+            lowerBound: -1,
+          },
+          {
+            id: `${variableId}:left`,
+            terms: [
+              { variableId, coefficient: 1 },
+              { variableId: left.id, coefficient: -1 },
+            ],
+            upperBound: 0,
+          },
+          {
+            id: `${variableId}:right`,
+            terms: [
+              { variableId, coefficient: 1 },
+              { variableId: right.id, coefficient: -1 },
+            ],
+            upperBound: 0,
+          }
+        );
+        addObjectiveTerm(
+          "minimum-flight-transition:diversion-usage",
+          variableId,
+          1
+        );
       }
     }
   }

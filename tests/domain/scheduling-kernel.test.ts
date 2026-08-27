@@ -6618,6 +6618,135 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(assignments[0]!.workHours).toBeCloseTo(65 / 60);
   });
 
+  it("does not use diversion when another qualified worker can cover the next flight", async () => {
+    const state = createDefaultState();
+    const workers = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    workers.forEach((person) => {
+      person.nightShift = true;
+      person.dutyQualified = false;
+    });
+    state.staff = workers;
+    state.flights = [
+      {
+        id: "ak-flight",
+        flightNo: "AK151",
+        startTime: "21:05",
+        endTime: "23:05",
+        bookedPassengers: 0,
+        positions: ["G09"],
+        remark: "",
+      },
+      {
+        id: "tw-flight",
+        flightNo: "TW616",
+        startTime: "22:10",
+        endTime: "00:10",
+        bookedPassengers: 0,
+        positions: ["G14"],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ak-g09",
+        flightNo: "AK151",
+        name: "G09",
+        category: "分流",
+        earlyReleaseMinutes: 60,
+        qualifiedStaffIds: workers.map((person) => person.id),
+      },
+      {
+        ...base,
+        id: "tw-g14",
+        flightNo: "TW616",
+        name: "G14",
+        category: "常规",
+        earlyReleaseMinutes: 0,
+        qualifiedStaffIds: workers.map((person) => person.id),
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-10-03");
+    const assignments = result.assignments.filter(
+      (assignment) => assignment.positionRuleId
+    );
+
+    expect(assignments).toHaveLength(2);
+    expect(assignments[0]!.staffId).not.toBe(assignments[1]!.staffId);
+    expect(assignments[0]!.endTime).toBe("23:05");
+    expect(assignments[0]!.workHours).toBe(2);
+  });
+
+  it("does not create a diversion transfer while finalizing a staffed KE166 supervisor", async () => {
+    const state = createDefaultState();
+    const workers = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    workers.forEach((person) => {
+      person.nightShift = true;
+      person.dutyQualified = false;
+    });
+    state.staff = workers;
+    state.flights = [
+      {
+        id: "ak-flight",
+        flightNo: "AK151",
+        startTime: "21:05",
+        endTime: "23:05",
+        bookedPassengers: 0,
+        positions: ["G09"],
+        remark: "",
+      },
+      {
+        id: "ke-flight",
+        flightNo: "KE166",
+        startTime: "22:10",
+        endTime: "00:10",
+        bookedPassengers: 0,
+        positions: ["督导"],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ak-g09-ke-case",
+        flightNo: "AK151",
+        name: "G09",
+        category: "分流",
+        earlyReleaseMinutes: 60,
+        qualifiedStaffIds: [workers[0]!.id],
+      },
+      {
+        ...base,
+        id: "ke-supervisor-diversion-case",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        earlyReleaseMinutes: 0,
+        qualifiedStaffIds: workers.map((person) => person.id),
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-10-03");
+    const source = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ak-g09-ke-case"
+    )!;
+    const supervisor = result.assignments.find(
+      (assignment) =>
+        assignment.positionRuleId === "ke-supervisor-diversion-case"
+    )!;
+
+    expect(supervisor.staffId).not.toBe(source.staffId);
+    expect(source.endTime).toBe("23:05");
+    expect(source.workHours).toBe(2);
+  });
+
   it("does not apply diversion release to morning flights", async () => {
     const state = createDefaultState();
     state.staff = [state.staff.find((person) => person.id === "2")!];

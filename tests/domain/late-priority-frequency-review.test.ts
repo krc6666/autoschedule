@@ -252,7 +252,7 @@ describe("late priority frequency review", () => {
     expect(warnings[0]!.split("。").filter(Boolean)).toHaveLength(2);
   });
 
-  it("commits the diversion release time together with a late-priority reassignment", async () => {
+  it("does not create a diversion transfer only to improve late-priority frequency", async () => {
     const state = createDefaultState();
     const [protectedWorker, replacementWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -361,8 +361,8 @@ describe("late priority frequency review", () => {
       new Set()
     );
 
-    expect(target.staffId).toBe(protectedWorker!.id);
-    expect(source.endTime).toBe("21:55");
-    expect(source.workHours).toBe(0.83);
+    expect(target.staffId).toBe(replacementWorker!.id);
+    expect(source.endTime).toBe("22:10");
+    expect(source.workHours).toBe(1.08);
   });
 });

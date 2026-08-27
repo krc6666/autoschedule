@@ -3,6 +3,7 @@ import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { buildAssignmentDecisionTrace } from "./assignment-decision-trace";
 import { createAssignedPosition } from "./assignment-factory";
 import { applyEarlyReleases } from "./assignment-timing";
+import { diversionTransferCount } from "./diversion-release-usage";
 import { assignKe166SupervisorByCounterCoverage } from "./ke166-assignment";
 import { strictOverrideNotes } from "./schedule-decision-notes";
 import { selectAssignmentCandidate } from "../candidates/candidate-selection";
@@ -81,7 +82,23 @@ export async function finalizeKe166Supervisors({
       candidateRulePlan,
       evaluateEligibility: evaluateAutomaticHardConstraints,
     });
-    let { selected } = selection;
+    const existingDiversionCount = diversionTransferCount(assignments, state);
+    const candidateDiversionCount = (staffId: string): number => {
+      const person = state.staff.find((item) => item.id === staffId)!;
+      return (
+        diversionTransferCount(
+          [...assignments, createAssignedPosition(task, person, hours, [], [])],
+          state
+        ) - existingDiversionCount
+      );
+    };
+    const orderedCandidates = [...selection.candidates].sort(
+      (left, right) =>
+        candidateDiversionCount(left.id) - candidateDiversionCount(right.id) ||
+        selection.candidates.indexOf(left) - selection.candidates.indexOf(right)
+    );
+    let selected = orderedCandidates[0];
+    const runnerUp = orderedCandidates[1];
     const repeatedIndependentSupervisorCanBeReleased = Boolean(
       selected &&
       consecutivePositionAssignments(
@@ -149,11 +166,15 @@ export async function finalizeKe166Supervisors({
       assignments,
       task,
       selected,
-      runnerUp: selection.runnerUp,
+      runnerUp,
       candidates: selection.candidates,
       candidatePriorities: selection.priorities,
       candidateRulePlan,
-      decisiveCandidateRule: selection.decisiveRule,
+      decisiveCandidateRule:
+        selected?.id === selection.selected?.id &&
+        runnerUp?.id === selection.runnerUp?.id
+          ? selection.decisiveRule
+          : null,
       runFacts: preparation.runFacts,
       dutyStaffId: preparation.dutyStaffId,
       isDutyTarget: dutyTargetTaskKeys.has(task.key),
