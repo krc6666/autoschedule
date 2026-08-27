@@ -14,6 +14,7 @@ const view: ApplicationViewState = {
   zoom: 1,
   loadSortField: "totalFatigue",
   loadSortDirection: "desc",
+  halfRestStaffIds: [],
   dialog: null,
   toast: null,
   progress: {

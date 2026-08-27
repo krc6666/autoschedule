@@ -8,6 +8,10 @@ import type {
   ScheduleWorkerRequest,
   ScheduleWorkerResponse,
 } from "./schedule-worker-protocol";
+import {
+  normalizeScheduleRunPreferences,
+  type ScheduleRunPreferences,
+} from "../domain/shared/schedule-run-preferences";
 
 export type ScheduleProgressListener = (
   stage: ScheduleProgressStage,
@@ -30,9 +34,11 @@ export function runScheduleInBackground(
   state: AppState,
   date: string,
   onProgress: ScheduleProgressListener,
-  onSafeResultAvailable: () => void = () => undefined
+  onSafeResultAvailable: () => void = () => undefined,
+  preferences?: ScheduleRunPreferences
 ): ActiveScheduleRun {
   const schedulingFacts = createScheduleGenerationFacts(state);
+  const runPreferences = normalizeScheduleRunPreferences(preferences);
   if (typeof Worker === "undefined") {
     let stopped = false;
     let latestSafeResult: ScheduleResult | undefined;
@@ -42,6 +48,7 @@ export function runScheduleInBackground(
       const completed = await generateSchedule(schedulingFacts, date, {
         solver: defaultHighsSolver,
         checkpointSolver: new HighsSolver(),
+        preferences: runPreferences,
         onProgress,
         onSafeResult: (safeResult) => {
           latestSafeResult = safeResult;
@@ -113,6 +120,7 @@ export function runScheduleInBackground(
     worker.postMessage({
       state: schedulingFacts,
       date,
+      preferences: runPreferences,
     } satisfies ScheduleWorkerRequest);
   } catch (error) {
     finish();

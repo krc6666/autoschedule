@@ -282,6 +282,18 @@ const RULE_EXECUTION: Readonly<
     candidate(compareLateShiftCutoff),
     review("late-shift-cutoff", "primary", lateShiftCutoffReview),
   ],
+  "half-rest-morning": [
+    {
+      kind: "daily-model",
+      id: "half-rest-morning",
+    },
+  ],
+  "half-rest-early-finish": [
+    {
+      kind: "daily-model",
+      id: "half-rest-early-finish",
+    },
+  ],
   "priority-position-consecutive": [
     candidate(
       (left, right) =>

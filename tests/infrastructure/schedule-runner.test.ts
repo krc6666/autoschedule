@@ -23,20 +23,33 @@ class ControlledWorker {
   }
 }
 
-function createRun() {
+function createRun(halfRestStaffIds: string[] = []) {
   vi.stubGlobal("Worker", ControlledWorker);
   const run = runScheduleInBackground(
     createDefaultState(),
     "2026-08-01",
     () => undefined,
-    () => undefined
+    () => undefined,
+    { halfRestStaffIds }
   );
   return { run, worker: ControlledWorker.instances.at(-1)! };
 }
 
 describe("background schedule runner", () => {
   it("projects application state to schedule-generation facts before posting", () => {
-    const { run, worker } = createRun();
+    const state = createDefaultState();
+    const selectedId = state.staff.find(
+      (person) => person.status === "正常" && person.staffType === "常规"
+    )!.id;
+    vi.stubGlobal("Worker", ControlledWorker);
+    const run = runScheduleInBackground(
+      state,
+      "2026-08-01",
+      () => undefined,
+      () => undefined,
+      { halfRestStaffIds: [selectedId] }
+    );
+    const worker = ControlledWorker.instances.at(-1)!;
 
     expect(worker.postMessage).toHaveBeenCalledOnce();
     const request = worker.postMessage.mock.calls[0]![0];
@@ -51,6 +64,7 @@ describe("background schedule runner", () => {
     expect(request.state).not.toHaveProperty("activeScheduleDate");
     expect(request.state).not.toHaveProperty("schedulePolicyStale");
     expect(request.state).not.toHaveProperty("updatedAt");
+    expect(request.preferences).toEqual({ halfRestStaffIds: [selectedId] });
     run.stopWithoutResult();
   });
 

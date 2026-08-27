@@ -10,6 +10,15 @@ const TECHNICAL_TERMS =
   /infeasible|changed-assignment-count|双向岗位资质|完整重排方案/;
 
 describe("user-facing schedule warnings", () => {
+  it("keeps a half-rest rejection more specific than a generic qualification reason", () => {
+    expect(
+      conciseAssignmentWarningReason([
+        "没有具备连续腾挪岗位资质的人员",
+        "该岗位的其他资质人员已设置半休，不能重新安排到后续岗位",
+      ])
+    ).toBe("其他资质人员已安排半休");
+  });
+
   it("turns solver diagnostics into one plain business reason", () => {
     expect(
       conciseAssignmentWarningReason([

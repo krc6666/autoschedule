@@ -92,11 +92,17 @@ export async function finalizeKe166Supervisors({
         ) - existingDiversionCount
       );
     };
-    const orderedCandidates = [...selection.candidates].sort(
-      (left, right) =>
-        candidateDiversionCount(left.id) - candidateDiversionCount(right.id) ||
-        selection.candidates.indexOf(left) - selection.candidates.indexOf(right)
-    );
+    const orderedCandidates = selection.candidates
+      .filter(
+        (person) => !preparation.runFacts.halfRest.activeStaffIds.has(person.id)
+      )
+      .sort(
+        (left, right) =>
+          candidateDiversionCount(left.id) -
+            candidateDiversionCount(right.id) ||
+          selection.candidates.indexOf(left) -
+            selection.candidates.indexOf(right)
+      );
     let selected = orderedCandidates[0];
     const runnerUp = orderedCandidates[1];
     const repeatedIndependentSupervisorCanBeReleased = Boolean(

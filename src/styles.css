@@ -1785,6 +1785,11 @@ autoschedule-schedule-grid {
   border-color: var(--as-border);
   background: #fff;
 }
+.schedule-cell.is-half-rest-unfilled {
+  border-color: #d94343;
+  background: #fff0f0;
+  box-shadow: inset 3px 0 0 #d94343;
+}
 .schedule-cell.is-soft-rule-warning {
   background: #fff7df;
   box-shadow: inset 3px 0 0 #d88a00;
@@ -2091,6 +2096,50 @@ autoschedule-schedule-grid {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.half-rest-selector {
+  position: relative;
+}
+.half-rest-selector > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 31px;
+  list-style: none;
+  cursor: pointer;
+}
+.half-rest-selector > summary::-webkit-details-marker {
+  display: none;
+}
+.half-rest-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(112px, 1fr));
+  gap: 2px 12px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--as-border);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(18 31 43 / 16%);
+}
+.half-rest-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 30px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.half-rest-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 autoschedule-archived-schedule-board,
 autoschedule-previous-schedule-comparison {
@@ -2587,6 +2636,10 @@ autoschedule-previous-schedule-comparison {
 @media (max-width: 720px) {
   body {
     padding-bottom: 68px;
+  }
+  .half-rest-menu {
+    right: auto;
+    left: 0;
   }
   .app-header .app-container {
     padding-inline: 12px;

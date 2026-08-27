@@ -20,6 +20,10 @@ import {
 } from "../coverage/team-leader-concurrent-plan";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { sameAirlinePriorityAssignmentConflict } from "../rules/airline-rotation";
+import {
+  isStrictRecoveryHalfRestBackfill,
+  type HalfRestFacts,
+} from "../rules/half-rest";
 
 export interface DailyScheduleSafetyOptions {
   state: ScheduleGenerationFacts;
@@ -31,6 +35,7 @@ export interface DailyScheduleSafetyOptions {
   ) => AssignmentEligibilityDiagnostic;
   allowFinalizedConcurrency?: boolean;
   preservedAssignments?: readonly Assignment[];
+  halfRestFacts?: HalfRestFacts;
 }
 
 function assignmentMatchesTask(
@@ -78,6 +83,7 @@ export function assertDailyScheduleSafety({
   evaluateEligibility,
   allowFinalizedConcurrency = false,
   preservedAssignments = [],
+  halfRestFacts,
 }: DailyScheduleSafetyOptions): void {
   const assigned = assignments.filter(
     (assignment) => assignment.status === "assigned" && assignment.staffId
@@ -169,7 +175,19 @@ export function assertDailyScheduleSafety({
         flightNo: task.flight.flightNo,
         position: task.rule.name,
         remark: task.rule.remark,
-      })
+      }) &&
+      !(
+        halfRestFacts &&
+        isStrictRecoveryHalfRestBackfill({
+          state,
+          facts: halfRestFacts,
+          protectedStaffIds: previousWorkdayLateProtection(state, date)
+            .protectedStaffIds,
+          staffId: person.id,
+          flight: task.flight,
+          rule: task.rule,
+        })
+      )
     ) {
       throw new Error(
         `最终安全复核未通过：${task.flight.flightNo}/${task.rule.name}违反严格跨工作日恢复目标`

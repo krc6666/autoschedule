@@ -16,6 +16,89 @@ import "../../src/ui/components/schedule-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("schedule page", () => {
+  it("selects multiple regular staff as current-date half-rest preferences", async () => {
+    const state = createDefaultState();
+    state.assignments = [];
+    const selectable = state.staff
+      .filter(
+        (person) => person.status === "正常" && person.staffType === "常规"
+      )
+      .slice(0, 2);
+    const commands: UiCommandEvent["detail"][] = [];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-08-03",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+      halfRestStaffIds: [],
+    });
+    element.addEventListener(UI_COMMAND_EVENT, (event) => {
+      commands.push((event as UiCommandEvent).detail);
+    });
+
+    expect(element.textContent).toContain("半休人员");
+    const inputs = selectable.map((person) =>
+      element.querySelector<HTMLInputElement>(
+        `input[aria-label="${person.name}设为半休"]`
+      )
+    );
+    expect(inputs.every(Boolean)).toBe(true);
+    inputs[0]!.click();
+    inputs[1]!.click();
+
+    expect(commands.at(-1)).toEqual({
+      type: "set-half-rest-staff",
+      staffIds: selectable.map((person) => person.id),
+    });
+  });
+
+  it("marks only half-rest shortages red", async () => {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    const rules = state.positionRules
+      .filter((rule) => rule.flightNo === flight.flightNo && !rule.manual)
+      .slice(0, 2);
+    state.assignments = rules.map((rule, index) => ({
+      id: `vacancy-${index}`,
+      flightId: flight.id,
+      flightNo: flight.flightNo,
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId: null,
+      staffName: "",
+      startTime: flight.startTime,
+      endTime: flight.endTime,
+      workHours: 0,
+      fatiguePoints: rule.fatiguePoints,
+      remark: rule.remark,
+      manualRemark: "",
+      status: "unfilled" as const,
+      ...(index === 0
+        ? { systemNotes: ["半休安排：后续可用人员不足，岗位保持空缺"] }
+        : {}),
+    }));
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-08-03",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+      halfRestStaffIds: [],
+    });
+
+    expect(
+      element.querySelector('[data-assignment-id="vacancy-0"]')?.classList
+    ).toContain("is-half-rest-unfilled");
+    expect(
+      element.querySelector('[data-assignment-id="vacancy-1"]')?.classList
+    ).not.toContain("is-half-rest-unfilled");
+  });
+
   it("keeps the administrative switch controlled until its command is applied", async () => {
     const state = createDefaultState();
     state.settings.adminSupportEnabled = false;

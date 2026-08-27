@@ -80,11 +80,13 @@ export function activeFlightRules(
       .map((rule) => rule.name.trim())
   );
   const configured = state.settings.adminSupportEnabled
-    ? flightRules.filter(
-        (rule) =>
-          rule.category === "行政支援" ||
-          !administrativePositions.has(rule.name.trim())
-      )
+    ? flightRules
+        .filter(
+          (rule) =>
+            rule.category === "行政支援" ||
+            !administrativePositions.has(rule.name.trim())
+        )
+        .map((rule) => administrativeSupportAutomaticRule(state, rule))
     : flightRules.filter((rule) => rule.category !== "行政支援");
   const primary = configured.filter(
     (rule) => rule.category !== "引导" && !isFixedBottomPosition(rule.name)
@@ -107,6 +109,30 @@ export function activeFlightRules(
     )
     .map(({ rule }) => rule);
   return [...orderedPrimary, ...fixedBottom];
+}
+
+export function administrativeSupportAutomaticRule(
+  state: Pick<FlightRuleFacts, "positionRules">,
+  rule: PositionRule
+): PositionRule {
+  if (rule.category !== "行政支援") return rule;
+  const regularCounterpartStaffIds = state.positionRules
+    .filter(
+      (candidate) =>
+        candidate.flightNo === rule.flightNo &&
+        candidate.name.trim() === rule.name.trim() &&
+        candidate.category === "常规"
+    )
+    .flatMap((candidate) => candidate.qualifiedStaffIds);
+  const qualifiedStaffIds = [
+    ...new Set([...rule.qualifiedStaffIds, ...regularCounterpartStaffIds]),
+  ];
+  return qualifiedStaffIds.length === rule.qualifiedStaffIds.length &&
+    qualifiedStaffIds.every(
+      (staffId, index) => staffId === rule.qualifiedStaffIds[index]
+    )
+    ? rule
+    : { ...rule, qualifiedStaffIds };
 }
 
 export function activeFlightPositions(

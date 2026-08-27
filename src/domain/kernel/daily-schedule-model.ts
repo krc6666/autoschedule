@@ -62,6 +62,12 @@ import {
   enabledCrossFlightPriorityPolicies,
 } from "../rules/cross-flight-priority";
 import { intervalsOverlap } from "../shared/time";
+import {
+  buildHalfRestOptimizationModel,
+  excludeCandidateForHalfRest,
+  halfRestBackfillStaffIds,
+  isStrictRecoveryHalfRestBackfill,
+} from "../rules/half-rest";
 
 export interface DailyScheduleStaffChoice {
   readonly id: string;
@@ -70,6 +76,7 @@ export interface DailyScheduleStaffChoice {
   readonly priority: CandidatePriority;
   readonly workHours: number;
   readonly lateShiftPositionRelief: boolean;
+  readonly strictRecoveryHalfRestBackfill: boolean;
 }
 
 export interface DailyScheduleVacancyChoice {
@@ -82,6 +89,15 @@ export interface DailyScheduleModel {
   readonly staffChoices: readonly DailyScheduleStaffChoice[];
   readonly vacancyChoices: readonly DailyScheduleVacancyChoice[];
   readonly rulePlan: readonly CandidateRulePlanItem[];
+  readonly halfRestAffectedStaffIdsByTask: ReadonlyMap<
+    string,
+    readonly string[]
+  >;
+}
+
+interface StaffChoiceBuild {
+  choices: DailyScheduleStaffChoice[];
+  halfRestAffectedStaffIdsByTask: Map<string, readonly string[]>;
 }
 
 interface WorkloadModel {
@@ -170,7 +186,7 @@ function staffChoicesForTasks(
   date: string,
   preparation: SchedulePreparation,
   scheduledTasks: readonly AssignmentTask[]
-): DailyScheduleStaffChoice[] {
+): StaffChoiceBuild {
   const processedTasks = new Set<string>();
   const dutyTargetTaskKeys = new Set([
     ...(preparation.preferredDutyMorningTaskKey
@@ -179,6 +195,7 @@ function staffChoicesForTasks(
     ...preparation.preferredDutyLateTaskCandidates.map((task) => task.key),
   ]);
   const choices: DailyScheduleStaffChoice[] = [];
+  const halfRestAffectedStaffIdsByTask = new Map<string, readonly string[]>();
   for (const task of scheduledTasks) {
     const candidates = state.staff.filter(
       (person) =>
@@ -220,7 +237,29 @@ function staffChoicesForTasks(
         ),
       ])
     );
+    const affectedHalfRestStaffIds = halfRestBackfillStaffIds({
+      state,
+      facts: preparation.runFacts.halfRest,
+      flight: task.flight,
+      rule: task.rule,
+    });
+    const preNoon = isPreNoonFlight(task.flight);
+    const taskAffectedByHalfRest =
+      !preNoon && affectedHalfRestStaffIds.length > 0;
+    if (taskAffectedByHalfRest) {
+      halfRestAffectedStaffIdsByTask.set(task.key, affectedHalfRestStaffIds);
+    }
     for (const person of candidates) {
+      const strictRecoveryHalfRestBackfill = isStrictRecoveryHalfRestBackfill({
+        state,
+        facts: preparation.runFacts.halfRest,
+        protectedStaffIds:
+          preparation.runFacts.crossDayRecovery.previousWorkday
+            .protectedStaffIds,
+        staffId: person.id,
+        flight: task.flight,
+        rule: task.rule,
+      });
       if (
         isStrictNextWorkdayRecoveryTarget(state, {
           flightNo: task.flight.flightNo,
@@ -229,7 +268,19 @@ function staffChoicesForTasks(
         }) &&
         preparation.runFacts.crossDayRecovery.previousWorkday.protectedStaffIds.has(
           person.id
-        )
+        ) &&
+        !strictRecoveryHalfRestBackfill
+      ) {
+        continue;
+      }
+      const priority = priorities.get(person.id)!;
+      if (
+        excludeCandidateForHalfRest({
+          facts: preparation.runFacts.halfRest,
+          staffId: person.id,
+          preNoon,
+          priority,
+        })
       ) {
         continue;
       }
@@ -237,8 +288,9 @@ function staffChoicesForTasks(
         id: `staff:${choices.length}`,
         task,
         person,
-        priority: priorities.get(person.id)!,
+        priority,
         workHours: minimumChoiceHours(task),
+        strictRecoveryHalfRestBackfill,
         lateShiftPositionRelief:
           state.settings.lateShiftRecoveryEnabled &&
           preparation.runFacts.crossDayRecovery.previousWorkday.scopedProtectedStaffIds.has(
@@ -252,7 +304,10 @@ function staffChoicesForTasks(
       });
     }
   }
-  return choices;
+  return {
+    choices,
+    halfRestAffectedStaffIdsByTask,
+  };
 }
 
 function dutyModel(
@@ -1063,12 +1118,13 @@ export function buildDailyScheduleModel({
   );
   if (!scheduledTasks.length) return null;
   const rulePlan = createCandidateRulePlan(state.settings);
-  const staffChoices = staffChoicesForTasks(
+  const staffChoiceBuild = staffChoicesForTasks(
     state,
     date,
     preparation,
     scheduledTasks
   );
+  const staffChoices = staffChoiceBuild.choices;
   const vacancyChoices = scheduledTasks.map((task, index) => ({
     id: `vacancy:${index}`,
     task,
@@ -1086,7 +1142,8 @@ export function buildDailyScheduleModel({
             preparation.runFacts.crossDayRecovery.previousWorkday.protectedStaffIds.has(
               staffId
             )
-          )
+          ) &&
+          !staffChoiceBuild.halfRestAffectedStaffIdsByTask.has(task.key)
       )
       .map((task) => task.key)
   );
@@ -1114,19 +1171,32 @@ export function buildDailyScheduleModel({
     new Set(dailyModelCandidateObjectives.map((objective) => objective.id))
   );
   const duty = dutyModel(preparation, staffChoices);
+  const halfRest = buildHalfRestOptimizationModel(
+    preparation.runFacts.halfRest,
+    staffChoices.map((choice) => ({
+      variableId: choice.id,
+      staffId: choice.person.id,
+      startTime: choice.task.flight.startTime,
+      endTime: choice.task.flight.endTime,
+    }))
+  );
   const maximumEligibleCount = Math.max(
     1,
-    ...scheduledTasks.map(
-      (task) => preparation.eligibleCounts.get(task.key) ?? 0
+    ...scheduledTasks.map((task) =>
+      task.rule.category === "行政支援"
+        ? 0
+        : (preparation.eligibleCounts.get(task.key) ?? 0)
     )
   );
   const preNoonScarcityTerms = vacancyChoices.map((choice) => ({
     variableId: choice.id,
-    coefficient: isPreNoonFlight(choice.task.flight)
-      ? maximumEligibleCount -
-        (preparation.eligibleCounts.get(choice.task.key) ?? 0) +
-        1
-      : 0,
+    coefficient:
+      choice.task.rule.category !== "行政支援" &&
+      isPreNoonFlight(choice.task.flight)
+        ? maximumEligibleCount -
+          (preparation.eligibleCounts.get(choice.task.key) ?? 0) +
+          1
+        : 0,
   }));
   const distinctPreNoonScarcityCoefficients = new Set(
     preNoonScarcityTerms
@@ -1139,7 +1209,19 @@ export function buildDailyScheduleModel({
       direction: "minimize",
       terms: vacancyChoices.map((choice) => ({
         variableId: choice.id,
-        coefficient: isPreNoonFlight(choice.task.flight) ? 1 : 0,
+        coefficient:
+          choice.task.rule.category !== "行政支援" &&
+          isPreNoonFlight(choice.task.flight)
+            ? 1
+            : 0,
+      })),
+    },
+    {
+      id: "regular-system-vacancies",
+      direction: "minimize",
+      terms: vacancyChoices.map((choice) => ({
+        variableId: choice.id,
+        coefficient: choice.task.rule.category === "行政支援" ? 0 : 1,
       })),
     },
     {
@@ -1149,6 +1231,13 @@ export function buildDailyScheduleModel({
         variableId: choice.id,
         coefficient: 1,
       })),
+    },
+    {
+      id: "strict-next-workday-recovery:half-rest-backfill",
+      direction: "minimize",
+      terms: staffChoices
+        .filter((choice) => choice.strictRecoveryHalfRestBackfill)
+        .map((choice) => ({ variableId: choice.id, coefficient: 1 })),
     },
     {
       id: "minimum-flight-transition:diversion-usage",
@@ -1222,6 +1311,11 @@ export function buildDailyScheduleModel({
     (objective) =>
       objective.id !== "candidate:ke166-supervisor" &&
       objective.id !== "candidate:position-transition" &&
+      !["candidate:late-shift-recovery", "candidate:late-shift-cutoff"].some(
+        (recoveryId) =>
+          objective.id === recoveryId ||
+          objective.id.startsWith(`${recoveryId}:`)
+      ) &&
       ![
         "candidate:late-priority-aggregate-rotation",
         "candidate:late-priority-frequency",
@@ -1241,6 +1335,12 @@ export function buildDailyScheduleModel({
         objective.id.startsWith(`${protectedId}:`)
     )
   );
+  const recoveryObjectives = candidateObjectives.filter((objective) =>
+    ["candidate:late-shift-recovery", "candidate:late-shift-cutoff"].some(
+      (recoveryId) =>
+        objective.id === recoveryId || objective.id.startsWith(`${recoveryId}:`)
+    )
+  );
   const objectives = applyDailyObjectiveOptimality(
     simplifyLexicographicObjectives(
       orderDailyObjectiveBuckets({
@@ -1252,6 +1352,8 @@ export function buildDailyScheduleModel({
         crossFlightPriority,
         protectedFairness: protectedFairnessObjectives,
         dutyRelief: duty.reliefObjectives,
+        recovery: recoveryObjectives,
+        halfRest: halfRest.objectives,
         remainingCandidate: remainingCandidateObjectives,
       })
     )
@@ -1260,6 +1362,8 @@ export function buildDailyScheduleModel({
     staffChoices,
     vacancyChoices,
     rulePlan,
+    halfRestAffectedStaffIdsByTask:
+      staffChoiceBuild.halfRestAffectedStaffIdsByTask,
     problem: {
       variables: [
         ...staffChoices.map(({ id }) => ({ id })),
@@ -1269,6 +1373,7 @@ export function buildDailyScheduleModel({
         ...combinations.variables,
         ...workload.variables,
         ...crossWorkdayReservation.variables,
+        ...halfRest.variables,
       ],
       constraints: [
         ...assignmentConstraints(
@@ -1285,6 +1390,7 @@ export function buildDailyScheduleModel({
         ...workload.constraints,
         ...crossWorkdayReservation.constraints,
         ...duty.constraints,
+        ...halfRest.constraints,
       ],
       objectives,
       timeoutMs,

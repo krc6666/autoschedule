@@ -2,6 +2,7 @@ import { html } from "lit";
 import { styleMap } from "lit/directives/style-map.js";
 
 import { assignmentRule } from "../../domain/flights/schedule-position-rules";
+import { isHalfRestWarning } from "../../domain/rules/half-rest";
 import type { AppState, Assignment } from "../../model";
 import { visiblePositionRemark } from "../../utils";
 import type {
@@ -116,6 +117,9 @@ export class ScheduleGridElement extends LightDomElement {
         decision.ruleId !== "cross-workday-load"
     );
     const manualWarning = assignment.manualOverrideWarnings?.[0];
+    const halfRestUnfilled =
+      assignment.status === "unfilled" &&
+      assignment.systemNotes?.some(isHalfRestWarning);
     const stateClasses = [
       assignment.staffName ? "is-assigned" : "is-unfilled",
       guide ? "is-guide" : "",
@@ -123,6 +127,7 @@ export class ScheduleGridElement extends LightDomElement {
       diversion ? "is-diversion" : "",
       warning ? "is-soft-rule-warning" : "",
       manualWarning ? "is-manual-override-warning" : "",
+      halfRestUnfilled ? "is-half-rest-unfilled" : "",
     ]
       .filter(Boolean)
       .join(" ");

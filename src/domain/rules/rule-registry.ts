@@ -60,6 +60,8 @@ export interface DailyModelExecutor {
     | "cross-flight-priority"
     | "cross-workday-qualification-reservation"
     | "strict-next-workday-recovery"
+    | "half-rest-morning"
+    | "half-rest-early-finish"
     | "same-day-late-obligation"
     | "late-shift-position-relief";
 }

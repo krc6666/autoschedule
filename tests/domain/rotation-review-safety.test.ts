@@ -4,6 +4,7 @@ import { createDefaultState } from "../../src/defaults";
 import type { Assignment } from "../../src/model";
 import { ROTATION_REVIEW_POLICIES } from "../../src/domain/reviews/reassignment-safety-policy";
 import { reassignmentSafetyReasons } from "../../src/domain/reviews/rotation-review-safety";
+import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 
 describe("rotation review safety", () => {
   it("requires an explicit safety policy for every review purpose", () => {
@@ -305,5 +306,148 @@ describe("rotation review safety", () => {
     });
 
     expect(reasons).toContain("调整会减少跨工作日资质预留人数");
+  });
+
+  function createStrictHalfRestFixture() {
+    const state = createDefaultState();
+    const [halfRestWorker, recoveringWorker, availableWorker] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 3);
+    state.staff = [halfRestWorker!, recoveringWorker!, availableWorker!];
+    state.flights = [
+      {
+        id: "late-flight",
+        flightNo: "PM200",
+        startTime: "15:00",
+        endTime: "17:00",
+        bookedPassengers: 100,
+        positions: ["B1"],
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...state.positionRules[0]!,
+        id: "late-control",
+        flightNo: "PM200",
+        name: "B1",
+        category: "常规",
+        remark: "控制",
+        qualifiedStaffIds: state.staff.map((person) => person.id),
+      },
+    ];
+    state.settings.lateShiftRecoveryEnabled = true;
+    state.settings.nextWorkdayRecoveryMode = "forbid";
+    state.settings.nextWorkdayRecoveryTargets = [
+      {
+        id: "strict-control",
+        enabled: true,
+        flightNo: "PM200",
+        positionKeyword: "控制",
+      },
+    ];
+    state.settings.lateShiftRecoveryPositionRules = [
+      {
+        id: "previous-number-one",
+        enabled: true,
+        flightNo: "OLD900",
+        matchField: "remark",
+        keyword: "一号",
+        nextWorkdayCutoffTime: "",
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-late",
+        date: "2026-07-28",
+        flightNo: "OLD900",
+        position: "H02",
+        staffId: recoveringWorker!.id,
+        staffName: recoveringWorker!.name,
+        startTime: "21:00",
+        endTime: "23:30",
+        workHours: 2.5,
+        fatiguePoints: 5,
+        remark: "一号",
+      },
+    ];
+    const target: Assignment = {
+      id: "target",
+      flightId: "late-flight",
+      flightNo: "PM200",
+      positionRuleId: "late-control",
+      position: "B1",
+      staffId: availableWorker!.id,
+      staffName: availableWorker!.name,
+      startTime: "15:00",
+      endTime: "17:00",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "控制",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const facts = createScheduleRunFacts(state, "2026-07-30", {
+      halfRestStaffIds: [halfRestWorker!.id],
+    });
+    return {
+      state,
+      target,
+      facts,
+      recoveringWorker: recoveringWorker!,
+    };
+  }
+
+  it("does not add a strict recovery exception for an ordinary half-rest reassignment", () => {
+    const { state, target, facts, recoveringWorker } =
+      createStrictHalfRestFixture();
+
+    const reasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: [target],
+      changes: [{ assignmentId: target.id, staffId: recoveringWorker.id }],
+      primaryAssignmentId: target.id,
+      date: "2026-07-30",
+      review: "frequency",
+      facts,
+    });
+
+    expect(reasons).toContain("调整会在未补齐半休空缺时新增严格恢复突破");
+  });
+
+  it("allows strict recovery to yield when a post-review plan fills a half-rest vacancy", () => {
+    const { state, target, facts, recoveringWorker } =
+      createStrictHalfRestFixture();
+    const vacancy: Assignment = {
+      ...target,
+      staffId: null,
+      staffName: "",
+      workHours: 0,
+      status: "unfilled",
+    };
+
+    const reasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: [vacancy],
+      changes: [
+        {
+          assignmentId: vacancy.id,
+          staffId: recoveringWorker.id,
+          workHours: 2,
+          status: "assigned",
+        },
+      ],
+      primaryAssignmentId: vacancy.id,
+      date: "2026-07-30",
+      review: "coverage",
+      facts,
+    });
+
+    expect(reasons).not.toContain(
+      "严格跨工作日恢复限制不允许该人员承担次班目标岗位"
+    );
+    expect(reasons).not.toContain("调整会在未补齐半休空缺时新增严格恢复突破");
   });
 });

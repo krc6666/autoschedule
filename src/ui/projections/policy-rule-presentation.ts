@@ -46,7 +46,7 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
   "minimum-flight-transition":
     "常规跨航班连续工作必须留足准备时间；符合条件的下午分流按提前撤岗配置接续。",
   "strict-next-workday-recovery":
-    "选择严格限制时，上一班末班重点岗位人员不得承担配置的次班恢复目标；无完整方案时本次排班失败。",
+    "选择严格限制时，上一班末班重点岗位人员不得承担配置的次班恢复目标；唯一例外是为补齐半休造成的后续岗位空缺。没有半休补位例外且无完整方案时，本次排班失败。",
   "ke166-supervisor":
     "先完成柜台与重点岗位，再安排独立督导；只有缺员时才受控兼任。",
   "duty-position": "按值班优先项安排晚撤岗位，并只锁定实际安排的岗位。",
@@ -68,6 +68,10 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "上一工作班承担晚间重点岗位的人，本班优先通过整体换位获得恢复。",
   "late-shift-cutoff":
     "需要恢复的人若能退出截止后岗位，优先按设定时间下班；若整体缺员使晚班不可避免，则保留晚班并优先安全撤掉其截止前岗位。",
+  "half-rest-morning":
+    "本次选中的正常常规人员有合法早班岗位时，先保证尽量多人至少承担一个12点前岗位；非半休人员即使命中疲劳恢复，缺少其他安全人选时仍继续上班补齐岗位。",
+  "half-rest-early-finish":
+    "完成前序规则和早班参与后，继续尽量提前半休人员的最终下班时间；后续缺员允许留空并提示。",
   "priority-position-consecutive": "重点岗位连续由同一人承担时优先换人。",
   "high-fatigue-position-consecutive":
     "高疲劳普通岗位连续由同一人承担时优先换人。",

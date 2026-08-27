@@ -16,6 +16,7 @@ import {
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
 import { assignmentWarningMessage } from "./schedule-warning-message";
+import { halfRestBackfillRejectionReason } from "../rules/half-rest";
 
 function applyRecoveryPlan(
   state: ScheduleGenerationFacts,
@@ -147,7 +148,17 @@ export async function reviewLateShiftRecovery(
       continue;
     }
     reviewed.add(primary.id);
-    const message = recoveryFallback(primary, attemptedReasons);
+    const halfRestReason = facts
+      ? halfRestBackfillRejectionReason({
+          state,
+          target: primary,
+          facts: facts.halfRest,
+        })
+      : null;
+    const message = recoveryFallback(primary, [
+      ...attemptedReasons,
+      ...(halfRestReason ? [halfRestReason] : []),
+    ]);
     replaceAssignmentDecisions(primary, "late-shift-recovery", [
       schedulingDecision("late-shift-recovery", "fallback", message),
     ]);

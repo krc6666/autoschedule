@@ -20,6 +20,10 @@ import { evaluateWorkloadBalance } from "./workload-balance";
 import { crossWorkdayReservationStatuses } from "./cross-workday-qualification-reservation";
 import { crossFlightPriorityReassignmentReasons } from "../rules/cross-flight-priority";
 import { isDutyReliefPriorityPosition } from "./position-rotation-policy";
+import {
+  halfRestRegressionReasons,
+  strictRecoveryHalfRestBackfillCount,
+} from "../rules/half-rest";
 
 function dutyReliefProfile(
   state: ScheduleGenerationFacts,
@@ -157,6 +161,34 @@ function plannedAssignmentSafetyReasons(
       frequencyFacts
     )
   );
+  if (facts) {
+    const beforeStrictBackfills = strictRecoveryHalfRestBackfillCount({
+      state,
+      assignments,
+      facts: facts.halfRest,
+      protectedStaffIds:
+        facts.crossDayRecovery.previousWorkday.protectedStaffIds,
+    });
+    const afterStrictBackfills = strictRecoveryHalfRestBackfillCount({
+      state: plannedState,
+      assignments: planned,
+      facts: facts.halfRest,
+      protectedStaffIds:
+        facts.crossDayRecovery.previousWorkday.protectedStaffIds,
+    });
+    const assignedBefore = assignments.filter(
+      (assignment) => assignment.status === "assigned" && assignment.staffId
+    ).length;
+    const assignedAfter = planned.filter(
+      (assignment) => assignment.status === "assigned" && assignment.staffId
+    ).length;
+    if (
+      afterStrictBackfills - beforeStrictBackfills >
+      assignedAfter - assignedBefore
+    ) {
+      reasons.push("调整会在未补齐半休空缺时新增严格恢复突破");
+    }
+  }
   for (const assignment of planned.filter((item) =>
     changedAssignmentIds.has(item.id)
   )) {
@@ -298,6 +330,17 @@ function plannedAssignmentSafetyReasons(
   ) {
     reasons.push("调整会增加值班人员的额外航班、重点岗位或疲劳");
   }
+  reasons.push(
+    ...halfRestRegressionReasons(
+      assignments,
+      planned,
+      facts?.halfRest ?? {
+        requestedStaffIds: [],
+        activeStaffIds: new Set<string>(),
+        ignoredWarnings: [],
+      }
+    )
+  );
   if (
     policy.protectWorkloadBalance &&
     state.settings.workloadBalanceEnabled &&

@@ -4,7 +4,10 @@ import {
   minimumFlightTransitionMessage,
   minimumFlightTransitionViolationsForInsertion,
 } from "../assignments/minimum-flight-transition";
-import { assignmentRule } from "../flights/schedule-position-rules";
+import {
+  administrativeSupportAutomaticRule,
+  assignmentRule,
+} from "../flights/schedule-position-rules";
 import {
   positionTransitionCost,
   positionTransitionInsertionCost,
@@ -367,7 +370,17 @@ export function diagnoseManualAssignmentEligibility(
     minPassengers: 0,
     earlyReleaseMinutes: 0,
   };
-  const staffFacts = staffAssignmentFacts(state, flight, factRule, person);
+  const automaticSupportRule = rule
+    ? administrativeSupportAutomaticRule(state, rule)
+    : factRule;
+  const eligibilityRule =
+    person.staffType === "行政支援" ? factRule : automaticSupportRule;
+  const staffFacts = staffAssignmentFacts(
+    state,
+    flight,
+    eligibilityRule,
+    person
+  );
   if (!staffFacts.available)
     return violation(
       "staff-unavailable",
@@ -407,7 +420,7 @@ export function diagnoseManualAssignmentEligibility(
               state,
               assignments: otherAssignments,
               flight,
-              rule,
+              rule: automaticSupportRule,
               person: regular,
               workHours: assignment.workHours,
               transitionMode: "forbid",
@@ -466,7 +479,7 @@ export function diagnoseManualAssignmentEligibility(
     state,
     assignments: others,
     flight,
-    rule: factRule,
+    rule: eligibilityRule,
     person,
     workHours: assignment.workHours,
     sameFlightConflict: reuse
@@ -490,7 +503,7 @@ export function diagnoseManualAssignmentEligibility(
     others,
     staffId,
     flight,
-    factRule
+    eligibilityRule
   )[0];
   if (minimumTransition) {
     violations.push({

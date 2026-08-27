@@ -3463,7 +3463,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     ).toMatchObject({ status: "manual", staffId: null });
   });
 
-  it("keeps administrative support positions empty even when basic positions are full", async () => {
+  it("fills an administrative support position with an available regular worker", async () => {
     const state = createDefaultState();
     state.settings.adminSupportEnabled = true;
     state.staff = state.staff.slice(0, 2);
@@ -3500,7 +3500,165 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     const adminSupport = (
       await generateSchedule(state, "2026-07-18")
     ).assignments.find((item) => item.position === "超规行李引导");
-    expect(adminSupport).toMatchObject({ status: "manual", staffId: null });
+    expect(adminSupport).toMatchObject({
+      status: "assigned",
+      staffId: state.staff[1]!.id,
+      workHours: 2,
+      fatiguePoints: base.fatiguePoints,
+    });
+  });
+
+  it("keeps regular positions ahead of administrative support positions", async () => {
+    const state = createDefaultState();
+    state.settings.adminSupportEnabled = true;
+    state.staff = [state.staff[0]!];
+    state.staff[0]!.dutyQualified = false;
+    state.flights = [
+      {
+        id: "f1",
+        flightNo: "F1",
+        startTime: "13:00",
+        endTime: "15:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "administrative-first",
+        flightNo: "F1",
+        name: "行政补位",
+        category: "行政支援",
+        qualifiedStaffIds: [state.staff[0]!.id],
+      },
+      {
+        ...base,
+        id: "regular-second",
+        flightNo: "F1",
+        name: "G14",
+        category: "常规",
+        qualifiedStaffIds: [state.staff[0]!.id],
+      },
+    ];
+
+    const assignments = (await generateSchedule(state, "2026-07-18"))
+      .assignments;
+
+    expect(
+      assignments.find((item) => item.positionRuleId === "regular-second")
+    ).toMatchObject({ status: "assigned", staffId: state.staff[0]!.id });
+    expect(
+      assignments.find((item) => item.positionRuleId === "administrative-first")
+    ).toMatchObject({ status: "manual", staffId: null });
+  });
+
+  it("continues using a regular worker on a non-conflicting administrative support position", async () => {
+    const state = createDefaultState();
+    state.settings.adminSupportEnabled = true;
+    state.staff = [state.staff[0]!];
+    state.staff[0]!.dutyQualified = false;
+    state.settings.minimumRegularTransitionMinutes = 0;
+    state.flights = [
+      {
+        id: "regular-flight",
+        flightNo: "REGULAR",
+        startTime: "13:00",
+        endTime: "15:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "support-flight",
+        flightNo: "SUPPORT",
+        startTime: "17:00",
+        endTime: "19:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "regular-position",
+        flightNo: "REGULAR",
+        name: "G14",
+        category: "常规",
+        qualifiedStaffIds: [state.staff[0]!.id],
+      },
+      {
+        ...base,
+        id: "support-position",
+        flightNo: "SUPPORT",
+        name: "行政补位",
+        category: "行政支援",
+        qualifiedStaffIds: [state.staff[0]!.id],
+      },
+    ];
+
+    const assignments = (await generateSchedule(state, "2026-07-18"))
+      .assignments;
+
+    expect(
+      assignments.filter((item) => item.staffId === state.staff[0]!.id)
+    ).toHaveLength(2);
+    expect(
+      assignments.find((item) => item.positionRuleId === "support-position")
+    ).toMatchObject({ status: "assigned", workHours: 2 });
+  });
+
+  it("uses the regular counterpart qualifications for same-name administrative support", async () => {
+    const state = createDefaultState();
+    state.settings.adminSupportEnabled = true;
+    const regular = state.staff[0]!;
+    const administrative = state.staff[1]!;
+    administrative.staffType = "行政支援";
+    regular.dutyQualified = false;
+    state.staff = [regular, administrative];
+    state.flights = [
+      {
+        id: "f1",
+        flightNo: "F1",
+        startTime: "13:00",
+        endTime: "15:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "regular-counterpart",
+        flightNo: "F1",
+        name: "督导",
+        category: "常规",
+        qualifiedStaffIds: [regular.id],
+      },
+      {
+        ...base,
+        id: "administrative-counterpart",
+        flightNo: "F1",
+        name: "督导",
+        category: "行政支援",
+        qualifiedStaffIds: [administrative.id],
+      },
+    ];
+
+    const assignment = (await generateSchedule(state, "2026-07-18"))
+      .assignments[0];
+
+    expect(assignment).toMatchObject({
+      positionRuleId: "administrative-counterpart",
+      status: "assigned",
+      staffId: regular.id,
+    });
   });
 
   it("omits administrative support positions while the mode is disabled", async () => {
@@ -3704,7 +3862,11 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(
       (await generateSchedule(state, "2026-07-18")).assignments
     ).toMatchObject([
-      { positionRuleId: "admin-supervisor", status: "manual", staffId: null },
+      {
+        positionRuleId: "admin-supervisor",
+        status: "assigned",
+        staffId: state.staff[0]!.id,
+      },
       { positionRuleId: "regular-counter", status: "assigned" },
     ]);
   });

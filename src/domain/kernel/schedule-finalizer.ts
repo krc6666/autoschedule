@@ -26,6 +26,7 @@ import type { DailySchedulePlan } from "./daily-schedule-result";
 import { assertDailyScheduleSafety } from "./daily-schedule-safety";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import { scheduleOptimizationWarning } from "../reviews/schedule-warning-message";
+import { isHalfRestWarning } from "../rules/half-rest";
 
 export interface ScheduleFinalizerOptions {
   solver: SolverPort;
@@ -86,7 +87,8 @@ function rebuildWarnings(
   state: ScheduleGenerationFacts,
   assignments: readonly Assignment[],
   postReviewWarnings: readonly string[],
-  optimizationQuality: DailySchedulePlan["optimizationQuality"]
+  optimizationQuality: DailySchedulePlan["optimizationQuality"],
+  persistentRunWarnings: readonly string[]
 ): string[] {
   const warnings = assignments.flatMap((assignment) => {
     if (assignment.systemNotes?.length)
@@ -111,6 +113,7 @@ function rebuildWarnings(
       ...warnings,
       ...reservationWarnings,
       ...postReviewWarnings,
+      ...persistentRunWarnings,
       ...(optimizationWarning ? [optimizationWarning] : []),
     ]),
   ];
@@ -189,6 +192,7 @@ export async function finalizeSchedule({
     evaluateEligibility: evaluateAutomaticHardConstraints,
     allowFinalizedConcurrency: true,
     preservedAssignments,
+    halfRestFacts: runFacts.halfRest,
   });
   warnings.splice(
     0,
@@ -197,7 +201,8 @@ export async function finalizeSchedule({
       state,
       resultAssignments,
       postReviewWarnings,
-      optimizationQuality
+      optimizationQuality,
+      warnings.filter(isHalfRestWarning)
     )
   );
   return {

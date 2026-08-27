@@ -19,6 +19,7 @@ import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
 import { timeToMinutes } from "../shared/time";
 import { assignmentWarningMessage } from "./schedule-warning-message";
+import { halfRestBackfillRejectionReason } from "../rules/half-rest";
 
 function operationalEnd(
   assignment: Pick<Assignment, "startTime" | "endTime">
@@ -281,7 +282,17 @@ export async function reviewLateShiftCutoff(
       result.changes.forEach((change) => reviewed.add(change.assignmentId));
       continue;
     }
-    const message = fallbackMessage(primary, result.attemptedReasons);
+    const halfRestReason = facts
+      ? halfRestBackfillRejectionReason({
+          state,
+          target: primary,
+          facts: facts.halfRest,
+        })
+      : null;
+    const message = fallbackMessage(primary, [
+      ...result.attemptedReasons,
+      ...(halfRestReason ? [halfRestReason] : []),
+    ]);
     replaceAssignmentDecisions(primary, "late-shift-cutoff", [
       schedulingDecision("late-shift-cutoff", "fallback", message),
     ]);

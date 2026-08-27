@@ -16,6 +16,7 @@ import {
   scheduleProgressPercent,
   type ScheduleProgressStage,
 } from "./schedule-progress";
+import type { ScheduleRunPreferences } from "../shared/schedule-run-preferences";
 
 export type { ScheduleProgressStage } from "./schedule-progress";
 
@@ -24,6 +25,7 @@ export interface GenerateScheduleOptions {
   checkpointSolver?: SolverPort;
   onProgress?: (stage: ScheduleProgressStage, percent: number) => void;
   onSafeResult?: (result: ScheduleResult) => void;
+  preferences?: ScheduleRunPreferences;
 }
 
 interface FinalizePlanOptions {
@@ -113,7 +115,8 @@ export async function generateSchedule(
   const preparation = prepareSchedule(
     state,
     date,
-    evaluateAutomaticHardConstraints
+    evaluateAutomaticHardConstraints,
+    options.preferences
   );
   reportProgress("optimize", scheduleProgressPercent("optimize"));
 

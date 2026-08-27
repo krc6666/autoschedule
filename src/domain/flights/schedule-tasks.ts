@@ -41,11 +41,21 @@ export function isNumberedRegularPosition(rule: PositionRule): boolean {
   return rule.category === "常规" && /\d/.test(rule.name);
 }
 
-export function shouldAutoAssign(flight: Flight, rule: PositionRule): boolean {
+export function shouldAutoAssign(
+  flight: Flight,
+  rule: PositionRule,
+  administrativeSupportEnabled = false
+): boolean {
   if (isKe166MobileSupervisor(flight, rule)) return true;
   if (mustAutoFillPreNoon(flight, rule)) return true;
+  if (rule.category === "行政支援") {
+    return (
+      administrativeSupportEnabled &&
+      (rule.minPassengers ?? 0) <= flight.bookedPassengers
+    );
+  }
   return (
-    !["引导", "行政支援"].includes(rule.category) &&
+    rule.category !== "引导" &&
     !rule.manual &&
     (rule.minPassengers ?? 0) <= flight.bookedPassengers
   );

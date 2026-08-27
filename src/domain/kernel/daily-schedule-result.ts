@@ -30,6 +30,7 @@ import type {
 import type { SolverResult } from "../solver/solver-port";
 import type { SchedulePreparation } from "./schedule-preparation";
 import { assertDailyScheduleSafety } from "./daily-schedule-safety";
+import { HALF_REST_WARNING_PREFIX } from "../rules/half-rest";
 
 export interface DailySchedulePlan {
   assignments: Assignment[];
@@ -142,6 +143,22 @@ function attachDecisionTraces(
       hasAssignedDutyLateTask: Boolean(assignedDutyLateTask),
       finalizingKe166Supervisor: false,
     });
+    if (selectedChoice.strictRecoveryHalfRestBackfill) {
+      const halfRestNames = (
+        model.halfRestAffectedStaffIdsByTask.get(task.key) ?? []
+      )
+        .map(
+          (staffId) => state.staff.find((person) => person.id === staffId)?.name
+        )
+        .filter((name): name is string => Boolean(name));
+      assignment.decisionTrace.push(
+        schedulingDecision(
+          "strict-next-workday-recovery",
+          "fallback",
+          `${assignment.staffName}命中严格跨工作日恢复目标；为避免${halfRestNames.join("、")}半休造成后续岗位空缺，本次继续安排${assignment.flightNo}/${assignment.position}。`
+        )
+      );
+    }
     if (!assignment.decisionTrace.length) delete assignment.decisionTrace;
   }
 }
@@ -160,6 +177,19 @@ function attachVacancyEvidence(
         item.rule.id === assignment.positionRuleId
     );
     if (!task) continue;
+    const halfRestStaffIds =
+      model.halfRestAffectedStaffIdsByTask.get(task.key) ?? [];
+    if (halfRestStaffIds.length) {
+      const names = halfRestStaffIds
+        .map(
+          (staffId) => state.staff.find((person) => person.id === staffId)?.name
+        )
+        .filter((name): name is string => Boolean(name));
+      assignment.systemNotes = [
+        `${HALF_REST_WARNING_PREFIX}为落实${names.join("、")}半休，后续可用人员不足，岗位保持空缺`,
+      ];
+      continue;
+    }
     const reallocatedTo = assignments.find(
       (candidate) =>
         candidate.status === "assigned" &&
@@ -323,6 +353,26 @@ export function materializeDailySchedulePlan({
     )
   );
   const warnings = [
+    ...preparation.runFacts.halfRest.ignoredWarnings,
+    ...[...preparation.runFacts.halfRest.activeStaffIds].flatMap((staffId) => {
+      const person = state.staff.find((item) => item.id === staffId);
+      const hasMorning = assignments.some(
+        (assignment) =>
+          assignment.status === "assigned" &&
+          assignment.staffId === staffId &&
+          isPreNoonFlight(assignment)
+      );
+      if (hasMorning) return [];
+      const hasMorningCandidate = model.staffChoices.some(
+        (choice) =>
+          choice.person.id === staffId && isPreNoonFlight(choice.task.flight)
+      );
+      return [
+        hasMorningCandidate
+          ? `${HALF_REST_WARNING_PREFIX}12点前岗位数量不足，${person?.name ?? "所选人员"}未能落实至少一个早班岗位`
+          : `${HALF_REST_WARNING_PREFIX}${person?.name ?? "所选人员"}没有可合法承担的12点前岗位，本次半休未落实`,
+      ];
+    }),
     ...assignments.flatMap((assignment) =>
       assignment.status === "unfilled"
         ? [`${assignment.flightNo} / ${assignment.position} 无可用人员`]
@@ -357,6 +407,7 @@ export function materializeValidatedDailySchedulePlan(options: {
       (task) => !isKe166MobileSupervisor(task.flight, task.rule)
     ),
     evaluateEligibility: evaluateAutomaticHardConstraints,
+    halfRestFacts: options.preparation.runFacts.halfRest,
   });
   return { ...plan, optimizationQuality: options.optimizationQuality };
 }

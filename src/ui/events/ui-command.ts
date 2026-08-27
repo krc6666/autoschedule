@@ -27,6 +27,7 @@ export type UiCommand =
   | { type: "export-share-html" }
   | { type: "export-share-png" }
   | { type: "generate-schedule" }
+  | { type: "set-half-rest-staff"; staffIds: string[] }
   | { type: "stop-schedule-without-result" }
   | { type: "stop-schedule-with-current-result" }
   | { type: "open-swap-analysis"; assignmentId: string }

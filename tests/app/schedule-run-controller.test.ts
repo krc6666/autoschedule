@@ -48,6 +48,28 @@ describe("ScheduleRunController", () => {
     expect(events).toEqual(["start", "yield", "assign", "finish"]);
   });
 
+  it("forwards current-date half-rest preferences to the run boundary", async () => {
+    const run = vi.fn(() => completedRun());
+    const controller = new ScheduleRunController({
+      run,
+      yieldToBrowser: async () => undefined,
+      start: vi.fn(),
+      progress: vi.fn(),
+      finish: vi.fn(),
+    });
+    const preferences = { halfRestStaffIds: ["staff-1", "staff-2"] };
+
+    await controller.calculate(createDefaultState(), "2026-08-03", preferences);
+
+    expect(run).toHaveBeenCalledWith(
+      expect.any(Object),
+      "2026-08-03",
+      expect.any(Function),
+      expect.any(Function),
+      preferences
+    );
+  });
+
   it("rejects concurrent runs and recovers after a failed run", async () => {
     let rejectRun!: (error: Error) => void;
     const finish = vi.fn();

@@ -17,6 +17,11 @@ import {
   type ScheduleFrequencyFacts,
 } from "../statistics/schedule-frequency";
 import { historyFatigue } from "../statistics/fatigue";
+import { createHalfRestFacts, type HalfRestFacts } from "../rules/half-rest";
+import {
+  normalizeScheduleRunPreferences,
+  type ScheduleRunPreferences,
+} from "./schedule-run-preferences";
 
 export interface ScheduleRunFacts {
   currentDutyStaffId: string | null;
@@ -25,11 +30,13 @@ export interface ScheduleRunFacts {
   workloadPressure: WorkloadPressureFacts;
   scheduleFrequency: ScheduleFrequencyFacts;
   historicalFatigueByStaff: ReadonlyMap<string, number>;
+  halfRest: HalfRestFacts;
 }
 
 export function createScheduleRunFacts(
   state: ScheduleGenerationFacts,
-  date: string
+  date: string,
+  preferences?: ScheduleRunPreferences
 ): ScheduleRunFacts {
   const currentDutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;
   const historicalFatigueByStaff = new Map(
@@ -45,5 +52,10 @@ export function createScheduleRunFacts(
     workloadPressure: analyzeWorkloadPressure(state),
     scheduleFrequency: createScheduleFrequencyFacts(state, date),
     historicalFatigueByStaff,
+    halfRest: createHalfRestFacts(
+      state,
+      normalizeScheduleRunPreferences(preferences),
+      currentDutyStaffId
+    ),
   };
 }

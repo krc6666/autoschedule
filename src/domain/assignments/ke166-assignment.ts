@@ -288,15 +288,16 @@ export async function assignKe166SupervisorByCounterCoverage(
     eligibleStaffForRule(state, flight, rule)
       .filter(
         (person) =>
-          !requireNonRepeated ||
-          consecutivePositionAssignments(
-            state,
-            person.id,
-            flight.flightNo,
-            rule.name,
-            rule.remark,
-            date
-          ) === 0
+          !facts?.halfRest.activeStaffIds.has(person.id) &&
+          (!requireNonRepeated ||
+            consecutivePositionAssignments(
+              state,
+              person.id,
+              flight.flightNo,
+              rule.name,
+              rule.remark,
+              date
+            ) === 0)
       )
       .map((person) => person.id)
   );

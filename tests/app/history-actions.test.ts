@@ -78,7 +78,7 @@ describe("history actions", () => {
     );
   });
 
-  it("does not archive administrative support staff or administrative positions as workload", () => {
+  it("archives regular staff on administrative positions but excludes administrative staff", () => {
     const state = createDefaultState();
     state.settings.dutyFatiguePoints = 0;
     const regular = state.staff[0]!;
@@ -109,7 +109,14 @@ describe("history actions", () => {
       },
     ];
 
-    expect(currentScheduleHistory(state, "2026-07-25")).toEqual([]);
+    expect(currentScheduleHistory(state, "2026-07-25")).toMatchObject([
+      {
+        staffId: regular.id,
+        position: "临时岗位",
+        workHours: 2,
+        fatiguePoints: 3,
+      },
+    ]);
   });
 
   it("does not archive guide reuse as additional workload", () => {

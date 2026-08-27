@@ -36,6 +36,7 @@ function mappedReason(reason: string): string | null {
     return null;
   if (/人工调整/.test(normalized)) return "人工调整后仍连续承担";
   if (/时间上限|timed-out/i.test(normalized)) return "换人计算时间不足";
+  if (/半休/.test(normalized)) return "其他资质人员已安排半休";
   if (/唯一合格|无其他具备.*资质|没有具备连续腾挪岗位资质/.test(normalized))
     return "唯一合格人员";
   if (/双向岗位资质|完整资质|不具备.*资质|资质/.test(normalized))

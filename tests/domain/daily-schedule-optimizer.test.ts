@@ -11,6 +11,7 @@ import type {
 } from "../../src/domain/solver/solver-port";
 import type { Flight, PositionRule } from "../../src/model";
 import type { ScheduleGenerationFacts } from "../../src/domain/shared/scheduling-facts";
+import type { ScheduleRunPreferences } from "../../src/domain/shared/schedule-run-preferences";
 import { createSchedulingScenario } from "../helpers/scheduling-scenario";
 import { generateSchedule } from "../helpers/generate-schedule";
 
@@ -138,14 +139,16 @@ function modelState(
 }
 
 async function captureProblem(
-  state: ScheduleGenerationFacts
+  state: ScheduleGenerationFacts,
+  preferences?: ScheduleRunPreferences
 ): Promise<SolverProblem> {
   const date = "2026-08-03";
   const solver = new CapturingSolver();
   const preparation = prepareSchedule(
     state,
     date,
-    evaluateAutomaticHardConstraints
+    evaluateAutomaticHardConstraints,
+    preferences
   );
 
   await expect(
@@ -155,6 +158,337 @@ async function captureProblem(
 }
 
 describe("daily schedule module interfaces", () => {
+  it("gives every feasible half-rest worker morning work and leaves later shortages explicit", async () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1", "A2"]),
+      flight("afternoon", "PM200", "14:00", "16:00", ["B1", "B2"]),
+    ]);
+    const secondHalfRest = {
+      ...state.staff[0]!,
+      id: "half-rest-2",
+      name: "半休乙",
+    };
+    const regular = {
+      ...state.staff[0]!,
+      id: "regular-worker",
+      name: "常规丙",
+    };
+    state.staff[0]!.name = "半休甲";
+    state.staff.push(secondHalfRest, regular);
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds = state.staff.map((person) => person.id);
+    });
+
+    const baseline = await generateSchedule(state, "2026-08-03");
+    const result = await generateSchedule(state, "2026-08-03", {
+      preferences: {
+        halfRestStaffIds: [state.staff[0]!.id, secondHalfRest.id],
+      },
+    });
+    const selectedIds = new Set([state.staff[0]!.id, secondHalfRest.id]);
+    const selectedAssignments = result.assignments.filter(
+      (assignment) => assignment.staffId && selectedIds.has(assignment.staffId)
+    );
+    const halfRestVacancy = result.assignments.find(
+      (assignment) =>
+        assignment.flightNo === "PM200" && assignment.status === "unfilled"
+    );
+
+    expect(baseline.unfilledCount).toBe(0);
+    expect(result.unfilledCount).toBe(1);
+    expect(
+      selectedAssignments
+        .filter((assignment) => assignment.startTime.localeCompare("12:00") < 0)
+        .map((assignment) => assignment.staffId)
+    ).toEqual(expect.arrayContaining([...selectedIds]));
+    expect(
+      selectedAssignments.every(
+        (assignment) => assignment.startTime.localeCompare("12:00") < 0
+      )
+    ).toBe(true);
+    expect(halfRestVacancy?.systemNotes?.join("；")).toContain("半休");
+    expect(result.warnings.join("；")).toContain("半休甲、半休乙");
+  });
+
+  it("uses a recovery-protected regular worker to backfill a half-rest vacancy", async () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+      flight("late", "PM200", "15:00", "17:00", ["B1"]),
+    ]);
+    const recovering = {
+      ...state.staff[0]!,
+      id: "recovering-worker",
+      name: "恢复人员",
+    };
+    state.staff[0]!.name = "半休人员";
+    state.staff.push(recovering);
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds = state.staff.map((person) => person.id);
+    });
+    state.settings.lateShiftRecoveryEnabled = true;
+    state.settings.lateShiftRecoveryPositionRules = [
+      {
+        id: "previous-number-one-cutoff",
+        enabled: true,
+        flightNo: "OLD900",
+        matchField: "remark",
+        keyword: "一号",
+        nextWorkdayCutoffTime: "12:00",
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-late",
+        date: "2026-08-01",
+        flightNo: "OLD900",
+        position: "H02",
+        staffId: recovering.id,
+        staffName: recovering.name,
+        startTime: "21:00",
+        endTime: "23:30",
+        workHours: 2.5,
+        fatiguePoints: 5,
+        remark: "一号",
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-08-03", {
+      preferences: { halfRestStaffIds: [state.staff[0]!.id] },
+    });
+    const late = result.assignments.find(
+      (assignment) => assignment.flightNo === "PM200"
+    );
+
+    expect(late).toMatchObject({
+      status: "assigned",
+      staffId: recovering.id,
+      staffName: recovering.name,
+      decisionTrace: expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "late-shift-cutoff",
+          outcome: "fallback",
+        }),
+      ]),
+    });
+    expect(
+      late?.decisionTrace?.map((item) => item.message).join("；")
+    ).toContain("半休");
+    expect(result.unfilledCount).toBe(0);
+  });
+
+  it("lets strict recovery yield only to backfill a half-rest vacancy", async () => {
+    const state = modelState(
+      [
+        flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+        flight("late", "PM200", "15:00", "17:00", ["B1"]),
+      ],
+      (rule) => (rule.flightNo === "PM200" ? { ...rule, remark: "控制" } : rule)
+    );
+    const recovering = {
+      ...state.staff[0]!,
+      id: "recovering-worker",
+      name: "严格恢复人员",
+    };
+    state.staff[0]!.name = "半休人员";
+    state.staff.push(recovering);
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds = state.staff.map((person) => person.id);
+    });
+    state.settings.lateShiftRecoveryEnabled = true;
+    state.settings.nextWorkdayRecoveryMode = "forbid";
+    state.settings.nextWorkdayRecoveryTargets = [
+      {
+        id: "strict-control",
+        enabled: true,
+        flightNo: "PM200",
+        positionKeyword: "控制",
+      },
+    ];
+    state.settings.lateShiftRecoveryPositionRules = [
+      {
+        id: "previous-number-one",
+        enabled: true,
+        flightNo: "OLD900",
+        matchField: "remark",
+        keyword: "一号",
+        nextWorkdayCutoffTime: "",
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-late",
+        date: "2026-08-01",
+        flightNo: "OLD900",
+        position: "H02",
+        staffId: recovering.id,
+        staffName: recovering.name,
+        startTime: "21:00",
+        endTime: "23:30",
+        workHours: 2.5,
+        fatiguePoints: 5,
+        remark: "一号",
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-08-03", {
+      preferences: { halfRestStaffIds: [state.staff[0]!.id] },
+    });
+    const late = result.assignments.find(
+      (assignment) => assignment.flightNo === "PM200"
+    );
+
+    expect(late).toMatchObject({
+      status: "assigned",
+      staffId: recovering.id,
+      staffName: recovering.name,
+      decisionTrace: expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "strict-next-workday-recovery",
+          outcome: "fallback",
+        }),
+      ]),
+    });
+    expect(
+      late?.decisionTrace?.map((item) => item.message).join("；")
+    ).toContain("半休");
+    expect(result.unfilledCount).toBe(0);
+
+    const available = {
+      ...state.staff[0]!,
+      id: "available-worker",
+      name: "正常补位人员",
+    };
+    state.staff.push(available);
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds.push(available.id);
+    });
+    const resultWithAlternative = await generateSchedule(state, "2026-08-03", {
+      preferences: { halfRestStaffIds: [state.staff[0]!.id] },
+    });
+    const lateWithAlternative = resultWithAlternative.assignments.find(
+      (assignment) => assignment.flightNo === "PM200"
+    );
+
+    expect(lateWithAlternative).toMatchObject({
+      status: "assigned",
+      staffId: available.id,
+      staffName: available.name,
+    });
+    expect(
+      lateWithAlternative?.decisionTrace?.some(
+        (item) => item.ruleId === "strict-next-workday-recovery"
+      )
+    ).toBe(false);
+  });
+
+  it("keeps recovery when another regular worker can backfill the half-rest vacancy", async () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+      flight("late", "PM200", "15:00", "17:00", ["B1"]),
+    ]);
+    const recovering = {
+      ...state.staff[0]!,
+      id: "recovering-worker",
+      name: "恢复人员",
+    };
+    const available = {
+      ...state.staff[0]!,
+      id: "available-worker",
+      name: "正常补位人员",
+    };
+    state.staff[0]!.name = "半休人员";
+    state.staff.push(recovering, available);
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds = state.staff.map((person) => person.id);
+    });
+    state.settings.lateShiftRecoveryEnabled = true;
+    state.settings.lateShiftRecoveryPositionRules = [
+      {
+        id: "previous-number-one-cutoff",
+        enabled: true,
+        flightNo: "OLD900",
+        matchField: "remark",
+        keyword: "一号",
+        nextWorkdayCutoffTime: "12:00",
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-late",
+        date: "2026-08-01",
+        flightNo: "OLD900",
+        position: "H02",
+        staffId: recovering.id,
+        staffName: recovering.name,
+        startTime: "21:00",
+        endTime: "23:30",
+        workHours: 2.5,
+        fatiguePoints: 5,
+        remark: "一号",
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-08-03", {
+      preferences: { halfRestStaffIds: [state.staff[0]!.id] },
+    });
+    const late = result.assignments.find(
+      (assignment) => assignment.flightNo === "PM200"
+    );
+
+    expect(late).toMatchObject({
+      status: "assigned",
+      staffId: available.id,
+      staffName: available.name,
+    });
+    expect(
+      result.assignments.some(
+        (assignment) => assignment.staffId === recovering.id
+      )
+    ).toBe(false);
+  });
+
+  it("adds bounded half-rest variables and objectives after recovery", async () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+      flight("late", "PM200", "14:00", "16:00", ["B1"]),
+    ]);
+    const problem = await captureProblem(state, {
+      halfRestStaffIds: [state.staff[0]!.id],
+    });
+    const objectiveIds = problem.objectives.map((objective) => objective.id);
+
+    expect(
+      problem.variables.filter((variable) =>
+        variable.id.startsWith("half-rest:")
+      )
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "binary" }),
+        expect.objectContaining({ type: "continuous", lowerEnvelope: true }),
+      ])
+    );
+    expect(objectiveIds).toContain("half-rest-morning:participation");
+    expect(objectiveIds).toContain("half-rest-early-finish:latest-end");
+    expect(
+      objectiveIds.indexOf("half-rest-morning:participation")
+    ).toBeGreaterThan(objectiveIds.indexOf("candidate:late-shift-cutoff"));
+    expect(
+      problem.objectives.find(
+        (objective) => objective.id === "half-rest-morning:participation"
+      )?.optimality
+    ).toBe("required");
+    expect(
+      problem.objectives.find(
+        (objective) => objective.id === "half-rest-early-finish:latest-end"
+      )?.optimality
+    ).toBe("best-effort");
+    expect(
+      problem.constraints.filter((constraint) =>
+        constraint.id.startsWith("half-rest:")
+      ).length
+    ).toBeLessThanOrEqual(4);
+  });
+
   it("uses the confirmed 150-second deadline for the daily solver", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
     try {
@@ -205,7 +539,7 @@ describe("daily schedule module interfaces", () => {
     }
   });
 
-  it("turns configured next-workday recovery targets into strict model constraints", () => {
+  it("keeps strict recovery mandatory when no half-rest backfill is involved", () => {
     const date = "2026-08-03";
     const state = modelState(
       [flight("target", "CX937", "06:00", "08:00", ["G18"])],

@@ -14,9 +14,12 @@ import {
   type ScheduleRunFacts,
 } from "../shared/schedule-run-facts";
 import {
+  isPreNoonFlight,
   shouldAutoAssign,
   type AssignmentTask,
 } from "../flights/schedule-tasks";
+import type { ScheduleRunPreferences } from "../shared/schedule-run-preferences";
+import { restrictHalfRestToMorningCandidates } from "../rules/half-rest";
 
 export interface SchedulePreparation {
   flights: Flight[];
@@ -35,7 +38,8 @@ export function prepareSchedule(
   date: string,
   evaluateEligibility: (
     context: AutomaticAssignmentEligibilityOptions
-  ) => AssignmentEligibilityDiagnostic
+  ) => AssignmentEligibilityDiagnostic,
+  preferences?: ScheduleRunPreferences
 ): SchedulePreparation {
   const flights = [...state.flights].sort((left, right) =>
     left.startTime.localeCompare(right.startTime)
@@ -45,7 +49,9 @@ export function prepareSchedule(
   );
   const tasks = flights.flatMap((flight) =>
     (displayRulesByFlight.get(flight.id) ?? [])
-      .filter((rule) => shouldAutoAssign(flight, rule))
+      .filter((rule) =>
+        shouldAutoAssign(flight, rule, state.settings.adminSupportEnabled)
+      )
       .map((rule) => ({ key: `${flight.id}:${rule.id}`, flight, rule }))
   );
   const eligibleStaffIds = new Map(
@@ -70,7 +76,16 @@ export function prepareSchedule(
   const eligibleCounts = new Map(
     tasks.map((task) => [task.key, eligibleStaffIds.get(task.key)?.size ?? 0])
   );
-  const runFacts = createScheduleRunFacts(state, date);
+  const runFacts = createScheduleRunFacts(state, date, preferences);
+  runFacts.halfRest = restrictHalfRestToMorningCandidates(
+    state,
+    runFacts.halfRest,
+    new Set(
+      tasks
+        .filter((task) => isPreNoonFlight(task.flight))
+        .flatMap((task) => [...(eligibleStaffIds.get(task.key) ?? [])])
+    )
+  );
   const dutyStaffId = runFacts.currentDutyStaffId;
   const preferredDutyMorningTaskKey =
     preferredDutyMorningTask(state, date, tasks, dutyStaffId)?.key ?? null;

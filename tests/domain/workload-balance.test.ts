@@ -28,7 +28,7 @@ describe("workload balance task facts", () => {
     expect(buildWorkloadTasks(state)).toEqual([]);
   });
 
-  it("does not count administrative support assignments in regular staff load", () => {
+  it("counts administrative positions by the assigned person's staff type", () => {
     const state = createDefaultState();
     state.settings.dutyFatiguePoints = 0;
     const regular = state.staff[0]!;
@@ -76,7 +76,7 @@ describe("workload balance task facts", () => {
     ];
 
     const metrics = evaluateWorkloadBalance(state, "2026-07-25");
-    expect(metrics.workHoursDifference).toBe(0);
-    expect(metrics.todayFatigueDifference).toBe(0);
+    expect(metrics.workHoursDifference).toBe(2);
+    expect(metrics.todayFatigueDifference).toBe(8);
   });
 });

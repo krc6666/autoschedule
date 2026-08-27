@@ -6,6 +6,7 @@ import {
   type ScheduleRunOutcome,
 } from "../infrastructure/schedule-runner";
 import type { AppState } from "../model";
+import type { ScheduleRunPreferences } from "../domain/shared/schedule-run-preferences";
 
 export type ScheduleRunFinishOutcome =
   "completed" | "failed" | "stopped-without-result" | "stopped-with-result";
@@ -15,7 +16,8 @@ export interface ScheduleRunControllerDependencies {
     state: AppState,
     date: string,
     onProgress: ScheduleProgressListener,
-    onSafeResultAvailable: () => void
+    onSafeResultAvailable: () => void,
+    preferences: ScheduleRunPreferences
   ) => ActiveScheduleRun;
   yieldToBrowser: () => Promise<void>;
   start: () => void;
@@ -48,7 +50,11 @@ export class ScheduleRunController {
     return this.activeRun?.stopWithLatestResult() ?? false;
   }
 
-  async calculate(state: AppState, date: string): Promise<ScheduleRunOutcome> {
+  async calculate(
+    state: AppState,
+    date: string,
+    preferences: ScheduleRunPreferences = { halfRestStaffIds: [] }
+  ): Promise<ScheduleRunOutcome> {
     if (this.running) throw new Error("排班正在运行，请等待当前任务完成");
     this.running = true;
     this.dependencies.start();
@@ -58,7 +64,8 @@ export class ScheduleRunController {
         state,
         date,
         this.dependencies.progress,
-        () => this.dependencies.safeResultAvailable?.()
+        () => this.dependencies.safeResultAvailable?.(),
+        preferences
       );
       const outcome = await this.activeRun.result;
       this.dependencies.finish(outcome.kind);

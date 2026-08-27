@@ -45,7 +45,7 @@ export const SCHEDULING_RULES = [
   {
     id: "strict-next-workday-recovery",
     stage: "hard-constraint",
-    label: "严格跨工作日恢复目标",
+    label: "严格跨工作日恢复目标（半休补位可突破）",
     feedbackMode: "aggregated",
   },
   {
@@ -158,6 +158,19 @@ export const SCHEDULING_RULES = [
     feedbackKey: "current-late",
     optimization: "best-effort",
     feedbackOrder: 7,
+  },
+  {
+    id: "half-rest-morning",
+    stage: "protection",
+    label: "半休人员至少一个早班",
+    feedbackMode: "aggregated",
+  },
+  {
+    id: "half-rest-early-finish",
+    stage: "protection",
+    label: "半休人员尽早下班",
+    feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "high-fatigue-position-consecutive",

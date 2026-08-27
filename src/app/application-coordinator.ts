@@ -58,6 +58,7 @@ function initialView(
     zoom: Math.min(1.6, Math.max(0.7, storedZoom || 1)),
     loadSortField: "totalFatigue",
     loadSortDirection: "desc",
+    halfRestStaffIds: [],
     dialog: null,
     toast: null,
     progress: {
@@ -219,7 +220,7 @@ export class ApplicationCoordinator implements ApplicationContext {
         return true;
       case "change-date":
         this.preferences.saveScheduleDate(command.date);
-        this.updateView({ date: command.date });
+        this.updateView({ date: command.date, halfRestStaffIds: [] });
         return true;
       case "close-dialog":
         this.updateView({ dialog: null });

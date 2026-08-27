@@ -12,7 +12,7 @@ export function isCountedWorkloadAssignment(
   const rule = assignment.positionRuleId
     ? state.positionRules.find((item) => item.id === assignment.positionRuleId)
     : undefined;
-  return rule?.category !== "行政支援" && rule?.category !== "引导";
+  return rule?.category !== "引导";
 }
 
 export function countedWorkloadAssignments(

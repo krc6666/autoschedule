@@ -29,6 +29,7 @@ import {
   positionTransitionInsertionCost,
   rollingLoadCost,
 } from "./schedule-protection";
+import { isStrictRecoveryHalfRestBackfill } from "../rules/half-rest";
 
 export type RotationReview =
   | "consecutive"
@@ -181,6 +182,7 @@ export function reassignmentCandidateSafetyReasons({
     isPriorityRotationPosition(primaryRule)
   );
   const reasons: string[] = [];
+  const flight = state.flights.find((item) => item.id === assignment.flightId);
   if (
     assignment.staffId &&
     isStrictNextWorkdayRecoveryTarget(state, {
@@ -191,6 +193,18 @@ export function reassignmentCandidateSafetyReasons({
     state.settings.lateShiftRecoveryEnabled &&
     facts?.crossDayRecovery.previousWorkday.protectedStaffIds.has(
       assignment.staffId
+    ) &&
+    !(
+      flight &&
+      isStrictRecoveryHalfRestBackfill({
+        state,
+        facts: facts.halfRest,
+        protectedStaffIds:
+          facts.crossDayRecovery.previousWorkday.protectedStaffIds,
+        staffId: assignment.staffId,
+        flight,
+        rule,
+      })
     )
   ) {
     reasons.push("严格跨工作日恢复限制不允许该人员承担次班目标岗位");

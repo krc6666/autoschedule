@@ -112,6 +112,20 @@ describe("compiled scheduling execution plan", () => {
           terms: [],
         },
       ],
+      recovery: [
+        {
+          id: "candidate:late-shift-cutoff",
+          direction: "minimize",
+          terms: [],
+        },
+      ],
+      halfRest: [
+        {
+          id: "half-rest-morning:participation",
+          direction: "maximize",
+          terms: [],
+        },
+      ],
       remainingCandidate: [
         { id: "candidate:workload", direction: "minimize", terms: [] },
       ],
@@ -126,6 +140,8 @@ describe("compiled scheduling execution plan", () => {
       "duty:between-target-rest",
       "duty:avoid-additional-priority",
       "duty:between-target-fatigue",
+      "candidate:late-shift-cutoff",
+      "half-rest-morning:participation",
       "candidate:workload",
     ]);
   });

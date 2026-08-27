@@ -76,6 +76,7 @@ export interface ApplicationViewState {
   loadSortField:
     "workHours" | "todayFatigue" | "historyFatigue" | "totalFatigue";
   loadSortDirection: "asc" | "desc";
+  halfRestStaffIds: string[];
   dialog: ApplicationDialog | null;
   toast: ApplicationToast | null;
   progress: ScheduleProgressView;

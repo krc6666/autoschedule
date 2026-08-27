@@ -16,6 +16,7 @@ import {
   flightNumbersForDate,
   isoWeekdayForDate,
 } from "../../domain/flights/weekly-flight-plan";
+import { isHalfRestWarning } from "../../domain/rules/half-rest";
 
 export class ScheduleController implements UiCommandController {
   constructor(private readonly context: ApplicationContext) {}
@@ -26,6 +27,25 @@ export class ScheduleController implements UiCommandController {
       case "generate-schedule":
         await this.generate(this.context.view().date);
         return true;
+      case "set-half-rest-staff": {
+        const allowedIds = new Set(
+          this.context
+            .model()
+            .staff.filter(
+              (person) =>
+                person.status === "正常" && person.staffType === "常规"
+            )
+            .map((person) => person.id)
+        );
+        this.context.updateView({
+          halfRestStaffIds: [
+            ...new Set(
+              command.staffIds.filter((staffId) => allowedIds.has(staffId))
+            ),
+          ],
+        });
+        return true;
+      }
       case "stop-schedule-without-result":
         if (!this.context.scheduleRunner.stopWithoutResult())
           this.context.toast("当前没有正在运行的排班", "warning");
@@ -140,13 +160,20 @@ export class ScheduleController implements UiCommandController {
     try {
       const outcome = await this.context.scheduleRunner.calculate(
         this.context.model(),
-        date
+        date,
+        { halfRestStaffIds: this.context.view().halfRestStaffIds }
       );
       if (outcome.kind === "stopped-without-result") {
         this.context.toast("排班已停止，原班表保持不变", "warning");
         return;
       }
       const result = outcome.result;
+      const halfRestWarnings = result.warnings.filter(isHalfRestWarning);
+      const halfRestVacancyCount = result.assignments.filter(
+        (assignment) =>
+          assignment.status === "unfilled" &&
+          assignment.systemNotes?.some(isHalfRestWarning)
+      ).length;
       this.context.store.getState().schedule.install(date, result);
       this.context.updateView({ section: "schedule" });
       this.context.commit(
@@ -156,6 +183,21 @@ export class ScheduleController implements UiCommandController {
             ? `排班已生成，${result.unfilledCount} 个常规岗位待补位`
             : "排班已生成"
       );
+      if (halfRestWarnings.length || halfRestVacancyCount) {
+        this.context.toast(
+          [
+            ...(halfRestVacancyCount
+              ? [
+                  `半休人员较多，${halfRestVacancyCount} 个后续岗位待补位并已标红`,
+                ]
+              : []),
+            ...halfRestWarnings.filter(
+              (message) => !message.includes("岗位保持空缺")
+            ),
+          ].join("；"),
+          "warning"
+        );
+      }
     } catch (error) {
       this.context.toast(
         `排班生成失败：${error instanceof Error ? error.message : String(error)}`,
@@ -380,7 +422,11 @@ export class ScheduleController implements UiCommandController {
       );
       this.context.store.getState().replaceModel(temporaryState);
       this.context.preferences.saveScheduleDate(nextDate);
-      this.context.updateView({ date: nextDate, section: "schedule" });
+      this.context.updateView({
+        date: nextDate,
+        section: "schedule",
+        halfRestStaffIds: [],
+      });
       this.context.commit(
         outcome.result.unfilledCount
           ? `后天排班已生成，${outcome.result.unfilledCount} 个常规岗位待补位`

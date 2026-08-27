@@ -3,6 +3,7 @@ import { html } from "lit";
 import type { AppState } from "../../model";
 import { dispatchUiCommand } from "../events/ui-command";
 import { LightDomElement } from "./light-dom-element";
+import "./half-rest-selector";
 
 export class ScheduleToolbarElement extends LightDomElement {
   static override properties = {
@@ -11,12 +12,14 @@ export class ScheduleToolbarElement extends LightDomElement {
     zoom: { type: Number },
     previousScheduleDate: { type: String },
     previousScheduleVisible: { type: Boolean },
+    halfRestStaffIds: { attribute: false },
   };
   model!: AppState;
   date = "";
   zoom = 1;
   previousScheduleDate = "";
   previousScheduleVisible = false;
+  halfRestStaffIds: string[] = [];
 
   protected override render() {
     return html`<section class="toolbar-band schedule-toolbar">
@@ -31,6 +34,10 @@ export class ScheduleToolbarElement extends LightDomElement {
         ${this.iconCommand("x-circle", "清空排班", "clear-schedule", "btn-outline-danger")}
       </div>
       <div class="schedule-toolbar-meta">
+        <autoschedule-half-rest-selector
+          .model=${this.model}
+          .selectedStaffIds=${this.halfRestStaffIds}
+        ></autoschedule-half-rest-selector>
         <div class="schedule-zoom-control" role="group" aria-label="排班表缩放">
           ${this.zoomButton("zoom-out", "缩小排班表", this.zoom - 0.1, this.zoom <= 0.7)}
           <output aria-label="当前排班表比例"
