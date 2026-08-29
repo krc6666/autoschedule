@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Assignment, PositionRule, Staff } from "../../src/model";
 import {
   analyzeAutomaticEligibilityPool,
+  availableStaffForManualAssignment,
   diagnoseAutomaticAssignmentEligibility,
   diagnoseManualAssignmentEligibility,
   eligibleStaffForRule,
@@ -11,6 +12,46 @@ import { createSchedulingScenario } from "../helpers/scheduling-scenario";
 import { evaluateManualAssignment } from "../../src/domain/candidates/manual-assignment-override";
 
 describe("assignment eligibility diagnostics", () => {
+  it("returns only fully eligible and currently idle staff for a manual position", () => {
+    const state = createSchedulingScenario();
+    const flight = state.flights[0]!;
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === flight.flightNo && item.category === "常规"
+    )!;
+    const [available, busy, unqualified] = state.staff.slice(0, 3);
+    state.staff = [available!, busy!, unqualified!];
+    rule.qualifiedStaffIds = [available!.id, busy!.id];
+    const target: Assignment = {
+      id: "target-assignment",
+      flightId: flight.id,
+      flightNo: flight.flightNo,
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId: null,
+      staffName: "",
+      startTime: flight.startTime,
+      endTime: flight.endTime,
+      workHours: 0,
+      fatiguePoints: rule.fatiguePoints,
+      remark: rule.remark,
+      manualRemark: "",
+      status: "unfilled",
+    };
+    const busyAssignment: Assignment = {
+      ...target,
+      id: "busy-assignment",
+      staffId: busy!.id,
+      staffName: busy!.name,
+      status: "assigned",
+      positionRuleId: rule.id,
+    };
+    state.assignments = [target, busyAssignment];
+
+    expect(availableStaffForManualAssignment(state, target.id)).toEqual([
+      available,
+    ]);
+  });
+
   it.each([
     ["控制", "控制"],
     ["控制", "一号"],

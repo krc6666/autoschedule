@@ -24,7 +24,7 @@ export class ScheduleToolbarElement extends LightDomElement {
   protected override render() {
     return html`<section class="toolbar-band schedule-toolbar">
       <div class="d-flex gap-1 flex-wrap">
-        ${this.command("arrow-repeat", "重新排班", "generate-schedule", "btn-primary")}
+        ${this.command("arrow-repeat", "重新排班", "open-reschedule-flight-picker", "btn-primary")}
         ${this.command("calendar2-plus", "归档并排后天", "archive-next-duty-day", "btn-success")}
         ${this.command("file-earmark-excel", "导出结果", "export-schedule", "btn-outline-success")}
         ${this.iconCommand("filetype-html", "导出 HTML", "export-share-html")}
@@ -68,6 +68,7 @@ export class ScheduleToolbarElement extends LightDomElement {
     label: string,
     type:
       | "generate-schedule"
+      | "open-reschedule-flight-picker"
       | "archive-next-duty-day"
       | "export-schedule"
       | "archive-schedule",

@@ -7,6 +7,7 @@ import {
   isFixedBottomPosition,
 } from "../../domain/flights/schedule-position-rules";
 import { countedWorkloadAssignments } from "../../domain/shared/workload-accounting";
+import { availableStaffForManualAssignment } from "../../domain/candidates/assignment-eligibility";
 import type { AppState, Assignment, Staff } from "../../model";
 
 export type LoadSortField =
@@ -99,6 +100,12 @@ export function buildSchedulePageModel(
       ),
     };
   });
+  const candidateStaffByAssignmentId = new Map(
+    state.assignments.map((assignment) => [
+      assignment.id,
+      availableStaffForManualAssignment(state, assignment.id),
+    ])
+  );
   const loads = buildStaffLoads(
     state.staff.filter((person) => person.staffType !== "行政支援"),
     countedWorkloadAssignments(state),
@@ -121,6 +128,7 @@ export function buildSchedulePageModel(
     ),
     loads,
     feedback: buildScheduleFeedback(state, date),
+    candidateStaffByAssignmentId,
     primaryRowCount:
       Math.max(0, ...groups.map((group) => group.primary.length)) + 1,
     bottomRowCount:

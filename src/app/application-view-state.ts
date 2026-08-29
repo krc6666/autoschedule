@@ -9,16 +9,22 @@ import type { LegacyScheduleImportPreview } from "../infrastructure/legacy-sched
 import type { OnlineFlight } from "../infrastructure/flight-query";
 import type { AppSection, AppState, IsoWeekday } from "../model";
 import type { ManualSwapAnalysis } from "../domain/reviews/manual-swap-analysis";
-import type { NextWorkdayFlightCandidate } from "../domain/flights/next-workday-flight-plan";
+import type { FlightSelectionCandidate } from "../domain/flights/next-workday-flight-plan";
 import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
 
 export type ApplicationDialog =
   | { kind: "templates" }
   | {
+      kind: "reschedule-flight-picker";
+      date: string;
+      candidates: FlightSelectionCandidate[];
+      selectedIds: string[];
+    }
+  | {
       kind: "next-workday-flight-picker";
       date: string;
       weekday: IsoWeekday;
-      candidates: NextWorkdayFlightCandidate[];
+      candidates: FlightSelectionCandidate[];
       selectedIds: string[];
     }
   | { kind: "qualification"; positionRuleId: string }

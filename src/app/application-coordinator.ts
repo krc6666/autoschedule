@@ -34,6 +34,7 @@ const COMMANDS_ALLOWED_DURING_SCHEDULE_RUN = new Set<UiCommand["type"]>([
 
 const COMMANDS_THAT_MAY_RUN_SCHEDULE = new Set<UiCommand["type"]>([
   "generate-schedule",
+  "confirm-reschedule-flight-picker",
   "toggle-administrative-mode",
   "archive-next-duty-day",
   "confirm-next-workday-flight-picker",

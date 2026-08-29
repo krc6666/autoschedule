@@ -7,7 +7,7 @@ import { weekdayLabel } from "../../domain/flights/weekly-flight-plan";
 
 type PickerDialog = Extract<
   ApplicationDialog,
-  { kind: "next-workday-flight-picker" }
+  { kind: "next-workday-flight-picker" | "reschedule-flight-picker" }
 >;
 
 export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
@@ -17,10 +17,13 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
   protected override render() {
     const selected = new Set(this.dialog.selectedIds);
     const selectedCount = this.dialog.selectedIds.length;
+    const reschedule = this.dialog.kind === "reschedule-flight-picker";
     return html`<div class="modal-body next-workday-flight-picker">
         <div class="d-flex flex-wrap gap-2 mb-3">
           ${this.quickAction(
-            `恢复${weekdayLabel(this.dialog.weekday)}预设`,
+            this.dialog.kind === "reschedule-flight-picker"
+              ? "恢复当前航班"
+              : `恢复${weekdayLabel(this.dialog.weekday)}预设`,
             this.restorePreset
           )}
           ${this.quickAction("全选", this.selectAll)}
@@ -38,10 +41,10 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
                           type="checkbox"
                           .checked=${selected.has(candidate.id)}
                           @change=${(event: Event) =>
-                          this.toggle(
-                            candidate.id,
-                            (event.currentTarget as HTMLInputElement).checked
-                          )}
+                            this.toggle(
+                              candidate.id,
+                              (event.currentTarget as HTMLInputElement).checked
+                            )}
                         />
                         <span class="min-w-0">
                           <strong>${candidate.flightNo}</strong>
@@ -62,10 +65,10 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
                           title="预定人数"
                           .value=${String(candidate.bookedPassengers)}
                           @change=${(event: Event) =>
-                          this.updatePassengers(
-                            candidate.id,
-                            (event.currentTarget as HTMLInputElement).value
-                          )}
+                            this.updatePassengers(
+                              candidate.id,
+                              (event.currentTarget as HTMLInputElement).value
+                            )}
                         />
                         <span aria-hidden="true">人</span>
                       </span>
@@ -86,12 +89,15 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
           取消
         </button>
         <button
-          class="btn btn-success"
+          class="btn ${reschedule ? "btn-primary" : "btn-success"}"
           type="button"
           ?disabled=${selectedCount === 0}
           @click=${this.confirm}
         >
-          <i class="bi bi-calendar2-check me-1"></i>归档并生成后天排班
+          <i
+            class="bi bi-${reschedule ? "arrow-repeat" : "calendar2-check"} me-1"
+          ></i
+          >${reschedule ? "确认并重新排班" : "归档并生成后天排班"}
         </button>
       </div>`;
   }
@@ -114,7 +120,10 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
 
   private updatePassengers(id: string, value: string): void {
     dispatchUiCommand(this, {
-      type: "update-next-workday-flight-picker-passengers",
+      type:
+        this.dialog.kind === "reschedule-flight-picker"
+          ? "update-reschedule-flight-picker-passengers"
+          : "update-next-workday-flight-picker-passengers",
       candidateId: id,
       bookedPassengers: value === "" ? 0 : Number(value),
     });
@@ -138,7 +147,10 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
 
   private dispatchSelection(selectedIds: string[]): void {
     dispatchUiCommand(this, {
-      type: "update-next-workday-flight-picker-selection",
+      type:
+        this.dialog.kind === "reschedule-flight-picker"
+          ? "update-reschedule-flight-picker-selection"
+          : "update-next-workday-flight-picker-selection",
       selectedIds,
     });
   }
@@ -146,7 +158,10 @@ export class NextWorkdayFlightPickerDialogElement extends LightDomElement {
   private confirm = (): void => {
     if (!this.dialog.selectedIds.length) return;
     dispatchUiCommand(this, {
-      type: "confirm-next-workday-flight-picker",
+      type:
+        this.dialog.kind === "reschedule-flight-picker"
+          ? "confirm-reschedule-flight-picker"
+          : "confirm-next-workday-flight-picker",
       selectedIds: this.dialog.selectedIds,
     });
   };

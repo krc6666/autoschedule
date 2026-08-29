@@ -16,6 +16,97 @@ import "../../src/ui/components/schedule-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("schedule page", () => {
+  it("shows only qualified idle staff when a position is selected", async () => {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === flight.flightNo && item.category === "常规"
+    )!;
+    const [available, busy, unqualified] = state.staff.slice(0, 3);
+    state.staff = [available!, busy!, unqualified!];
+    rule.qualifiedStaffIds = [available!.id, busy!.id];
+    state.assignments = [
+      {
+        id: "target-assignment",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: null,
+        staffName: "",
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 0,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        manualRemark: "",
+        status: "unfilled",
+      },
+      {
+        id: "busy-assignment",
+        flightId: "other-flight",
+        flightNo: "OTHER",
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: busy!.id,
+        staffName: busy!.name,
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    const commands: UiCommandEvent["detail"][] = [];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-08-03",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+      halfRestStaffIds: [],
+    });
+    element.addEventListener(UI_COMMAND_EVENT, (event) => {
+      commands.push((event as UiCommandEvent).detail);
+    });
+
+    element
+      .querySelector<HTMLButtonElement>(
+        `button[aria-label="查看${rule.name}可用人员"]`
+      )
+      ?.click();
+    await settleLit();
+
+    const menu = element.querySelector<HTMLElement>(".schedule-candidate-menu");
+    expect(menu?.textContent).toContain(available!.name);
+    expect(menu?.textContent).not.toContain(busy!.name);
+    expect(menu?.textContent).not.toContain(unqualified!.name);
+
+    const candidateTrigger = element.querySelector<HTMLButtonElement>(
+      `button[aria-label="查看${rule.name}当前合格空闲人员"]`
+    );
+    expect(candidateTrigger).toBeTruthy();
+    candidateTrigger?.click();
+    await settleLit();
+    expect(element.querySelector(".schedule-candidate-menu")).toBeNull();
+    candidateTrigger?.click();
+    await settleLit();
+    expect(element.querySelector(".schedule-candidate-menu")).toBeTruthy();
+
+    element
+      .querySelector<HTMLButtonElement>(".schedule-candidate-option")
+      ?.click();
+    expect(commands.at(-1)).toEqual({
+      type: "assign-staff",
+      assignmentId: "target-assignment",
+      staffId: available!.id,
+    });
+  });
+
   it("selects multiple regular staff as current-date half-rest preferences", async () => {
     const state = createDefaultState();
     state.assignments = [];
@@ -125,6 +216,29 @@ describe("schedule page", () => {
     });
     expect(input.checked).toBe(false);
   }, 30_000);
+
+  it("opens flight confirmation from the reschedule toolbar action", async () => {
+    const state = createDefaultState();
+    const commands: UiCommandEvent["detail"][] = [];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-toolbar", {
+      model: state,
+      date: "2026-08-29",
+      zoom: 1,
+    });
+    element.addEventListener(UI_COMMAND_EVENT, (event) => {
+      commands.push((event as UiCommandEvent).detail);
+    });
+
+    [...element.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.includes("重新排班"))
+      ?.click();
+
+    expect(commands.at(-1)).toEqual({
+      type: "open-reschedule-flight-picker",
+    });
+  });
 
   it("toggles the nearest earlier archived workday above the current schedule", async () => {
     const state = createDefaultState();

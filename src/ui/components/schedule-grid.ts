@@ -28,6 +28,7 @@ export class ScheduleGridElement extends LightDomElement {
     string,
     { position: string; staffName: string }
   >();
+  private candidateAssignmentId: string | null = null;
 
   protected override render() {
     const groups = this.view.groups;
@@ -150,11 +151,15 @@ export class ScheduleGridElement extends LightDomElement {
                     aria-label="临时岗位名称"
                     @change=${(event: Event) => this.updateAssignment(assignment.id, "position", event)}
                   />`
-                : html`<strong
-                    class="schedule-position"
-                    title=${assignment.position}
-                    >${guide ? html`<span class="guide-tag">引</span>` : administrative ? html`<span class="admin-support-tag">行</span>` : diversion ? html`<span class="diversion-tag">流</span>` : null}${assignment.position}</strong
-                  >`
+                : html`<button
+                    class="schedule-position schedule-position-button"
+                    type="button"
+                    title="查看当前可用人员"
+                    aria-label="查看${assignment.position}可用人员"
+                    @click=${() => this.toggleCandidates(assignment.id)}
+                  >
+                    ${guide ? html`<span class="guide-tag">引</span>` : administrative ? html`<span class="admin-support-tag">行</span>` : diversion ? html`<span class="diversion-tag">流</span>` : null}${assignment.position}
+                  </button>`
             }
             ${remark ? html`<span class="position-remark" title=${remark}>${remark}</span>` : null}
           </div>
@@ -192,37 +197,47 @@ export class ScheduleGridElement extends LightDomElement {
             @pointerdown=${() => this.pointerSource(assignment)}
           >
             ${assignment.staffId ? html`<i class="bi bi-grip-vertical assignment-drag-handle" aria-hidden="true"></i>` : null}
+            <button
+              type="button"
+              class="schedule-candidate-trigger"
+              title="查看当前合格空闲人员"
+              aria-label="查看${assignment.position}当前合格空闲人员"
+              @pointerdown=${(event: Event) => event.stopPropagation()}
+              @click=${() => this.toggleCandidates(assignment.id)}
+            >
+              <i class="bi bi-person-plus" aria-hidden="true"></i>
+            </button>
             ${
-              manualWarning
-                ? html`<i
-                    class="bi bi-exclamation-triangle-fill schedule-manual-warning-icon"
-                    title=${
+                manualWarning
+                  ? html`<i
+                      class="bi bi-exclamation-triangle-fill schedule-manual-warning-icon"
+                      title=${
                       assignment.manualOverrideWarnings
                         ?.map((item) => item.message)
                         .join("；") ?? "人工调整提醒"
                     }
-                    aria-label="人工调整提醒"
-                  ></i>`
-                : warning
-                  ? html`<button
-                      class="schedule-soft-warning-button"
-                      type="button"
-                      title="${warning.message}。点击分析人员调换"
-                      aria-label="分析这个岗位的调换方案"
-                      @click=${() =>
+                      aria-label="人工调整提醒"
+                    ></i>`
+                  : warning
+                    ? html`<button
+                        class="schedule-soft-warning-button"
+                        type="button"
+                        title="${warning.message}。点击分析人员调换"
+                        aria-label="分析这个岗位的调换方案"
+                        @click=${() =>
                         dispatchUiCommand(this, {
                           type: "open-swap-analysis",
                           assignmentId: assignment.id,
                         })}
-                    >
-                      <i
-                        class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"
-                        title=${warning.message}
-                        aria-hidden="true"
-                      ></i>
-                    </button>`
-                  : null
-            }
+                      >
+                        <i
+                          class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"
+                          title=${warning.message}
+                          aria-hidden="true"
+                        ></i>
+                      </button>`
+                    : null
+              }
             <input
               class="schedule-name-input"
               list=${guide ? guideListId : auxiliary ? "" : "schedule-staff-names"}
@@ -250,9 +265,52 @@ export class ScheduleGridElement extends LightDomElement {
             aria-label="${assignment.position}临时备注"
             @change=${(event: Event) => this.updateAssignment(assignment.id, "manualRemark", event)}
           />
+          ${this.candidateMenu(assignment)}
         </article>
       </td>`,
     ];
+  }
+
+  private toggleCandidates(assignmentId: string): void {
+    this.candidateAssignmentId =
+      this.candidateAssignmentId === assignmentId ? null : assignmentId;
+    this.requestUpdate();
+  }
+
+  private candidateMenu(assignment: Assignment) {
+    if (this.candidateAssignmentId !== assignment.id) return null;
+    const candidates =
+      this.view.candidateStaffByAssignmentId.get(assignment.id) ?? [];
+    return html`<div
+      class="schedule-candidate-menu"
+      role="listbox"
+      aria-label="${assignment.position}可用人员"
+    >
+      ${
+        candidates.length
+          ? candidates.map(
+              (person) =>
+                html`<button
+                  type="button"
+                  class="schedule-candidate-option"
+                  role="option"
+                  @click=${() => this.selectCandidate(assignment.id, person.id)}
+                >
+                  ${person.name}
+                </button>`
+            )
+          : html`<span class="schedule-candidate-empty">暂无可用人员</span>`
+      }
+    </div>`;
+  }
+
+  private selectCandidate(assignmentId: string, staffId: string): void {
+    this.candidateAssignmentId = null;
+    dispatchUiCommand(this, {
+      type: "assign-staff",
+      assignmentId,
+      staffId,
+    });
   }
 
   private emptyCells(

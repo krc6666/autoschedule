@@ -8,10 +8,13 @@ import type {
 } from "../application-context";
 import { analyzeManualSwap } from "../../domain/reviews/manual-swap-analysis";
 import {
+  buildCurrentScheduleFlightCandidates,
   buildNextWorkdayFlightCandidates,
+  materializeCurrentScheduleFlights,
   materializeNextWorkdayFlights,
-  updateNextWorkdayFlightBookedPassengers,
+  updateFlightSelectionBookedPassengers,
 } from "../../domain/flights/next-workday-flight-plan";
+import { installGeneratedSchedule } from "../../domain/kernel/schedule-lifecycle";
 import {
   flightNumbersForDate,
   isoWeekdayForDate,
@@ -26,6 +29,21 @@ export class ScheduleController implements UiCommandController {
     switch (command.type) {
       case "generate-schedule":
         await this.generate(this.context.view().date);
+        return true;
+      case "open-reschedule-flight-picker":
+        this.openRescheduleFlightPicker();
+        return true;
+      case "update-reschedule-flight-picker-selection":
+        this.updateRescheduleFlightSelection(command.selectedIds);
+        return true;
+      case "update-reschedule-flight-picker-passengers":
+        this.updateRescheduleFlightPassengers(
+          command.candidateId,
+          command.bookedPassengers
+        );
+        return true;
+      case "confirm-reschedule-flight-picker":
+        await this.confirmRescheduleFlightPicker(command.selectedIds);
         return true;
       case "set-half-rest-staff": {
         const allowedIds = new Set(
@@ -301,6 +319,108 @@ export class ScheduleController implements UiCommandController {
     this.context.commit("排班已归档到历史");
   }
 
+  private openRescheduleFlightPicker(): void {
+    const model = this.context.model();
+    const candidates = buildCurrentScheduleFlightCandidates(
+      model.templates,
+      model.flights
+    );
+    if (!candidates.length)
+      return this.context.toast("没有可选择的本地航班", "warning");
+    this.context.updateView({
+      dialog: {
+        kind: "reschedule-flight-picker",
+        date: this.context.view().date,
+        candidates,
+        selectedIds: candidates
+          .filter((candidate) => candidate.selectedByDefault)
+          .map((candidate) => candidate.id),
+      },
+    });
+  }
+
+  private updateRescheduleFlightSelection(selectedIds: string[]): void {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "reschedule-flight-picker") return;
+    const candidateIds = new Set(
+      dialog.candidates.map((candidate) => candidate.id)
+    );
+    this.context.updateView({
+      dialog: {
+        ...dialog,
+        selectedIds: [...new Set(selectedIds)].filter((id) =>
+          candidateIds.has(id)
+        ),
+      },
+    });
+  }
+
+  private updateRescheduleFlightPassengers(
+    candidateId: string,
+    bookedPassengers: number
+  ): void {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "reschedule-flight-picker") return;
+    this.context.updateView({
+      dialog: {
+        ...dialog,
+        candidates: updateFlightSelectionBookedPassengers(
+          dialog.candidates,
+          candidateId,
+          bookedPassengers
+        ),
+      },
+    });
+  }
+
+  private async confirmRescheduleFlightPicker(
+    selectedIds: string[]
+  ): Promise<void> {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "reschedule-flight-picker") return;
+    const flights = materializeCurrentScheduleFlights(
+      dialog.candidates,
+      selectedIds
+    );
+    if (!flights.length) {
+      this.context.toast("请至少选择一个航班", "warning");
+      return;
+    }
+    const date = dialog.date;
+    const temporaryState = structuredClone(this.context.model());
+    temporaryState.flights = flights;
+    temporaryState.assignments = [];
+    temporaryState.activeScheduleDate = null;
+    temporaryState.schedulePolicyStale = false;
+    this.context.updateView({ dialog: null });
+    try {
+      const outcome = await this.context.scheduleRunner.calculate(
+        temporaryState,
+        date,
+        { halfRestStaffIds: this.context.view().halfRestStaffIds }
+      );
+      if (outcome.kind === "stopped-without-result") {
+        this.context.toast("排班已停止，原航班和班表保持不变", "warning");
+        return;
+      }
+      installGeneratedSchedule(temporaryState, date, outcome.result);
+      this.context.store.getState().replaceModel(temporaryState);
+      this.context.updateView({ section: "schedule" });
+      this.context.commit(
+        outcome.kind === "stopped-with-result"
+          ? "已采用最近一份完整安全方案，航班与班表已更新"
+          : outcome.result.unfilledCount
+            ? `重新排班完成，${outcome.result.unfilledCount} 个常规岗位待补位`
+            : "重新排班完成"
+      );
+    } catch (error) {
+      this.context.toast(
+        `重新排班失败，原航班和班表保持不变：${error instanceof Error ? error.message : String(error)}`,
+        "danger"
+      );
+    }
+  }
+
   private openNextWorkdayFlightPicker(): void {
     const currentDate = this.context.view().date;
     const records = currentScheduleHistory(this.context.model(), currentDate);
@@ -352,7 +472,7 @@ export class ScheduleController implements UiCommandController {
     this.context.updateView({
       dialog: {
         ...dialog,
-        candidates: updateNextWorkdayFlightBookedPassengers(
+        candidates: updateFlightSelectionBookedPassengers(
           dialog.candidates,
           candidateId,
           bookedPassengers

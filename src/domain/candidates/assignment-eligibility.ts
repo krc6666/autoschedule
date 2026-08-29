@@ -530,6 +530,21 @@ export function diagnoseManualAssignmentEligibility(
   return diagnostic(violations);
 }
 
+/** Returns only people who can be assigned without any manual warning. */
+export function availableStaffForManualAssignment(
+  state: AssignmentEligibilityFacts,
+  assignmentId: string
+): Staff[] {
+  const assignment = state.assignments.find((item) => item.id === assignmentId);
+  if (!assignment?.positionRuleId) return [];
+  return state.staff.filter(
+    (person) =>
+      person.id !== assignment?.staffId &&
+      diagnoseManualAssignmentEligibility(state, assignmentId, person.id)
+        .violations.length === 0
+  );
+}
+
 export function canAssignStaff(
   state: AssignmentEligibilityFacts,
   assignmentId: string,

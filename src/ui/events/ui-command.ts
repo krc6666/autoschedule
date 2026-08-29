@@ -27,6 +27,17 @@ export type UiCommand =
   | { type: "export-share-html" }
   | { type: "export-share-png" }
   | { type: "generate-schedule" }
+  | { type: "open-reschedule-flight-picker" }
+  | {
+      type: "update-reschedule-flight-picker-selection";
+      selectedIds: string[];
+    }
+  | {
+      type: "update-reschedule-flight-picker-passengers";
+      candidateId: string;
+      bookedPassengers: number;
+    }
+  | { type: "confirm-reschedule-flight-picker"; selectedIds: string[] }
   | { type: "set-half-rest-staff"; staffIds: string[] }
   | { type: "stop-schedule-without-result" }
   | { type: "stop-schedule-with-current-result" }

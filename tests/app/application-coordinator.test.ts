@@ -763,3 +763,226 @@ describe("next workday flight picker workflow", () => {
     expect(savedDate).toBe("2026-08-17");
   });
 });
+
+describe("current schedule flight picker workflow", () => {
+  const currentDate = "2026-08-29";
+  const currentPreferences: ApplicationPreferences = {
+    ...preferences,
+    loadScheduleDate: () => currentDate,
+  };
+
+  function stateWithCurrentSchedule() {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    flight.bookedPassengers = 88;
+    state.flights = [flight];
+    state.assignments = [
+      {
+        id: "existing-assignment",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: state.positionRules[0]!.id,
+        position: state.positionRules[0]!.name,
+        staffId: state.staff[1]!.id,
+        staffName: state.staff[1]!.name,
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: 2,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    state.activeScheduleDate = currentDate;
+    state.history = [
+      {
+        id: "history-before-reschedule",
+        date: "2026-08-27",
+        flightNo: "CX937",
+        position: "G12",
+        staffId: state.staff[1]!.id,
+        staffName: state.staff[1]!.name,
+        startTime: "08:30",
+        endTime: "10:30",
+        workHours: 2,
+        fatiguePoints: 2,
+        remark: "",
+      },
+    ];
+    return state;
+  }
+
+  it("opens every local flight and defaults to the current day's selection without mutating state", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = stateWithCurrentSchedule();
+    const original = structuredClone(state);
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences: currentPreferences, confirm: () => true }
+    );
+    const calculate = vi.fn();
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: { calculate, isRunning: () => false },
+    });
+
+    await coordinator.handle({ type: "open-reschedule-flight-picker" });
+
+    const dialog = coordinator.view().dialog;
+    if (dialog?.kind !== "reschedule-flight-picker")
+      throw new Error("缺少重新排班航班窗口");
+    expect(dialog.candidates.map((item) => item.flightNo)).toEqual(
+      expect.arrayContaining(state.templates.map((item) => item.flightNo))
+    );
+    expect(
+      dialog.candidates
+        .filter((item) => dialog.selectedIds.includes(item.id))
+        .map((item) => item.flightNo)
+    ).toEqual(
+      expect.arrayContaining(state.flights.map((item) => item.flightNo))
+    );
+    expect(
+      dialog.candidates.find((item) => item.flightNo === "CX937")
+        ?.bookedPassengers
+    ).toBe(88);
+
+    const selected = dialog.candidates.find(
+      (item) => item.flightNo === "CX937"
+    )!;
+    await coordinator.handle({
+      type: "update-reschedule-flight-picker-passengers",
+      candidateId: selected.id,
+      bookedPassengers: 128,
+    });
+
+    expect(coordinator.model()).toEqual(original);
+    expect(calculate).not.toHaveBeenCalled();
+  });
+
+  it("commits selected flights, passenger counts, and the new schedule only after success", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = stateWithCurrentSchedule();
+    const originalHistory = structuredClone(state.history);
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences: currentPreferences, confirm: () => true }
+    );
+    const result: ScheduleResult = {
+      assignments: [],
+      warnings: [],
+      unfilledCount: 0,
+    };
+    const calculate = vi.fn().mockResolvedValue({
+      kind: "completed",
+      result,
+    });
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: { calculate, isRunning: () => false },
+    });
+
+    await coordinator.handle({ type: "open-reschedule-flight-picker" });
+    const dialog = coordinator.view().dialog;
+    if (dialog?.kind !== "reschedule-flight-picker")
+      throw new Error("缺少重新排班航班窗口");
+    const addedFlightNo = state.templates[1]!.flightNo;
+    const target = dialog.candidates.find(
+      (item) => item.flightNo === addedFlightNo
+    )!;
+    await coordinator.handle({
+      type: "update-reschedule-flight-picker-passengers",
+      candidateId: target.id,
+      bookedPassengers: 186,
+    });
+    await coordinator.handle({
+      type: "confirm-reschedule-flight-picker",
+      selectedIds: [target.id],
+    });
+
+    expect(calculate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flights: [
+          expect.objectContaining({
+            flightNo: addedFlightNo,
+            bookedPassengers: 186,
+          }),
+        ],
+        assignments: [],
+      }),
+      currentDate,
+      { halfRestStaffIds: [] }
+    );
+    expect(coordinator.model().flights).toEqual([
+      expect.objectContaining({
+        flightNo: addedFlightNo,
+        bookedPassengers: 186,
+      }),
+    ]);
+    expect(coordinator.model().assignments).toEqual(result.assignments);
+    expect(coordinator.model().activeScheduleDate).toBe(currentDate);
+    expect(coordinator.model().history).toEqual(originalHistory);
+  });
+
+  it("keeps the original flights and schedule when recalculation fails", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = stateWithCurrentSchedule();
+    const original = structuredClone(state);
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences: currentPreferences, confirm: () => true }
+    );
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: {
+        calculate: vi.fn().mockRejectedValue(new Error("测试失败")),
+        isRunning: () => false,
+      },
+    });
+
+    await coordinator.handle({ type: "open-reschedule-flight-picker" });
+    const dialog = coordinator.view().dialog;
+    if (dialog?.kind !== "reschedule-flight-picker")
+      throw new Error("缺少重新排班航班窗口");
+    await coordinator.handle({
+      type: "confirm-reschedule-flight-picker",
+      selectedIds: dialog.selectedIds,
+    });
+
+    expect(coordinator.model()).toEqual(original);
+    expect(coordinator.view().toast).toMatchObject({
+      tone: "danger",
+      message: expect.stringContaining("重新排班失败"),
+    });
+  });
+
+  it("atomically adopts selected flights and a safe result when stop-and-adopt is requested", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = stateWithCurrentSchedule();
+    const original = structuredClone(state);
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences: currentPreferences, confirm: () => true }
+    );
+    Object.defineProperty(coordinator, "scheduleRunner", {
+      value: {
+        calculate: vi.fn().mockResolvedValue({
+          kind: "stopped-with-result",
+          result: { assignments: [], warnings: [], unfilledCount: 0 },
+        }),
+        isRunning: () => false,
+      },
+    });
+
+    await coordinator.handle({ type: "open-reschedule-flight-picker" });
+    const dialog = coordinator.view().dialog;
+    if (dialog?.kind !== "reschedule-flight-picker")
+      throw new Error("缺少重新排班航班窗口");
+    await coordinator.handle({
+      type: "confirm-reschedule-flight-picker",
+      selectedIds: dialog.selectedIds,
+    });
+
+    expect(coordinator.model().flights).toEqual(original.flights);
+    expect(coordinator.model().assignments).toEqual([]);
+    expect(coordinator.model().history).toEqual(original.history);
+    expect(coordinator.view().toast?.message).toContain("完整安全方案");
+  });
+});

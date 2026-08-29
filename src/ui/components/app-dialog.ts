@@ -61,6 +61,8 @@ export class AppDialogElement extends LightDomElement {
   private titleText(): string {
     const dialog = this.dialog;
     if (dialog?.kind === "templates") return "从模板添加航班";
+    if (dialog?.kind === "reschedule-flight-picker")
+      return `确认 ${dialog.date} 航班与人数`;
     if (dialog?.kind === "next-workday-flight-picker")
       return `确认 ${dialog.date}（${weekdayLabel(dialog.weekday)}）航班`;
     if (dialog?.kind === "qualification") {
@@ -87,7 +89,10 @@ export class AppDialogElement extends LightDomElement {
         class="modal-content-stack"
         .model=${this.model}
       ></autoschedule-template-picker>`;
-    if (dialog?.kind === "next-workday-flight-picker")
+    if (
+      dialog?.kind === "next-workday-flight-picker" ||
+      dialog?.kind === "reschedule-flight-picker"
+    )
       return html`<autoschedule-next-workday-flight-picker
         class="modal-content-stack"
         .dialog=${dialog}
