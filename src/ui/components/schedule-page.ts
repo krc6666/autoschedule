@@ -10,6 +10,7 @@ import { buildPreviousArchivedScheduleView } from "../projections/archived-sched
 import { dispatchUiCommand } from "../events/ui-command";
 import { LightDomElement } from "./light-dom-element";
 import "./duty-roster-summary";
+import "./daily-staff-flight-statistics";
 import "./schedule-feedback";
 import "./schedule-grid";
 import "./previous-schedule-comparison";
@@ -113,6 +114,10 @@ export class SchedulePageElement extends LightDomElement {
           ></autoschedule-schedule-relaxed-shift-summary>
         </div>
       </section>
+      <autoschedule-daily-staff-flight-statistics
+        .model=${this.model}
+        .date=${this.date}
+      ></autoschedule-daily-staff-flight-statistics>
       <autoschedule-schedule-feedback
         .model=${this.model}
         .view=${view}

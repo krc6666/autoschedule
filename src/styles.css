@@ -2286,6 +2286,77 @@ autoschedule-previous-schedule-comparison {
   margin-top: 8px;
   padding: 11px 14px;
 }
+.daily-staff-flight-statistics {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 11px 14px;
+}
+.daily-staff-flight-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.daily-staff-flight-head > div {
+  display: grid;
+  gap: 2px;
+}
+.daily-staff-flight-head h3 {
+  margin: 0;
+  color: var(--as-ink);
+  font-size: 14px;
+}
+.daily-staff-flight-head > div > span,
+.daily-staff-flight-head label > span,
+.daily-staff-flight-summary {
+  color: var(--as-muted);
+  font-size: 11px;
+}
+.daily-staff-flight-head label {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+.daily-staff-flight-head .form-control {
+  width: 150px;
+}
+.daily-staff-flight-summary {
+  display: flex;
+  gap: 10px;
+}
+.daily-staff-flight-summary strong {
+  color: #176b48;
+}
+.daily-staff-flight-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  border-left: 3px solid #39756e;
+  background: #f7faf9;
+}
+.daily-staff-flight-tag {
+  padding: 4px 7px;
+  border: 1px solid #d9e5e2;
+  border-radius: 4px;
+  background: #fff;
+  color: #46514f;
+  font-size: 12px;
+}
+.daily-staff-flight-tag strong {
+  color: var(--as-ink);
+}
+.daily-staff-flight-message {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 11px;
+  border-left: 3px solid #9b7a2f;
+  background: #fffaf0;
+  color: #6f5924;
+  font-size: 12px;
+}
 .load-details summary {
   color: #4c5661;
   cursor: pointer;
@@ -2848,6 +2919,13 @@ autoschedule-previous-schedule-comparison {
   }
   .relaxed-shift-today {
     grid-template-columns: 1fr;
+  }
+  .daily-staff-flight-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .daily-staff-flight-head .form-control {
+    width: 100%;
   }
   .flight-heading > div {
     align-items: flex-start;

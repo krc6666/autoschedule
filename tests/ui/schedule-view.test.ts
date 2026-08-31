@@ -529,6 +529,120 @@ describe("schedule page", () => {
     }
   });
 
+  it("queries regular staff flights by workday using compact flight-only tags", async () => {
+    const state = createDefaultState();
+    const regular = state.staff.find((person) => person.staffType === "常规")!;
+    const administrative = {
+      ...regular,
+      id: "administrative",
+      name: "行政人员",
+      staffType: "行政支援" as const,
+    };
+    state.staff = [regular, administrative];
+    state.activeScheduleDate = "2026-09-13";
+    state.assignments = [
+      {
+        id: "current-cx-1",
+        flightId: "current-cx",
+        flightNo: "CX931",
+        positionRuleId: null,
+        position: "G18",
+        staffId: regular.id,
+        staffName: regular.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "current-cx-2",
+        flightId: "current-cx",
+        flightNo: "CX931",
+        positionRuleId: null,
+        position: "G20",
+        staffId: regular.id,
+        staffName: regular.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "current-admin",
+        flightId: "current-tr",
+        flightNo: "TR121",
+        positionRuleId: null,
+        position: "H02",
+        staffId: administrative.id,
+        staffName: administrative.name,
+        startTime: "12:00",
+        endTime: "14:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    state.history = [
+      {
+        id: "archived-ke",
+        date: "2026-09-11",
+        flightNo: "KE166",
+        position: "K01",
+        staffId: regular.id,
+        staffName: regular.name,
+        startTime: "07:00",
+        endTime: "09:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        historyCoverage: "complete",
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-09-13",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+    });
+    const statistics = element.querySelector(
+      "autoschedule-daily-staff-flight-statistics"
+    )!;
+    const currentTag = statistics.querySelector(".daily-staff-flight-tag")!;
+
+    expect(currentTag.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      `${regular.name} CX931`
+    );
+    expect(currentTag.textContent).not.toContain("G18");
+    expect(currentTag.textContent).not.toContain("2026-09-13");
+    expect(statistics.textContent).not.toContain(administrative.name);
+
+    const dateInput = statistics.querySelector<HTMLInputElement>(
+      'input[aria-label="人员航班查询日期"]'
+    )!;
+    dateInput.value = "2026-09-11";
+    dateInput.dispatchEvent(new Event("change"));
+    await settleLit();
+
+    expect(
+      statistics
+        .querySelector(".daily-staff-flight-tag")
+        ?.textContent?.replace(/\s+/g, " ")
+        .trim()
+    ).toBe(`${regular.name} KE166`);
+    expect(statistics.textContent).not.toContain("CX931");
+  });
+
   it("highlights only the last schedule cell for today's early-departure staff", async () => {
     const state = createDefaultState();
     const [earlyPerson, afternoonFreePerson, regularPerson] = state.staff
