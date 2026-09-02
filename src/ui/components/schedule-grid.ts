@@ -142,6 +142,40 @@ export class ScheduleGridElement extends LightDomElement {
     return [
       html`<td class="schedule-grid-slot schedule-position-slot">
         <article class="schedule-cell schedule-position-cell ${stateClasses}">
+          <div class="schedule-cell-actions schedule-position-actions">
+            <!-- candidate actions live in the position cell -->
+            <button
+              type="button"
+              class="schedule-candidate-trigger"
+              title="查看当前合格空闲人员"
+              aria-label="查看${assignment.position}当前合格空闲人员"
+              @click=${() => this.toggleCandidates(assignment.id)}
+            >
+              <i class="bi bi-person-plus" aria-hidden="true"></i>
+            </button>
+            <button
+              class="btn btn-sm btn-light icon-btn"
+              type="button"
+              title="清空人员"
+              aria-label="清空人员"
+              @click=${() => dispatchUiCommand(this, { type: "assign-staff", assignmentId: assignment.id, staffId: "" })}
+            >
+              <i class="bi bi-eraser"></i>
+            </button>
+            ${
+              temporary
+                ? html`<button
+                    class="btn btn-sm btn-light icon-btn"
+                    type="button"
+                    title="删除本次临时岗位"
+                    aria-label="删除本次临时岗位"
+                    @click=${() => dispatchUiCommand(this, { type: "delete-temporary-assignment", id: assignment.id })}
+                  >
+                    <i class="bi bi-x-lg"></i>
+                  </button>`
+                : null
+            }
+          </div>
           <div class="schedule-position-content">
             ${
               temporary
@@ -165,7 +199,9 @@ export class ScheduleGridElement extends LightDomElement {
           </div>
           ${
             temporary
-              ? html`<div class="schedule-cell-actions">
+              ? html`<div
+                  class="schedule-cell-actions legacy-temporary-actions"
+                >
                   <button
                     class="btn btn-sm btn-light icon-btn"
                     type="button"
@@ -199,7 +235,7 @@ export class ScheduleGridElement extends LightDomElement {
             ${assignment.staffId ? html`<i class="bi bi-grip-vertical assignment-drag-handle" aria-hidden="true"></i>` : null}
             <button
               type="button"
-              class="schedule-candidate-trigger"
+              class="schedule-candidate-trigger legacy-hidden-trigger"
               title="查看当前合格空闲人员"
               aria-label="查看${assignment.position}当前合格空闲人员"
               @pointerdown=${(event: Event) => event.stopPropagation()}
@@ -208,36 +244,36 @@ export class ScheduleGridElement extends LightDomElement {
               <i class="bi bi-person-plus" aria-hidden="true"></i>
             </button>
             ${
-                manualWarning
-                  ? html`<i
-                      class="bi bi-exclamation-triangle-fill schedule-manual-warning-icon"
-                      title=${
-                      assignment.manualOverrideWarnings
-                        ?.map((item) => item.message)
-                        .join("；") ?? "人工调整提醒"
-                    }
-                      aria-label="人工调整提醒"
-                    ></i>`
-                  : warning
-                    ? html`<button
-                        class="schedule-soft-warning-button"
-                        type="button"
-                        title="${warning.message}。点击分析人员调换"
-                        aria-label="分析这个岗位的调换方案"
-                        @click=${() =>
-                        dispatchUiCommand(this, {
-                          type: "open-swap-analysis",
-                          assignmentId: assignment.id,
-                        })}
-                      >
-                        <i
-                          class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"
-                          title=${warning.message}
-                          aria-hidden="true"
-                        ></i>
-                      </button>`
-                    : null
-              }
+              manualWarning
+                ? html`<i
+                    class="bi bi-exclamation-triangle-fill schedule-manual-warning-icon"
+                    title=${
+                        assignment.manualOverrideWarnings
+                          ?.map((item) => item.message)
+                          .join("；") ?? "人工调整提醒"
+                      }
+                    aria-label="人工调整提醒"
+                  ></i>`
+                : warning
+                  ? html`<button
+                      class="schedule-soft-warning-button"
+                      type="button"
+                      title="${warning.message}。点击分析人员调换"
+                      aria-label="分析这个岗位的调换方案"
+                      @click=${() =>
+                          dispatchUiCommand(this, {
+                            type: "open-swap-analysis",
+                            assignmentId: assignment.id,
+                          })}
+                    >
+                      <i
+                        class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"
+                        title=${warning.message}
+                        aria-hidden="true"
+                      ></i>
+                    </button>`
+                  : null
+            }
             <input
               class="schedule-name-input"
               list=${guide ? guideListId : auxiliary ? "" : "schedule-staff-names"}
@@ -246,7 +282,7 @@ export class ScheduleGridElement extends LightDomElement {
               @change=${(event: Event) => this.updateAssignment(assignment.id, "staffName", event)}
             />
           </div>
-          <div class="schedule-cell-actions">
+          <div class="schedule-cell-actions legacy-person-actions">
             <button
               class="btn btn-sm btn-light icon-btn"
               type="button"

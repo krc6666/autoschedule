@@ -91,6 +91,12 @@ describe("schedule page", () => {
       `button[aria-label="查看${rule.name}当前合格空闲人员"]`
     );
     expect(candidateTrigger).toBeTruthy();
+    expect(candidateTrigger?.closest(".schedule-position-cell")).toBeTruthy();
+    expect(
+      element
+        .querySelector<HTMLButtonElement>(`.schedule-position-cell .icon-btn`)
+        ?.closest(".schedule-position-cell")
+    ).toBeTruthy();
     candidateTrigger?.click();
     await settleLit();
     expect(element.querySelector(".schedule-candidate-menu")).toBeNull();
@@ -105,6 +111,15 @@ describe("schedule page", () => {
       type: "assign-staff",
       assignmentId: "target-assignment",
       staffId: available!.id,
+    });
+
+    element
+      .querySelector<HTMLButtonElement>('button[aria-label="清空人员"]')
+      ?.click();
+    expect(commands.at(-1)).toEqual({
+      type: "assign-staff",
+      assignmentId: "target-assignment",
+      staffId: "",
     });
   });
 
@@ -132,6 +147,10 @@ describe("schedule page", () => {
     });
 
     expect(element.textContent).toContain("半休人员");
+    expect(element.textContent).toContain("下午半休");
+    expect(element.textContent).toContain("上午半休");
+    expect(element.textContent).not.toContain("尽早下班");
+    expect(element.textContent).not.toContain("晚到班");
     const inputs = selectable.map((person) =>
       element.querySelector<HTMLInputElement>(
         `input[aria-label="${person.name}设为半休"]`
@@ -542,13 +561,16 @@ describe("schedule page", () => {
   it("queries regular staff flights by workday using compact flight-only tags", async () => {
     const state = createDefaultState();
     const regular = state.staff.find((person) => person.staffType === "常规")!;
+    const unassignedRegular = state.staff.find(
+      (person) => person.staffType === "常规" && person.id !== regular.id
+    )!;
     const administrative = {
       ...regular,
       id: "administrative",
       name: "行政人员",
       staffType: "行政支援" as const,
     };
-    state.staff = [regular, administrative];
+    state.staff = [regular, unassignedRegular, administrative];
     state.activeScheduleDate = "2026-09-13";
     state.assignments = [
       {
@@ -636,6 +658,9 @@ describe("schedule page", () => {
     expect(currentTag.textContent).not.toContain("G18");
     expect(currentTag.textContent).not.toContain("2026-09-13");
     expect(statistics.textContent).not.toContain(administrative.name);
+    expect(
+      statistics.querySelector(".daily-staff-flight-unassigned")?.textContent
+    ).toContain(unassignedRegular.name);
 
     const dateInput = statistics.querySelector<HTMLInputElement>(
       'input[aria-label="人员航班查询日期"]'

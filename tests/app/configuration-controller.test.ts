@@ -21,6 +21,63 @@ function memoryStorage(): Storage {
 }
 
 describe("configuration controller", () => {
+  it("overwrites the late flight rules with the selected early flight rules", async () => {
+    const initial = createDefaultState();
+    const sourceFlightNo = "CX937 （早）";
+    const targetFlightNo = "CX937 （晚）";
+    const sourceRules = initial.positionRules
+      .filter((rule) => rule.flightNo === "CX937")
+      .map((rule) => ({ ...rule, flightNo: sourceFlightNo }));
+    const targetRules = initial.positionRules
+      .filter((rule) => rule.flightNo === "FD573")
+      .map((rule) => ({
+        ...rule,
+        id: `late-${rule.id}`,
+        flightNo: targetFlightNo,
+      }));
+    initial.positionRules = [...sourceRules, ...targetRules];
+    initial.templates = [
+      { ...initial.templates[0]!, id: "early", flightNo: sourceFlightNo },
+      { ...initial.templates[1]!, id: "late", flightNo: targetFlightNo },
+    ];
+    const store = createAutoscheduleStore(initial);
+    const confirm = vi.fn(() => true);
+    const commit = vi.fn();
+    const context = {
+      store,
+      model: () => store.getState().model,
+      confirm,
+      commit,
+      toast: vi.fn(),
+    } as unknown as ApplicationContext;
+
+    await new ConfigurationController(context).handle({
+      type: "copy-position-rules",
+      sourceFlightNo,
+      targetFlightNo,
+    });
+
+    const copied = store
+      .getState()
+      .model.positionRules.filter((rule) => rule.flightNo === targetFlightNo);
+    expect(confirm).toHaveBeenCalledWith(
+      `目标航班 ${targetFlightNo} 已有岗位规则，确认覆盖？`
+    );
+    expect(copied).toHaveLength(sourceRules.length);
+    expect(copied.map((rule) => rule.name)).toEqual(
+      sourceRules.map((rule) => rule.name)
+    );
+    expect(copied.map((rule) => rule.qualifiedStaffIds)).toEqual(
+      sourceRules.map((rule) => rule.qualifiedStaffIds)
+    );
+    expect(
+      copied.some((rule) => targetRules.some((old) => old.id === rule.id))
+    ).toBe(false);
+    expect(commit).toHaveBeenCalledWith(
+      `已将 ${sourceFlightNo} 的岗位配置复制到 ${targetFlightNo}`
+    );
+  });
+
   it("persists a staff status change when background rescheduling fails", async () => {
     const storage = memoryStorage();
     vi.stubGlobal("localStorage", storage);

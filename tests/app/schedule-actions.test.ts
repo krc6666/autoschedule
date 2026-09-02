@@ -83,6 +83,26 @@ function supervisorSchedule(): AppState {
 }
 
 describe("督导机动补位编辑", () => {
+  it("clears an assignment without immediately reusing the person", () => {
+    const state = supervisorSchedule();
+    const target = state.assignments.find(
+      (item) => item.id === "h04-assignment"
+    )!;
+    target.staffId = state.staff[0]!.id;
+    target.staffName = state.staff[0]!.name;
+    target.status = "assigned";
+    target.supervisorSourceAssignmentId = "supervisor-assignment";
+
+    const result = assignStaff(state, target.id, "");
+
+    expect(result).toMatchObject({ changed: true });
+    expect(target).toMatchObject({
+      staffId: null,
+      staffName: "",
+      status: "unfilled",
+    });
+  });
+
   it("拖动顶部督导到空柜台时保留顶部并跳过目标资质限制", () => {
     const state = supervisorSchedule();
     const result = assignStaff(

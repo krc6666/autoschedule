@@ -80,7 +80,9 @@ describe("workbook boundary", () => {
     assignments[0]!.manualOverrideWarnings = [
       { code: "daily-hours", message: "人员A 将超过每日工时上限" },
     ];
-    const workbook = buildScheduleWorkbook(assignments, "2026-07-18");
+    state.assignments = assignments;
+    state.activeScheduleDate = "2026-07-18";
+    const workbook = buildScheduleWorkbook(state, "2026-07-18");
     expect(workbook.SheetNames).toHaveLength(3);
     expect(workbook.Sheets[workbook.SheetNames[0]!]!["!ref"]).toBeTruthy();
     expect(workbook.Sheets[workbook.SheetNames[1]!]!["!ref"]).toBeTruthy();
@@ -95,7 +97,74 @@ describe("workbook boundary", () => {
     expect(machineRows.flat().join(" ")).toContain(
       "人工调整提醒：人员A 将超过每日工时上限"
     );
+    const detailRows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["保障明细"]!,
+      { header: 1, raw: false, defval: "" }
+    );
+    const detailText = detailRows.flat().join(" ");
+    expect(detailText).toContain("CX航前");
+    expect(detailText).toContain("24小时值班");
+    expect(detailText).toContain("次日备勤一（2026-07-19）");
+    expect(detailText).toContain("引导人员");
+    const flightHeader = detailRows
+      .flat()
+      .find(
+        (value): value is string =>
+          typeof value === "string" &&
+          /^\p{L}{2}\d+\n到岗[^\n]*\n/mu.test(value)
+      );
+    expect(flightHeader).toBeTruthy();
+    const guideRow = detailRows.findIndex((row) => row.includes("引导人员"));
+    expect(guideRow).toBeGreaterThan(2);
+    expect(detailRows[guideRow - 1]?.every((value) => value === "")).toBe(true);
+    expect(detailRows[guideRow - 2]?.every((value) => value === "")).toBe(true);
   }, 30_000);
+
+  it("groups early departures by airline code in the schedule summary", () => {
+    const state = createDefaultState();
+    const staff = state.staff.slice(0, 2).map((person, index) => ({
+      ...person,
+      id: `early-${index}`,
+      name: index === 0 ? "钱七" : "孙八",
+      dutyQualified: false,
+      cxPreflightQualified: false,
+      standbyQualified: false,
+    }));
+    state.staff = staff;
+    state.positionRules = [];
+    state.assignments = staff.map((person, index) => ({
+      id: `early-assignment-${index}`,
+      flightId: `flight-${index}`,
+      flightNo: index === 0 ? "TR999" : "TW888",
+      positionRuleId: null,
+      position: "普通岗位",
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned" as const,
+    }));
+    state.activeScheduleDate = "2026-07-18";
+    state.settings.earlyDepartureCutoffTime = "13:00";
+
+    const workbook = buildScheduleWorkbook(state, "2026-07-18");
+    const detailRows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["保障明细"]!,
+      {
+        header: 1,
+        raw: false,
+        defval: "",
+      }
+    );
+    const earlyRow = detailRows.find((row) => row[0] === "提前下班");
+    expect(earlyRow?.[1]).toBe("TR：钱七\nTW：孙八");
+    expect(earlyRow?.[1]).not.toContain("TR999");
+    expect(earlyRow?.[1]).not.toContain("13:00");
+  });
 
   it("imports a flight configuration sheet as reusable templates", () => {
     const workbook = XLSX.utils.book_new();
@@ -571,7 +640,9 @@ describe("workbook boundary", () => {
       manualRemark: "09:00-10:00",
       status: "assigned",
     });
-    const workbook = buildScheduleWorkbook(assignments, "2026-07-18");
+    state.assignments = assignments;
+    state.activeScheduleDate = "2026-07-18";
+    const workbook = buildScheduleWorkbook(state, "2026-07-18");
     const detail = XLSX.utils
       .sheet_to_json<unknown[]>(workbook.Sheets["保障明细"]!, {
         header: 1,

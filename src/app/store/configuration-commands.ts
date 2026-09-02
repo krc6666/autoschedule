@@ -2,6 +2,7 @@ import {
   addAdministrativeStaff,
   addFlight,
   addPositions,
+  copyPositionRules,
   addStaff,
   addTemplate,
   addTemplateFlight,
@@ -43,6 +44,14 @@ export function createConfigurationCommands(command: StateCommand) {
     deleteStaff: (id: string) => command((state) => deleteStaff(state, id)),
     addPositions: (flightNo: string, count: number) =>
       command((state) => addPositions(state, flightNo, count)),
+    copyPositionRules: (
+      sourceFlightNo: string,
+      targetFlightNo: string,
+      overwrite = false
+    ) =>
+      command((state) =>
+        copyPositionRules(state, sourceFlightNo, targetFlightNo, overwrite)
+      ),
     deletePosition: (id: string) =>
       command((state) => deletePosition(state, id)),
     movePosition: (id: string, direction: -1 | 1) =>

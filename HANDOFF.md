@@ -1,6 +1,33 @@
 # autoschedule 新窗口交接
 
-更新时间：2026-08-27
+更新时间：2026-09-02
+
+## 当前最新快照（优先阅读）
+
+- 最近完成：半休拆分为两种模式。
+  - `early-finish`：下午半休，保持原行为，优先安排 `12:00` 前航班并尽早结束。
+  - `late-start`：上午半休，优先选择该人员可承担且结束时间最晚的午后航班，再尽量减少此前航班。
+- 输入入口是 `ScheduleRunPreferences.halfRestModes`，按人员 ID 映射模式；未指定模式默认 `early-finish`。
+- 半休模式只存在当前日期临时 view state，不写入 `AppState`、localStorage、Excel 或历史；切换日期会清空人员和模式。
+- 行政支援人员仍不显示在半休选择器中；值班、KE166、资质、衔接、工时、跨工作日恢复等高优先级合同不被半休突破。
+- 上午半休没有午后合法候选时按普通人员参加排班并提示；下午半休没有早班合法候选时保持原回退提示。
+- 关键实现：`src/domain/rules/half-rest.ts`、`src/domain/shared/schedule-run-preferences.ts`、`src/domain/kernel/schedule-preparation.ts`、`src/domain/kernel/daily-schedule-result.ts`、`src/ui/components/half-rest-selector.ts`。
+- 最近提交：`9516b1d feat(half-rest): add late-start mode`。
+- 当前分支：`全局化highs`；工作区干净；该提交已同步到 `origin/全局化highs`。
+
+## 最新验证
+
+- `npm.cmd run typecheck`：通过。
+- `npm.cmd test`：99 个测试文件、715 项通过。
+- `npm.cmd run test:performance`：4 个性能文件、14 项通过。
+- `npm.cmd run build`：通过。
+- 新增上午半休最晚结束场景连续执行 5 次：全部通过。
+- 排班 UI、日期切换、半休模式切换和应用协调器组合测试：3 个文件、36 项通过。
+- `npm.cmd run verify`：通过（类型检查、普通测试、性能测试和构建均成功）。
+
+## 新窗口继续方式
+
+新窗口可以直接说“继续上次工作”。先读取 `AGENTS.md`、本文件、`spec.md` 和相关 Skill，再检查 `git status --short --branch`。不要把本文件当作产品规则唯一来源；以当前代码、测试、`spec.md` 和中央规则合同为准。
 
 ## 新窗口入口
 
@@ -15,8 +42,8 @@ owner 在新窗口可以直接说：
 ## 当前分支与工作区
 
 - 分支：`全局化highs`。
-- 工作区有大量未提交改动，属于 owner 现有工作和本轮排班规则修复，禁止清理或按 `HEAD` 批量恢复。
-- 当前未执行 commit、push 或部署。
+- 当前工作区干净；半休模式改动已提交为 `9516b1d` 并推送到 `origin/全局化highs`。
+- 本节以下的旧任务记录仅供背景参考，不得覆盖“当前最新快照”中的分支、提交和验证事实。
 - 当前开发地址通常为 `http://127.0.0.1:51127/`，端口是临时状态；新窗口使用前重新检查。当前地址最近一次 HTTP 检查返回 `200`。
 
 ## 最近完成：分流仅在岗位缺口时启用
@@ -81,9 +108,9 @@ owner 在新窗口可以直接说：
 
 具体行为以当前代码、测试、`spec.md` 和中央规则合同为准。
 
-## 最近真实验证
+## 历史验证记录（已被当前最新快照覆盖）
 
-本次分流修复后的独立验证已完成：
+上一轮分流修复的独立验证记录：
 
 - 目标及相邻规则测试：7 个文件、195 项通过；
 - `npm.cmd run typecheck`：通过；
@@ -92,16 +119,16 @@ owner 在新窗口可以直接说：
 - `git diff --check`：通过；
 - 未发现调试输出残留。
 
-`npm.cmd run verify` 已实际运行但退出码为 `1`：普通测试 98 个文件中 97 通过、1 失败，682/683 项通过。失败为 `tests/app/application-coordinator.test.ts` 的“rechecks a proposed swap before applying it”，其预期手工换岗分析为 `safe`，实际为 `soft-tradeoff`。该用例仅交换同一航班两个常规岗位，分流计数为 0；可在本次修改前后的当前工作区独立复现，尚未处理，禁止将完整门禁写成通过，也不得 commit/push。
+当时 `npm.cmd run verify` 曾因旧的手工换岗基线失败；该记录属于上一轮工作区，已不适用于当前 `9516b1d` 快照。当前最新快照中的完整门禁已通过。
 
 ## 下一步与风险
 
-- 新窗口如继续排班规则开发，先保留当前未提交分流改动，不得按 `HEAD` 恢复或清理工作区。
+- 新窗口如继续排班规则开发，先确认当前工作区和分支状态；不要按 `HEAD` 批量恢复或清理 owner 新改动。
 - 可以用真实晚间 `AK151`、`TW616` 数据点击“重新排班”复核：两边有独立合格人员时不得同人分流；缺员时仍应允许提前撤岗接续。不要仅刷新页面，刷新只恢复 localStorage 中旧班表。
-- 若下一任务需要 commit/push，先定位并修复上述手工换岗测试的 `safe`/`soft-tradeoff` 基线差异，再重新运行 `npm.cmd run verify`，必须退出码为 0。
+- 若下一任务需要新的 commit/push，必须按当时改动重新运行 `npm.cmd run verify`，并如实报告结果。
 - 值班人员中间减负的真实页面复核仍有效：22 日、24 日历史导入后，26 日值班人员应保持在 `CX931/G14`，不要只刷新页面。
 - 任何新的排班规则改动都要先核对 `spec.md` 宏观原则和规则合同，先写失败测试，再修改所属职责模块。
-- 当前未授权 commit、push 或部署。
+- 当前半休提交已按 owner 当时授权推送；后续新的 commit/push/部署仍需 owner 明确授权。
 
 ## 交接文件边界
 

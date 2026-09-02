@@ -71,6 +71,11 @@ export type UiCommand =
   | { type: "add-staff"; administrative: boolean }
   | { type: "delete-staff"; id: string }
   | { type: "add-positions"; flightNo: string; count: number }
+  | {
+      type: "copy-position-rules";
+      sourceFlightNo: string;
+      targetFlightNo: string;
+    }
   | { type: "delete-position"; id: string }
   | { type: "move-position"; id: string; direction: -1 | 1 }
   | { type: "sort-counters"; flightNo: string }

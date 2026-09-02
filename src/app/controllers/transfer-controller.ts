@@ -60,10 +60,7 @@ export class TransferController implements UiCommandController {
         const { buildScheduleWorkbook, writeWorkbook } =
           await import("../../infrastructure/excel");
         writeWorkbook(
-          buildScheduleWorkbook(
-            this.context.model().assignments,
-            this.context.view().date
-          ),
+          buildScheduleWorkbook(this.context.model(), this.context.view().date),
           `保障明细_${this.context.view().date}.xlsx`
         );
         return true;

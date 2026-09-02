@@ -6,6 +6,7 @@ import {
   addAdministrativeStaff,
   addFlightsFromTemplates,
   addStaff,
+  copyPositionRules,
   deleteTemplate,
   deleteStaff,
   setWeeklyFlightPlanFlight,
@@ -48,6 +49,76 @@ describe("configuration actions", () => {
     expect(flightNumbersForDate(state.weeklyFlightPlans, "2026-08-17")).toEqual(
       []
     );
+  });
+
+  it("renames matching position rules together with a flight template", () => {
+    const state = createDefaultState();
+    const template = state.templates[0]!;
+    const rules = state.positionRules.filter(
+      (rule) => rule.flightNo === template.flightNo
+    );
+    expect(rules.length).toBeGreaterThan(0);
+    state.activeScheduleDate = "2026-08-17";
+    state.schedulePolicyStale = true;
+
+    expect(
+      updateConfigurationField(
+        state,
+        "template",
+        template.id,
+        "flightNo",
+        "cx937(早)"
+      )
+    ).toBe("updated");
+
+    expect(
+      state.positionRules.find((rule) => rule.id === rules[0]!.id)
+    ).toMatchObject({
+      flightNo: "CX937(早)",
+    });
+    expect(state.positionRules.some((rule) => rule.flightNo === "CX937")).toBe(
+      false
+    );
+    expect(state.activeScheduleDate).toBeNull();
+    expect(state.schedulePolicyStale).toBe(false);
+  });
+
+  it("copies a complete position group and qualifications to another flight", () => {
+    const state = createDefaultState();
+    const source = "CX937";
+    const target = "CX937(晚)";
+    const sourceRules = state.positionRules.filter(
+      (rule) => rule.flightNo === source
+    );
+
+    expect(copyPositionRules(state, source, target, true)).toBe(true);
+
+    const copiedRules = state.positionRules.filter(
+      (rule) => rule.flightNo === target
+    );
+    expect(copiedRules).toHaveLength(sourceRules.length);
+    expect(
+      copiedRules.map(({ id: _id, flightNo: _flightNo, ...rule }) => rule)
+    ).toEqual(
+      sourceRules.map(({ id: _id, flightNo: _flightNo, ...rule }) => rule)
+    );
+    expect(
+      copiedRules.every((rule, index) => rule.id !== sourceRules[index]!.id)
+    ).toBe(true);
+  });
+
+  it("does not overwrite an existing target position group without confirmation", () => {
+    const state = createDefaultState();
+    const source = "CX937";
+    const target = "FD573";
+    const before = structuredClone(
+      state.positionRules.filter((rule) => rule.flightNo === target)
+    );
+
+    expect(copyPositionRules(state, source, target)).toBe(false);
+    expect(
+      state.positionRules.filter((rule) => rule.flightNo === target)
+    ).toEqual(before);
   });
 
   it("defaults standby qualification by staff type and clears it for administrative support", () => {

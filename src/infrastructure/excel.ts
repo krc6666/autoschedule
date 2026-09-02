@@ -21,7 +21,17 @@ import {
   orderPositionRules,
   splitList,
 } from "../utils";
-import { durationHours, normalizeTime } from "../domain/shared/time";
+import {
+  addIsoDays,
+  durationHours,
+  normalizeTime,
+} from "../domain/shared/time";
+import { getDutyRosterForDate } from "../domain/duty-roster/roster";
+import { buildMonthlyRelaxedShiftStatistics } from "../domain/statistics/relaxed-shift-statistics";
+import {
+  isFixedBottomPosition,
+  isGuideAssignment,
+} from "../domain/flights/schedule-position-rules";
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
 import {
   createEmptyWeeklyFlightPlans,
@@ -669,27 +679,101 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
 }
 
 export function buildScheduleWorkbook(
-  assignments: Assignment[],
+  state: AppState,
   date: string
 ): XLSX.WorkBook {
   const workbook = XLSX.utils.book_new();
+  const assignments = state.assignments;
   const flights = [...new Set(assignments.map((item) => item.flightNo))];
   const grouped = flights.map((flightNo) =>
     assignments.filter((item) => item.flightNo === flightNo)
   );
-  const maxPositions = Math.max(0, ...grouped.map((items) => items.length));
-  const matrix: unknown[][] = [
-    flights.flatMap((flightNo, index) => {
-      const first = grouped[index]?.[0];
-      return [
-        `${date}\n岗位`,
-        `${flightNo}\n${first?.startTime ?? ""}-${first?.endTime ?? ""}`,
-      ];
-    }),
+  const isGuideExportAssignment = (item: Assignment): boolean =>
+    isGuideAssignment(state, item) || isFixedBottomPosition(item.position);
+  const normalGroups = grouped.map((items) =>
+    items.filter((item) => !isGuideExportAssignment(item))
+  );
+  const guideGroups = grouped.map((items) =>
+    items.filter(isGuideExportAssignment)
+  );
+  const maxPositions = Math.max(
+    0,
+    ...normalGroups.map((items) => items.length)
+  );
+  const totalColumns = Math.max(4, flights.length * 2);
+  const roster = getDutyRosterForDate(state, date);
+  const staffName = (staffId: string | null): string =>
+    staffId
+      ? (state.staff.find((person) => person.id === staffId)?.name ?? "未安排")
+      : "未安排";
+  const standbyDate = addIsoDays(date, 1);
+  const relaxed = buildMonthlyRelaxedShiftStatistics(state, date);
+  const airlineCode = (flightNo: string): string =>
+    /^[A-Za-z]{2}/.exec(flightNo)?.[0].toUpperCase() ?? "其他";
+  const earlyDepartureText = (() => {
+    const byAirline = new Map<string, string[]>();
+    for (const item of relaxed.currentEarlyDepartures) {
+      const code = airlineCode(item.flightNo);
+      const names = byAirline.get(code) ?? [];
+      if (!names.includes(item.staffName)) names.push(item.staffName);
+      byAirline.set(code, names);
+    }
+    return (
+      [...byAirline.entries()]
+        .map(([code, names]) => `${code}：${names.join("、")}`)
+        .join("\n") || "无"
+    );
+  })();
+  const earlyDepartureRowHeight = Math.max(
+    34,
+    18 * earlyDepartureText.split("\n").length
+  );
+  const summaryRows: unknown[][] = [
+    [`${date} 航班保障排班`, ...Array(totalColumns - 1).fill("")],
+    [
+      "CX航前人员",
+      staffName(roster.cxPreflightStaffId),
+      "24小时值班人员",
+      staffName(roster.dutyStaffId),
+      ...Array(Math.max(0, totalColumns - 4)).fill(""),
+    ],
+    [
+      `次日备勤一（${standbyDate}）`,
+      staffName(roster.standbyStaffIds[0]),
+      `次日备勤二（${standbyDate}）`,
+      staffName(roster.standbyStaffIds[1]),
+      ...Array(Math.max(0, totalColumns - 4)).fill(""),
+    ],
+    [
+      "提前下班",
+      earlyDepartureText,
+      ...Array(Math.max(0, totalColumns - 2)).fill(""),
+    ],
+    Array(totalColumns).fill(""),
   ];
+  const matrixHeader: unknown[] =
+    [
+      flights.flatMap((flightNo, index) => {
+        const first = grouped[index]?.[0];
+        const flightRemark = state.flights
+          .find((flight) => flight.flightNo === flightNo)
+          ?.remark.trim();
+        return [
+          `${date}\n岗位`,
+          [
+            flightNo,
+            flightRemark,
+            `${first?.startTime ?? ""}-${first?.endTime ?? ""}`,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ];
+      }),
+    ][0] ?? [];
+  const matrix: unknown[][] = [...summaryRows, matrixHeader];
   for (let row = 0; row < maxPositions; row += 1) {
     matrix.push(
-      grouped.flatMap((items) => {
+      normalGroups.flatMap((items) => {
         const item = items[row];
         if (!item) return ["", ""];
         const remark = combinedAssignmentRemark(item.remark, item.manualRemark);
@@ -699,9 +783,30 @@ export function buildScheduleWorkbook(
       })
     );
   }
+  matrix.push(Array(totalColumns).fill(""));
+  matrix.push(Array(totalColumns).fill(""));
+  matrix.push(
+    guideGroups.flatMap((items) => {
+      const names = [
+        ...new Set(
+          items
+            .map(
+              (item) =>
+                item.staffName || (item.status === "manual" ? "" : "待补位")
+            )
+            .filter(Boolean)
+        ),
+      ];
+      return names.length
+        ? ["引导人员", names.join("、")]
+        : ["引导人员", "未安排"];
+    })
+  );
   const matrixSheet = sheet(
     matrix,
-    flights.flatMap(() => [20, 22])
+    Array.from({ length: totalColumns }, (_, index) =>
+      index % 2 === 0 ? 20 : 22
+    )
   );
   const range = XLSX.utils.decode_range(matrixSheet["!ref"] ?? "A1");
   for (let row = range.s.r; row <= range.e.r; row += 1) {
@@ -709,29 +814,80 @@ export function buildScheduleWorkbook(
       const address = XLSX.utils.encode_cell({ r: row, c: column });
       const cell = matrixSheet[address];
       if (!cell) continue;
+      const matrixHeaderRow = summaryRows.length;
+      const isTitle = row === 0;
+      const isSummary = row > 0 && row < summaryRows.length - 1;
+      const isSummaryLabel = isSummary && (column === 0 || column === 2);
+      const isGuideRow = row === matrixHeaderRow + maxPositions + 3;
+      const isBlankGuideSpacer =
+        row > matrixHeaderRow + maxPositions &&
+        row < matrixHeaderRow + maxPositions + 3;
       cell.s = {
         font: {
-          bold: row === 0 || column % 2 === 0,
-          color: { rgb: row === 0 ? "FFFFFF" : "1F2328" },
+          bold:
+            isTitle ||
+            row === matrixHeaderRow ||
+            column % 2 === 0 ||
+            isSummaryLabel ||
+            isGuideRow,
+          color: {
+            rgb: isTitle || row === matrixHeaderRow ? "FFFFFF" : "1F2328",
+          },
+          sz: isTitle ? 14 : isGuideRow ? 11 : 10,
         },
         fill: {
           fgColor: {
-            rgb: row === 0 ? "B4232D" : column % 2 === 0 ? "F3F4F6" : "FFFFFF",
+            rgb:
+              isTitle || row === matrixHeaderRow
+                ? "B4232D"
+                : isSummaryLabel
+                  ? "F3F4F6"
+                  : isGuideRow
+                    ? "EAF4F1"
+                    : isBlankGuideSpacer
+                      ? "FFFFFF"
+                      : column % 2 === 0
+                        ? "F3F4F6"
+                        : "FFFFFF",
           },
         },
         alignment: { vertical: "center", horizontal: "center", wrapText: true },
         border: {
-          top: { style: "thin", color: { rgb: "D8DEE4" } },
-          bottom: { style: "thin", color: { rgb: "D8DEE4" } },
-          left: { style: "thin", color: { rgb: "D8DEE4" } },
-          right: { style: "thin", color: { rgb: "D8DEE4" } },
+          top: {
+            style: isBlankGuideSpacer ? undefined : "thin",
+            color: { rgb: "D8DEE4" },
+          },
+          bottom: {
+            style: isBlankGuideSpacer ? undefined : "thin",
+            color: { rgb: "D8DEE4" },
+          },
+          left: {
+            style: isBlankGuideSpacer ? undefined : "thin",
+            color: { rgb: "D8DEE4" },
+          },
+          right: {
+            style: isBlankGuideSpacer ? undefined : "thin",
+            color: { rgb: "D8DEE4" },
+          },
         },
       };
     }
   }
   matrixSheet["!rows"] = [
+    { hpt: 30 },
+    { hpt: 22 },
+    { hpt: 22 },
+    { hpt: earlyDepartureRowHeight },
+    { hpt: 10 },
     { hpt: 42 },
     ...Array.from({ length: maxPositions }, () => ({ hpt: 26 })),
+    { hpt: 10 },
+    { hpt: 10 },
+    { hpt: 28 },
+  ];
+  matrixSheet["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: totalColumns - 1 } },
+    { s: { r: 3, c: 1 }, e: { r: 3, c: totalColumns - 1 } },
   ];
   XLSX.utils.book_append_sheet(workbook, matrixSheet, "保障明细");
   append(

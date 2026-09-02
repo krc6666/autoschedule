@@ -91,6 +91,7 @@ describe("daily staff flight statistics", () => {
     ]);
     expect(result.assignedStaffCount).toBe(1);
     expect(result.unassignedStaffCount).toBe(0);
+    expect(result.unassignedStaffNames).toEqual([]);
   });
 
   it("queries a complete archived workday without mixing in the current schedule", () => {
@@ -133,6 +134,37 @@ describe("daily staff flight statistics", () => {
     ]);
     expect(result.assignedStaffCount).toBe(1);
     expect(result.unassignedStaffCount).toBe(1);
+    expect(result.unassignedStaffNames).toEqual([first!.name]);
+  });
+
+  it("does not count sick or leave staff as expected working staff", () => {
+    const state = createDefaultState();
+    const regular = state.staff.find((person) => person.staffType === "常规")!;
+    const sick = {
+      ...regular,
+      id: "sick",
+      name: "病假人员",
+      status: "病假" as const,
+    };
+    const leave = {
+      ...regular,
+      id: "leave",
+      name: "休假人员",
+      status: "休假" as const,
+    };
+    state.staff = [regular, sick, leave];
+    state.activeScheduleDate = "2026-09-13";
+    state.assignments = [
+      assignment("regular", regular.id, regular.name, "CX931", "G01"),
+      assignment("sick", sick.id, sick.name, "TR121", "G01"),
+    ];
+
+    const result = buildDailyStaffFlightStatistics(state, "2026-09-13");
+
+    expect(result.assignedStaffCount).toBe(1);
+    expect(result.unassignedStaffCount).toBe(0);
+    expect(result.unassignedStaffNames).toEqual([]);
+    expect(result.rows.map((row) => row.staffName)).toEqual([regular.name]);
   });
 
   it("does not present late-priority-only history as a complete daily result", () => {
@@ -156,5 +188,6 @@ describe("daily staff flight statistics", () => {
     expect(result.rows).toEqual([]);
     expect(result.assignedStaffCount).toBe(0);
     expect(result.unassignedStaffCount).toBe(0);
+    expect(result.unassignedStaffNames).toEqual([]);
   });
 });

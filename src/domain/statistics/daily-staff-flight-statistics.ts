@@ -12,6 +12,7 @@ export interface DailyStaffFlightStatistics {
   rows: DailyStaffFlightRow[];
   assignedStaffCount: number;
   unassignedStaffCount: number;
+  unassignedStaffNames: string[];
 }
 
 interface StaffFlightEntry {
@@ -29,7 +30,7 @@ function rowsFromEntries(
   entries: readonly StaffFlightEntry[]
 ): DailyStaffFlightRow[] {
   const regularStaff = state.staff.filter(
-    (person) => person.staffType === "常规"
+    (person) => person.staffType === "常规" && person.status === "正常"
   );
   const regularStaffIds = new Set(regularStaff.map((person) => person.id));
   const flightsByStaffId = new Map<string, Map<string, string>>();
@@ -73,7 +74,7 @@ export function buildDailyStaffFlightStatistics(
   date: string
 ): DailyStaffFlightStatistics {
   const regularStaffCount = state.staff.filter(
-    (person) => person.staffType === "常规"
+    (person) => person.staffType === "常规" && person.status === "正常"
   ).length;
   let source: DailyStaffFlightStatistics["source"] = "none";
   let rows: DailyStaffFlightRow[] = [];
@@ -121,5 +122,15 @@ export function buildDailyStaffFlightStatistics(
       source === "current" || source === "history"
         ? regularStaffCount - rows.length
         : 0,
+    unassignedStaffNames:
+      source === "current" || source === "history"
+        ? state.staff
+            .filter(
+              (person) =>
+                person.staffType === "常规" && person.status === "正常"
+            )
+            .filter((person) => !rows.some((row) => row.staffId === person.id))
+            .map((person) => person.name)
+        : [],
   };
 }

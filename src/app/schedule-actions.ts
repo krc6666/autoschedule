@@ -228,7 +228,12 @@ export function assignStaff(
         : "unfilled";
     clearAutomaticAssignmentEvidence(assignment);
     delete assignment.manualOverrideWarnings;
-    refreshSameFlightGuides(state, [assignment.flightId]);
+    // Explicitly clearing a cell must not immediately refill it through the
+    // same-flight guide reuse pass. Linked reuse cells are cleared together.
+    for (const linked of state.assignments) {
+      if (linked.supervisorSourceAssignmentId !== assignment.id) continue;
+      clearSupervisorLink(state, linked);
+    }
     refreshManualRuleEvidence(state);
     return { changed: true, message: "岗位已设为待补位" };
   }

@@ -52,8 +52,8 @@ export class HalfRestSelectorElement extends LightDomElement {
                 .value=${this.selectedModes[person.id] ?? "early-finish"}
                 @change=${this.changeSelection}
               >
-                <option value="early-finish">下午半休（尽早下班）</option>
-                <option value="late-start">上午半休（晚到班）</option>
+                <option value="early-finish">下午半休</option>
+                <option value="late-start">上午半休</option>
               </select>
             </label>`
         )}

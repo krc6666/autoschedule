@@ -86,6 +86,10 @@ export class PositionRulesSectionElement extends LightDomElement {
           </button>
         </div>
       </div>
+      ${this.copyControls(
+        flightNumbers,
+        groups.map((group) => group.flightNo)
+      )}
       <div class="position-rule-groups">
         ${
           groups.length
@@ -140,6 +144,61 @@ export class PositionRulesSectionElement extends LightDomElement {
         </table>
       </div>
     </details>`;
+  }
+
+  private copyControls(flightNumbers: string[], sourceOptions: string[]) {
+    const defaultSource = sourceOptions[0] ?? "";
+    return html`<div class="position-copy-controls">
+      <span class="position-copy-label">复制岗位配置：</span>
+      <select
+        class="form-select form-select-sm"
+        aria-label="复制来源航班"
+        .value=${defaultSource}
+        ?disabled=${sourceOptions.length === 0}
+      >
+        <option value="">选择来源航班</option>
+        ${sourceOptions.map((flightNo) => html`<option .value=${flightNo}>${flightNo}</option>`)}
+      </select>
+      <span>→ 覆盖</span>
+      <select
+        class="form-select form-select-sm"
+        aria-label="复制目标航班"
+        ?disabled=${flightNumbers.length < 2}
+      >
+        <option value="">选择目标航班</option>
+        ${flightNumbers.map((flightNo) => html`<option .value=${flightNo}>${flightNo}</option>`)}
+      </select>
+      <button
+        class="btn btn-sm btn-outline-primary"
+        type="button"
+        ?disabled=${!defaultSource || flightNumbers.length < 2}
+        @click=${(event: Event) => {
+          const controls = (event.currentTarget as HTMLButtonElement)
+            .parentElement;
+          const sourceFlightNo =
+            controls?.querySelector<HTMLSelectElement>(
+              '[aria-label="复制来源航班"]'
+            )?.value ?? "";
+          const targetFlightNo =
+            controls?.querySelector<HTMLSelectElement>(
+              '[aria-label="复制目标航班"]'
+            )?.value ?? "";
+          if (
+            !sourceFlightNo ||
+            !targetFlightNo ||
+            sourceFlightNo === targetFlightNo
+          )
+            return;
+          dispatchUiCommand(this, {
+            type: "copy-position-rules",
+            sourceFlightNo,
+            targetFlightNo,
+          });
+        }}
+      >
+        <i class="bi bi-copy me-1"></i>复制岗位配置
+      </button>
+    </div>`;
   }
 
   private ruleRow(rule: PositionRule, index: number, count: number) {

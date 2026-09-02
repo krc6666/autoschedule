@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
+import { UI_COMMAND_EVENT } from "../../src/ui/events/ui-command";
+import "../../src/ui/components/position-rules-section";
 import "../../src/ui/components/config-page";
 import { mountElement } from "./lit-test-helpers";
 
@@ -30,6 +32,7 @@ describe("configuration page", () => {
         expect(element.querySelector(`[aria-label="${label}"]`)).not.toBeNull()
     );
     expect(text).toContain("机动督导");
+    expect(text).toContain("复制岗位配置");
     expect(text).not.toContain(">督导<");
   });
 
@@ -103,5 +106,41 @@ describe("configuration page", () => {
         'select[aria-label="状态"]'
       )?.value
     ).toBe("休假");
+  });
+
+  it("dispatches the selected target when copying a position group", async () => {
+    const state = createDefaultState();
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-position-rules", { model: state });
+    const source = state.positionRules[0]!.flightNo;
+    const sourceSelect = element.querySelector(
+      '[aria-label="复制来源航班"]'
+    ) as HTMLSelectElement;
+    const targetSelect = element.querySelector(
+      '[aria-label="复制目标航班"]'
+    ) as HTMLSelectElement;
+    const target = [...targetSelect.options].find(
+      (option) => option.value
+    )?.value;
+    expect(target).toBeTruthy();
+    let command: Event | undefined;
+    element.addEventListener(UI_COMMAND_EVENT, (event) => {
+      command = event;
+    });
+    sourceSelect.value = source;
+    sourceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    targetSelect.value = target!;
+    targetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    const copyButton = element.querySelector<HTMLButtonElement>(
+      ".position-copy-controls button"
+    );
+    expect(copyButton?.disabled).toBe(false);
+    copyButton?.click();
+    expect((command as CustomEvent).detail).toEqual({
+      type: "copy-position-rules",
+      sourceFlightNo: source,
+      targetFlightNo: target,
+    });
   });
 });

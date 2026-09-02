@@ -309,6 +309,41 @@ export function addPositions(
   return count;
 }
 
+export function copyPositionRules(
+  state: AppState,
+  sourceFlightNo: string,
+  targetFlightNo: string,
+  overwrite = false
+): boolean {
+  const source = normalizeWeeklyFlightNo(sourceFlightNo);
+  const target = normalizeWeeklyFlightNo(targetFlightNo);
+  const targetLabel = targetFlightNo.trim().toUpperCase();
+  if (!source || !target || source === target) return false;
+  const sourceRules = state.positionRules.filter(
+    (rule) => normalizeWeeklyFlightNo(rule.flightNo) === source
+  );
+  if (!sourceRules.length) return false;
+  const targetRules = state.positionRules.filter(
+    (rule) => normalizeWeeklyFlightNo(rule.flightNo) === target
+  );
+  if (targetRules.length && !overwrite) return false;
+
+  const copied = sourceRules.map((rule) => ({
+    ...rule,
+    id: createId("position"),
+    flightNo: targetLabel,
+    qualifiedStaffIds: [...rule.qualifiedStaffIds],
+  }));
+  state.positionRules = orderPositionRules([
+    ...state.positionRules.filter(
+      (rule) => normalizeWeeklyFlightNo(rule.flightNo) !== target
+    ),
+    ...copied,
+  ]);
+  clearSchedule(state);
+  return true;
+}
+
 export function deletePosition(state: AppState, id: string): boolean {
   const before = state.positionRules.length;
   state.positionRules = state.positionRules.filter((item) => item.id !== id);
@@ -430,18 +465,69 @@ export function updateConfigurationField(
     const template = state.templates.find((item) => item.id === id);
     if (!template) return "missing";
     const previousFlightNo = template.flightNo;
+    if (field === "flightNo" && typeof value === "string") {
+      const next = value.trim().toUpperCase();
+      const normalizedNext = normalizeWeeklyFlightNo(next);
+      if (
+        !next ||
+        state.templates.some(
+          (item) =>
+            item.id !== id &&
+            normalizeWeeklyFlightNo(item.flightNo) === normalizedNext
+        )
+      )
+        return "duplicate";
+    }
     if (field === "positions") template.positions = splitList(value);
     else
       (template as unknown as Record<string, unknown>)[field] =
         typeof value === "string" && field === "flightNo"
           ? value.toUpperCase()
           : value;
-    if (field === "flightNo" && typeof value === "string")
+    if (field === "flightNo" && typeof value === "string") {
       state.weeklyFlightPlans = replaceWeeklyFlightNumber(
         state.weeklyFlightPlans,
         previousFlightNo,
         value
       );
+      const previous = normalizeWeeklyFlightNo(previousFlightNo);
+      const next = value.trim().toUpperCase();
+      state.positionRules.forEach((rule) => {
+        if (normalizeWeeklyFlightNo(rule.flightNo) === previous)
+          rule.flightNo = next;
+      });
+      state.positionRules = orderPositionRules(state.positionRules);
+      const rename = (flightNo: string) =>
+        normalizeWeeklyFlightNo(flightNo) === previous ? next : flightNo;
+      state.settings.latePriorityFlightNumbers =
+        state.settings.latePriorityFlightNumbers.map(rename);
+      state.settings.positionTransitionPolicies.forEach((policy) => {
+        policy.sourceFlightNo = rename(policy.sourceFlightNo);
+        policy.targetFlightNo = rename(policy.targetFlightNo);
+      });
+      state.settings.dutyPositionPriorities.forEach(
+        (policy) => (policy.flightNo = rename(policy.flightNo))
+      );
+      state.settings.nextWorkdayRecoveryTargets.forEach(
+        (policy) => (policy.flightNo = rename(policy.flightNo))
+      );
+      state.settings.lateShiftRecoveryPositionRules.forEach(
+        (policy) => (policy.flightNo = rename(policy.flightNo))
+      );
+      state.settings.mobileSupervisorCoverageRules.forEach(
+        (policy) => (policy.flightNo = rename(policy.flightNo))
+      );
+      state.settings.crossWorkdayQualificationReservations.forEach(
+        (policy) => (policy.flightNo = rename(policy.flightNo))
+      );
+      state.settings.crossFlightPriorityPolicies.forEach(
+        (policy) => (policy.flightNo = rename(policy.flightNo))
+      );
+      state.latePriorityFrequencyAdjustments.forEach(
+        (adjustment) => (adjustment.flightNo = rename(adjustment.flightNo))
+      );
+      clearSchedule(state);
+    }
     return "updated";
   }
   if (entity === "staff") {

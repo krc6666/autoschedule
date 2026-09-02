@@ -3,6 +3,7 @@ import type {
   UiCommandController,
 } from "../application-context";
 import type { UiCommand } from "../../ui/events/ui-command";
+import { normalizeWeeklyFlightNo } from "../../domain/flights/weekly-flight-plan";
 
 export class ConfigurationController implements UiCommandController {
   constructor(private readonly context: ApplicationContext) {}
@@ -61,7 +62,12 @@ export class ConfigurationController implements UiCommandController {
           command.value
         );
         if (result === "duplicate")
-          this.context.toast("人员编号不能重复", "danger");
+          this.context.toast(
+            command.entity === "staff"
+              ? "人员编号不能重复"
+              : "航班模板号不能重复",
+            "danger"
+          );
         else if (result !== "missing") this.context.commit();
         return true;
       }
@@ -134,6 +140,33 @@ export class ConfigurationController implements UiCommandController {
         else
           this.context.commit(
             `已为 ${command.flightNo} 新增 ${commands.addPositions(command.flightNo, command.count)} 条岗位规则`
+          );
+        return true;
+      }
+      case "copy-position-rules": {
+        const targetHasRules = this.context
+          .model()
+          .positionRules.some(
+            (rule) =>
+              normalizeWeeklyFlightNo(rule.flightNo) ===
+              normalizeWeeklyFlightNo(command.targetFlightNo)
+          );
+        if (
+          targetHasRules &&
+          !this.context.confirm(
+            `目标航班 ${command.targetFlightNo} 已有岗位规则，确认覆盖？`
+          )
+        )
+          return true;
+        if (
+          commands.copyPositionRules(
+            command.sourceFlightNo,
+            command.targetFlightNo,
+            targetHasRules
+          )
+        )
+          this.context.commit(
+            `已将 ${command.sourceFlightNo} 的岗位配置复制到 ${command.targetFlightNo}`
           );
         return true;
       }

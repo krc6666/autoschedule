@@ -53,6 +53,19 @@ export class DailyStaffFlightStatisticsElement extends LightDomElement {
             </div>`
           : null
       }
+      ${
+        statistics.unassignedStaffNames.length
+          ? html`<div class="daily-staff-flight-unassigned" role="alert">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              <strong>全天未安排航班：</strong>
+              <span>${statistics.unassignedStaffNames.join("、")}</span>
+            </div>`
+          : statistics.source === "current" || statistics.source === "history"
+            ? html`<div class="daily-staff-flight-complete" role="status">
+                <i class="bi bi-check-circle-fill"></i>所有常规人员均已安排航班
+              </div>`
+            : null
+      }
       ${this.result(statistics)}
     </section>`;
   }
