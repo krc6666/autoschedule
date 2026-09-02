@@ -60,6 +60,7 @@ function initialView(
     loadSortField: "totalFatigue",
     loadSortDirection: "desc",
     halfRestStaffIds: [],
+    halfRestModes: {},
     dialog: null,
     toast: null,
     progress: {
@@ -221,7 +222,11 @@ export class ApplicationCoordinator implements ApplicationContext {
         return true;
       case "change-date":
         this.preferences.saveScheduleDate(command.date);
-        this.updateView({ date: command.date, halfRestStaffIds: [] });
+        this.updateView({
+          date: command.date,
+          halfRestStaffIds: [],
+          halfRestModes: {},
+        });
         return true;
       case "close-dialog":
         this.updateView({ dialog: null });

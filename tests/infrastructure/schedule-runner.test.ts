@@ -47,7 +47,10 @@ describe("background schedule runner", () => {
       "2026-08-01",
       () => undefined,
       () => undefined,
-      { halfRestStaffIds: [selectedId] }
+      {
+        halfRestStaffIds: [selectedId],
+        halfRestModes: { [selectedId]: "late-start" },
+      }
     );
     const worker = ControlledWorker.instances.at(-1)!;
 
@@ -64,7 +67,10 @@ describe("background schedule runner", () => {
     expect(request.state).not.toHaveProperty("activeScheduleDate");
     expect(request.state).not.toHaveProperty("schedulePolicyStale");
     expect(request.state).not.toHaveProperty("updatedAt");
-    expect(request.preferences).toEqual({ halfRestStaffIds: [selectedId] });
+    expect(request.preferences).toEqual({
+      halfRestStaffIds: [selectedId],
+      halfRestModes: { [selectedId]: "late-start" },
+    });
     run.stopWithoutResult();
   });
 

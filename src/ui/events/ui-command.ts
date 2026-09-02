@@ -2,6 +2,7 @@ import type { SchedulePolicyInput } from "../../app/policy-actions";
 import type { WorkbookImportMode } from "../../app/workbook-import-controller";
 import type { DutyRosterSlot } from "../../domain/duty-roster/roster";
 import type { AppSection, IsoWeekday } from "../../model";
+import type { HalfRestMode } from "../../domain/shared/schedule-run-preferences";
 
 export type EditableValue = string | number | boolean;
 
@@ -38,7 +39,11 @@ export type UiCommand =
       bookedPassengers: number;
     }
   | { type: "confirm-reschedule-flight-picker"; selectedIds: string[] }
-  | { type: "set-half-rest-staff"; staffIds: string[] }
+  | {
+      type: "set-half-rest-staff";
+      staffIds: string[];
+      modes?: Record<string, HalfRestMode>;
+    }
   | { type: "stop-schedule-without-result" }
   | { type: "stop-schedule-with-current-result" }
   | { type: "open-swap-analysis"; assignmentId: string }

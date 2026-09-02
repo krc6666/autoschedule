@@ -2210,6 +2210,12 @@ autoschedule-schedule-grid {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.half-rest-mode {
+  width: 150px;
+  min-width: 0;
+  padding: 2px 22px 2px 6px;
+  font-size: 12px;
+}
 autoschedule-archived-schedule-board,
 autoschedule-previous-schedule-comparison {
   display: block;

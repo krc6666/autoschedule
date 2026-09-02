@@ -4,6 +4,7 @@ import type { CandidatePriority } from "../candidates/candidate-priority";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { isPreNoonFlight } from "../flights/schedule-tasks";
 import type { ScheduleRunPreferences } from "../shared/schedule-run-preferences";
+import type { HalfRestMode } from "../shared/schedule-run-preferences";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { timeToMinutes } from "../shared/time";
 import { isStrictNextWorkdayRecoveryTarget } from "../reviews/cross-day-recovery";
@@ -17,6 +18,9 @@ export interface HalfRestFacts {
   requestedStaffIds: readonly string[];
   activeStaffIds: ReadonlySet<string>;
   ignoredWarnings: readonly string[];
+  modesByStaffId: ReadonlyMap<string, HalfRestMode>;
+  earlyFinishStaffIds: ReadonlySet<string>;
+  lateStartStaffIds: ReadonlySet<string>;
 }
 
 export interface HalfRestChoiceFact {
@@ -44,6 +48,7 @@ export function createHalfRestFacts(
   dutyStaffId: string | null
 ): HalfRestFacts {
   const activeStaffIds = new Set<string>();
+  const modesByStaffId = new Map<string, HalfRestMode>();
   const ignoredWarnings: string[] = [];
   for (const staffId of preferences.halfRestStaffIds) {
     const person = state.staff.find((item) => item.id === staffId);
@@ -66,34 +71,72 @@ export function createHalfRestFacts(
       continue;
     }
     activeStaffIds.add(person.id);
+    modesByStaffId.set(
+      person.id,
+      preferences.halfRestModes?.[person.id] ?? "early-finish"
+    );
   }
   return {
     requestedStaffIds: preferences.halfRestStaffIds,
     activeStaffIds,
     ignoredWarnings,
+    modesByStaffId,
+    earlyFinishStaffIds: new Set(
+      [...activeStaffIds].filter(
+        (id) => modesByStaffId.get(id) === "early-finish"
+      )
+    ),
+    lateStartStaffIds: new Set(
+      [...activeStaffIds].filter(
+        (id) => modesByStaffId.get(id) === "late-start"
+      )
+    ),
   };
 }
 
-export function restrictHalfRestToMorningCandidates(
+export function restrictHalfRestToEligiblePeriodCandidates(
   state: ScheduleGenerationFacts,
   facts: HalfRestFacts,
-  morningEligibleStaffIds: ReadonlySet<string>
+  morningEligibleStaffIds: ReadonlySet<string>,
+  afternoonEligibleStaffIds: ReadonlySet<string>
 ): HalfRestFacts {
   const activeStaffIds = new Set(
     [...facts.activeStaffIds].filter((staffId) =>
-      morningEligibleStaffIds.has(staffId)
+      facts.lateStartStaffIds.has(staffId)
+        ? afternoonEligibleStaffIds.has(staffId)
+        : morningEligibleStaffIds.has(staffId)
     )
   );
-  const missingMorningWarnings = [...facts.activeStaffIds]
+  const missingMorningWarnings = [...facts.earlyFinishStaffIds]
     .filter((staffId) => !activeStaffIds.has(staffId))
     .map((staffId) => {
       const name = state.staff.find((person) => person.id === staffId)?.name;
       return `${HALF_REST_WARNING_PREFIX}${name ?? "所选人员"}没有可合法承担的12点前岗位，本次已按普通人员参加排班`;
     });
+  const missingAfternoonWarnings = [...facts.lateStartStaffIds]
+    .filter((staffId) => !activeStaffIds.has(staffId))
+    .map((staffId) => {
+      const name = state.staff.find((person) => person.id === staffId)?.name;
+      return `${HALF_REST_WARNING_PREFIX}${name ?? "所选人员"}没有可合法承担的午后岗位，本次已按普通人员参加排班`;
+    });
   return {
     ...facts,
     activeStaffIds,
-    ignoredWarnings: [...facts.ignoredWarnings, ...missingMorningWarnings],
+    earlyFinishStaffIds: new Set(
+      [...facts.earlyFinishStaffIds].filter((staffId) =>
+        activeStaffIds.has(staffId)
+      )
+    ),
+    lateStartStaffIds: new Set(
+      [...facts.lateStartStaffIds].filter((staffId) =>
+        activeStaffIds.has(staffId)
+      )
+    ),
+    ignoredWarnings: [
+      ...facts.ignoredWarnings,
+      ...missingMorningWarnings,
+      ...missingAfternoonWarnings,
+    ],
   };
 }
 
@@ -115,6 +158,10 @@ export function excludeCandidateForHalfRest(options: {
 }): boolean {
   const selected = options.facts.activeStaffIds.has(options.staffId);
   const recoveryConflict = hasHalfRestRecoveryConflict(options.priority);
+  const mode =
+    options.facts.modesByStaffId.get(options.staffId) ?? "early-finish";
+  if (mode === "late-start")
+    return selected && (recoveryConflict || options.preNoon);
   return selected && (recoveryConflict || !options.preNoon);
 }
 
@@ -125,7 +172,7 @@ export function halfRestBackfillStaffIds(options: {
   rule: PositionRule;
 }): readonly string[] {
   if (isPreNoonFlight(options.flight)) return [];
-  return [...options.facts.activeStaffIds].filter((staffId) => {
+  return [...options.facts.earlyFinishStaffIds].filter((staffId) => {
     const person = options.state.staff.find((item) => item.id === staffId);
     return Boolean(
       person &&
@@ -205,13 +252,20 @@ export function buildHalfRestOptimizationModel(
     coefficient: number;
   }> = [];
   const latestEndTerms: Array<{ variableId: string; coefficient: number }> = [];
+  const lateStartCountTerms: Array<{
+    variableId: string;
+    coefficient: number;
+  }> = [];
 
   for (const staffId of facts.activeStaffIds) {
     const staffChoices = choices.filter((choice) => choice.staffId === staffId);
-    const morningChoices = staffChoices.filter((choice) =>
-      isPreNoonFlight({ startTime: choice.startTime })
+    const mode = facts.modesByStaffId.get(staffId) ?? "early-finish";
+    const targetChoices = staffChoices.filter((choice) =>
+      mode === "late-start"
+        ? !isPreNoonFlight({ startTime: choice.startTime })
+        : isPreNoonFlight({ startTime: choice.startTime })
     );
-    if (!morningChoices.length) continue;
+    if (!targetChoices.length) continue;
     const workedId = `half-rest:worked:${staffId}`;
     const latestEndId = `half-rest:latest-end:${staffId}`;
     variables.push(
@@ -228,7 +282,7 @@ export function buildHalfRestOptimizationModel(
       id: `half-rest:morning-work:${staffId}`,
       terms: [
         { variableId: workedId, coefficient: 1 },
-        ...morningChoices.map((choice) => ({
+        ...targetChoices.map((choice) => ({
           variableId: choice.variableId,
           coefficient: -1,
         })),
@@ -236,16 +290,15 @@ export function buildHalfRestOptimizationModel(
       upperBound: 0,
     });
     for (const choice of staffChoices) {
+      const end = operationalEndMinutes(choice.startTime, choice.endTime);
+      const coefficient = mode === "late-start" ? 2 * 24 * 60 - end : end;
       constraints.push({
         id: `half-rest:latest-end:${staffId}:${choice.variableId}`,
         terms: [
           { variableId: latestEndId, coefficient: 1 },
           {
             variableId: choice.variableId,
-            coefficient: -operationalEndMinutes(
-              choice.startTime,
-              choice.endTime
-            ),
+            coefficient: -coefficient,
           },
         ],
         lowerBound: 0,
@@ -253,6 +306,14 @@ export function buildHalfRestOptimizationModel(
     }
     participationTerms.push({ variableId: workedId, coefficient: 1 });
     latestEndTerms.push({ variableId: latestEndId, coefficient: 1 });
+    if (mode === "late-start") {
+      lateStartCountTerms.push(
+        ...targetChoices.map((choice) => ({
+          variableId: choice.variableId,
+          coefficient: 1,
+        }))
+      );
+    }
   }
 
   const objectives: LexicographicObjective[] = [];
@@ -268,6 +329,13 @@ export function buildHalfRestOptimizationModel(
       id: "half-rest-early-finish:latest-end",
       direction: "minimize",
       terms: latestEndTerms,
+    });
+  }
+  if (lateStartCountTerms.length) {
+    objectives.push({
+      id: "half-rest-early-finish:late-start-count",
+      direction: "minimize",
+      terms: lateStartCountTerms,
     });
   }
   return { variables, constraints, objectives };
@@ -297,6 +365,7 @@ export function halfRestRegressionReasons(
 ): string[] {
   const reasons: string[] = [];
   for (const staffId of facts.activeStaffIds) {
+    const mode = facts.modesByStaffId.get(staffId) ?? "early-finish";
     const hadMorning = before.some(
       (assignment) =>
         assignment.status === "assigned" &&
@@ -309,10 +378,18 @@ export function halfRestRegressionReasons(
         assignment.staffId === staffId &&
         isPreNoonFlight(assignment)
     );
-    if (hadMorning && !hasMorning)
+    if (mode === "early-finish" && hadMorning && !hasMorning)
       reasons.push("调整会使半休人员失去12点前岗位");
-    if (latestAssignedEnd(after, staffId) > latestAssignedEnd(before, staffId))
+    if (
+      mode === "early-finish" &&
+      latestAssignedEnd(after, staffId) > latestAssignedEnd(before, staffId)
+    )
       reasons.push("调整会推迟半休人员的最终下班时间");
+    if (
+      mode === "late-start" &&
+      latestAssignedEnd(after, staffId) < latestAssignedEnd(before, staffId)
+    )
+      reasons.push("调整会使上午半休人员失去最晚结束航班");
   }
   return [...new Set(reasons)];
 }

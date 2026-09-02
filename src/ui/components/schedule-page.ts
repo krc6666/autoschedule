@@ -1,6 +1,7 @@
 import { html } from "lit";
 
 import type { AppState } from "../../model";
+import type { HalfRestMode } from "../../domain/shared/schedule-run-preferences";
 import {
   buildSchedulePageModel,
   type LoadSortDirection,
@@ -33,6 +34,7 @@ export class SchedulePageElement extends LightDomElement {
     loadSortField: { type: String },
     loadSortDirection: { type: String },
     halfRestStaffIds: { attribute: false },
+    halfRestModes: { attribute: false },
   };
   model!: AppState;
   date = "";
@@ -40,6 +42,7 @@ export class SchedulePageElement extends LightDomElement {
   loadSortField: LoadSortField = "totalFatigue";
   loadSortDirection: LoadSortDirection = "desc";
   halfRestStaffIds: string[] = [];
+  halfRestModes: Record<string, HalfRestMode> = {};
   private pointerSourceValue: PointerDragSource | null = null;
   private pointerTargetId = "";
   private previousScheduleVisible = false;
@@ -52,6 +55,7 @@ export class SchedulePageElement extends LightDomElement {
         <autoschedule-half-rest-selector
           .model=${this.model}
           .selectedStaffIds=${this.halfRestStaffIds}
+          .selectedModes=${this.halfRestModes}
         ></autoschedule-half-rest-selector>
         <button
           class="btn btn-primary"
@@ -79,6 +83,7 @@ export class SchedulePageElement extends LightDomElement {
         .previousScheduleDate=${previousSchedule?.date ?? ""}
         .previousScheduleVisible=${this.previousScheduleVisible}
         .halfRestStaffIds=${this.halfRestStaffIds}
+        .halfRestModes=${this.halfRestModes}
         @autoschedule-toggle-previous-schedule=${this.togglePreviousSchedule}
       ></autoschedule-schedule-toolbar>
       ${this.model.schedulePolicyStale ? html`<div class="alert alert-warning py-2" role="status"><i class="bi bi-exclamation-triangle me-2"></i>排班规则已更新，当前排班尚未按新规则重新生成。</div>` : null}

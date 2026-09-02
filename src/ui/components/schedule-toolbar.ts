@@ -1,6 +1,7 @@
 import { html } from "lit";
 
 import type { AppState } from "../../model";
+import type { HalfRestMode } from "../../domain/shared/schedule-run-preferences";
 import { dispatchUiCommand } from "../events/ui-command";
 import { LightDomElement } from "./light-dom-element";
 import "./half-rest-selector";
@@ -13,6 +14,7 @@ export class ScheduleToolbarElement extends LightDomElement {
     previousScheduleDate: { type: String },
     previousScheduleVisible: { type: Boolean },
     halfRestStaffIds: { attribute: false },
+    halfRestModes: { attribute: false },
   };
   model!: AppState;
   date = "";
@@ -20,6 +22,7 @@ export class ScheduleToolbarElement extends LightDomElement {
   previousScheduleDate = "";
   previousScheduleVisible = false;
   halfRestStaffIds: string[] = [];
+  halfRestModes: Record<string, HalfRestMode> = {};
 
   protected override render() {
     return html`<section class="toolbar-band schedule-toolbar">
@@ -37,6 +40,7 @@ export class ScheduleToolbarElement extends LightDomElement {
         <autoschedule-half-rest-selector
           .model=${this.model}
           .selectedStaffIds=${this.halfRestStaffIds}
+          .selectedModes=${this.halfRestModes}
         ></autoschedule-half-rest-selector>
         <div class="schedule-zoom-control" role="group" aria-label="排班表缩放">
           ${this.zoomButton("zoom-out", "缩小排班表", this.zoom - 0.1, this.zoom <= 0.7)}

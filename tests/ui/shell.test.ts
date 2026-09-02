@@ -15,6 +15,7 @@ const view: ApplicationViewState = {
   loadSortField: "totalFatigue",
   loadSortDirection: "desc",
   halfRestStaffIds: [],
+  halfRestModes: {},
   dialog: null,
   toast: null,
   progress: {

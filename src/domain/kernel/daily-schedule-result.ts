@@ -356,6 +356,26 @@ export function materializeDailySchedulePlan({
     ...preparation.runFacts.halfRest.ignoredWarnings,
     ...[...preparation.runFacts.halfRest.activeStaffIds].flatMap((staffId) => {
       const person = state.staff.find((item) => item.id === staffId);
+      const lateStart =
+        preparation.runFacts.halfRest.lateStartStaffIds.has(staffId);
+      if (lateStart) {
+        const hasLate = assignments.some(
+          (assignment) =>
+            assignment.status === "assigned" &&
+            assignment.staffId === staffId &&
+            !isPreNoonFlight(assignment)
+        );
+        const hasLateCandidate = model.staffChoices.some(
+          (choice) =>
+            choice.person.id === staffId && !isPreNoonFlight(choice.task.flight)
+        );
+        if (hasLate) return [];
+        return [
+          hasLateCandidate
+            ? `${HALF_REST_WARNING_PREFIX}${person?.name ?? "所选人员"}未能落实最晚结束航班`
+            : `${HALF_REST_WARNING_PREFIX}${person?.name ?? "所选人员"}没有可合法承担的午后岗位，本次半休未落实`,
+        ];
+      }
       const hasMorning = assignments.some(
         (assignment) =>
           assignment.status === "assigned" &&

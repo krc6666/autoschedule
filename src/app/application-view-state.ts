@@ -11,6 +11,7 @@ import type { AppSection, AppState, IsoWeekday } from "../model";
 import type { ManualSwapAnalysis } from "../domain/reviews/manual-swap-analysis";
 import type { FlightSelectionCandidate } from "../domain/flights/next-workday-flight-plan";
 import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
+import type { HalfRestMode } from "../domain/shared/schedule-run-preferences";
 
 export type ApplicationDialog =
   | { kind: "templates" }
@@ -83,6 +84,7 @@ export interface ApplicationViewState {
     "workHours" | "todayFatigue" | "historyFatigue" | "totalFatigue";
   loadSortDirection: "asc" | "desc";
   halfRestStaffIds: string[];
+  halfRestModes: Record<string, HalfRestMode>;
   dialog: ApplicationDialog | null;
   toast: ApplicationToast | null;
   progress: ScheduleProgressView;

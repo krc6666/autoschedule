@@ -19,7 +19,7 @@ import {
   type AssignmentTask,
 } from "../flights/schedule-tasks";
 import type { ScheduleRunPreferences } from "../shared/schedule-run-preferences";
-import { restrictHalfRestToMorningCandidates } from "../rules/half-rest";
+import { restrictHalfRestToEligiblePeriodCandidates } from "../rules/half-rest";
 
 export interface SchedulePreparation {
   flights: Flight[];
@@ -77,12 +77,17 @@ export function prepareSchedule(
     tasks.map((task) => [task.key, eligibleStaffIds.get(task.key)?.size ?? 0])
   );
   const runFacts = createScheduleRunFacts(state, date, preferences);
-  runFacts.halfRest = restrictHalfRestToMorningCandidates(
+  runFacts.halfRest = restrictHalfRestToEligiblePeriodCandidates(
     state,
     runFacts.halfRest,
     new Set(
       tasks
         .filter((task) => isPreNoonFlight(task.flight))
+        .flatMap((task) => [...(eligibleStaffIds.get(task.key) ?? [])])
+    ),
+    new Set(
+      tasks
+        .filter((task) => !isPreNoonFlight(task.flight))
         .flatMap((task) => [...(eligibleStaffIds.get(task.key) ?? [])])
     )
   );

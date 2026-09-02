@@ -57,7 +57,10 @@ describe("ScheduleRunController", () => {
       progress: vi.fn(),
       finish: vi.fn(),
     });
-    const preferences = { halfRestStaffIds: ["staff-1", "staff-2"] };
+    const preferences = {
+      halfRestStaffIds: ["staff-1", "staff-2"],
+      halfRestModes: { "staff-1": "late-start" as const },
+    };
 
     await controller.calculate(createDefaultState(), "2026-08-03", preferences);
 

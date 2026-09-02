@@ -158,6 +158,59 @@ async function captureProblem(
 }
 
 describe("daily schedule module interfaces", () => {
+  it("assigns late-start half-rest staff to the latest-ending eligible flight", async () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+      flight("afternoon", "PM200", "14:00", "17:00", ["B1"]),
+      flight("late", "PM300", "20:00", "23:30", ["C1"]),
+    ]);
+    const regular = {
+      ...state.staff[0]!,
+      id: "regular-worker",
+      name: "常规人员",
+    };
+    state.staff.push(regular);
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds = state.staff.map((person) => person.id);
+    });
+
+    const result = await generateSchedule(state, "2026-08-03", {
+      preferences: {
+        halfRestStaffIds: [state.staff[0]!.id],
+        halfRestModes: { [state.staff[0]!.id]: "late-start" },
+      },
+    });
+    const ownFlights = result.assignments
+      .filter((assignment) => assignment.staffId === state.staff[0]!.id)
+      .map((assignment) => assignment.flightNo);
+
+    expect(ownFlights).toContain("PM300");
+    expect(ownFlights).not.toContain("AM100");
+    expect(ownFlights).not.toContain("PM200");
+  });
+
+  it("falls back to ordinary scheduling when late-start staff has no eligible afternoon flight", () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+    ]);
+    const preparation = prepareSchedule(
+      state,
+      "2026-08-03",
+      evaluateAutomaticHardConstraints,
+      {
+        halfRestStaffIds: [state.staff[0]!.id],
+        halfRestModes: { [state.staff[0]!.id]: "late-start" },
+      }
+    );
+
+    expect(preparation.runFacts.halfRest.activeStaffIds).not.toContain(
+      state.staff[0]!.id
+    );
+    expect(preparation.runFacts.halfRest.ignoredWarnings.join("；")).toContain(
+      "没有可合法承担的午后岗位"
+    );
+  });
+
   it("gives every feasible half-rest worker morning work and leaves later shortages explicit", async () => {
     const state = modelState([
       flight("morning", "AM100", "08:00", "10:00", ["A1", "A2"]),

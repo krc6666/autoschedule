@@ -909,7 +909,7 @@ describe("current schedule flight picker workflow", () => {
         assignments: [],
       }),
       currentDate,
-      { halfRestStaffIds: [] }
+      { halfRestStaffIds: [], halfRestModes: {} }
     );
     expect(coordinator.model().flights).toEqual([
       expect.objectContaining({

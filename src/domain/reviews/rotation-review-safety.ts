@@ -338,6 +338,9 @@ function plannedAssignmentSafetyReasons(
         requestedStaffIds: [],
         activeStaffIds: new Set<string>(),
         ignoredWarnings: [],
+        modesByStaffId: new Map(),
+        earlyFinishStaffIds: new Set<string>(),
+        lateStartStaffIds: new Set<string>(),
       }
     )
   );

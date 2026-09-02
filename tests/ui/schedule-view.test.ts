@@ -69,6 +69,7 @@ describe("schedule page", () => {
       loadSortField: "totalFatigue",
       loadSortDirection: "desc",
       halfRestStaffIds: [],
+      halfRestModes: {},
     });
     element.addEventListener(UI_COMMAND_EVENT, (event) => {
       commands.push((event as UiCommandEvent).detail);
@@ -138,11 +139,20 @@ describe("schedule page", () => {
     );
     expect(inputs.every(Boolean)).toBe(true);
     inputs[0]!.click();
+    const mode = element.querySelector<HTMLSelectElement>(
+      `select[aria-label="${selectable[0]!.name}半休时段"]`
+    )!;
+    mode.value = "late-start";
+    mode.dispatchEvent(new Event("change", { bubbles: true }));
     inputs[1]!.click();
 
     expect(commands.at(-1)).toEqual({
       type: "set-half-rest-staff",
       staffIds: selectable.map((person) => person.id),
+      modes: {
+        [selectable[0]!.id]: "late-start",
+        [selectable[1]!.id]: "early-finish",
+      },
     });
   });
 

@@ -61,6 +61,11 @@ export class ScheduleController implements UiCommandController {
               command.staffIds.filter((staffId) => allowedIds.has(staffId))
             ),
           ],
+          halfRestModes: Object.fromEntries(
+            Object.entries(command.modes ?? {}).filter(([staffId]) =>
+              allowedIds.has(staffId)
+            )
+          ),
         });
         return true;
       }
@@ -179,7 +184,10 @@ export class ScheduleController implements UiCommandController {
       const outcome = await this.context.scheduleRunner.calculate(
         this.context.model(),
         date,
-        { halfRestStaffIds: this.context.view().halfRestStaffIds }
+        {
+          halfRestStaffIds: this.context.view().halfRestStaffIds,
+          halfRestModes: this.context.view().halfRestModes,
+        }
       );
       if (outcome.kind === "stopped-without-result") {
         this.context.toast("排班已停止，原班表保持不变", "warning");
@@ -397,7 +405,10 @@ export class ScheduleController implements UiCommandController {
       const outcome = await this.context.scheduleRunner.calculate(
         temporaryState,
         date,
-        { halfRestStaffIds: this.context.view().halfRestStaffIds }
+        {
+          halfRestStaffIds: this.context.view().halfRestStaffIds,
+          halfRestModes: this.context.view().halfRestModes,
+        }
       );
       if (outcome.kind === "stopped-without-result") {
         this.context.toast("排班已停止，原航班和班表保持不变", "warning");
@@ -546,6 +557,7 @@ export class ScheduleController implements UiCommandController {
         date: nextDate,
         section: "schedule",
         halfRestStaffIds: [],
+        halfRestModes: {},
       });
       this.context.commit(
         outcome.result.unfilledCount

@@ -1,6 +1,7 @@
 import { html } from "lit";
 
 import type { AppState } from "../../model";
+import type { HalfRestMode } from "../../domain/shared/schedule-run-preferences";
 import { dispatchUiCommand } from "../events/ui-command";
 import { LightDomElement } from "./light-dom-element";
 
@@ -8,10 +9,12 @@ export class HalfRestSelectorElement extends LightDomElement {
   static override properties = {
     model: { attribute: false },
     selectedStaffIds: { attribute: false },
+    selectedModes: { attribute: false },
   };
 
   model!: AppState;
   selectedStaffIds: string[] = [];
+  selectedModes: Record<string, HalfRestMode> = {};
 
   protected override render() {
     const staff = this.model.staff.filter(
@@ -42,6 +45,16 @@ export class HalfRestSelectorElement extends LightDomElement {
                 @change=${this.changeSelection}
               />
               <span>${person.name}</span>
+              <select
+                class="form-select form-select-sm half-rest-mode"
+                data-staff-id=${person.id}
+                aria-label="${person.name}半休时段"
+                .value=${this.selectedModes[person.id] ?? "early-finish"}
+                @change=${this.changeSelection}
+              >
+                <option value="early-finish">下午半休（尽早下班）</option>
+                <option value="late-start">上午半休（晚到班）</option>
+              </select>
             </label>`
         )}
       </div>
@@ -54,7 +67,15 @@ export class HalfRestSelectorElement extends LightDomElement {
         '.half-rest-menu input[type="checkbox"]:checked'
       ),
     ].map((input) => input.value);
-    dispatchUiCommand(this, { type: "set-half-rest-staff", staffIds });
+    const modes = Object.fromEntries(
+      staffIds.map((staffId) => {
+        const select = this.querySelector<HTMLSelectElement>(
+          `select[data-staff-id="${staffId}"]`
+        );
+        return [staffId, (select?.value as HalfRestMode) ?? "early-finish"];
+      })
+    ) as Record<string, HalfRestMode>;
+    dispatchUiCommand(this, { type: "set-half-rest-staff", staffIds, modes });
   }
 }
 

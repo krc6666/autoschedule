@@ -162,13 +162,13 @@ export const SCHEDULING_RULES = [
   {
     id: "half-rest-morning",
     stage: "protection",
-    label: "半休人员至少一个早班",
+    label: "半休时段参与目标",
     feedbackMode: "aggregated",
   },
   {
     id: "half-rest-early-finish",
     stage: "protection",
-    label: "半休人员尽早下班",
+    label: "下午半休尽早下班与上午半休最晚结束",
     feedbackMode: "aggregated",
     optimization: "best-effort",
   },
