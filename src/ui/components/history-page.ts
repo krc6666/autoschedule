@@ -82,7 +82,26 @@ export class HistoryPageElement extends LightDomElement {
             ${day.totalHours.toFixed(1)}
             ${day.hasPartialHistory ? "已知工时（仅末班重点记录）" : "总工时"}</small
           ></span
-        ><i class="bi bi-chevron-down"></i>
+        >${
+          !day.hasPartialHistory
+            ? html`<button
+                class="btn btn-sm btn-outline-primary ms-auto me-2"
+                type="button"
+                title="编辑该日排班"
+                aria-label="编辑该日排班"
+                @click=${(event: Event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  dispatchUiCommand(this, {
+                    type: "edit-history-date",
+                    date: day.date,
+                  });
+                }}
+              >
+                <i class="bi bi-pencil-square me-1"></i>编辑该日排班
+              </button>`
+            : null
+        }<i class="bi bi-chevron-down"></i>
       </summary>
       ${
         expanded

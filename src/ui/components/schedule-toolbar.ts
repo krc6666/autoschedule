@@ -15,6 +15,7 @@ export class ScheduleToolbarElement extends LightDomElement {
     previousScheduleVisible: { type: Boolean },
     halfRestStaffIds: { attribute: false },
     halfRestModes: { attribute: false },
+    historyEditDate: { attribute: false },
   };
   model!: AppState;
   date = "";
@@ -23,10 +24,29 @@ export class ScheduleToolbarElement extends LightDomElement {
   previousScheduleVisible = false;
   halfRestStaffIds: string[] = [];
   halfRestModes: Record<string, HalfRestMode> = {};
+  historyEditDate: string | null = null;
 
   protected override render() {
     return html`<section class="toolbar-band schedule-toolbar">
       <div class="d-flex gap-1 flex-wrap">
+        ${
+          this.historyEditDate === this.date
+            ? html`<button
+                  class="btn btn-sm btn-success"
+                  type="button"
+                  @click=${() => dispatchUiCommand(this, { type: "save-history-edit" })}
+                >
+                  <i class="bi bi-check2 me-1"></i>保存并更新历史
+                </button>
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  type="button"
+                  @click=${() => dispatchUiCommand(this, { type: "cancel-history-edit" })}
+                >
+                  <i class="bi bi-x-lg me-1"></i>取消编辑
+                </button>`
+            : null
+        }
         ${this.command("arrow-repeat", "重新排班", "open-reschedule-flight-picker", "btn-primary")}
         ${this.command("calendar2-plus", "归档并排后天", "archive-next-duty-day", "btn-success")}
         ${this.command("file-earmark-excel", "导出结果", "export-schedule", "btn-outline-success")}

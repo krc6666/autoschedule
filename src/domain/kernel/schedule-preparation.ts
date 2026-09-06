@@ -14,7 +14,6 @@ import {
   type ScheduleRunFacts,
 } from "../shared/schedule-run-facts";
 import {
-  isPreNoonFlight,
   shouldAutoAssign,
   type AssignmentTask,
 } from "../flights/schedule-tasks";
@@ -78,18 +77,7 @@ export function prepareSchedule(
   );
   const runFacts = createScheduleRunFacts(state, date, preferences);
   runFacts.halfRest = restrictHalfRestToEligiblePeriodCandidates(
-    state,
-    runFacts.halfRest,
-    new Set(
-      tasks
-        .filter((task) => isPreNoonFlight(task.flight))
-        .flatMap((task) => [...(eligibleStaffIds.get(task.key) ?? [])])
-    ),
-    new Set(
-      tasks
-        .filter((task) => !isPreNoonFlight(task.flight))
-        .flatMap((task) => [...(eligibleStaffIds.get(task.key) ?? [])])
-    )
+    runFacts.halfRest
   );
   const dutyStaffId = runFacts.currentDutyStaffId;
   const preferredDutyMorningTaskKey =

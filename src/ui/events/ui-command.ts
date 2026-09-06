@@ -166,6 +166,9 @@ export type UiCommand =
     }
   | { type: "clear-history" }
   | { type: "delete-history"; id: string }
+  | { type: "edit-history-date"; date: string }
+  | { type: "save-history-edit" }
+  | { type: "cancel-history-edit" }
   | {
       type: "update-duty-roster";
       date: string;

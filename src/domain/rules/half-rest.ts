@@ -95,49 +95,10 @@ export function createHalfRestFacts(
 }
 
 export function restrictHalfRestToEligiblePeriodCandidates(
-  state: ScheduleGenerationFacts,
-  facts: HalfRestFacts,
-  morningEligibleStaffIds: ReadonlySet<string>,
-  afternoonEligibleStaffIds: ReadonlySet<string>
+  facts: HalfRestFacts
 ): HalfRestFacts {
-  const activeStaffIds = new Set(
-    [...facts.activeStaffIds].filter((staffId) =>
-      facts.lateStartStaffIds.has(staffId)
-        ? afternoonEligibleStaffIds.has(staffId)
-        : morningEligibleStaffIds.has(staffId)
-    )
-  );
-  const missingMorningWarnings = [...facts.earlyFinishStaffIds]
-    .filter((staffId) => !activeStaffIds.has(staffId))
-    .map((staffId) => {
-      const name = state.staff.find((person) => person.id === staffId)?.name;
-      return `${HALF_REST_WARNING_PREFIX}${name ?? "所选人员"}没有可合法承担的12点前岗位，本次已按普通人员参加排班`;
-    });
-  const missingAfternoonWarnings = [...facts.lateStartStaffIds]
-    .filter((staffId) => !activeStaffIds.has(staffId))
-    .map((staffId) => {
-      const name = state.staff.find((person) => person.id === staffId)?.name;
-      return `${HALF_REST_WARNING_PREFIX}${name ?? "所选人员"}没有可合法承担的午后岗位，本次已按普通人员参加排班`;
-    });
-  return {
-    ...facts,
-    activeStaffIds,
-    earlyFinishStaffIds: new Set(
-      [...facts.earlyFinishStaffIds].filter((staffId) =>
-        activeStaffIds.has(staffId)
-      )
-    ),
-    lateStartStaffIds: new Set(
-      [...facts.lateStartStaffIds].filter((staffId) =>
-        activeStaffIds.has(staffId)
-      )
-    ),
-    ignoredWarnings: [
-      ...facts.ignoredWarnings,
-      ...missingMorningWarnings,
-      ...missingAfternoonWarnings,
-    ],
-  };
+  // 半休是用户明确的休息时段，不因该时段暂时没有岗位而降级为普通人员。
+  return { ...facts };
 }
 
 export function hasHalfRestRecoveryConflict(
@@ -183,6 +144,30 @@ export function halfRestBackfillStaffIds(options: {
         person
       ).eligible
     );
+  });
+}
+
+export function halfRestRestrictedStaffIds(options: {
+  state: ScheduleGenerationFacts;
+  facts: HalfRestFacts;
+  flight: Flight;
+  rule: PositionRule;
+}): readonly string[] {
+  const preNoon = isPreNoonFlight(options.flight);
+  return [...options.facts.activeStaffIds].filter((staffId) => {
+    const person = options.state.staff.find((item) => item.id === staffId);
+    if (
+      !person ||
+      !diagnoseBaseAssignmentEligibility(
+        options.state,
+        options.flight,
+        options.rule,
+        person
+      ).eligible
+    )
+      return false;
+    const mode = options.facts.modesByStaffId.get(staffId) ?? "early-finish";
+    return mode === "late-start" ? preNoon : !preNoon;
   });
 }
 

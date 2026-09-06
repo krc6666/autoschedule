@@ -35,6 +35,7 @@ export class SchedulePageElement extends LightDomElement {
     loadSortDirection: { type: String },
     halfRestStaffIds: { attribute: false },
     halfRestModes: { attribute: false },
+    historyEditDate: { attribute: false },
   };
   model!: AppState;
   date = "";
@@ -43,6 +44,7 @@ export class SchedulePageElement extends LightDomElement {
   loadSortDirection: LoadSortDirection = "desc";
   halfRestStaffIds: string[] = [];
   halfRestModes: Record<string, HalfRestMode> = {};
+  historyEditDate: string | null = null;
   private pointerSourceValue: PointerDragSource | null = null;
   private pointerTargetId = "";
   private previousScheduleVisible = false;
@@ -84,6 +86,7 @@ export class SchedulePageElement extends LightDomElement {
         .previousScheduleVisible=${this.previousScheduleVisible}
         .halfRestStaffIds=${this.halfRestStaffIds}
         .halfRestModes=${this.halfRestModes}
+        .historyEditDate=${this.historyEditDate}
         @autoschedule-toggle-previous-schedule=${this.togglePreviousSchedule}
       ></autoschedule-schedule-toolbar>
       ${this.model.schedulePolicyStale ? html`<div class="alert alert-warning py-2" role="status"><i class="bi bi-exclamation-triangle me-2"></i>排班规则已更新，当前排班尚未按新规则重新生成。</div>` : null}

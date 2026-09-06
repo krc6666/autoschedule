@@ -5,6 +5,7 @@ import { buildScheduleFeedback } from "../../src/domain/feedback/schedule-feedba
 import { generateSchedule } from "../helpers/generate-schedule";
 import type { Assignment, HistoryRecord } from "../../src/model";
 import {
+  buildHistoricalScheduleDraft,
   currentScheduleHistory,
   replaceHistoryForDate,
 } from "../../src/app/history-actions";
@@ -33,6 +34,159 @@ function assignment(
 }
 
 describe("history actions", () => {
+  it("rebuilds an archived day from the matching current flight template", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.flights = [
+      {
+        id: "current-unrelated",
+        flightNo: "CURRENT",
+        startTime: "12:00",
+        endTime: "14:00",
+        bookedPassengers: 0,
+        positions: [],
+        remark: "",
+      },
+    ];
+    state.templates = [
+      {
+        id: "template-cx937-early",
+        flightNo: "CX937(早)",
+        startTime: "08:30",
+        endTime: "10:30",
+        positions: [],
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...state.positionRules[0]!,
+        id: "cx937-early-g01",
+        flightNo: "CX937(早)",
+        name: "G01",
+        remark: "当前配置备注",
+        qualifiedStaffIds: [person.id],
+      },
+    ];
+    state.history = [
+      {
+        id: "archived-cx937-early",
+        date: "2026-08-20",
+        flightNo: "CX937(早)",
+        position: "G01",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "08:20",
+        endTime: "10:20",
+        workHours: 2,
+        fatiguePoints: 3,
+        remark: "历史备注",
+        historyCoverage: "complete",
+      },
+    ];
+    state.history.push({
+      id: "archived-duty",
+      date: "2026-08-20",
+      flightNo: "轮值",
+      position: "值班人员",
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "",
+      endTime: "",
+      workHours: 0,
+      fatiguePoints: 12,
+      remark: "月度轮值",
+    });
+
+    const draft = buildHistoricalScheduleDraft(state, "2026-08-20");
+
+    expect(draft.warnings).toEqual([]);
+    expect(draft.flights).toMatchObject([
+      {
+        flightNo: "CX937(早)",
+        startTime: "08:30",
+        endTime: "10:30",
+      },
+    ]);
+    expect(draft.assignments).toMatchObject([
+      {
+        flightNo: "CX937(早)",
+        position: "G01",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "08:30",
+        endTime: "10:30",
+        remark: "历史备注",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ]);
+  });
+
+  it("refuses a partial archive or records missing from current configuration", () => {
+    const state = createDefaultState();
+    state.history = [
+      {
+        id: "partial",
+        date: "2026-08-20",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: state.staff[0]!.id,
+        staffName: state.staff[0]!.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 4,
+        remark: "一号",
+        historyCoverage: "late-priority-only",
+      },
+    ];
+    expect(buildHistoricalScheduleDraft(state, "2026-08-20")).toMatchObject({
+      assignments: [],
+      flights: [],
+      warnings: ["该日期只有末班重点历史记录，不能还原完整排班"],
+    });
+
+    state.history = [
+      {
+        ...state.history[0]!,
+        id: "missing-template",
+        flightNo: "已删除航班",
+        position: "已删除岗位",
+        historyCoverage: "complete",
+      },
+    ];
+    const missing = buildHistoricalScheduleDraft(state, "2026-08-20");
+    expect(missing.assignments).toEqual([]);
+    expect(missing.warnings.join("；")).toContain("已删除航班");
+    expect(missing.warnings.join("；")).toContain("当前航班模板");
+  });
+
+  it("reports a duty-only date as having no editable flight positions", () => {
+    const state = createDefaultState();
+    state.history = [
+      {
+        id: "duty-only",
+        date: "2026-08-20",
+        flightNo: "轮值",
+        position: "值班人员",
+        staffId: state.staff[0]!.id,
+        staffName: state.staff[0]!.name,
+        startTime: "",
+        endTime: "",
+        workHours: 0,
+        fatiguePoints: 12,
+        remark: "月度轮值",
+      },
+    ];
+
+    expect(buildHistoricalScheduleDraft(state, "2026-08-20")).toEqual({
+      flights: [],
+      assignments: [],
+      warnings: ["该日期没有可编辑的航班岗位记录"],
+    });
+  });
+
   it("archives only available workers and adds duty fatigue once", () => {
     const state = createDefaultState();
     const available = state.staff[0]!;
@@ -58,6 +212,21 @@ describe("history actions", () => {
     ]);
     expect(records[0]?.remark).toBe("配置备注；临时备注");
     expect(records[1]?.fatiguePoints).toBe(state.settings.dutyFatiguePoints);
+  });
+
+  it("can preserve an already archived worker during historical editing", () => {
+    const state = createDefaultState();
+    state.settings.dutyFatiguePoints = 0;
+    const person = state.staff[0]!;
+    person.status = "病假";
+    state.assignments = [assignment("archived-worker", person.id, person.name)];
+
+    expect(currentScheduleHistory(state, "2026-07-25")).toEqual([]);
+    expect(
+      currentScheduleHistory(state, "2026-07-25", {
+        includeUnavailableStaff: true,
+      })
+    ).toMatchObject([{ staffId: person.id, staffName: person.name }]);
   });
 
   it("archives manual override reasons without losing configured or manual remarks", () => {

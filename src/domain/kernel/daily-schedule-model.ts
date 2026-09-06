@@ -65,7 +65,7 @@ import { intervalsOverlap } from "../shared/time";
 import {
   buildHalfRestOptimizationModel,
   excludeCandidateForHalfRest,
-  halfRestBackfillStaffIds,
+  halfRestRestrictedStaffIds,
   isStrictRecoveryHalfRestBackfill,
 } from "../rules/half-rest";
 
@@ -237,18 +237,16 @@ function staffChoicesForTasks(
         ),
       ])
     );
-    const affectedHalfRestStaffIds = halfRestBackfillStaffIds({
+    const affectedHalfRestStaffIds = halfRestRestrictedStaffIds({
       state,
       facts: preparation.runFacts.halfRest,
       flight: task.flight,
       rule: task.rule,
     });
-    const preNoon = isPreNoonFlight(task.flight);
-    const taskAffectedByHalfRest =
-      !preNoon && affectedHalfRestStaffIds.length > 0;
-    if (taskAffectedByHalfRest) {
+    if (affectedHalfRestStaffIds.length > 0) {
       halfRestAffectedStaffIdsByTask.set(task.key, affectedHalfRestStaffIds);
     }
+    const preNoon = isPreNoonFlight(task.flight);
     for (const person of candidates) {
       const strictRecoveryHalfRestBackfill = isStrictRecoveryHalfRestBackfill({
         state,

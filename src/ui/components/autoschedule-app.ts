@@ -179,6 +179,7 @@ export class AutoscheduleAppElement extends LightDomElement {
         .loadSortDirection=${this.view.loadSortDirection}
         .halfRestStaffIds=${this.view.halfRestStaffIds}
         .halfRestModes=${this.view.halfRestModes}
+        .historyEditDate=${this.view.historyEditDate}
       ></autoschedule-schedule-page>`;
     if (section === "policy")
       return html`<autoschedule-policy-page

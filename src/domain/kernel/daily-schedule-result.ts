@@ -373,7 +373,7 @@ export function materializeDailySchedulePlan({
         return [
           hasLateCandidate
             ? `${HALF_REST_WARNING_PREFIX}${person?.name ?? "所选人员"}未能落实最晚结束航班`
-            : `${HALF_REST_WARNING_PREFIX}${person?.name ?? "所选人员"}没有可合法承担的午后岗位，本次半休未落实`,
+            : `${HALF_REST_WARNING_PREFIX}${person?.name ?? "所选人员"}没有可合法承担的午后岗位，仍保留上午半休`,
         ];
       }
       const hasMorning = assignments.some(
@@ -390,7 +390,7 @@ export function materializeDailySchedulePlan({
       return [
         hasMorningCandidate
           ? `${HALF_REST_WARNING_PREFIX}12点前岗位数量不足，${person?.name ?? "所选人员"}未能落实至少一个早班岗位`
-          : `${HALF_REST_WARNING_PREFIX}${person?.name ?? "所选人员"}没有可合法承担的12点前岗位，本次半休未落实`,
+          : `${HALF_REST_WARNING_PREFIX}${person?.name ?? "所选人员"}没有可合法承担的12点前岗位，仍保留下午半休`,
       ];
     }),
     ...assignments.flatMap((assignment) =>

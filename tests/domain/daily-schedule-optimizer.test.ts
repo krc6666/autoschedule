@@ -189,7 +189,7 @@ describe("daily schedule module interfaces", () => {
     expect(ownFlights).not.toContain("PM200");
   });
 
-  it("falls back to ordinary scheduling when late-start staff has no eligible afternoon flight", () => {
+  it("keeps late-start staff out of morning work when no afternoon flight exists", async () => {
     const state = modelState([
       flight("morning", "AM100", "08:00", "10:00", ["A1"]),
     ]);
@@ -203,12 +203,47 @@ describe("daily schedule module interfaces", () => {
       }
     );
 
-    expect(preparation.runFacts.halfRest.activeStaffIds).not.toContain(
+    expect(preparation.runFacts.halfRest.activeStaffIds).toContain(
       state.staff[0]!.id
     );
-    expect(preparation.runFacts.halfRest.ignoredWarnings.join("；")).toContain(
-      "没有可合法承担的午后岗位"
-    );
+    const result = await generateSchedule(state, "2026-08-03", {
+      preferences: {
+        halfRestStaffIds: [state.staff[0]!.id],
+        halfRestModes: { [state.staff[0]!.id]: "late-start" },
+      },
+    });
+    expect(result.assignments).toMatchObject([
+      expect.objectContaining({
+        flightNo: "AM100",
+        status: "unfilled",
+        systemNotes: expect.arrayContaining([expect.stringContaining("半休")]),
+      }),
+    ]);
+    expect(
+      result.assignments.some((item) => item.staffId === state.staff[0]!.id)
+    ).toBe(false);
+  });
+
+  it("keeps early-finish staff out of afternoon work when no morning flight exists", async () => {
+    const state = modelState([
+      flight("afternoon", "PM200", "14:00", "16:00", ["B1"]),
+    ]);
+    const result = await generateSchedule(state, "2026-08-03", {
+      preferences: {
+        halfRestStaffIds: [state.staff[0]!.id],
+        halfRestModes: { [state.staff[0]!.id]: "early-finish" },
+      },
+    });
+    expect(result.assignments).toMatchObject([
+      expect.objectContaining({
+        flightNo: "PM200",
+        status: "unfilled",
+        systemNotes: expect.arrayContaining([expect.stringContaining("半休")]),
+      }),
+    ]);
+    expect(
+      result.assignments.some((item) => item.staffId === state.staff[0]!.id)
+    ).toBe(false);
   });
 
   it("gives every feasible half-rest worker morning work and leaves later shortages explicit", async () => {

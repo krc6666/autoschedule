@@ -85,6 +85,7 @@ export interface ApplicationViewState {
   loadSortDirection: "asc" | "desc";
   halfRestStaffIds: string[];
   halfRestModes: Record<string, HalfRestMode>;
+  historyEditDate?: string | null;
   dialog: ApplicationDialog | null;
   toast: ApplicationToast | null;
   progress: ScheduleProgressView;

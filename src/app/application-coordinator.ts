@@ -40,6 +40,19 @@ const COMMANDS_THAT_MAY_RUN_SCHEDULE = new Set<UiCommand["type"]>([
   "confirm-next-workday-flight-picker",
 ]);
 
+const COMMANDS_ALLOWED_DURING_HISTORY_EDIT = new Set<UiCommand["type"]>([
+  "close-dialog",
+  "dismiss-toast",
+  "set-schedule-zoom",
+  "set-load-sort",
+  "assign-staff",
+  "update-assignment",
+  "create-temporary-assignment",
+  "delete-temporary-assignment",
+  "save-history-edit",
+  "cancel-history-edit",
+]);
+
 function mayRunSchedule(command: UiCommand): boolean {
   return (
     COMMANDS_THAT_MAY_RUN_SCHEDULE.has(command.type) ||
@@ -61,6 +74,7 @@ function initialView(
     loadSortDirection: "desc",
     halfRestStaffIds: [],
     halfRestModes: {},
+    historyEditDate: null,
     dialog: null,
     toast: null,
     progress: {
@@ -163,6 +177,13 @@ export class ApplicationCoordinator implements ApplicationContext {
   }
 
   commit(message?: string): void {
+    if (
+      this.currentView.historyEditDate &&
+      !message?.includes("历史排班已更新")
+    ) {
+      if (message) this.toast(message);
+      return;
+    }
     try {
       const result = this.store.getState().persist();
       if (result.nearCapacity) {
@@ -196,6 +217,13 @@ export class ApplicationCoordinator implements ApplicationContext {
 
   async handle(command: UiCommand): Promise<void> {
     if (
+      this.currentView.historyEditDate &&
+      !COMMANDS_ALLOWED_DURING_HISTORY_EDIT.has(command.type)
+    ) {
+      this.toast("历史排班正在编辑，请先保存或取消编辑", "warning");
+      return;
+    }
+    if (
       (this.scheduleCommandPending || this.scheduleRunner.isRunning()) &&
       !COMMANDS_ALLOWED_DURING_SCHEDULE_RUN.has(command.type)
     ) {
@@ -221,11 +249,16 @@ export class ApplicationCoordinator implements ApplicationContext {
         this.updateView({ section: command.section });
         return true;
       case "change-date":
+        if (this.currentView.historyEditDate) {
+          this.toast("请先保存或取消当前历史排班编辑", "warning");
+          return true;
+        }
         this.preferences.saveScheduleDate(command.date);
         this.updateView({
           date: command.date,
           halfRestStaffIds: [],
           halfRestModes: {},
+          historyEditDate: null,
         });
         return true;
       case "close-dialog":

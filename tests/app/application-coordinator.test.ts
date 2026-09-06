@@ -187,6 +187,173 @@ describe("application persistence feedback", () => {
   });
 });
 
+describe("historical schedule editing", () => {
+  function editableHistoricalState() {
+    const state = createDefaultState();
+    state.settings.dutyFatiguePoints = 0;
+    const template = state.templates[0]!;
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === template.flightNo
+    )!;
+    const person = state.staff.find((item) =>
+      rule.qualifiedStaffIds.includes(item.id)
+    )!;
+    state.activeScheduleDate = "2026-08-22";
+    state.assignments = [
+      {
+        id: "current-assignment",
+        flightId: state.flights[0]!.id,
+        flightNo: state.flights[0]!.flightNo,
+        positionRuleId: null,
+        position: "当前岗位",
+        staffId: state.staff[0]!.id,
+        staffName: state.staff[0]!.name,
+        startTime: state.flights[0]!.startTime,
+        endTime: state.flights[0]!.endTime,
+        workHours: 2,
+        fatiguePoints: 2,
+        remark: "",
+        manualRemark: "",
+        status: "assigned" as const,
+      },
+    ];
+    state.history = [
+      {
+        id: "other-date",
+        date: "2026-08-18",
+        flightNo: template.flightNo,
+        position: rule.name,
+        staffId: person.id,
+        staffName: person.name,
+        startTime: template.startTime,
+        endTime: template.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        historyCoverage: "complete" as const,
+      },
+      {
+        id: "target-date",
+        date: "2026-08-20",
+        flightNo: template.flightNo,
+        position: rule.name,
+        staffId: person.id,
+        staffName: person.name,
+        startTime: template.startTime,
+        endTime: template.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        historyCoverage: "complete" as const,
+      },
+    ];
+    return state;
+  }
+
+  const historicalPreferences: ApplicationPreferences = {
+    ...preferences,
+    loadScheduleDate: () => "2026-08-22",
+  };
+
+  it("opens the archived date as an isolated draft and cancels back to the current schedule", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = editableHistoricalState();
+    const originalFlights = structuredClone(state.flights);
+    const originalAssignments = structuredClone(state.assignments);
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences: historicalPreferences, confirm: () => true }
+    );
+
+    await coordinator.handle({
+      type: "edit-history-date",
+      date: "2026-08-20",
+    });
+
+    expect(coordinator.view()).toMatchObject({
+      section: "schedule",
+      date: "2026-08-20",
+      historyEditDate: "2026-08-20",
+    });
+    expect(coordinator.model().activeScheduleDate).toBe("2026-08-20");
+    expect(coordinator.model().flights[0]?.flightNo).toBe(
+      state.history[1]!.flightNo
+    );
+    expect(coordinator.model().history).toEqual(state.history);
+
+    await coordinator.handle({ type: "cancel-history-edit" });
+
+    expect(coordinator.view()).toMatchObject({
+      section: "schedule",
+      date: "2026-08-22",
+      historyEditDate: null,
+    });
+    expect(coordinator.model().flights).toEqual(originalFlights);
+    expect(coordinator.model().assignments).toEqual(originalAssignments);
+    expect(coordinator.model().activeScheduleDate).toBe("2026-08-22");
+    expect(coordinator.model().history).toEqual(state.history);
+  });
+
+  it("saves only the target history date and restores the current schedule", async () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("localStorage", { setItem });
+    const state = editableHistoricalState();
+    const originalFlights = structuredClone(state.flights);
+    const originalAssignments = structuredClone(state.assignments);
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences: historicalPreferences, confirm: () => true }
+    );
+
+    await coordinator.handle({
+      type: "edit-history-date",
+      date: "2026-08-20",
+    });
+    const targetAssignment = coordinator
+      .model()
+      .assignments.find((item) => item.staffId)!;
+    await coordinator.handle({
+      type: "update-assignment",
+      id: targetAssignment.id,
+      field: "staffName",
+      value: "",
+    });
+    expect(setItem).not.toHaveBeenCalled();
+
+    await coordinator.handle({ type: "save-history-edit" });
+
+    expect(coordinator.view().historyEditDate).toBeNull();
+    expect(coordinator.model().flights).toEqual(originalFlights);
+    expect(coordinator.model().assignments).toEqual(originalAssignments);
+    expect(coordinator.model().activeScheduleDate).toBe("2026-08-22");
+    expect(
+      coordinator.model().history.filter((item) => item.date === "2026-08-20")
+    ).toEqual([]);
+    expect(
+      coordinator.model().history.filter((item) => item.date === "2026-08-18")
+    ).toEqual([state.history[0]]);
+    expect(setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the draft and history unchanged when overwrite confirmation is declined", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = editableHistoricalState();
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences: historicalPreferences, confirm: () => false }
+    );
+
+    await coordinator.handle({
+      type: "edit-history-date",
+      date: "2026-08-20",
+    });
+    await coordinator.handle({ type: "save-history-edit" });
+
+    expect(coordinator.view().historyEditDate).toBe("2026-08-20");
+    expect(coordinator.model().history).toEqual(state.history);
+  });
+});
+
 describe("application scheduling exclusivity", () => {
   it("keeps the pre-run schedule when calculation is stopped without a result", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });

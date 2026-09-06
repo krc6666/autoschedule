@@ -3,8 +3,22 @@ import type {
   ApplicationContext,
   UiCommandController,
 } from "../application-context";
+import {
+  buildHistoricalScheduleDraft,
+  currentScheduleHistory,
+  replaceHistoryForDate,
+} from "../history-actions";
+import type { AppState } from "../../model";
 
 export class RecordsController implements UiCommandController {
+  private historicalEditSnapshot: {
+    flights: AppState["flights"];
+    assignments: AppState["assignments"];
+    activeScheduleDate: AppState["activeScheduleDate"];
+    schedulePolicyStale: AppState["schedulePolicyStale"];
+  } | null = null;
+  private historicalEditWarnings: string[] = [];
+
   constructor(private readonly context: ApplicationContext) {}
 
   async handle(command: UiCommand): Promise<boolean> {
@@ -23,6 +37,112 @@ export class RecordsController implements UiCommandController {
         records.deleteHistory(command.id);
         this.context.commit("历史记录已删除");
         return true;
+      case "edit-history-date": {
+        if (this.context.view().historyEditDate) {
+          this.context.toast("请先保存或取消当前历史排班编辑", "warning");
+          return true;
+        }
+        const draft = buildHistoricalScheduleDraft(
+          this.context.model(),
+          command.date
+        );
+        if (!draft.assignments.length) {
+          this.context.toast(draft.warnings.join("；"), "warning");
+          return true;
+        }
+        this.historicalEditSnapshot = {
+          flights: structuredClone(this.context.model().flights),
+          assignments: structuredClone(this.context.model().assignments),
+          activeScheduleDate: this.context.model().activeScheduleDate,
+          schedulePolicyStale: this.context.model().schedulePolicyStale,
+        };
+        this.historicalEditWarnings = draft.warnings;
+        const nextState = structuredClone(this.context.model());
+        nextState.flights = draft.flights;
+        nextState.assignments = draft.assignments;
+        nextState.activeScheduleDate = command.date;
+        nextState.schedulePolicyStale = false;
+        this.context.store.getState().replaceModel(nextState);
+        this.context.updateView({
+          section: "schedule",
+          date: command.date,
+          historyEditDate: command.date,
+          halfRestStaffIds: [],
+          halfRestModes: {},
+        });
+        if (draft.warnings.length)
+          this.context.toast(draft.warnings.join("；"), "warning");
+        return true;
+      }
+      case "save-history-edit": {
+        const date = this.context.view().historyEditDate;
+        if (!date) return true;
+        if (this.historicalEditWarnings.length) {
+          this.context.toast(
+            `当前历史排班存在无法匹配的记录，不能覆盖保存。请取消编辑并补齐配置后重试：${this.historicalEditWarnings.join("；")}`,
+            "warning"
+          );
+          return true;
+        }
+        if (
+          !this.context.confirm(`确认用当前编辑结果覆盖 ${date} 的历史排班？`)
+        )
+          return true;
+        const replacement = currentScheduleHistory(this.context.model(), date, {
+          includeUnavailableStaff: true,
+        }).filter((item) => item.flightNo !== "轮值");
+        replacement.push(
+          ...this.context
+            .model()
+            .history.filter(
+              (item) => item.date === date && item.flightNo === "轮值"
+            )
+        );
+        const restored = structuredClone(this.context.model());
+        restored.flights =
+          this.historicalEditSnapshot?.flights ?? restored.flights;
+        restored.assignments =
+          this.historicalEditSnapshot?.assignments ?? restored.assignments;
+        restored.activeScheduleDate =
+          this.historicalEditSnapshot?.activeScheduleDate ??
+          restored.activeScheduleDate;
+        restored.schedulePolicyStale =
+          this.historicalEditSnapshot?.schedulePolicyStale ??
+          restored.schedulePolicyStale;
+        replaceHistoryForDate(restored, date, replacement);
+        this.context.store.getState().replaceModel(restored);
+        this.historicalEditSnapshot = null;
+        this.historicalEditWarnings = [];
+        this.context.updateView({
+          section: "history",
+          date: restored.activeScheduleDate ?? date,
+          historyEditDate: null,
+        });
+        this.context.commit("历史排班已更新");
+        return true;
+      }
+      case "cancel-history-edit": {
+        if (!this.historicalEditSnapshot) return true;
+        const restored = structuredClone(this.context.model());
+        restored.flights = this.historicalEditSnapshot.flights;
+        restored.assignments = this.historicalEditSnapshot.assignments;
+        restored.activeScheduleDate =
+          this.historicalEditSnapshot.activeScheduleDate;
+        restored.schedulePolicyStale =
+          this.historicalEditSnapshot.schedulePolicyStale;
+        this.context.store.getState().replaceModel(restored);
+        const restoredDate =
+          restored.activeScheduleDate ?? this.context.view().date;
+        this.historicalEditSnapshot = null;
+        this.historicalEditWarnings = [];
+        this.context.updateView({
+          section: restored.activeScheduleDate ? "schedule" : "history",
+          date: restoredDate,
+          historyEditDate: null,
+        });
+        this.context.commit("已取消历史排班编辑");
+        return true;
+      }
       case "update-duty-roster": {
         if (!command.staffId) this.context.toast("轮值人员不能为空", "danger");
         else {
