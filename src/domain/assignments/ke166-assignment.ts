@@ -65,6 +65,25 @@ export function compareKe166SupervisorRotation(
   );
 }
 
+/** Snapshot-level KE166 completeness check used by the final safety guard. */
+export function assessKe166AssignmentSnapshot(
+  state: ScheduleGenerationFacts,
+  assignments: readonly Assignment[]
+): string[] {
+  return assignments.flatMap((assignment) => {
+    if (assignment.status !== "unfilled") return [];
+    const flight = state.flights.find(
+      (item) => item.id === assignment.flightId
+    );
+    const rule = state.positionRules.find(
+      (item) => item.id === assignment.positionRuleId
+    );
+    return flight && rule && isKe166MobileSupervisor(flight, rule)
+      ? [assignment.id]
+      : [];
+  });
+}
+
 function isAutomaticRegularAssignment(
   state: ScheduleGenerationFacts,
   assignment: Assignment

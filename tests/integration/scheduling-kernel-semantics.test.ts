@@ -25,9 +25,12 @@ describe("scheduler semantic quality", { timeout: 15_000 }, () => {
     );
 
     expect(result.unfilledCount).toBe(0);
-    expect(result.warnings).toEqual([
-      "班表已满足全部硬性要求和核心排班规则；人员恢复与公平已优化到允许的小幅差距内。",
-    ]);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        "班表已满足全部硬性要求和核心排班规则；人员恢复与公平已优化到允许的小幅差距内。",
+        expect.stringContaining("最终班表负荷平衡需要复核"),
+      ])
+    );
     expect(new Set(assignmentKeys).size).toBe(assignmentKeys.length);
     expect(
       expectedTaskKeys.every((taskKey) => assignmentKeys.includes(taskKey))

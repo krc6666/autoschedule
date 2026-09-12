@@ -256,5 +256,22 @@ export function dutyPositionPriority(
   return targetTaskKeys.has(taskKey) ? "reserved-target" : "reserved-elsewhere";
 }
 
+/** Snapshot evidence for duty locks: selected duty targets must remain assigned. */
+export function assessDutyPositionSnapshot(
+  assignments: readonly Assignment[]
+): string[] {
+  return assignments
+    .filter((assignment) =>
+      assignment.decisionTrace?.some(
+        (decision) =>
+          decision.ruleId === "duty-position" && decision.outcome === "selected"
+      )
+    )
+    .filter(
+      (assignment) => assignment.status !== "assigned" || !assignment.staffId
+    )
+    .map((assignment) => assignment.id);
+}
+
 export type DutyPositionDisposition =
   "reserved-target" | "unrelated" | "reserved-elsewhere";

@@ -1,5 +1,6 @@
 import type { Assignment, Staff } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
+import { administrativeSupportAutomaticRule } from "../flights/schedule-position-rules";
 import {
   priorityPositionScarceQualification,
   scarceQualificationPriority,
@@ -106,6 +107,28 @@ export function compareScarceQualification(
     left.scarceQualification.futureTaskCount -
       right.scarceQualification.futureTaskCount
   );
+}
+
+/** Snapshot-level hard qualification check for automatic assignments. */
+export function assessScarceQualificationSnapshot(
+  state: Pick<ScheduleGenerationFacts, "positionRules" | "staff" | "flights">,
+  assignments: readonly Assignment[]
+): string[] {
+  const rules = new Map(state.positionRules.map((rule) => [rule.id, rule]));
+  return assignments.flatMap((assignment) => {
+    if (assignment.status !== "assigned" || !assignment.staffId) return [];
+    const rule = assignment.positionRuleId
+      ? rules.get(assignment.positionRuleId)
+      : undefined;
+    const flight = state.flights.find(
+      (item) => item.id === assignment.flightId
+    );
+    if (!rule || !flight) return [];
+    const effectiveRule = administrativeSupportAutomaticRule(state, rule);
+    return effectiveRule.qualifiedStaffIds.includes(assignment.staffId)
+      ? []
+      : [assignment.id];
+  });
 }
 
 export function compareLateShiftRecovery(

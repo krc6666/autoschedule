@@ -47,14 +47,66 @@ async function finalizeDailyPlan({
   reportProgress,
 }: FinalizePlanOptions): Promise<ScheduleResult> {
   const guards = createDefaultScheduleGuards();
+  const warnings = [...plan.warnings];
+  const guardWarnings: string[] = [];
   const ledger = createScheduleLedger(plan.assignments, {
     guards,
     guardContext: {
       phase: "partial",
       halfRestFacts: preparation.runFacts.halfRest,
+      airlineRotationFacts: {
+        positionRules: state.positionRules,
+      },
+      minimumFlightTransitionFacts: {
+        flights: state.flights,
+        positionRules: state.positionRules,
+        settings: state.settings,
+      },
+      lateShiftCutoffFacts: {
+        state,
+        date,
+        crossDayRecovery: preparation.runFacts.crossDayRecovery,
+      },
+      crossWorkdayQualificationReservationFacts: { state },
+      latePriorityFrequencyFacts: {
+        state,
+        date,
+        scheduleFrequency: preparation.runFacts.scheduleFrequency,
+      },
+      latePriorityAggregateRotationFacts: {
+        state,
+        date,
+        scheduleFrequency: preparation.runFacts.scheduleFrequency,
+      },
+      strictNextWorkdayRecoveryFacts: {
+        state,
+        date,
+        crossDayRecovery: preparation.runFacts.crossDayRecovery,
+        halfRestFacts: preparation.runFacts.halfRest,
+      },
+      highFatiguePositionFacts: {
+        state,
+        date,
+        scheduleFrequency: preparation.runFacts.scheduleFrequency,
+      },
+      positionTransitionFacts: { state },
+      positionFrequencyFacts: {
+        state,
+        date,
+      },
+      workloadBalanceFacts: {
+        state,
+        date,
+        dutyStaffId: preparation.runFacts.currentDutyStaffId,
+      },
+      sameDayLateObligationFacts: { state, date },
+      lateShiftPositionReliefFacts: { state, date },
+      ke166SnapshotFacts: { state, date },
+      scarceQualificationFacts: { state, date },
+      dutyPositionFacts: { state, date },
+      warningSink: guardWarnings,
     },
   });
-  const warnings = [...plan.warnings];
   const automaticTaskKeys = new Set(preparation.tasks.map((task) => task.key));
   for (const flight of preparation.flights) {
     const displayRules = preparation.displayRulesByFlight.get(flight.id) ?? [];
@@ -81,6 +133,7 @@ async function finalizeDailyPlan({
     date,
     ledger,
     guards,
+    guardWarnings,
     warnings,
     flights: preparation.flights,
     displayRulesByFlight: preparation.displayRulesByFlight,

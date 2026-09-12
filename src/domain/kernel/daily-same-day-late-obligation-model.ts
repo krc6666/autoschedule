@@ -1,4 +1,6 @@
-import type { Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
+import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
+import { timeToMinutes } from "../shared/time";
 import type { CandidatePriority } from "../candidates/candidate-priority";
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import type {
@@ -32,6 +34,44 @@ export interface SameDayLateObligationModel {
   readonly variables: Array<SolverProblem["variables"][number]>;
   readonly constraints: LinearConstraint[];
   readonly objectives: LexicographicObjective[];
+}
+
+/** Snapshot-level assessment for the best-effort same-day early/late split objective. */
+export function assessSameDayLateObligationSnapshot(
+  state: Pick<ScheduleGenerationFacts, "settings">,
+  assignments: readonly Assignment[]
+): string[] {
+  const cutoff = timeToMinutes(state.settings.lateShiftEndTime);
+  if (!Number.isFinite(cutoff)) return [];
+  const byStaff = new Map<string, Assignment[]>();
+  for (const assignment of assignments) {
+    if (assignment.status !== "assigned" || !assignment.staffId) continue;
+    const own = byStaff.get(assignment.staffId) ?? [];
+    own.push(assignment);
+    byStaff.set(assignment.staffId, own);
+  }
+  return [...byStaff].flatMap(([staffId, own]) => {
+    const early = own.some((item) => timeToMinutes(item.startTime) < cutoff);
+    const late = own.some((item) => timeToMinutes(item.startTime) >= cutoff);
+    return early && late ? [staffId] : [];
+  });
+}
+
+/** Snapshot assessment for late-shift relief evidence; remains best-effort. */
+export function assessLateShiftPositionReliefSnapshot(
+  assignments: readonly Assignment[]
+): string[] {
+  return assignments
+    .filter(
+      (assignment) =>
+        assignment.status === "assigned" &&
+        assignment.decisionTrace?.some(
+          (decision) =>
+            decision.ruleId === "late-shift-position-relief" &&
+            decision.outcome === "fallback"
+        )
+    )
+    .map((assignment) => assignment.id);
 }
 
 function compareBeforeCutoffPriority(

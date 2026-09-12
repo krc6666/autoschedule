@@ -40,6 +40,7 @@ export interface ScheduleFinalizerOptions {
   date: string;
   ledger: ScheduleLedger;
   guards: readonly ScheduleGuard[];
+  guardWarnings: string[];
   warnings: string[];
   flights: readonly Flight[];
   displayRulesByFlight: ReadonlyMap<string, readonly PositionRule[]>;
@@ -155,6 +156,7 @@ export async function finalizeSchedule({
   date,
   ledger,
   guards,
+  guardWarnings,
   warnings,
   flights,
   displayRulesByFlight,
@@ -195,7 +197,59 @@ export async function finalizeSchedule({
   const finalGuardContext: ScheduleGuardContext = {
     phase: "final",
     halfRestFacts: runFacts.halfRest,
+    airlineRotationFacts: {
+      positionRules: state.positionRules,
+    },
+    minimumFlightTransitionFacts: {
+      flights: state.flights,
+      positionRules: state.positionRules,
+      settings: state.settings,
+    },
+    lateShiftCutoffFacts: {
+      state,
+      date,
+      crossDayRecovery: runFacts.crossDayRecovery,
+    },
+    crossWorkdayQualificationReservationFacts: { state },
+    latePriorityFrequencyFacts: {
+      state,
+      date,
+      scheduleFrequency: runFacts.scheduleFrequency,
+    },
+    latePriorityAggregateRotationFacts: {
+      state,
+      date,
+      scheduleFrequency: runFacts.scheduleFrequency,
+    },
+    strictNextWorkdayRecoveryFacts: {
+      state,
+      date,
+      crossDayRecovery: runFacts.crossDayRecovery,
+      halfRestFacts: runFacts.halfRest,
+    },
+    highFatiguePositionFacts: {
+      state,
+      date,
+      scheduleFrequency: runFacts.scheduleFrequency,
+    },
+    positionTransitionFacts: { state },
+    positionFrequencyFacts: {
+      state,
+      date,
+    },
+    workloadBalanceFacts: {
+      state,
+      date,
+      dutyStaffId: runFacts.currentDutyStaffId,
+    },
+    sameDayLateObligationFacts: { state, date },
+    lateShiftPositionReliefFacts: { state, date },
+    ke166SnapshotFacts: { state, date },
+    scarceQualificationFacts: { state, date },
+    dutyPositionFacts: { state, date },
+    warningSink: guardWarnings,
   };
+  guardWarnings.splice(0, guardWarnings.length);
   assertScheduleAssignmentsSafe({
     assignments: resultAssignments,
     context: finalGuardContext,
@@ -219,7 +273,7 @@ export async function finalizeSchedule({
       resultAssignments,
       postReviewWarnings,
       optimizationQuality,
-      warnings.filter(isHalfRestWarning)
+      [...warnings.filter(isHalfRestWarning), ...guardWarnings]
     )
   );
   return {
