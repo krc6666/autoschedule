@@ -31,6 +31,7 @@ import {
   replaceWeeklyFlightPlan,
 } from "../domain/flights/weekly-flight-plan";
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
+import { scheduleRuleFingerprint } from "../domain/rules/schedule-rule-fingerprint";
 
 type PersistedSettings = Partial<ScheduleSettings>;
 type PersistedAppState = Record<string, unknown> & {
@@ -399,6 +400,32 @@ const ASSIGNMENT_STATUSES = new Set<Assignment["status"]>([
   "manual",
 ]);
 
+export interface StateRestorationIssue {
+  readonly collection: string;
+  readonly index?: number;
+  readonly reason: string;
+}
+
+export interface StateRestorationReport {
+  readonly issues: readonly StateRestorationIssue[];
+}
+
+let lastRestorationReport: StateRestorationReport = { issues: [] };
+
+export function getLastRestorationReport(): StateRestorationReport {
+  return lastRestorationReport;
+}
+
+export function clearLastRestorationReport(): void {
+  lastRestorationReport = { issues: [] };
+}
+
+export function recordRestorationIssue(reason: string): void {
+  lastRestorationReport = {
+    issues: [...lastRestorationReport.issues, { collection: "state", reason }],
+  };
+}
+
 function restoredAssignment(value: unknown): Assignment | null {
   if (
     !isRecord(value) ||
@@ -444,6 +471,15 @@ function restoredAssignment(value: unknown): Assignment | null {
   if (Array.isArray(value.decisionTrace)) {
     assignment.decisionTrace = value.decisionTrace.filter(validDecision);
   }
+  if (assignment.decisionTrace?.length && isRecord(value.decisionEvidence)) {
+    const scheduleRunId = value.decisionEvidence.scheduleRunId;
+    const ruleFingerprint = value.decisionEvidence.ruleFingerprint;
+    if (
+      typeof scheduleRunId === "string" &&
+      typeof ruleFingerprint === "string"
+    )
+      assignment.decisionEvidence = { scheduleRunId, ruleFingerprint };
+  }
   if (Array.isArray(value.manualOverrideWarnings)) {
     const warnings = value.manualOverrideWarnings.flatMap((item) => {
       if (
@@ -475,33 +511,70 @@ function restoredAssignment(value: unknown): Assignment | null {
   return assignment;
 }
 
-function restoreAssignments(next: AppState, value: unknown[]): Assignment[] {
+function restoreAssignments(
+  next: AppState,
+  value: unknown[],
+  issues: StateRestorationIssue[]
+): Assignment[] {
   const administrativePositions = new Set(
     next.positionRules
       .filter((rule) => rule.category === "行政支援")
       .map((rule) => `${rule.flightNo}\u0000${rule.name.trim()}`)
   );
-  return value
-    .map(restoredAssignment)
-    .filter((assignment): assignment is Assignment => assignment !== null)
-    .filter((assignment) => {
-      if (assignment.layoutGroup) return true;
-      if (!assignment.positionRuleId) return false;
-      const rule = next.positionRules.find(
-        (item) =>
-          item.id === assignment.positionRuleId &&
-          item.flightNo === assignment.flightNo
-      );
-      if (!rule) return false;
-      if (!next.settings.adminSupportEnabled)
-        return rule.category !== "行政支援";
-      return (
-        rule.category === "行政支援" ||
-        !administrativePositions.has(
-          `${rule.flightNo}\u0000${rule.name.trim()}`
-        )
-      );
-    });
+  return value.flatMap((raw, index) => {
+    const assignment = restoredAssignment(raw);
+    if (!assignment) {
+      issues.push({
+        collection: "assignments",
+        index,
+        reason: "字段缺失或类型无效",
+      });
+      return [];
+    }
+    if (assignment.layoutGroup) return [assignment];
+    if (!assignment.positionRuleId) {
+      issues.push({
+        collection: "assignments",
+        index,
+        reason: "缺少岗位规则标识",
+      });
+      return [];
+    }
+    const rule = next.positionRules.find(
+      (item) =>
+        item.id === assignment.positionRuleId &&
+        item.flightNo === assignment.flightNo
+    );
+    if (!rule) {
+      issues.push({
+        collection: "assignments",
+        index,
+        reason: "找不到对应的岗位规则",
+      });
+      return [];
+    }
+    if (!next.settings.adminSupportEnabled && rule.category === "行政支援") {
+      issues.push({
+        collection: "assignments",
+        index,
+        reason: "行政支援模式未启用",
+      });
+      return [];
+    }
+    if (
+      next.settings.adminSupportEnabled &&
+      rule.category !== "行政支援" &&
+      administrativePositions.has(`${rule.flightNo}\u0000${rule.name.trim()}`)
+    ) {
+      issues.push({
+        collection: "assignments",
+        index,
+        reason: "同名行政支援岗位替换了普通岗位",
+      });
+      return [];
+    }
+    return [assignment];
+  });
 }
 
 function restoreDutyRosterOverrides(value: unknown[]): DutyRosterOverride[] {
@@ -531,7 +604,15 @@ export function restorePersistedState(
   value: unknown,
   fallback: AppState
 ): AppState | null {
-  if (!isPersistedState(value)) return null;
+  const issues: StateRestorationIssue[] = [];
+  lastRestorationReport = { issues };
+  if (!isPersistedState(value)) {
+    issues.push({
+      collection: "state",
+      reason: "根对象缺失或版本不受支持",
+    });
+    return null;
+  }
   const positionRules = restoredCollection(
     value.positionRules,
     fallback.positionRules,
@@ -578,6 +659,10 @@ export function restorePersistedState(
       typeof value.schedulePolicyStale === "boolean"
         ? value.schedulePolicyStale
         : fallback.schedulePolicyStale,
+    scheduleRuleFingerprint:
+      typeof value.scheduleRuleFingerprint === "string"
+        ? value.scheduleRuleFingerprint
+        : undefined,
     settings: migrateSettings(value, fallback, positionRules),
     updatedAt:
       typeof value.updatedAt === "string"
@@ -589,17 +674,39 @@ export function restorePersistedState(
       ? value.assignments
       : fallback.assignments;
     const hadPersistedAssignments = persistedAssignments.length > 0;
-    next.assignments = restoreAssignments(next, persistedAssignments);
+    next.assignments = restoreAssignments(next, persistedAssignments, issues);
+    const beforeUnavailableRemoval = next.assignments.length;
     removeUnavailableStaffAssignments(next);
+    if (next.assignments.length < beforeUnavailableRemoval) {
+      issues.push({
+        collection: "assignments",
+        reason: `${beforeUnavailableRemoval - next.assignments.length} 条记录因人员不可用未恢复`,
+      });
+    }
     normalizeSupervisorAssignments(next);
     if (hadPersistedAssignments && !next.assignments.length) {
       next.activeScheduleDate = null;
       next.schedulePolicyStale = false;
+      next.scheduleRuleFingerprint = undefined;
+    } else if (next.assignments.length) {
+      const currentFingerprint = scheduleRuleFingerprint(next);
+      next.schedulePolicyStale =
+        next.schedulePolicyStale ||
+        !next.scheduleRuleFingerprint ||
+        next.scheduleRuleFingerprint !== currentFingerprint;
     }
-  } catch {
+  } catch (error) {
+    issues.push({
+      collection: "state",
+      reason: `整体恢复失败：${error instanceof Error ? error.message : String(error)}`,
+    });
     next.assignments = [];
     next.activeScheduleDate = null;
     next.schedulePolicyStale = false;
+    next.scheduleRuleFingerprint = undefined;
+  }
+  if (!next.assignments.length) {
+    next.scheduleRuleFingerprint = undefined;
   }
   return next;
 }

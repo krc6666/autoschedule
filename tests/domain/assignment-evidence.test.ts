@@ -4,6 +4,7 @@ import type { Assignment } from "../../src/model";
 import { schedulingDecision } from "../../src/domain/rules/schedule-rule-contract";
 import {
   appendAssignmentDecision,
+  attachAssignmentDecisionEvidence,
   assignmentDecisionMessages,
   assignmentDecisions,
   rebuildAutomaticAssignmentEvidence,
@@ -30,6 +31,23 @@ function assignment(): Assignment {
 }
 
 describe("assignment evidence module", () => {
+  it("binds decision evidence to a schedule run and rule fingerprint", () => {
+    const target = assignment();
+    target.decisionTrace = [
+      schedulingDecision("position-rotation", "selected", "已选择"),
+    ];
+
+    attachAssignmentDecisionEvidence(target, {
+      scheduleRunId: "run-1",
+      ruleFingerprint: "rules-v1:abc",
+    });
+
+    expect(target.decisionEvidence).toEqual({
+      scheduleRunId: "run-1",
+      ruleFingerprint: "rules-v1:abc",
+    });
+  });
+
   it("replaces one rule's evidence without erasing earlier rule decisions", () => {
     const target = assignment();
     appendAssignmentDecision(
@@ -53,6 +71,24 @@ describe("assignment evidence module", () => {
         message: "新轮岗结论",
       }),
     ]);
+  });
+
+  it("invalidates run metadata when a later stage changes the decision trace", () => {
+    const target = assignment();
+    target.decisionTrace = [
+      schedulingDecision("position-rotation", "selected", "旧结论"),
+    ];
+    target.decisionEvidence = {
+      scheduleRunId: "run-1",
+      ruleFingerprint: "rules-v1:abc",
+    };
+
+    appendAssignmentDecision(
+      target,
+      schedulingDecision("position-rotation", "fallback", "新结论")
+    );
+
+    expect(target.decisionEvidence).toBeUndefined();
   });
 
   it("rebuilds all automatic evidence after a staff change and exposes one collection seam", () => {

@@ -1,6 +1,9 @@
 import type { Assignment, ScheduleResult } from "../../model";
 import type { ScheduleGuardContext } from "./schedule-guard";
 import { previousWorkdayLateProtection } from "../reviews/cross-day-recovery";
+import { fnv64Fingerprint } from "../rules/schedule-rule-fingerprint";
+
+const SCHEDULE_CREDENTIAL_FINGERPRINT_VERSION = "credential-v1";
 
 export interface ScheduleSafetyCredential {
   readonly kind: "schedule-safety-credential";
@@ -12,7 +15,7 @@ export interface ScheduleSafetyCredential {
 }
 
 function fingerprint(value: unknown): string {
-  return JSON.stringify(value);
+  return fnv64Fingerprint(value, SCHEDULE_CREDENTIAL_FINGERPRINT_VERSION);
 }
 
 function contextFingerprint(context: ScheduleGuardContext): string {

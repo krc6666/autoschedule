@@ -20,6 +20,7 @@ export interface ApplicationCoordinatorOptions {
   preferences: ApplicationPreferences;
   confirm?: (message: string) => boolean;
   onViewChange?: (view: ApplicationViewState) => void;
+  restoredScheduleNotice?: boolean;
 }
 
 const COMMANDS_ALLOWED_DURING_SCHEDULE_RUN = new Set<UiCommand["type"]>([
@@ -63,7 +64,8 @@ function mayRunSchedule(command: UiCommand): boolean {
 }
 
 function initialView(
-  preferences: ApplicationPreferences
+  preferences: ApplicationPreferences,
+  restoredScheduleNotice = false
 ): ApplicationViewState {
   const storedZoom = preferences.loadScheduleZoom();
   return {
@@ -77,6 +79,7 @@ function initialView(
     historyEditDate: null,
     dialog: null,
     toast: null,
+    restoredScheduleNotice,
     progress: {
       outcome: "idle",
       visible: false,
@@ -102,11 +105,15 @@ export class ApplicationCoordinator implements ApplicationContext {
     private readonly options: ApplicationCoordinatorOptions
   ) {
     this.preferences = options.preferences;
-    this.currentView = initialView(this.preferences);
+    this.currentView = initialView(
+      this.preferences,
+      options.restoredScheduleNotice
+    );
     this.scheduleRunner = createBrowserScheduleRunController({
       start: () => {
         if (this.progressHideTimer) clearTimeout(this.progressHideTimer);
         this.updateView({
+          restoredScheduleNotice: false,
           progress: {
             outcome: "running",
             visible: true,

@@ -16,6 +16,48 @@ import "../../src/ui/components/schedule-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("schedule page", () => {
+  it("warns when a refreshed page is showing a restored old schedule", async () => {
+    const state = createDefaultState();
+    const flight = state.flights[0]!;
+    const rule = state.positionRules.find(
+      (item) => item.flightNo === flight.flightNo
+    )!;
+    const staff = state.staff.find((person) =>
+      rule.qualifiedStaffIds.includes(person.id)
+    )!;
+    state.assignments = [
+      {
+        id: "restored-old-schedule",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: staff.id,
+        staffName: staff.name,
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-08-01",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+      restoredScheduleNotice: true,
+    });
+
+    expect(element.textContent).toContain("这是旧班表，请重新排班后再使用");
+  });
+
   it("shows only qualified idle staff when a position is selected", async () => {
     const state = createDefaultState();
     const flight = state.flights[0]!;

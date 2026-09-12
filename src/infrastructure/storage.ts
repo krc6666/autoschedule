@@ -1,6 +1,10 @@
 import { createDefaultState } from "../defaults";
 import type { AppState } from "../model";
-import { restorePersistedState } from "./state-restoration";
+import {
+  clearLastRestorationReport,
+  recordRestorationIssue,
+  restorePersistedState,
+} from "./state-restoration";
 
 export const STORAGE_KEY = "autoschedule.state.v1";
 export const STORAGE_CAPACITY_WARNING_BYTES = 4 * 1024 * 1024;
@@ -11,16 +15,57 @@ export interface StateSaveResult {
   nearCapacity: boolean;
 }
 
+interface StorageEstimateSnapshot {
+  usage: number;
+  quota: number;
+}
+
+let storageEstimate: StorageEstimateSnapshot | null = null;
+
+export async function refreshStorageEstimate(
+  manager: Pick<StorageManager, "estimate"> | undefined = globalThis.navigator
+    ?.storage
+): Promise<StorageEstimateSnapshot | null> {
+  if (!manager) return storageEstimate;
+  try {
+    const estimate = await manager.estimate();
+    if (
+      typeof estimate.usage !== "number" ||
+      typeof estimate.quota !== "number" ||
+      !Number.isFinite(estimate.usage) ||
+      !Number.isFinite(estimate.quota) ||
+      estimate.quota <= 0
+    )
+      return storageEstimate;
+    storageEstimate = {
+      usage: Math.max(0, estimate.usage),
+      quota: estimate.quota,
+    };
+    return storageEstimate;
+  } catch {
+    return storageEstimate;
+  }
+}
+
+export function resetStorageEstimate(): void {
+  storageEstimate = null;
+}
+
 export function loadState(
   storage: Pick<Storage, "getItem"> = localStorage
 ): AppState {
+  clearLastRestorationReport();
+  void refreshStorageEstimate();
   const fallback = createDefaultState();
   try {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
     const parsed: unknown = JSON.parse(raw);
     return restorePersistedState(parsed, fallback) ?? fallback;
-  } catch {
+  } catch (error) {
+    recordRestorationIssue(
+      `持久化数据无法读取：${error instanceof Error ? error.message : String(error)}`
+    );
     return fallback;
   }
 }
@@ -33,10 +78,16 @@ export function saveState(
   const serialized = JSON.stringify(next);
   const sizeBytes = new Blob([serialized]).size;
   storage.setItem(STORAGE_KEY, serialized);
+  const availableBytes = storageEstimate
+    ? Math.max(0, storageEstimate.quota - storageEstimate.usage)
+    : STORAGE_CAPACITY_WARNING_BYTES;
+  const warningThreshold = storageEstimate
+    ? Math.min(STORAGE_CAPACITY_WARNING_BYTES, availableBytes * 0.8)
+    : STORAGE_CAPACITY_WARNING_BYTES;
   return {
     state: next,
     sizeBytes,
-    nearCapacity: sizeBytes >= STORAGE_CAPACITY_WARNING_BYTES,
+    nearCapacity: sizeBytes >= warningThreshold,
   };
 }
 

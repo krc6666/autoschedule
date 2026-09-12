@@ -96,6 +96,11 @@ export interface Assignment {
   status: "assigned" | "unfilled" | "manual";
   systemNotes?: string[];
   decisionTrace?: SchedulingDecision[];
+  /** Identifies the schedule run and rule snapshot behind decisionTrace. */
+  decisionEvidence?: {
+    scheduleRunId: string;
+    ruleFingerprint: string;
+  };
   manualOverrideWarnings?: Array<{ code: string; message: string }>;
   supervisorSourceAssignmentId?: string;
   layoutGroup?: "primary" | "bottom";
@@ -168,6 +173,8 @@ export interface AppState {
   assignments: Assignment[];
   activeScheduleDate: string | null;
   schedulePolicyStale: boolean;
+  /** Fingerprint of the rule context used for the active generated schedule. */
+  scheduleRuleFingerprint?: string;
   settings: ScheduleSettings;
   updatedAt: string;
 }

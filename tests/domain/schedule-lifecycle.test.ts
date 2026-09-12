@@ -10,6 +10,25 @@ import {
 import { createScheduleSafetyCredential } from "../../src/domain/kernel/schedule-safety-credential";
 
 describe("schedule lifecycle", () => {
+  it("stores compact FNV fingerprints in safety credentials", () => {
+    const credential = createScheduleSafetyCredential({
+      date: "2026-07-30",
+      assignments: [],
+      context: { phase: "final" },
+    });
+
+    expect(credential.assignmentsFingerprint).toMatch(
+      /^credential-v1:[0-9a-f]{16}$/
+    );
+    expect(credential.contextFingerprint).toMatch(
+      /^credential-v1:[0-9a-f]{16}$/
+    );
+    expect(credential.integrityFingerprint).toMatch(
+      /^credential-v1:[0-9a-f]{16}$/
+    );
+    expect(credential.assignmentsFingerprint).not.toContain("[");
+  });
+
   it("rejects installing a generated result without a safety credential and preserves the old schedule", () => {
     const state = createDefaultState();
     const oldAssignment = {
@@ -121,6 +140,7 @@ describe("schedule lifecycle", () => {
       activeScheduleDate: "2026-07-30",
       schedulePolicyStale: false,
     });
+    expect(state.scheduleRuleFingerprint).toEqual(expect.any(String));
     expect(markActiveScheduleStale(state)).toBe(true);
     clearActiveSchedule(state);
     expect(state).toMatchObject({

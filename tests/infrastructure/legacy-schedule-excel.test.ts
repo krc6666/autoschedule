@@ -306,6 +306,62 @@ describe("legacy horizontal schedule workbook adapter", () => {
     });
   });
 
+  it("rejects imported same-airline priority conflicts before writing history", () => {
+    const state = createDefaultState();
+    const worker = state.staff.find((person) => person.id === "2")!;
+    const preview = {
+      records: [
+        {
+          id: "legacy-cx937-g20",
+          date: "2026-08-19",
+          flightNo: "CX937",
+          position: "G20",
+          staffId: worker.id,
+          staffName: worker.name,
+          startTime: "08:30",
+          endTime: "10:30",
+          workHours: 2,
+          fatiguePoints: 4,
+          remark: "涓€鍙?",
+          rawText: worker.name,
+          sourceSheet: "Sheet1",
+          sourceCell: "B2",
+          status: "ready" as const,
+        },
+        {
+          id: "legacy-cx931-g20",
+          date: "2026-08-19",
+          flightNo: "CX931",
+          position: "G20",
+          staffId: worker.id,
+          staffName: worker.name,
+          startTime: "17:50",
+          endTime: "19:50",
+          workHours: 2,
+          fatiguePoints: 4,
+          remark: "涓€鍙?",
+          rawText: worker.name,
+          sourceSheet: "Sheet1",
+          sourceCell: "B3",
+          status: "ready" as const,
+        },
+      ],
+      sheets: 1,
+      recognizedSheets: 1,
+      readyRecords: 2,
+      reviewRecords: 0,
+      ignoredRecords: 0,
+      warnings: [],
+    } satisfies LegacyScheduleImportPreview;
+
+    const result = applyLegacyScheduleImport(state, preview, "2026-08-19");
+
+    expect(result.imported).toBe(0);
+    expect(result.rejected).toBe(2);
+    expect((result.errors ?? []).join("\n")).toContain("同航司");
+    expect(state.history).toHaveLength(0);
+  });
+
   it("upgrades an existing legacy record instead of leaving old metadata behind", () => {
     const preview = {
       records: [

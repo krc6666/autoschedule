@@ -9,6 +9,7 @@ const domainRoot = join(repositoryRoot, "src", "domain");
 const allowedAppStateImports = new Set([
   "src/domain/flights/flight-plan-reconciliation.ts",
   "src/domain/kernel/schedule-lifecycle.ts",
+  "src/domain/rules/schedule-rule-fingerprint.ts",
   "src/domain/shared/scheduling-facts.ts",
 ]);
 

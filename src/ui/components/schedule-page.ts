@@ -36,6 +36,7 @@ export class SchedulePageElement extends LightDomElement {
     halfRestStaffIds: { attribute: false },
     halfRestModes: { attribute: false },
     historyEditDate: { attribute: false },
+    restoredScheduleNotice: { type: Boolean },
   };
   model!: AppState;
   date = "";
@@ -45,6 +46,7 @@ export class SchedulePageElement extends LightDomElement {
   halfRestStaffIds: string[] = [];
   halfRestModes: Record<string, HalfRestMode> = {};
   historyEditDate: string | null = null;
+  restoredScheduleNotice = false;
   private pointerSourceValue: PointerDragSource | null = null;
   private pointerTargetId = "";
   private previousScheduleVisible = false;
@@ -90,6 +92,7 @@ export class SchedulePageElement extends LightDomElement {
         @autoschedule-toggle-previous-schedule=${this.togglePreviousSchedule}
       ></autoschedule-schedule-toolbar>
       ${this.model.schedulePolicyStale ? html`<div class="alert alert-warning py-2" role="status"><i class="bi bi-exclamation-triangle me-2"></i>排班规则已更新，当前排班尚未按新规则重新生成。</div>` : null}
+      ${this.restoredScheduleNotice ? html`<div class="alert alert-warning py-2" role="status"><i class="bi bi-arrow-repeat me-2"></i>这是旧班表，请重新排班后再使用。</div>` : null}
       ${
         this.previousScheduleVisible && previousSchedule
           ? html`<autoschedule-previous-schedule-comparison

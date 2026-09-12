@@ -180,6 +180,7 @@ export class AutoscheduleAppElement extends LightDomElement {
         .halfRestStaffIds=${this.view.halfRestStaffIds}
         .halfRestModes=${this.view.halfRestModes}
         .historyEditDate=${this.view.historyEditDate}
+        .restoredScheduleNotice=${this.view.restoredScheduleNotice ?? false}
       ></autoschedule-schedule-page>`;
     if (section === "policy")
       return html`<autoschedule-policy-page

@@ -18,6 +18,7 @@ import {
   type ScheduleProgressStage,
 } from "./schedule-progress";
 import type { ScheduleRunPreferences } from "../shared/schedule-run-preferences";
+import { createId } from "../../utils";
 
 export type { ScheduleProgressStage } from "./schedule-progress";
 
@@ -36,6 +37,7 @@ interface FinalizePlanOptions {
   preparation: SchedulePreparation;
   plan: DailySchedulePlan;
   reportProgress: (stage: ScheduleProgressStage, percent: number) => void;
+  scheduleRunId: string;
 }
 
 async function finalizeDailyPlan({
@@ -45,6 +47,7 @@ async function finalizeDailyPlan({
   preparation,
   plan,
   reportProgress,
+  scheduleRunId,
 }: FinalizePlanOptions): Promise<ScheduleResult> {
   const guards = createDefaultScheduleGuards();
   const warnings = [...plan.warnings];
@@ -161,6 +164,7 @@ async function finalizeDailyPlan({
       ke166Finalized = true;
     },
     reportProgress,
+    scheduleRunId,
   });
 }
 
@@ -183,6 +187,7 @@ export async function generateSchedule(
   reportProgress("optimize", scheduleProgressPercent("optimize"));
 
   let pendingCheckpoint: DailySchedulePlan | null = null;
+  const scheduleRunId = createId("schedule-run");
   let checkpointRunning = false;
   const queueCheckpoint = (checkpointPlan: DailySchedulePlan): void => {
     if (!options.onSafeResult || !options.checkpointSolver) return;
@@ -201,6 +206,7 @@ export async function generateSchedule(
             preparation,
             plan: current,
             reportProgress: () => undefined,
+            scheduleRunId,
           });
           options.onSafeResult?.(safeResult);
         } catch {
@@ -229,6 +235,7 @@ export async function generateSchedule(
     preparation,
     plan,
     reportProgress,
+    scheduleRunId,
   });
   reportProgress("complete", scheduleProgressPercent("complete"));
   return result;

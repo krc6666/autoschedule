@@ -122,8 +122,7 @@ export function excludeCandidateForHalfRest(options: {
   const recoveryConflict = hasHalfRestRecoveryConflict(options.priority);
   const mode =
     options.facts.modesByStaffId.get(options.staffId) ?? "early-finish";
-  if (mode === "late-start")
-    return selected && (recoveryConflict || options.preNoon);
+  if (mode === "late-start") return selected && options.preNoon;
   return selected && (recoveryConflict || !options.preNoon);
 }
 
@@ -293,10 +292,6 @@ export function buildHalfRestOptimizationModel(
     coefficient: number;
   }> = [];
   const latestEndTerms: Array<{ variableId: string; coefficient: number }> = [];
-  const lateStartCountTerms: Array<{
-    variableId: string;
-    coefficient: number;
-  }> = [];
 
   for (const staffId of facts.activeStaffIds) {
     const staffChoices = choices.filter((choice) => choice.staffId === staffId);
@@ -308,16 +303,16 @@ export function buildHalfRestOptimizationModel(
     );
     const workedId = `half-rest:worked:${staffId}`;
     const latestEndId = `half-rest:latest-end:${staffId}`;
-    variables.push(
-      { id: workedId, type: "binary" },
-      {
+    variables.push({ id: workedId, type: "binary" });
+    if (mode === "early-finish") {
+      variables.push({
         id: latestEndId,
         type: "continuous",
         lowerBound: 0,
         upperBound: 2 * 24 * 60,
         lowerEnvelope: true,
-      }
-    );
+      });
+    }
     constraints.push({
       id: `half-rest:morning-work:${staffId}`,
       terms: [
@@ -336,31 +331,22 @@ export function buildHalfRestOptimizationModel(
         lowerBound: 1,
       });
     }
-    for (const choice of staffChoices) {
-      const end = operationalEndMinutes(choice.startTime, choice.endTime);
-      const coefficient = mode === "late-start" ? 2 * 24 * 60 - end : end;
-      constraints.push({
-        id: `half-rest:latest-end:${staffId}:${choice.variableId}`,
-        terms: [
-          { variableId: latestEndId, coefficient: 1 },
-          {
-            variableId: choice.variableId,
-            coefficient: -coefficient,
-          },
-        ],
-        lowerBound: 0,
-      });
+    if (mode === "early-finish") {
+      for (const choice of staffChoices) {
+        const end = operationalEndMinutes(choice.startTime, choice.endTime);
+        constraints.push({
+          id: `half-rest:latest-end:${staffId}:${choice.variableId}`,
+          terms: [
+            { variableId: latestEndId, coefficient: 1 },
+            { variableId: choice.variableId, coefficient: -end },
+          ],
+          lowerBound: 0,
+        });
+      }
     }
     participationTerms.push({ variableId: workedId, coefficient: 1 });
-    latestEndTerms.push({ variableId: latestEndId, coefficient: 1 });
-    if (mode === "late-start") {
-      lateStartCountTerms.push(
-        ...targetChoices.map((choice) => ({
-          variableId: choice.variableId,
-          coefficient: 1,
-        }))
-      );
-    }
+    if (mode === "early-finish")
+      latestEndTerms.push({ variableId: latestEndId, coefficient: 1 });
   }
 
   const objectives: LexicographicObjective[] = [];
@@ -376,13 +362,6 @@ export function buildHalfRestOptimizationModel(
       id: "half-rest-early-finish:latest-end",
       direction: "minimize",
       terms: latestEndTerms,
-    });
-  }
-  if (lateStartCountTerms.length) {
-    objectives.push({
-      id: "half-rest-early-finish:late-start-count",
-      direction: "minimize",
-      terms: lateStartCountTerms,
     });
   }
   return { variables, constraints, objectives };

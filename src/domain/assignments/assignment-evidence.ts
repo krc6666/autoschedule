@@ -7,6 +7,18 @@ import type {
 export function clearAutomaticAssignmentEvidence(assignment: Assignment): void {
   delete assignment.systemNotes;
   delete assignment.decisionTrace;
+  delete assignment.decisionEvidence;
+}
+
+export function attachAssignmentDecisionEvidence(
+  assignment: Assignment,
+  evidence: NonNullable<Assignment["decisionEvidence"]>
+): void {
+  if (!assignment.decisionTrace?.length) {
+    delete assignment.decisionEvidence;
+    return;
+  }
+  assignment.decisionEvidence = { ...evidence };
 }
 
 export function replaceAssignmentDecisions(
@@ -21,6 +33,7 @@ export function replaceAssignmentDecisions(
   const next = [...remaining, ...decisions];
   if (next.length) assignment.decisionTrace = next;
   else delete assignment.decisionTrace;
+  delete assignment.decisionEvidence;
 }
 
 export function appendAssignmentDecision(
@@ -28,6 +41,7 @@ export function appendAssignmentDecision(
   decision: SchedulingDecision
 ): void {
   assignment.decisionTrace = [...(assignment.decisionTrace ?? []), decision];
+  delete assignment.decisionEvidence;
 }
 
 export function rebuildAutomaticAssignmentEvidence(

@@ -834,7 +834,7 @@ export function createScarceQualificationScheduleGuard(): ScheduleGuard {
           ruleId: "scarce-qualification",
           severity: "warning" as const,
           assignmentId,
-          message: `安排人员不具备岗位资质，拒绝提交`,
+          message: `安排人员不具备岗位资质，需要复核`,
         })
       );
     },

@@ -50,6 +50,13 @@ export async function prepareWorkbookImport(
   });
   if (imported.legacySchedule?.recognizedSheets)
     return { kind: "legacy-schedule", preview: imported.legacySchedule };
-  const { recognized } = applyWorkbookImport(state, imported, mode);
-  return { kind: "workbook", recognized, warnings: imported.warnings };
+  const applied = applyWorkbookImport(state, imported, mode);
+  return {
+    kind: "workbook",
+    recognized: applied.recognized,
+    warnings: [
+      ...imported.warnings,
+      ...(applied.errors?.map((error) => `导入的班表未写入：${error}`) ?? []),
+    ],
+  };
 }

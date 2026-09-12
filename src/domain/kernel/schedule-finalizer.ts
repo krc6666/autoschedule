@@ -5,7 +5,10 @@ import type {
   ScheduleResult,
 } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
-import { assignmentDecisionMessages } from "../assignments/assignment-evidence";
+import {
+  assignmentDecisionMessages,
+  attachAssignmentDecisionEvidence,
+} from "../assignments/assignment-evidence";
 import { strictOverrideNotes } from "../assignments/schedule-decision-notes";
 import type { ScheduleLedger } from "./schedule-ledger";
 import {
@@ -33,6 +36,7 @@ import {
   type ScheduleGuardContext,
 } from "./schedule-guard";
 import { createScheduleSafetyCredential } from "./schedule-safety-credential";
+import { scheduleRuleFingerprint } from "../rules/schedule-rule-fingerprint";
 
 export interface ScheduleFinalizerOptions {
   solver: SolverPort;
@@ -51,6 +55,7 @@ export interface ScheduleFinalizerOptions {
   optimizationQuality: DailySchedulePlan["optimizationQuality"];
   finalizeKe166Supervisor: () => Promise<void>;
   reportProgress: (stage: ScheduleProgressStage, percent: number) => void;
+  scheduleRunId: string;
 }
 
 function workingAssignments(ledger: ScheduleLedger): Assignment[] {
@@ -167,6 +172,7 @@ export async function finalizeSchedule({
   optimizationQuality,
   finalizeKe166Supervisor,
   reportProgress,
+  scheduleRunId,
 }: ScheduleFinalizerOptions): Promise<ScheduleResult> {
   const pipelineContext = {
     solver,
@@ -194,6 +200,14 @@ export async function finalizeSchedule({
   sortAssignments(assignments, flights, displayRulesByFlight);
   ledger.commit({ type: "replace", assignments });
   const resultAssignments = workingAssignments(ledger);
+  const ruleFingerprint = scheduleRuleFingerprint(state);
+  resultAssignments.forEach((assignment) =>
+    attachAssignmentDecisionEvidence(assignment, {
+      scheduleRunId,
+      ruleFingerprint,
+    })
+  );
+  ledger.commit({ type: "replace", assignments: resultAssignments });
   const finalGuardContext: ScheduleGuardContext = {
     phase: "final",
     halfRestFacts: runFacts.halfRest,

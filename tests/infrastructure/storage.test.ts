@@ -1,14 +1,100 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
 import {
   loadState,
   saveState,
+  refreshStorageEstimate,
+  resetStorageEstimate,
   STORAGE_KEY,
 } from "../../src/infrastructure/storage";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
+import { scheduleRuleFingerprint } from "../../src/domain/rules/schedule-rule-fingerprint";
+import { getLastRestorationReport } from "../../src/infrastructure/state-restoration";
 
 describe("state persistence", () => {
+  afterEach(() => {
+    resetStorageEstimate();
+    vi.unstubAllGlobals();
+  });
+
+  it("uses the browser's estimated remaining capacity for near-limit warnings", async () => {
+    vi.stubGlobal("navigator", {
+      storage: {
+        estimate: vi.fn().mockResolvedValue({ usage: 95_000, quota: 100_000 }),
+      },
+    });
+    await refreshStorageEstimate();
+
+    const result = saveState(createDefaultState(), {
+      setItem: vi.fn(),
+    });
+
+    expect(result.nearCapacity).toBe(true);
+  });
+
+  it("records which persisted assignment rows were discarded during recovery", () => {
+    const persisted = JSON.parse(JSON.stringify(createDefaultState()));
+    persisted.assignments = [null];
+
+    loadState({ getItem: () => JSON.stringify(persisted) });
+
+    expect(getLastRestorationReport().issues).toEqual([
+      expect.objectContaining({ collection: "assignments", index: 0 }),
+    ]);
+  });
+
+  it("records a report when persisted JSON cannot be parsed", () => {
+    loadState({ getItem: () => "{not-json" });
+
+    expect(getLastRestorationReport().issues[0]).toEqual(
+      expect.objectContaining({ collection: "state" })
+    );
+  });
+
+  it("restores decision evidence metadata without changing legacy traces", () => {
+    const persisted = JSON.parse(JSON.stringify(createDefaultState()));
+    const rule = persisted.positionRules[0];
+    const flight = persisted.flights.find(
+      (item: { flightNo: string }) => item.flightNo === rule.flightNo
+    );
+    persisted.assignments = [
+      {
+        id: "evidence-assignment",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: persisted.staff[0].id,
+        staffName: persisted.staff[0].name,
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+        decisionTrace: [
+          {
+            ruleId: "position-rotation",
+            stage: "post-schedule-review",
+            outcome: "selected",
+            message: "kept",
+          },
+        ],
+        decisionEvidence: {
+          scheduleRunId: "run-1",
+          ruleFingerprint: "rules-v1:abc",
+        },
+      },
+    ];
+    const loaded = loadState({ getItem: () => JSON.stringify(persisted) });
+    expect(loaded.assignments[0]?.decisionEvidence).toEqual({
+      scheduleRunId: "run-1",
+      ruleFingerprint: "rules-v1:abc",
+    });
+  });
+
   it("round-trips manual late-priority frequency corrections", () => {
     const state = createDefaultState();
     state.latePriorityFrequencyAdjustments = [
@@ -103,6 +189,75 @@ describe("state persistence", () => {
     expect(loaded.assignments).toEqual([]);
     expect(loaded.activeScheduleDate).toBeNull();
     expect(loaded.schedulePolicyStale).toBe(false);
+  });
+
+  it("marks a persisted schedule stale when it has no rule fingerprint", () => {
+    const persisted = JSON.parse(JSON.stringify(createDefaultState()));
+    const flight = persisted.flights[0];
+    const rule = persisted.positionRules.find(
+      (item: { flightNo: string }) => item.flightNo === flight.flightNo
+    );
+    persisted.assignments = [
+      {
+        id: "legacy-active-assignment",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: persisted.staff[0].id,
+        staffName: persisted.staff[0].name,
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    persisted.activeScheduleDate = "2026-08-01";
+    persisted.schedulePolicyStale = false;
+    delete persisted.scheduleRuleFingerprint;
+
+    const loaded = loadState({ getItem: () => JSON.stringify(persisted) });
+
+    expect(loaded.assignments).toHaveLength(1);
+    expect(loaded.schedulePolicyStale).toBe(true);
+  });
+
+  it("marks a persisted schedule stale when the current rule context changed", () => {
+    const persisted = JSON.parse(JSON.stringify(createDefaultState()));
+    const flight = persisted.flights[0];
+    const rule = persisted.positionRules.find(
+      (item: { flightNo: string }) => item.flightNo === flight.flightNo
+    );
+    persisted.assignments = [
+      {
+        id: "fingerprinted-assignment",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: persisted.staff[0].id,
+        staffName: persisted.staff[0].name,
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    persisted.activeScheduleDate = "2026-08-01";
+    persisted.schedulePolicyStale = false;
+    persisted.scheduleRuleFingerprint = scheduleRuleFingerprint(persisted);
+    persisted.settings.maxDailyHours += 1;
+
+    const loaded = loadState({ getItem: () => JSON.stringify(persisted) });
+
+    expect(loaded.assignments).toHaveLength(1);
+    expect(loaded.schedulePolicyStale).toBe(true);
   });
 
   it("restores valid collections while discarding malformed flight and history records", () => {

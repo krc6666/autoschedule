@@ -88,5 +88,7 @@ export interface ApplicationViewState {
   historyEditDate?: string | null;
   dialog: ApplicationDialog | null;
   toast: ApplicationToast | null;
+  /** True only during the session immediately after restoring a saved schedule. */
+  restoredScheduleNotice?: boolean;
   progress: ScheduleProgressView;
 }

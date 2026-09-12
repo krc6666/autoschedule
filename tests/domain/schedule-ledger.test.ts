@@ -35,6 +35,16 @@ const assignment: Assignment = {
 };
 
 describe("schedule ledger", () => {
+  it("reports a readable missing guard context error", () => {
+    const ledger = createScheduleLedger([], {
+      guards: [createDefaultScheduleGuards()[0]!],
+    });
+
+    expect(() =>
+      ledger.commit({ type: "append", assignments: [assignment] })
+    ).toThrow("排班 ledger 守卫缺少上下文");
+  });
+
   it("exposes immutable snapshots and commits validated proposals atomically", () => {
     const ledger = createScheduleLedger();
     ledger.commit({ type: "append", assignments: [assignment] });
@@ -1290,6 +1300,8 @@ describe("schedule ledger", () => {
       ledger.commit({ type: "append", assignments: [invalid] })
     ).not.toThrow();
     expect(warningSink).toHaveLength(1);
+    expect(warningSink[0]).toContain("复核");
+    expect(warningSink[0]).not.toContain("拒绝提交");
   });
 
   it("rejects deletion of a selected duty-position assignment", () => {

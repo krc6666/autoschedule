@@ -56,7 +56,7 @@ export function createScheduleLedger(
       validateAssignments(next);
       if (options.guards?.length) {
         if (!options.guardContext) {
-          throw new Error("鎺掔彮 ledger 守卫缺少上下文");
+          throw new Error("排班 ledger 守卫缺少上下文");
         }
         assertScheduleAssignmentsSafe({
           assignments: next,
