@@ -15,6 +15,8 @@ import { isPreNoonFlight } from "../flights/schedule-tasks";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import { durationHours } from "../shared/time";
 import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
+import type { HalfRestFacts } from "../rules/half-rest";
+import { halfRestPeriodViolation } from "../rules/half-rest";
 import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
 import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
 
@@ -71,8 +73,18 @@ function canMoveRegularPlacement(
   placement: RegularPlacement,
   targetRule: PositionRule,
   date: string,
-  frequencyFacts: ScheduleFrequencyFacts
+  frequencyFacts: ScheduleFrequencyFacts,
+  halfRestFacts?: HalfRestFacts
 ): boolean {
+  if (
+    halfRestFacts &&
+    halfRestPeriodViolation({
+      facts: halfRestFacts,
+      staffId: placement.person.id,
+      startTime: flight.startTime,
+    })
+  )
+    return false;
   if (
     exceedsTr121NumberOneAutomaticLimit(
       state,
@@ -226,7 +238,8 @@ export function compactRegularAssignments(
   assignments: Assignment[],
   lockedAssignmentIds: ReadonlySet<string>,
   date: string,
-  frequencyFacts: ScheduleFrequencyFacts
+  frequencyFacts: ScheduleFrequencyFacts,
+  halfRestFacts?: HalfRestFacts
 ): Set<string> {
   const changedFlightIds = new Set<string>();
 
@@ -300,7 +313,8 @@ export function compactRegularAssignments(
         placement,
         slot.rule,
         date,
-        frequencyFacts
+        frequencyFacts,
+        halfRestFacts
       );
     };
     const occupiedSlots: RegularSlot[] = [];

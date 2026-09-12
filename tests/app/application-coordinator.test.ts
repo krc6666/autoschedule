@@ -7,6 +7,7 @@ import { createDefaultState } from "../../src/defaults";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 import { buildMonthlyLatePriorityStatistics } from "../../src/domain/statistics/monthly-late-priority-statistics";
 import type { ScheduleResult } from "../../src/model";
+import { createScheduleSafetyCredential } from "../../src/domain/kernel/schedule-safety-credential";
 import { generateSchedule } from "../helpers/generate-schedule";
 import {
   buildLatePriorityCountsWorkbook,
@@ -21,6 +22,26 @@ const preferences: ApplicationPreferences = {
 };
 
 afterEach(() => vi.unstubAllGlobals());
+
+function certifiedResult(
+  date: string,
+  assignments: ScheduleResult["assignments"] = []
+): ScheduleResult {
+  const result = {
+    assignments,
+    warnings: [],
+    unfilledCount: assignments.filter((item) => item.status === "unfilled")
+      .length,
+  };
+  return {
+    ...result,
+    safetyCredential: createScheduleSafetyCredential({
+      date,
+      assignments,
+      context: { phase: "final" },
+    }),
+  };
+}
 
 describe("application persistence feedback", () => {
   it("applies a validated late-priority count preview through the records controller", async () => {
@@ -400,9 +421,8 @@ describe("application scheduling exclusivity", () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     const safeResult: ScheduleResult = {
-      assignments: [],
+      ...certifiedResult("2026-09-12"),
       warnings: ["已安全复核"],
-      unfilledCount: 0,
     };
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
@@ -883,7 +903,7 @@ describe("next workday flight picker workflow", () => {
     );
     const calculate = vi.fn().mockResolvedValue({
       kind: "completed",
-      result: { assignments: [], warnings: [], unfilledCount: 0 },
+      result: certifiedResult("2026-08-17"),
     });
     Object.defineProperty(coordinator, "scheduleRunner", {
       value: { calculate, isRunning: () => false },
@@ -1034,11 +1054,7 @@ describe("current schedule flight picker workflow", () => {
       createAutoscheduleStore(state),
       { preferences: currentPreferences, confirm: () => true }
     );
-    const result: ScheduleResult = {
-      assignments: [],
-      warnings: [],
-      unfilledCount: 0,
-    };
+    const result = certifiedResult(currentDate);
     const calculate = vi.fn().mockResolvedValue({
       kind: "completed",
       result,
@@ -1132,7 +1148,7 @@ describe("current schedule flight picker workflow", () => {
       value: {
         calculate: vi.fn().mockResolvedValue({
           kind: "stopped-with-result",
-          result: { assignments: [], warnings: [], unfilledCount: 0 },
+          result: certifiedResult("2026-08-29"),
         }),
         isRunning: () => false,
       },

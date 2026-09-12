@@ -249,7 +249,217 @@ describe("daily schedule final safety review", () => {
     ).toThrow("最终安全复核未通过");
   });
 
-  it("keeps one plain business warning when finalizing a time-limited fairness schedule", async () => {
+  it("rejects a final morning assignment for a late-start half-rest worker", () => {
+    const state = createDefaultState();
+    const person = {
+      ...state.staff[0]!,
+      id: "half-rest-worker",
+      name: "half-rest-worker",
+      nightShift: true,
+    };
+    state.staff = [person as (typeof state.staff)[number]];
+    state.flights = [
+      {
+        id: "morning",
+        flightNo: "AM100",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: ["A1"],
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...state.positionRules[0]!,
+        id: "morning-rule",
+        flightNo: "AM100",
+        name: "A1",
+        qualifiedStaffIds: [person.id],
+      },
+    ];
+    const task: AssignmentTask = {
+      key: "morning:morning-rule",
+      flight: state.flights[0]!,
+      rule: state.positionRules[0]!,
+    };
+    const assignment: Assignment = {
+      id: "morning-assignment",
+      flightId: "morning",
+      flightNo: "AM100",
+      positionRuleId: "morning-rule",
+      position: "A1",
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    expect(() =>
+      assertDailyScheduleSafety({
+        state,
+        date: "2026-08-13",
+        tasks: [task],
+        assignments: [assignment],
+        evaluateEligibility: () => ({ eligible: true, violations: [] }),
+        halfRestFacts: {
+          requestedStaffIds: [person.id],
+          activeStaffIds: new Set([person.id]),
+          minimumWorkStaffIds: new Set([person.id]),
+          ignoredWarnings: [],
+          modesByStaffId: new Map([[person.id, "late-start"]]),
+          earlyFinishStaffIds: new Set(),
+          lateStartStaffIds: new Set([person.id]),
+        },
+      })
+    ).toThrow("半休时段");
+  });
+
+  it("rejects an all-day-empty non-team-leader half-rest result", () => {
+    const state = createDefaultState();
+    const person = {
+      ...state.staff[0]!,
+      id: "half-rest-worker",
+      name: "half-rest-worker",
+      teamLeader: false,
+    };
+    state.staff = [person];
+    state.flights = [
+      {
+        id: "morning",
+        flightNo: "AM100",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: ["A1"],
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...state.positionRules[0]!,
+        id: "morning-rule",
+        flightNo: "AM100",
+        name: "A1",
+        qualifiedStaffIds: [person.id],
+      },
+    ];
+    const task: AssignmentTask = {
+      key: "morning:morning-rule",
+      flight: state.flights[0]!,
+      rule: state.positionRules[0]!,
+    };
+    const assignment: Assignment = {
+      id: "morning-assignment",
+      flightId: "morning",
+      flightNo: "AM100",
+      positionRuleId: "morning-rule",
+      position: "A1",
+      staffId: null,
+      staffName: "",
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "unfilled",
+    };
+    expect(() =>
+      assertDailyScheduleSafety({
+        state,
+        date: "2026-08-13",
+        tasks: [task],
+        assignments: [assignment],
+        evaluateEligibility: () => ({ eligible: true, violations: [] }),
+        halfRestFacts: {
+          requestedStaffIds: [person.id],
+          activeStaffIds: new Set([person.id]),
+          minimumWorkStaffIds: new Set([person.id]),
+          ignoredWarnings: [],
+          modesByStaffId: new Map([[person.id, "late-start"]]),
+          earlyFinishStaffIds: new Set(),
+          lateStartStaffIds: new Set([person.id]),
+        },
+      })
+    ).toThrow("必须至少安排一个");
+  });
+
+  it("allows an all-day-empty team-leader half-rest result", () => {
+    const state = createDefaultState();
+    const person = {
+      ...state.staff[0]!,
+      id: "team-leader",
+      name: "team-leader",
+      teamLeader: true,
+    };
+    state.staff = [person];
+    state.flights = [
+      {
+        id: "morning",
+        flightNo: "AM100",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: ["A1"],
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...state.positionRules[0]!,
+        id: "morning-rule",
+        flightNo: "AM100",
+        name: "A1",
+        qualifiedStaffIds: [person.id],
+      },
+    ];
+    const task: AssignmentTask = {
+      key: "morning:morning-rule",
+      flight: state.flights[0]!,
+      rule: state.positionRules[0]!,
+    };
+    const assignment: Assignment = {
+      id: "morning-assignment",
+      flightId: "morning",
+      flightNo: "AM100",
+      positionRuleId: "morning-rule",
+      position: "A1",
+      staffId: null,
+      staffName: "",
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "unfilled",
+    };
+    expect(() =>
+      assertDailyScheduleSafety({
+        state,
+        date: "2026-08-13",
+        tasks: [task],
+        assignments: [assignment],
+        evaluateEligibility: () => ({ eligible: true, violations: [] }),
+        halfRestFacts: {
+          requestedStaffIds: [person.id],
+          activeStaffIds: new Set([person.id]),
+          minimumWorkStaffIds: new Set(),
+          ignoredWarnings: [],
+          modesByStaffId: new Map([[person.id, "late-start"]]),
+          earlyFinishStaffIds: new Set(),
+          lateStartStaffIds: new Set([person.id]),
+        },
+      })
+    ).not.toThrow();
+  });
+
+  it("keeps a time-limited schedule usable when coverage cannot give every worker a shift", async () => {
     const state = createDefaultState();
     const workers = [
       {
@@ -304,15 +514,12 @@ describe("daily schedule final safety review", () => {
     const result = await generateSchedule(state, "2026-08-03", {
       solver: new TimeLimitedCompleteScheduleSolver(),
     });
-    const fairnessWarnings = result.warnings.filter((warning) =>
-      warning.includes("人员恢复与公平已在可用时间内尽量优化")
-    );
 
-    expect(fairnessWarnings).toEqual([
-      "班表已满足全部硬性要求和核心排班规则；人员恢复与公平已在可用时间内尽量优化，仍可能存在小幅改善空间。",
-    ]);
-    expect(fairnessWarnings[0]).not.toMatch(
-      /HiGHS|MIP|incumbent|objective|gap|求解目标|变量/i
-    );
+    expect(result.unfilledCount).toBe(4);
+    expect(result.assignments).toHaveLength(4);
+    expect(
+      result.assignments.every((assignment) => assignment.status === "unfilled")
+    ).toBe(true);
+    expect(result.safetyCredential?.phase).toBe("final");
   });
 });

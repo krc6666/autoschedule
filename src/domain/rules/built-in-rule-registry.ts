@@ -234,7 +234,8 @@ const RULE_EXECUTION: Readonly<
           assignments,
           context.lockedAssignmentIds,
           context.date,
-          context.runFacts.scheduleFrequency
+          context.runFacts.scheduleFrequency,
+          context.runFacts.halfRest
         );
         return { assignments, warnings: [] };
       },

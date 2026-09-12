@@ -29,7 +29,10 @@ import {
   positionTransitionInsertionCost,
   rollingLoadCost,
 } from "./schedule-protection";
-import { isStrictRecoveryHalfRestBackfill } from "../rules/half-rest";
+import {
+  halfRestPeriodViolation,
+  isStrictRecoveryHalfRestBackfill,
+} from "../rules/half-rest";
 
 export type RotationReview =
   | "consecutive"
@@ -183,6 +186,14 @@ export function reassignmentCandidateSafetyReasons({
   );
   const reasons: string[] = [];
   const flight = state.flights.find((item) => item.id === assignment.flightId);
+  const halfRestViolation = facts
+    ? halfRestPeriodViolation({
+        facts: facts.halfRest,
+        staffId: assignment.staffId,
+        startTime: flight?.startTime ?? assignment.startTime,
+      })
+    : null;
+  if (halfRestViolation) reasons.push(halfRestViolation);
   if (
     assignment.staffId &&
     isStrictNextWorkdayRecoveryTarget(state, {

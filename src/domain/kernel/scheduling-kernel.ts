@@ -7,6 +7,7 @@ import type { DailySchedulePlan } from "./daily-schedule-result";
 import { optimizeDailySchedule } from "./daily-schedule-optimizer";
 import { finalizeSchedule } from "./schedule-finalizer";
 import { createScheduleLedger } from "./schedule-ledger";
+import { createDefaultScheduleGuards } from "./schedule-guard";
 import { placePassivePosition } from "./schedule-passive-position";
 import {
   prepareSchedule,
@@ -45,7 +46,14 @@ async function finalizeDailyPlan({
   plan,
   reportProgress,
 }: FinalizePlanOptions): Promise<ScheduleResult> {
-  const ledger = createScheduleLedger(plan.assignments);
+  const guards = createDefaultScheduleGuards();
+  const ledger = createScheduleLedger(plan.assignments, {
+    guards,
+    guardContext: {
+      phase: "partial",
+      halfRestFacts: preparation.runFacts.halfRest,
+    },
+  });
   const warnings = [...plan.warnings];
   const automaticTaskKeys = new Set(preparation.tasks.map((task) => task.key));
   for (const flight of preparation.flights) {
@@ -72,6 +80,7 @@ async function finalizeDailyPlan({
     state,
     date,
     ledger,
+    guards,
     warnings,
     flights: preparation.flights,
     displayRulesByFlight: preparation.displayRulesByFlight,

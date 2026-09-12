@@ -383,6 +383,20 @@ describe("scheduling policy contract", () => {
     );
   });
 
+  it("keeps position-frequency selection independent from staff coverage", () => {
+    const frequent = priority({
+      positionFrequency: { currentMonthCount: 4, recentWorkdayCount: 2 },
+    });
+    const underused = priority({
+      positionFrequency: { currentMonthCount: 0, recentWorkdayCount: 0 },
+    });
+
+    expect(compareCandidatePriority(frequent, underused)).toBeGreaterThan(0);
+    expect(firstDifferentCandidateRule(frequent, underused)).toBe(
+      "position-frequency"
+    );
+  });
+
   it("uses monthly position frequency before previous-workday load", () => {
     const heavierPrevious = priority({
       previousWorkdayLoad: {

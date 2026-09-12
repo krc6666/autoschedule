@@ -1,6 +1,11 @@
 import { freeze } from "immer";
 
 import type { Assignment } from "../../model";
+import {
+  assertScheduleAssignmentsSafe,
+  type ScheduleGuard,
+  type ScheduleGuardContext,
+} from "./schedule-guard";
 
 export type ScheduleProposal =
   | { type: "append"; assignments: readonly Assignment[] }
@@ -10,6 +15,11 @@ export type ScheduleProposal =
 export interface ScheduleLedger {
   snapshot(): readonly Readonly<Assignment>[];
   commit(proposal: ScheduleProposal): void;
+}
+
+export interface ScheduleLedgerOptions {
+  guards?: readonly ScheduleGuard[];
+  guardContext?: ScheduleGuardContext;
 }
 
 function cloneAssignments(assignments: readonly Assignment[]): Assignment[] {
@@ -27,7 +37,8 @@ function validateAssignments(assignments: readonly Assignment[]): void {
 }
 
 export function createScheduleLedger(
-  initial: readonly Assignment[] = []
+  initial: readonly Assignment[] = [],
+  options: ScheduleLedgerOptions = {}
 ): ScheduleLedger {
   let current = freeze(cloneAssignments(initial), true);
   validateAssignments(current);
@@ -43,6 +54,16 @@ export function createScheduleLedger(
                 (assignment) => !proposal.assignmentIds.includes(assignment.id)
               );
       validateAssignments(next);
+      if (options.guards?.length) {
+        if (!options.guardContext) {
+          throw new Error("鎺掔彮 ledger 守卫缺少上下文");
+        }
+        assertScheduleAssignmentsSafe({
+          assignments: next,
+          context: options.guardContext,
+          guards: options.guards,
+        });
+      }
       current = freeze(next, true);
     },
   });

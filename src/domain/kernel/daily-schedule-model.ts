@@ -337,7 +337,13 @@ function dutyModel(
     (choice) =>
       choice.person.id === dutyStaffId && isPreNoonFlight(choice.task.flight)
   );
-  if (morningChoices.length) {
+  const hasMorningTasks = preparation.tasks.some((task) =>
+    isPreNoonFlight(task.flight)
+  );
+  const dutyMorningBlockedByHalfRest =
+    hasMorningTasks &&
+    preparation.runFacts.halfRest.lateStartStaffIds.has(dutyStaffId);
+  if (morningChoices.length || dutyMorningBlockedByHalfRest) {
     constraints.push({
       id: "duty:morning",
       terms: morningChoices.map((choice) => ({

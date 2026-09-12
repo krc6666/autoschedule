@@ -176,6 +176,7 @@ export interface ScheduleResult {
   assignments: Assignment[];
   unfilledCount: number;
   warnings: string[];
+  safetyCredential?: import("./domain/kernel/schedule-safety-credential").ScheduleSafetyCredential;
 }
 
 export type AppSection =

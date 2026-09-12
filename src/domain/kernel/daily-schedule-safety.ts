@@ -21,6 +21,8 @@ import {
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { sameAirlinePriorityAssignmentConflict } from "../rules/airline-rotation";
 import {
+  halfRestMinimumWorkViolation,
+  halfRestPeriodViolation,
   isStrictRecoveryHalfRestBackfill,
   type HalfRestFacts,
 } from "../rules/half-rest";
@@ -159,6 +161,16 @@ export function assertDailyScheduleSafety({
         `最终安全复核未通过：${task.flight.flightNo}/${task.rule.name}没有形成有效自动排班结果`
       );
     }
+    const halfRestViolation = halfRestFacts
+      ? halfRestPeriodViolation({
+          facts: halfRestFacts,
+          staffId: assignment.staffId,
+          startTime: task.flight.startTime,
+        })
+      : null;
+    if (halfRestViolation) {
+      throw new Error(`最终安全复核未通过：${halfRestViolation}`);
+    }
     const person = state.staff.find((item) => item.id === assignment.staffId);
     if (!person) {
       throw new Error(
@@ -217,6 +229,15 @@ export function assertDailyScheduleSafety({
       throw new Error(
         `最终安全复核未通过：${task.flight.flightNo}/${task.rule.name}${diagnostic.violations[0]?.message ?? "不满足排班要求"}`
       );
+    }
+  }
+  if (halfRestFacts) {
+    const violations = halfRestMinimumWorkViolation({
+      assignments,
+      facts: halfRestFacts,
+    });
+    if (violations.length) {
+      throw new Error(`最终安全复核未通过：${violations.join("；")}`);
     }
   }
 }

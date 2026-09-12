@@ -27,12 +27,19 @@ import { assertDailyScheduleSafety } from "./daily-schedule-safety";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import { scheduleOptimizationWarning } from "../reviews/schedule-warning-message";
 import { isHalfRestWarning } from "../rules/half-rest";
+import {
+  assertScheduleAssignmentsSafe,
+  type ScheduleGuard,
+  type ScheduleGuardContext,
+} from "./schedule-guard";
+import { createScheduleSafetyCredential } from "./schedule-safety-credential";
 
 export interface ScheduleFinalizerOptions {
   solver: SolverPort;
   state: ScheduleGenerationFacts;
   date: string;
   ledger: ScheduleLedger;
+  guards: readonly ScheduleGuard[];
   warnings: string[];
   flights: readonly Flight[];
   displayRulesByFlight: ReadonlyMap<string, readonly PositionRule[]>;
@@ -147,6 +154,7 @@ export async function finalizeSchedule({
   state,
   date,
   ledger,
+  guards,
   warnings,
   flights,
   displayRulesByFlight,
@@ -184,6 +192,15 @@ export async function finalizeSchedule({
   sortAssignments(assignments, flights, displayRulesByFlight);
   ledger.commit({ type: "replace", assignments });
   const resultAssignments = workingAssignments(ledger);
+  const finalGuardContext: ScheduleGuardContext = {
+    phase: "final",
+    halfRestFacts: runFacts.halfRest,
+  };
+  assertScheduleAssignmentsSafe({
+    assignments: resultAssignments,
+    context: finalGuardContext,
+    guards,
+  });
   assertDailyScheduleSafety({
     state,
     date,
@@ -211,5 +228,10 @@ export async function finalizeSchedule({
       (assignment) => assignment.status === "unfilled"
     ).length,
     warnings: [...warnings],
+    safetyCredential: createScheduleSafetyCredential({
+      date,
+      assignments: resultAssignments,
+      context: finalGuardContext,
+    }),
   };
 }

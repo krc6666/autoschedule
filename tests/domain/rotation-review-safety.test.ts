@@ -5,8 +5,105 @@ import type { Assignment } from "../../src/model";
 import { ROTATION_REVIEW_POLICIES } from "../../src/domain/reviews/reassignment-safety-policy";
 import { reassignmentSafetyReasons } from "../../src/domain/reviews/rotation-review-safety";
 import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
+import { halfRestRegressionReasons } from "../../src/domain/rules/half-rest";
+import {
+  reassignmentChoiceRequirements,
+  type ReassignmentChoiceFacts,
+} from "../../src/domain/solver/reassignment-choice-graph";
+import type { ReassignmentOptimizationOptions } from "../../src/domain/solver/reassignment-contract";
 
 describe("rotation review safety", () => {
+  it("does not impose a global retain-work requirement on a local frequency review", () => {
+    const state = createDefaultState();
+    const worker = {
+      ...state.staff[0]!,
+      id: "required-worker",
+      name: "必上班人员",
+      status: "正常" as const,
+      staffType: "常规" as const,
+      teamLeader: false,
+    };
+    state.staff = [worker];
+    const assignment: Assignment = {
+      id: "target",
+      flightId: "flight",
+      flightNo: "F100",
+      positionRuleId: "rule",
+      position: "G20",
+      staffId: worker.id,
+      staffName: worker.name,
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const choices: ReassignmentChoiceFacts[] = [
+      {
+        assignment,
+        person: worker,
+        choice: {
+          id: "choice:worker",
+          assignmentId: assignment.id,
+          staffId: worker.id,
+          keepsCurrentStaff: true,
+          preferenceRank: 0,
+          workHours: 2,
+        },
+      },
+    ];
+    const requirements = reassignmentChoiceRequirements(
+      {
+        state,
+        review: "frequency",
+      } as unknown as ReassignmentOptimizationOptions,
+      choices,
+      [assignment],
+      []
+    );
+    expect(requirements).not.toContainEqual(
+      expect.objectContaining({ id: `retain-work:${worker.id}` })
+    );
+  });
+
+  it("rejects post-review plans that leave a non-team-leader half-rest worker empty", () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => !item.teamLeader)!;
+    const assignment: Assignment = {
+      id: "target",
+      flightId: "flight",
+      flightNo: "F100",
+      positionRuleId: "rule",
+      position: "G20",
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const reasons = halfRestRegressionReasons(
+      [assignment],
+      [{ ...assignment, staffId: null, staffName: "", status: "unfilled" }],
+      {
+        requestedStaffIds: [person.id],
+        activeStaffIds: new Set([person.id]),
+        minimumWorkStaffIds: new Set([person.id]),
+        ignoredWarnings: [],
+        modesByStaffId: new Map([[person.id, "early-finish"]]),
+        earlyFinishStaffIds: new Set([person.id]),
+        lateStartStaffIds: new Set(),
+      }
+    );
+    expect(reasons).toContain(
+      "半休硬约束：非分队长下午半休人员必须至少安排一个12点前岗位"
+    );
+  });
   it("requires an explicit safety policy for every review purpose", () => {
     expect(Object.keys(ROTATION_REVIEW_POLICIES).sort()).toEqual([
       "consecutive",
@@ -449,5 +546,55 @@ describe("rotation review safety", () => {
       "严格跨工作日恢复限制不允许该人员承担次班目标岗位"
     );
     expect(reasons).not.toContain("调整会在未补齐半休空缺时新增严格恢复突破");
+  });
+
+  it("rejects assigning a morning flight to a late-start half-rest worker", () => {
+    const { state, target, facts, recoveringWorker } =
+      createStrictHalfRestFixture();
+    const morningFlight = {
+      ...state.flights[0]!,
+      id: "morning-flight",
+      flightNo: "AM100",
+      startTime: "08:00",
+      endTime: "10:00",
+    };
+    const morningRule = {
+      ...state.positionRules[0]!,
+      id: "morning-control",
+      flightNo: "AM100",
+    };
+    state.flights = [morningFlight];
+    state.positionRules = [morningRule];
+    const morningTarget = {
+      ...target,
+      id: "morning-target",
+      flightId: morningFlight.id,
+      flightNo: morningFlight.flightNo,
+      positionRuleId: morningRule.id,
+      startTime: morningFlight.startTime,
+      endTime: morningFlight.endTime,
+    };
+    const reasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: [morningTarget],
+      changes: [
+        { assignmentId: morningTarget.id, staffId: recoveringWorker.id },
+      ],
+      primaryAssignmentId: morningTarget.id,
+      date: "2026-07-30",
+      review: "frequency",
+      facts: {
+        ...facts,
+        halfRest: {
+          ...facts.halfRest,
+          activeStaffIds: new Set([recoveringWorker.id]),
+          lateStartStaffIds: new Set([recoveringWorker.id]),
+          earlyFinishStaffIds: new Set(),
+          modesByStaffId: new Map([[recoveringWorker.id, "late-start"]]),
+        },
+      },
+    });
+    expect(reasons.some((reason) => /半休/.test(reason))).toBe(true);
   });
 });

@@ -57,7 +57,7 @@ function mutationApplies(
   return postScheduleMutationApplies(item, flights);
 }
 
-async function runPlan(
+export async function runScheduleMutationPlan(
   context: SchedulePipelineContext,
   plan: readonly PlannedScheduleMutation[]
 ): Promise<string[]> {
@@ -81,11 +81,17 @@ async function runPlan(
 export function runCoveragePipeline(
   context: SchedulePipelineContext
 ): Promise<string[]> {
-  return runPlan(context, coverageHookPlan(context.state.settings));
+  return runScheduleMutationPlan(
+    context,
+    coverageHookPlan(context.state.settings)
+  );
 }
 
 export function runPostSchedulePipeline(
   context: SchedulePipelineContext
 ): Promise<string[]> {
-  return runPlan(context, postScheduleReviewPlan(context.state.settings));
+  return runScheduleMutationPlan(
+    context,
+    postScheduleReviewPlan(context.state.settings)
+  );
 }

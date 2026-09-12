@@ -337,6 +337,7 @@ function plannedAssignmentSafetyReasons(
       facts?.halfRest ?? {
         requestedStaffIds: [],
         activeStaffIds: new Set<string>(),
+        minimumWorkStaffIds: new Set<string>(),
         ignoredWarnings: [],
         modesByStaffId: new Map(),
         earlyFinishStaffIds: new Set<string>(),

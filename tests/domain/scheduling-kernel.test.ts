@@ -174,6 +174,8 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     ];
 
     const result = await generateSchedule(state, "2026-08-18");
+    expect(result.safetyCredential?.phase).toBe("final");
+    expect(result.safetyCredential?.date).toBe("2026-08-18");
     const lateStaffIds = result.assignments
       .filter((assignment) => assignment.flightNo.startsWith("LATE"))
       .map((assignment) => assignment.staffId);
@@ -5702,6 +5704,52 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(new Set(assignments.map((item) => item.staffId))).toEqual(
       new Set(workers.map((person) => person.id))
     );
+  });
+
+  it("keeps the schedule feasible when enough positions exist but one worker has no eligible choice", async () => {
+    const state = createDefaultState();
+    const [qualifiedWorker, unqualifiedWorker] = state.staff.slice(0, 2);
+    state.staff = [qualifiedWorker!, unqualifiedWorker!];
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+    });
+    state.flights = [
+      {
+        id: "coverage-flight",
+        flightNo: "COVERAGE100",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = ["C01", "C02"].map((name, index) => ({
+      ...base,
+      id: `coverage-${index + 1}`,
+      flightNo: "COVERAGE100",
+      name,
+      category: "常规" as const,
+      remark: "",
+      qualifiedStaffIds: [qualifiedWorker!.id],
+      minPassengers: 0,
+      fatiguePoints: 1,
+    }));
+
+    const result = await generateSchedule(state, "2026-07-18");
+
+    expect(result.assignments).toHaveLength(2);
+    expect(
+      result.assignments.filter(
+        (assignment) => assignment.status === "assigned"
+      )
+    ).toHaveLength(1);
+    expect(
+      result.assignments.some(
+        (assignment) => assignment.staffId === unqualifiedWorker!.id
+      )
+    ).toBe(false);
   });
 
   it("gives every available regular worker actual hours in the configured default schedule", async () => {

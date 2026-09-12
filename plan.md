@@ -156,3 +156,84 @@ git status --short
 - 未在另一台真实设备上执行配置导入导出手工验收。
 - 未运行性能测试或 `npm.cmd run verify`；本功能未改求解器、Worker 或性能模型，按当前 L2 验证策略收口。
 - 未执行 commit、push、部署或发布。
+
+# 本轮任务：半休人员至少一班（分队长例外）
+
+## 已确认合同
+
+- 用户撤销“半休人员必须完全不上班”的上一轮表述；当前仍按上午/下午半休的允许时段执行。
+- 非分队长被选为半休时，必须至少承担一个符合时段的合法岗位；全天无班不得作为成功结果。
+- 分队长是唯一全天无班例外。
+- 无合法候选或被冲突、工时等硬约束阻断时，不突破半休时段；HiGHS 判定无解，现有调度入口保留原班表并提示原因。
+- 值班身份不再自动忽略半休选择；值班规则与半休同时进入模型，若产生不可满足组合按排班失败处理。
+
+## 实施
+
+- `HalfRestFacts.minimumWorkStaffIds` 记录非分队长半休人员唯一事实。
+- `buildHalfRestOptimizationModel` 增加 `half-rest:minimum-work:*` 硬约束。
+- `halfRestMinimumWorkViolation` 接入最终安全复核和后置重排复核。
+- 失败诊断明确指出具体人员、半休方向和阻断原因。
+- 更新 `spec.md`、`README.md` 及半休/值班/分队长回归测试。
+
+## 验证
+
+- 目标测试：`61` 个通过。
+- `npm.cmd run verify`：通过（99 个测试文件、741 个功能测试；4 个性能文件、14 个性能测试；构建通过）。
+- `git diff --check`：通过；仅有 Git 的 LF/CRLF 提示。
+- 未执行 commit、push、部署或发布；当前工作区保留 owner 之前的未提交修改。
+
+# 本轮任务：半休时段硬约束修复
+
+> 本节为当前修复的规范驱动记录；原有历史计划保留。
+
+## 当前需求与边界
+
+- 上午半休人员在 `12:00` 前不得承担任何自动排班岗位；`12:00` 后航班和晚班仍可正常安排。
+- 下午半休人员只能承担开始时间早于 `12:00` 的岗位；`12:00` 后岗位不得安排。
+- 半休是硬约束。缺员时岗位保持空缺并标红，恢复、轮岗、覆盖和公平重排不得突破。
+
+## 当前事实与根因假设
+
+- 初始 HiGHS 候选池调用 `excludeCandidateForHalfRest`；后置 `optimizeReassignment` 候选池未消费半休时段规则。
+- `assertDailyScheduleSafety` 当前未校验半休时段，因此后置直接写入可能绕过初始过滤。
+- `spec.md` 已声明半休禁止时段为硬排除，本任务只补齐执行链路。
+
+## 失败测试与目标
+
+- 后置重排将上午岗位换给 `late-start` 半休人员时，公共安全接口必须拒绝。
+- 最终安全复核发现上午半休人员承担上午岗位时必须失败。
+- 保持上午半休的午后/晚班能力、下午半休的上午能力以及半休缺员标红行为不变。
+
+## 设计与不做范围
+
+1. 在 `src/domain/rules/half-rest.ts` 增加统一时段硬约束判断。
+2. 在 `reassignmentCandidateSafetyReasons` 和 `assertDailyScheduleSafety` 中消费该判断。
+3. 不改变半休输入、界面、持久化合同、恢复例外语义或其他排班优先级；不新增第二套事实源。
+
+## 实施与验证
+
+- [x] 核实输入、候选、后置重排和最终复核链路。
+- [x] 编写失败测试并确认当前实现失败。
+- [x] 实现统一半休硬约束并接入后置候选、岗位压缩与最终复核。
+- [x] 运行目标测试、类型检查、全量测试、构建和 `verify`。
+- [x] 记录未验证项和剩余风险；本轮未执行 commit/push。
+
+```powershell
+npm.cmd exec vitest -- run tests/domain/rotation-review-safety.test.ts tests/domain/daily-schedule-safety.test.ts tests/domain/daily-schedule-optimizer.test.ts
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
+npm.cmd run verify
+git diff --check
+```
+
+## 收口记录
+
+- 目标测试：通过；后置重排和最终安全复核均覆盖半休硬约束。
+- `npm.cmd run typecheck`：通过。
+- `npm.cmd test`：99 个测试文件、735 个测试通过。
+- `npm.cmd run test:performance`：4 个测试文件、14 个测试通过。
+- `npm.cmd run build`：通过。
+- `npm.cmd run verify`：通过。
+- `git diff --check`：通过；仅有 Git 的 LF/CRLF 提示。
+- 未验证项：未在真实浏览器界面执行人工点选回归；未执行 commit、push、部署或发布。

@@ -5,6 +5,7 @@ import { optimizeDailySchedule } from "../../src/domain/kernel/daily-schedule-op
 import { materializeDailySchedulePlan } from "../../src/domain/kernel/daily-schedule-result";
 import { prepareSchedule } from "../../src/domain/kernel/schedule-preparation";
 import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-in-rule-registry";
+import { createHalfRestFacts } from "../../src/domain/rules/half-rest";
 import type {
   SolverPort,
   SolverProblem,
@@ -158,6 +159,70 @@ async function captureProblem(
 }
 
 describe("daily schedule module interfaces", () => {
+  it("requires a non-team-leader half-rest worker to take one allowed-period assignment", async () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+    ]);
+    state.staff[0]!.teamLeader = false;
+    const problem = await captureProblem(state, {
+      halfRestStaffIds: [state.staff[0]!.id],
+      halfRestModes: { [state.staff[0]!.id]: "late-start" },
+    });
+
+    expect(problem.constraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: `half-rest:minimum-work:${state.staff[0]!.id}`,
+          lowerBound: 1,
+        }),
+      ])
+    );
+    expect(problem.constraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: `half-rest:morning-work:${state.staff[0]!.id}`,
+          upperBound: 0,
+        }),
+      ])
+    );
+  });
+
+  it("allows a team leader selected for half-rest to have no allowed-period assignment", async () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+    ]);
+    state.staff[0]!.teamLeader = false;
+    state.staff[0]!.teamLeader = true;
+    const problem = await captureProblem(state, {
+      halfRestStaffIds: [state.staff[0]!.id],
+      halfRestModes: { [state.staff[0]!.id]: "late-start" },
+    });
+
+    expect(
+      problem.constraints.some(
+        (constraint) =>
+          constraint.id === `half-rest:minimum-work:${state.staff[0]!.id}`
+      )
+    ).toBe(false);
+  });
+
+  it("does not silently ignore the duty worker when half-rest is selected", () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+    ]);
+    const facts = createHalfRestFacts(
+      state,
+      {
+        halfRestStaffIds: [state.staff[0]!.id],
+        halfRestModes: { [state.staff[0]!.id]: "early-finish" },
+      },
+      state.staff[0]!.id
+    );
+
+    expect(facts.activeStaffIds).toContain(state.staff[0]!.id);
+    expect(facts.ignoredWarnings).toEqual([]);
+  });
+
   it("assigns late-start half-rest staff to the latest-ending eligible flight", async () => {
     const state = modelState([
       flight("morning", "AM100", "08:00", "10:00", ["A1"]),
@@ -193,6 +258,7 @@ describe("daily schedule module interfaces", () => {
     const state = modelState([
       flight("morning", "AM100", "08:00", "10:00", ["A1"]),
     ]);
+    state.staff[0]!.teamLeader = false;
     const preparation = prepareSchedule(
       state,
       "2026-08-03",
@@ -206,44 +272,30 @@ describe("daily schedule module interfaces", () => {
     expect(preparation.runFacts.halfRest.activeStaffIds).toContain(
       state.staff[0]!.id
     );
-    const result = await generateSchedule(state, "2026-08-03", {
-      preferences: {
-        halfRestStaffIds: [state.staff[0]!.id],
-        halfRestModes: { [state.staff[0]!.id]: "late-start" },
-      },
-    });
-    expect(result.assignments).toMatchObject([
-      expect.objectContaining({
-        flightNo: "AM100",
-        status: "unfilled",
-        systemNotes: expect.arrayContaining([expect.stringContaining("半休")]),
-      }),
-    ]);
-    expect(
-      result.assignments.some((item) => item.staffId === state.staff[0]!.id)
-    ).toBe(false);
+    await expect(
+      generateSchedule(state, "2026-08-03", {
+        preferences: {
+          halfRestStaffIds: [state.staff[0]!.id],
+          halfRestModes: { [state.staff[0]!.id]: "late-start" },
+        },
+      })
+    ).rejects.toThrow("当天无法生成完整班表");
   });
 
   it("keeps early-finish staff out of afternoon work when no morning flight exists", async () => {
     const state = modelState([
       flight("afternoon", "PM200", "14:00", "16:00", ["B1"]),
     ]);
-    const result = await generateSchedule(state, "2026-08-03", {
-      preferences: {
-        halfRestStaffIds: [state.staff[0]!.id],
-        halfRestModes: { [state.staff[0]!.id]: "early-finish" },
-      },
-    });
-    expect(result.assignments).toMatchObject([
-      expect.objectContaining({
-        flightNo: "PM200",
-        status: "unfilled",
-        systemNotes: expect.arrayContaining([expect.stringContaining("半休")]),
-      }),
-    ]);
-    expect(
-      result.assignments.some((item) => item.staffId === state.staff[0]!.id)
-    ).toBe(false);
+    state.staff[0]!.teamLeader = false;
+    state.staff[0]!.teamLeader = false;
+    await expect(
+      generateSchedule(state, "2026-08-03", {
+        preferences: {
+          halfRestStaffIds: [state.staff[0]!.id],
+          halfRestModes: { [state.staff[0]!.id]: "early-finish" },
+        },
+      })
+    ).rejects.toThrow("当天无法生成完整班表");
   });
 
   it("gives every feasible half-rest worker morning work and leaves later shortages explicit", async () => {

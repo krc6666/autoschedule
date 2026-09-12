@@ -17,6 +17,8 @@ import type {
 export interface HalfRestFacts {
   requestedStaffIds: readonly string[];
   activeStaffIds: ReadonlySet<string>;
+  /** 非分队长半休人员必须至少落实一个允许时段岗位。 */
+  minimumWorkStaffIds: ReadonlySet<string>;
   ignoredWarnings: readonly string[];
   modesByStaffId: ReadonlyMap<string, HalfRestMode>;
   earlyFinishStaffIds: ReadonlySet<string>;
@@ -45,7 +47,7 @@ export function isHalfRestWarning(message: string): boolean {
 export function createHalfRestFacts(
   state: ScheduleGenerationFacts,
   preferences: ScheduleRunPreferences,
-  dutyStaffId: string | null
+  _dutyStaffId: string | null
 ): HalfRestFacts {
   const activeStaffIds = new Set<string>();
   const modesByStaffId = new Map<string, HalfRestMode>();
@@ -64,12 +66,6 @@ export function createHalfRestFacts(
       );
       continue;
     }
-    if (person.id === dutyStaffId) {
-      ignoredWarnings.push(
-        `${HALF_REST_WARNING_PREFIX}${person.name}是当日值班人员，值班岗位优先，本次不能设置半休`
-      );
-      continue;
-    }
     activeStaffIds.add(person.id);
     modesByStaffId.set(
       person.id,
@@ -79,6 +75,11 @@ export function createHalfRestFacts(
   return {
     requestedStaffIds: preferences.halfRestStaffIds,
     activeStaffIds,
+    minimumWorkStaffIds: new Set(
+      [...activeStaffIds].filter(
+        (id) => !state.staff.find((person) => person.id === id)?.teamLeader
+      )
+    ),
     ignoredWarnings,
     modesByStaffId,
     earlyFinishStaffIds: new Set(
@@ -124,6 +125,61 @@ export function excludeCandidateForHalfRest(options: {
   if (mode === "late-start")
     return selected && (recoveryConflict || options.preNoon);
   return selected && (recoveryConflict || !options.preNoon);
+}
+
+export function halfRestPeriodViolation(options: {
+  facts: HalfRestFacts;
+  staffId: string;
+  startTime: string;
+}): string | null {
+  if (!options.facts.activeStaffIds.has(options.staffId)) return null;
+  const mode =
+    options.facts.modesByStaffId.get(options.staffId) ?? "early-finish";
+  const preNoon = isPreNoonFlight({ startTime: options.startTime });
+  if (mode === "late-start" && preNoon)
+    return "半休时段硬约束：上午半休人员不得安排12点前岗位";
+  if (mode === "early-finish" && !preNoon)
+    return "半休时段硬约束：下午半休人员不得安排12点后岗位";
+  return null;
+}
+
+function isAllowedHalfRestPeriod(
+  mode: HalfRestMode,
+  startTime: string
+): boolean {
+  const preNoon = isPreNoonFlight({ startTime });
+  return mode === "late-start" ? !preNoon : preNoon;
+}
+
+function halfRestAllowedAssignmentCount(
+  assignments: readonly Assignment[],
+  staffId: string,
+  mode: HalfRestMode
+): number {
+  return assignments.filter(
+    (assignment) =>
+      (assignment.status === "assigned" || assignment.status === "manual") &&
+      assignment.staffId === staffId &&
+      isAllowedHalfRestPeriod(mode, assignment.startTime)
+  ).length;
+}
+
+export function halfRestMinimumWorkViolation(options: {
+  assignments: readonly Assignment[];
+  facts: HalfRestFacts;
+}): string[] {
+  const violations: string[] = [];
+  for (const staffId of options.facts.minimumWorkStaffIds) {
+    const mode = options.facts.modesByStaffId.get(staffId) ?? "early-finish";
+    if (halfRestAllowedAssignmentCount(options.assignments, staffId, mode) > 0)
+      continue;
+    violations.push(
+      mode === "late-start"
+        ? "半休硬约束：非分队长上午半休人员必须至少安排一个12点后岗位"
+        : "半休硬约束：非分队长下午半休人员必须至少安排一个12点前岗位"
+    );
+  }
+  return [...new Set(violations)];
 }
 
 export function halfRestBackfillStaffIds(options: {
@@ -250,7 +306,6 @@ export function buildHalfRestOptimizationModel(
         ? !isPreNoonFlight({ startTime: choice.startTime })
         : isPreNoonFlight({ startTime: choice.startTime })
     );
-    if (!targetChoices.length) continue;
     const workedId = `half-rest:worked:${staffId}`;
     const latestEndId = `half-rest:latest-end:${staffId}`;
     variables.push(
@@ -274,6 +329,13 @@ export function buildHalfRestOptimizationModel(
       ],
       upperBound: 0,
     });
+    if (facts.minimumWorkStaffIds.has(staffId)) {
+      constraints.push({
+        id: `half-rest:minimum-work:${staffId}`,
+        terms: [{ variableId: workedId, coefficient: 1 }],
+        lowerBound: 1,
+      });
+    }
     for (const choice of staffChoices) {
       const end = operationalEndMinutes(choice.startTime, choice.endTime);
       const coefficient = mode === "late-start" ? 2 * 24 * 60 - end : end;
@@ -376,6 +438,7 @@ export function halfRestRegressionReasons(
     )
       reasons.push("调整会使上午半休人员失去最晚结束航班");
   }
+  reasons.push(...halfRestMinimumWorkViolation({ assignments: after, facts }));
   return [...new Set(reasons)];
 }
 

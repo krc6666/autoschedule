@@ -1,4 +1,5 @@
 import type { AppState, ScheduleResult } from "../../model";
+import { assertScheduleSafetyCredential } from "./schedule-safety-credential";
 
 export function clearActiveSchedule(state: AppState): void {
   state.assignments = [];
@@ -16,6 +17,7 @@ export function installGeneratedSchedule(
   date: string,
   result: ScheduleResult
 ): void {
+  assertScheduleSafetyCredential({ date, result });
   state.assignments = result.assignments;
   state.activeScheduleDate = date;
   state.schedulePolicyStale = false;

@@ -1,7 +1,10 @@
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { diagnoseBaseAssignmentEligibility } from "../candidates/assignment-eligibility";
 import { isStrictNextWorkdayRecoveryTarget } from "../reviews/cross-day-recovery";
-import type { AssignmentTask } from "../flights/schedule-tasks";
+import {
+  isPreNoonFlight,
+  type AssignmentTask,
+} from "../flights/schedule-tasks";
 import type { LinearConstraint } from "../solver/solver-port";
 import type { DailyScheduleModel } from "./daily-schedule-model";
 import type { SchedulePreparation } from "./schedule-preparation";
@@ -108,6 +111,45 @@ function strictTaskDiagnostics({
   return diagnostics;
 }
 
+function halfRestDiagnostics({
+  state,
+  preparation,
+  model,
+}: DailyScheduleFailureDiagnosticsOptions): string[] {
+  const noAllowedPositionDiagnostics: string[] = [];
+  const workersWithChoices: string[] = [];
+  for (const staffId of preparation.runFacts.halfRest.minimumWorkStaffIds) {
+    const person = state.staff.find((item) => item.id === staffId);
+    if (!person) continue;
+    const mode =
+      preparation.runFacts.halfRest.modesByStaffId.get(staffId) ??
+      "early-finish";
+    const targetChoices = model.staffChoices.filter(
+      (choice) =>
+        choice.person.id === staffId &&
+        (mode === "late-start"
+          ? !isPreNoonFlight(choice.task.flight)
+          : isPreNoonFlight(choice.task.flight))
+    );
+    if (targetChoices.length === 0) {
+      const restPeriod = mode === "late-start" ? "上午" : "下午";
+      const workPeriod = mode === "late-start" ? "下午" : "上午";
+      noAllowedPositionDiagnostics.push(
+        `${person.name}选择了${restPeriod}半休，只能安排${workPeriod}岗位；但当前${workPeriod}没有${person.name}能上的岗位（资质或其他条件不符合），会导致全天没有航班，因此本次重新排班未采用。`
+      );
+    } else {
+      workersWithChoices.push(
+        `${person.name}（${mode === "late-start" ? "上午" : "下午"}半休）`
+      );
+    }
+  }
+  if (noAllowedPositionDiagnostics.length) return noAllowedPositionDiagnostics;
+  if (!workersWithChoices.length) return [];
+  return [
+    `${workersWithChoices.join("、")}在可上班的半天都有候选岗位，但整批安排与其他航班发生冲突，无法保证每人至少上一班，因此本次重新排班未采用。`,
+  ];
+}
+
 function strictCapacityDiagnostics({
   state,
   preparation,
@@ -157,6 +199,7 @@ export function diagnoseDailyScheduleFailure(
   options: DailyScheduleFailureDiagnosticsOptions
 ): string[] {
   const diagnostics = [
+    ...halfRestDiagnostics(options),
     ...strictTaskDiagnostics(options),
     ...strictCapacityDiagnostics(options),
   ];

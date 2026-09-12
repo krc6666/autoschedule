@@ -95,6 +95,57 @@ function diagnose(state: ScheduleGenerationFacts) {
 }
 
 describe("daily schedule failure diagnostics", () => {
+  it("names only the half-rest worker who has no allowed-period position", async () => {
+    const state = stateFor([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+      flight("afternoon", "PM200", "14:00", "16:00", ["B1"]),
+    ]);
+    state.staff[0]!.name = "肖萍";
+    state.staff[0]!.teamLeader = false;
+    const blockedWorker = {
+      ...state.staff[0]!,
+      id: "blocked-worker",
+      name: "严晓珂",
+    };
+    state.staff.push(blockedWorker);
+    state.positionRules.find(
+      (rule) => rule.flightNo === "PM200"
+    )!.qualifiedStaffIds = [state.staff[0]!.id, blockedWorker.id];
+    const preparation = prepareSchedule(
+      state,
+      "2026-08-03",
+      evaluateAutomaticHardConstraints,
+      {
+        halfRestStaffIds: [state.staff[0]!.id, blockedWorker.id],
+        halfRestModes: {
+          [state.staff[0]!.id]: "late-start",
+          [blockedWorker.id]: "early-finish",
+        },
+      }
+    );
+    const solver: SolverPort = {
+      async solve() {
+        return {
+          termination: "infeasible" as const,
+          selectedVariableIds: new Set<string>(),
+          objectiveValues: new Map<string, number>(),
+        };
+      },
+    };
+
+    const failure = optimizeDailySchedule({
+      solver,
+      state,
+      date: "2026-08-03",
+      preparation,
+    });
+
+    await expect(failure).rejects.toThrow(
+      "严晓珂选择了下午半休，只能安排上午岗位；但当前上午没有严晓珂能上的岗位（资质或其他条件不符合），会导致全天没有航班，因此本次重新排班未采用。"
+    );
+    await expect(failure).rejects.not.toThrow(/肖萍.*冲突/);
+  });
+
   it("explains when a strict recovery target has no remaining candidate", () => {
     const state = stateFor(
       [flight("target", "CX937", "06:00", "08:00", ["G18"])],
