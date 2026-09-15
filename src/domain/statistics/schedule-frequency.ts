@@ -10,6 +10,7 @@ import { positionRotationGroupKey } from "../rules/airline-rotation";
 
 export interface ScheduleFrequencyFacts {
   date: string;
+  recentArchivedWorkdayDates: readonly string[];
   recentConsecutiveWorkdays: readonly string[];
   recentFrequencyRecordIds: ReadonlySet<string>;
   recentEightWorkdayRecordIds: ReadonlySet<string>;
@@ -48,8 +49,18 @@ export function createScheduleFrequencyFacts(
     staffRecords.push(record);
     recordsByStaffId.set(record.staffId, staffRecords);
   }
+  const recentArchivedWorkdayDates = [
+    ...new Set(
+      recentArchivedWorkdays(
+        state.history,
+        date,
+        Math.max(8, state.settings.tr121H02CooldownWorkdays)
+      ).map((record) => record.date)
+    ),
+  ].sort((left, right) => right.localeCompare(left));
   return {
     date,
+    recentArchivedWorkdayDates,
     recentConsecutiveWorkdays: [
       ...new Set(
         recentArchivedWorkdays(state.history, date, 2).map(

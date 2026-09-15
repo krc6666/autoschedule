@@ -83,7 +83,11 @@ function improvementMessages(source: Assignment, target: Assignment): string[] {
     (target.flightNo !== source.flightNo ||
       target.position !== source.position);
   if (warning && (earlierFinish || lighterPosition || leavesRepeatedPosition))
-    messages.push(`原提醒预计得到改善：${warning.message}`);
+    messages.push(
+      warning.ruleId === "position-rotation"
+        ? `${source.staffName}换离${source.flightNo}/${source.position}，有助于避免连续做这个岗位`
+        : `原提醒预计得到改善：${warning.message}`
+    );
   if (target.fatiguePoints < source.fatiguePoints) {
     messages.push(
       `${source.staffName}从${source.flightNo}/${source.position}调整到${target.flightNo}/${target.position}，岗位疲劳更低`

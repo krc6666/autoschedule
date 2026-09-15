@@ -17,7 +17,11 @@ import {
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
 import { intervalsOverlap } from "../shared/time";
-import { assignmentWarningMessage } from "./schedule-warning-message";
+import {
+  assignmentWarningMessage,
+  rotationCandidateWarningMessage,
+  rotationWarningCandidates,
+} from "./schedule-warning-message";
 
 interface Ke166RotationReviewResult {
   warnings: string[];
@@ -251,6 +255,9 @@ export async function reviewKe166GroupRotation(
       )
         continue;
       let attemptedReasons: string[] = [];
+      let candidateRejections:
+        { staffId: string; reasons: string[] }[] | undefined;
+      let searchTimedOut = false;
       let changes: readonly RotationStaffChange[] | null = null;
       if (primaryRole.assignments.some(hasSelectedDutyLock)) {
         attemptedReasons = ["机动督导岗位或兼任组包含值班锁定岗位"];
@@ -324,6 +331,8 @@ export async function reviewKe166GroupRotation(
         });
         changes = result.changes;
         attemptedReasons = result.attemptedReasons;
+        candidateRejections = result.candidateRejections;
+        searchTimedOut = result.termination !== "infeasible";
       }
       if (changes) {
         applyRotationPlan(
@@ -342,12 +351,28 @@ export async function reviewKe166GroupRotation(
         });
         continue;
       }
-      const message = unresolvedMessage(
+      const originalMessage = unresolvedMessage(
         primaryRole,
         repeatedAssignment,
         runs,
         attemptedReasons
       );
+      const message =
+        candidateRejections && !primaryRole.mobileSupervisorGroup
+          ? rotationCandidateWarningMessage({
+              staffName: repeatedAssignment.staffName,
+              fact: `已连续${runs}次承担${repeatedAssignment.flightNo}/${repeatedAssignment.position}`,
+              targetFlightNo: repeatedAssignment.flightNo,
+              candidates: rotationWarningCandidates(
+                state,
+                repeatedAssignment,
+                date,
+                candidateRejections,
+                facts
+              ),
+              timedOut: searchTimedOut,
+            })
+          : originalMessage;
       primaryRole.assignments.forEach((assignment) => {
         replaceAssignmentDecisions(assignment, "position-rotation", [
           schedulingDecision("position-rotation", "fallback", message),

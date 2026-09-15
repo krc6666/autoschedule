@@ -28,7 +28,9 @@ export class PolicyController implements UiCommandController {
           this.context.commit();
         return true;
       case "add-policy-item":
-        if (command.collection === "duty") policy.addDutyPriority();
+        if (command.collection === "same-flight-staff-exclusion")
+          policy.addSameFlightStaffExclusion();
+        else if (command.collection === "duty") policy.addDutyPriority();
         else if (command.collection === "recovery-target")
           policy.addRecoveryTarget();
         else if (command.collection === "cross-workday-reservation")
@@ -71,19 +73,21 @@ export class PolicyController implements UiCommandController {
     if (!this.context.confirm("确认删除这条规则配置？")) return true;
     const policy = this.context.store.getState().policy;
     const deleted =
-      collection === "duty"
-        ? policy.deleteDutyPriority(id)
-        : collection === "recovery-target"
-          ? policy.deleteRecoveryTarget(id)
-          : collection === "cross-workday-reservation"
-            ? policy.deleteCrossWorkdayReservation(id)
-            : collection === "cross-flight-priority"
-              ? policy.deleteCrossFlightPriority(id)
-              : collection === "late-position"
-                ? policy.deleteLateShiftPosition(id)
-                : collection === "supervisor"
-                  ? policy.deleteSupervisorCoverage(id)
-                  : policy.deleteTransition(id);
+      collection === "same-flight-staff-exclusion"
+        ? policy.deleteSameFlightStaffExclusion(id)
+        : collection === "duty"
+          ? policy.deleteDutyPriority(id)
+          : collection === "recovery-target"
+            ? policy.deleteRecoveryTarget(id)
+            : collection === "cross-workday-reservation"
+              ? policy.deleteCrossWorkdayReservation(id)
+              : collection === "cross-flight-priority"
+                ? policy.deleteCrossFlightPriority(id)
+                : collection === "late-position"
+                  ? policy.deleteLateShiftPosition(id)
+                  : collection === "supervisor"
+                    ? policy.deleteSupervisorCoverage(id)
+                    : policy.deleteTransition(id);
     if (deleted) this.context.commit("规则配置已删除");
     return true;
   }

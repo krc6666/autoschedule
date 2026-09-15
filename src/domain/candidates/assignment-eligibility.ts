@@ -22,6 +22,10 @@ import {
   isSameAirlinePriorityPosition,
   sameAirlinePriorityAssignmentConflict,
 } from "../rules/airline-rotation";
+import {
+  matchingSameFlightStaffExclusion,
+  sameFlightStaffExclusionPairMessage,
+} from "../rules/same-flight-staff-exclusion";
 
 export type AssignmentEligibilityViolationCode =
   | "missing-target"
@@ -36,7 +40,8 @@ export type AssignmentEligibilityViolationCode =
   | "minimum-flight-transition"
   | "position-transition"
   | "regular-staff-priority"
-  | "same-airline-priority";
+  | "same-airline-priority"
+  | "same-flight-staff-exclusion";
 
 export interface AssignmentEligibilityViolation {
   code: AssignmentEligibilityViolationCode;
@@ -250,6 +255,39 @@ export function diagnoseSameAirlinePriorityEligibility(
     : success();
 }
 
+export function diagnoseSameFlightStaffExclusionEligibility(
+  options: AutomaticAssignmentEligibilityOptions
+): AssignmentEligibilityDiagnostic {
+  const conflict = options.assignments.find(
+    (assignment) =>
+      assignment.status === "assigned" &&
+      assignment.staffId &&
+      assignment.staffId !== options.person.id &&
+      assignment.flightId === options.flight.id &&
+      matchingSameFlightStaffExclusion(
+        options.state,
+        options.person.id,
+        assignment.staffId,
+        options.flight.flightNo
+      )
+  );
+  if (!conflict?.staffId) return success();
+  const exclusion = matchingSameFlightStaffExclusion(
+    options.state,
+    options.person.id,
+    conflict.staffId,
+    options.flight.flightNo
+  )!;
+  return violation(
+    "same-flight-staff-exclusion",
+    sameFlightStaffExclusionPairMessage(
+      options.state,
+      exclusion,
+      options.flight.flightNo
+    )
+  );
+}
+
 function diagnoseAutomaticAssignmentEligibilityWithTransitionCheck(
   options: AutomaticAssignmentEligibilityOptions,
   transitionCheck: PositionTransitionCheck
@@ -445,12 +483,39 @@ export function diagnoseManualAssignmentEligibility(
     return diagnostic(violations);
   }
   const reuse = rule?.category === "引导";
-  const others = state.assignments.filter(
+  const otherAssignments = state.assignments.filter(
     (item) =>
-      item.id !== assignmentId &&
-      (reuse || item.id !== ignoreAssignmentId) &&
-      item.staffId === staffId
+      item.id !== assignmentId && (reuse || item.id !== ignoreAssignmentId)
   );
+  const others = otherAssignments.filter((item) => item.staffId === staffId);
+  const exclusionConflict = otherAssignments.find(
+    (item) =>
+      item.status === "assigned" &&
+      item.staffId &&
+      item.flightId === assignment.flightId &&
+      matchingSameFlightStaffExclusion(
+        state,
+        staffId,
+        item.staffId,
+        assignment.flightNo
+      )
+  );
+  if (exclusionConflict?.staffId) {
+    const exclusion = matchingSameFlightStaffExclusion(
+      state,
+      staffId,
+      exclusionConflict.staffId,
+      assignment.flightNo
+    )!;
+    violations.push({
+      code: "same-flight-staff-exclusion",
+      message: `${sameFlightStaffExclusionPairMessage(
+        state,
+        exclusion,
+        assignment.flightNo
+      )}，本次为人工突破`,
+    });
+  }
   const sameAirlinePriority = diagnoseSameAirlinePriorityEligibility(
     {
       state,

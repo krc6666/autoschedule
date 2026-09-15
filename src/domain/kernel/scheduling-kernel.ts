@@ -56,6 +56,7 @@ async function finalizeDailyPlan({
     guards,
     guardContext: {
       phase: "partial",
+      sameFlightStaffExclusionFacts: { state },
       halfRestFacts: preparation.runFacts.halfRest,
       airlineRotationFacts: {
         positionRules: state.positionRules,

@@ -51,6 +51,11 @@ import {
   consecutivePositionAssignments,
   type ScheduleFrequencyFacts,
 } from "../statistics/schedule-frequency";
+import {
+  SAME_FLIGHT_STAFF_EXCLUSION_RULE_ID,
+  sameFlightStaffExclusionMessage,
+  sameFlightStaffExclusionViolations,
+} from "../rules/same-flight-staff-exclusion";
 
 /**
  * The phase controls which invariants are meaningful for a partial result.
@@ -135,7 +140,33 @@ export interface ScheduleGuardContext {
   ke166SnapshotFacts?: SnapshotRuleFacts;
   scarceQualificationFacts?: SnapshotRuleFacts;
   dutyPositionFacts?: SnapshotRuleFacts;
+  sameFlightStaffExclusionFacts?: {
+    state: Pick<ScheduleGenerationFacts, "settings" | "staff">;
+  };
   warningSink?: string[];
+}
+
+export function createSameFlightStaffExclusionScheduleGuard(): ScheduleGuard {
+  return Object.freeze({
+    id: SAME_FLIGHT_STAFF_EXCLUSION_RULE_ID,
+    validate: (
+      assignments: readonly Assignment[],
+      context: ScheduleGuardContext
+    ): readonly ScheduleGuardViolation[] => {
+      const facts = context.sameFlightStaffExclusionFacts;
+      if (!facts) return [];
+      return sameFlightStaffExclusionViolations(facts.state, assignments).map(
+        (violation) => ({
+          ruleId: SAME_FLIGHT_STAFF_EXCLUSION_RULE_ID,
+          assignmentId: violation.secondAssignmentIds[0],
+          message: `${sameFlightStaffExclusionMessage(
+            facts.state,
+            violation
+          )}，自动排班拒绝提交`,
+        })
+      );
+    },
+  });
 }
 
 export interface ScheduleGuardViolation {
@@ -812,8 +843,9 @@ export function createKe166SnapshotScheduleGuard(): ScheduleGuard {
       return assessKe166AssignmentSnapshot(facts.state, assignments).map(
         (assignmentId) => ({
           ruleId: "ke166-supervisor",
+          severity: "warning" as const,
           assignmentId,
-          message: `KE166机动督导/兼任组未形成完整安排，拒绝提交`,
+          message: `KE166机动督导未安排，岗位已留空，请人工复核`,
         })
       );
     },
@@ -860,6 +892,7 @@ export function createDutyPositionScheduleGuard(): ScheduleGuard {
 
 export function createDefaultScheduleGuards(): readonly ScheduleGuard[] {
   return Object.freeze([
+    createSameFlightStaffExclusionScheduleGuard(),
     createHalfRestScheduleGuard(),
     createSameAirlinePriorityScheduleGuard(),
     createMinimumFlightTransitionScheduleGuard(),

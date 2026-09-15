@@ -58,7 +58,7 @@ describe("late priority position policy", () => {
     expect(latePriorityMonthlyLabel("number-one")).toBe("本月跨航班一号");
     expect(
       latePriorityFrequencyKinds({ name: "督导", remark: "申报、送资料" })
-    ).toEqual(["supervisor", "declaration", "delivery"]);
+    ).toEqual(["supervisor", "delivery"]);
   });
 
   it("normalizes late-priority flight and position references consistently", () => {

@@ -53,6 +53,7 @@ export interface MonthlyLatePriorityStatisticsRow {
 export interface MonthlyLatePriorityFlightStatistics {
   flightNo: string;
   totalCount: number;
+  applicableCategories: LatePriorityStatisticsCategory[];
   categories: Record<
     LatePriorityStatisticsCategory,
     MonthlyLatePriorityCategoryStatistics
@@ -75,6 +76,19 @@ function categoryKinds(
   const kinds = latePriorityFrequencyKinds(target);
   return LATE_PRIORITY_STATISTICS_CATEGORIES.filter((category) =>
     kinds.includes(latePriorityKindForLabel(category))
+  );
+}
+
+function flightCategories(
+  rules: readonly PositionRule[],
+  flightNo: string
+): LatePriorityStatisticsCategory[] {
+  return LATE_PRIORITY_STATISTICS_CATEGORIES.filter((category) =>
+    rules.some(
+      (rule) =>
+        normalizeLatePriorityFlightNumber(rule.flightNo) === flightNo &&
+        categoryKinds(rule).includes(category)
+    )
   );
 }
 
@@ -339,6 +353,7 @@ export function buildMonthlyLatePriorityStatistics(
       }
       row.flights = Object.fromEntries(
         flightNumbers.map((flightNo) => {
+          const applicableCategories = flightCategories(rules, flightNo);
           const categories = Object.fromEntries(
             LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => {
               const categoryStatistics = row.categories[category];
@@ -360,21 +375,22 @@ export function buildMonthlyLatePriorityStatistics(
                   normalizeLatePriorityFlightNumber(detail.flightNo) ===
                   flightNo
               );
-              const manualCorrection = (
-                state.latePriorityFrequencyAdjustments ?? []
-              )
-                .filter(
-                  (item) =>
-                    item.month === month &&
-                    item.staffId === row.staff.id &&
-                    item.kind === kind &&
-                    normalizeLatePriorityFlightNumber(item.flightNo) ===
-                      flightNo
-                )
-                .reduce(
-                  (sum, item) => sum + item.delta + (item.resetBaseline ?? 0),
-                  0
-                );
+              const manualCorrection = applicableCategories.includes(category)
+                ? (state.latePriorityFrequencyAdjustments ?? [])
+                    .filter(
+                      (item) =>
+                        item.month === month &&
+                        item.staffId === row.staff.id &&
+                        item.kind === kind &&
+                        normalizeLatePriorityFlightNumber(item.flightNo) ===
+                          flightNo
+                    )
+                    .reduce(
+                      (sum, item) =>
+                        sum + item.delta + (item.resetBaseline ?? 0),
+                      0
+                    )
+                : 0;
               return [
                 category,
                 {
@@ -394,6 +410,7 @@ export function buildMonthlyLatePriorityStatistics(
             flightNo,
             {
               flightNo,
+              applicableCategories,
               categories,
               totalCount: LATE_PRIORITY_STATISTICS_CATEGORIES.reduce(
                 (sum, category) => sum + categories[category].effectiveCount,

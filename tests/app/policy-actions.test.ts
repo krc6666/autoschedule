@@ -6,12 +6,14 @@ import {
   addDutyPriority,
   addLateShiftRecoveryPositionRule,
   addMobileSupervisorCoverageRule,
+  addSameFlightStaffExclusion,
   addNextWorkdayRecoveryTarget,
   addTransitionPolicy,
   applySchedulePolicy,
   deleteDutyPriority,
   deleteCrossWorkdayQualificationReservation,
   deleteMobileSupervisorCoverageRule,
+  deleteSameFlightStaffExclusion,
   deleteNextWorkdayRecoveryTarget,
   deleteLateShiftRecoveryPositionRule,
   deleteTransitionPolicy,
@@ -36,6 +38,7 @@ const input: SchedulePolicyInput = {
   rollingLoadWindowMinutes: 360,
   rollingLoadMaxFatigue: 8,
   positionRotationEnabled: true,
+  tr121H02CooldownWorkdays: 3,
   latePriorityFlightNumbers: [" tr121 ", "TW 616", "TR121"],
   lateShiftRecoveryEnabled: true,
   nextWorkdayRecoveryMode: "forbid",
@@ -72,6 +75,43 @@ function addActiveSchedule(state: ReturnType<typeof createDefaultState>): void {
 }
 
 describe("policy actions", () => {
+  it("adds, edits, and deletes configurable same-flight staff exclusions", () => {
+    const state = createDefaultState();
+    addActiveSchedule(state);
+    const exclusion = addSameFlightStaffExclusion(state);
+
+    expect(exclusion).toMatchObject({
+      firstStaffId: state.staff[0]!.id,
+      secondStaffId: state.staff[1]!.id,
+      flightNo: "",
+    });
+    expect(
+      updatePolicyEntityField(
+        state,
+        "same-flight-staff-exclusion",
+        exclusion.id,
+        "firstStaffId",
+        state.staff[2]!.id
+      )
+    ).toBe("saved");
+    expect(
+      updatePolicyEntityField(
+        state,
+        "same-flight-staff-exclusion",
+        exclusion.id,
+        "flightNo",
+        " ke166 "
+      )
+    ).toBe("saved");
+    expect(exclusion).toMatchObject({
+      firstStaffId: state.staff[2]!.id,
+      secondStaffId: state.staff[1]!.id,
+      flightNo: "KE166",
+    });
+    expect(state.schedulePolicyStale).toBe(true);
+    expect(deleteSameFlightStaffExclusion(state, exclusion.id)).toBe(true);
+    expect(state.settings.sameFlightStaffExclusions).toEqual([]);
+  });
   it("normalizes settings explicitly and marks an existing schedule stale without regenerating it", () => {
     const state = createDefaultState();
     state.settings.dutyPositionPriorities[0]!.flightNo = " tr121 ";

@@ -19,6 +19,7 @@ describe("schedule settings module", () => {
       "mobileSupervisorCoverageRules",
       "crossWorkdayQualificationReservations",
       "crossFlightPriorityPolicies",
+      "sameFlightStaffExclusions",
       "latePriorityFlightNumbers",
     ]);
     const scalarKeys = Object.keys(createDefaultScheduleSettings())
@@ -37,8 +38,14 @@ describe("schedule settings module", () => {
         (definition) => definition.key === "minimumRegularTransitionMinutes"
       )
     ).toMatchObject({ defaultValue: 90, min: 0, max: 1440 });
+    expect(
+      SCHEDULE_SETTING_DEFINITIONS.find(
+        (definition) => definition.key === "tr121H02CooldownWorkdays"
+      )
+    ).toMatchObject({ defaultValue: 3, min: 0, max: 30, integer: true });
     expect(createDefaultScheduleSettings()).toMatchObject({
       minimumRegularTransitionMinutes: 90,
+      tr121H02CooldownWorkdays: 3,
       nextWorkdayRecoveryMode: "prefer",
       crossWorkdayQualificationReservations: [],
     });
@@ -55,10 +62,45 @@ describe("schedule settings module", () => {
     ).toBe("prefer");
   });
 
+  it("normalizes same-flight exclusions as unordered unique staff pairs", () => {
+    const normalized = normalizeScheduleSettings({
+      sameFlightStaffExclusions: [
+        {
+          id: " first ",
+          firstStaffId: "worker-b",
+          secondStaffId: "worker-a",
+          flightNo: " ke166 ",
+        },
+        {
+          id: "duplicate",
+          firstStaffId: "worker-a",
+          secondStaffId: "worker-b",
+          flightNo: "KE166",
+        },
+        {
+          id: "invalid",
+          firstStaffId: "worker-a",
+          secondStaffId: "worker-a",
+          flightNo: "",
+        },
+      ],
+    });
+
+    expect(normalized.sameFlightStaffExclusions).toEqual([
+      {
+        id: "first",
+        firstStaffId: "worker-a",
+        secondStaffId: "worker-b",
+        flightNo: "KE166",
+      },
+    ]);
+  });
+
   it("normalizes the same values for every settings adapter", () => {
     const defaults = createDefaultScheduleSettings();
     const input = {
       dutyFatiguePoints: 100,
+      tr121H02CooldownWorkdays: 99.7,
       highLoadRecoveryMinutes: 1500.4,
       lateShiftEndTime: "25:00",
       minimumRegularTransitionMinutes: 2000,
@@ -89,6 +131,7 @@ describe("schedule settings module", () => {
 
     expect(normalizeScheduleSettings({ ...defaults, ...input })).toMatchObject({
       dutyFatiguePoints: 50,
+      tr121H02CooldownWorkdays: 30,
       highLoadRecoveryMinutes: 1440,
       lateShiftEndTime: "23:00",
       minimumRegularTransitionMinutes: 1440,

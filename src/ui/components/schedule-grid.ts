@@ -2,6 +2,7 @@ import { html } from "lit";
 import { styleMap } from "lit/directives/style-map.js";
 
 import { assignmentRule } from "../../domain/flights/schedule-position-rules";
+import { isKe166MobileSupervisor } from "../../domain/flights/schedule-tasks";
 import { isHalfRestWarning } from "../../domain/rules/half-rest";
 import type { AppState, Assignment } from "../../model";
 import { visiblePositionRemark } from "../../utils";
@@ -104,6 +105,9 @@ export class ScheduleGridElement extends LightDomElement {
 
   private assignmentCells(assignment: Assignment, guideListId: string) {
     const rule = assignmentRule(this.model, assignment);
+    const flight = this.model.flights.find(
+      (item) => item.id === assignment.flightId
+    );
     const temporary = !rule && Boolean(assignment.layoutGroup);
     const guide = rule?.category === "引导";
     const administrative = rule?.category === "行政支援";
@@ -112,15 +116,25 @@ export class ScheduleGridElement extends LightDomElement {
     const earlyDepartureLast = this.view.earlyDepartureLastAssignmentIds.has(
       assignment.id
     );
-    const warning = assignment.decisionTrace?.find(
-      (decision) =>
-        decision.outcome === "fallback" &&
-        decision.ruleId !== "cross-workday-load"
-    );
+    const warning =
+      assignment.decisionTrace?.find(
+        (decision) =>
+          decision.ruleId === "position-rotation" &&
+          decision.outcome === "fallback" &&
+          decision.message.includes("\n")
+      ) ??
+      assignment.decisionTrace?.find(
+        (decision) =>
+          decision.outcome === "fallback" &&
+          decision.ruleId !== "cross-workday-load"
+      );
     const manualWarning = assignment.manualOverrideWarnings?.[0];
     const halfRestUnfilled =
       assignment.status === "unfilled" &&
       assignment.systemNotes?.some(isHalfRestWarning);
+    const ke166Unfilled =
+      assignment.status === "unfilled" &&
+      Boolean(flight && rule && isKe166MobileSupervisor(flight, rule));
     const stateClasses = [
       assignment.staffName ? "is-assigned" : "is-unfilled",
       guide ? "is-guide" : "",
@@ -135,6 +149,7 @@ export class ScheduleGridElement extends LightDomElement {
     const personStateClasses = [
       stateClasses,
       earlyDepartureLast ? "is-early-departure-last" : "",
+      ke166Unfilled ? "is-ke166-unfilled" : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -248,23 +263,23 @@ export class ScheduleGridElement extends LightDomElement {
                 ? html`<i
                     class="bi bi-exclamation-triangle-fill schedule-manual-warning-icon"
                     title=${
-                        assignment.manualOverrideWarnings
-                          ?.map((item) => item.message)
-                          .join("；") ?? "人工调整提醒"
-                      }
+                      assignment.manualOverrideWarnings
+                        ?.map((item) => item.message)
+                        .join("；") ?? "人工调整提醒"
+                    }
                     aria-label="人工调整提醒"
                   ></i>`
                 : warning
                   ? html`<button
                       class="schedule-soft-warning-button"
                       type="button"
-                      title="${warning.message}。点击分析人员调换"
+                      title=${`${warning.message}\n点击查看与他人轮换`}
                       aria-label="分析这个岗位的调换方案"
                       @click=${() =>
-                          dispatchUiCommand(this, {
-                            type: "open-swap-analysis",
-                            assignmentId: assignment.id,
-                          })}
+                        dispatchUiCommand(this, {
+                          type: "open-swap-analysis",
+                          assignmentId: assignment.id,
+                        })}
                     >
                       <i
                         class="bi bi-exclamation-triangle-fill schedule-soft-warning-icon"
@@ -278,6 +293,7 @@ export class ScheduleGridElement extends LightDomElement {
               class="schedule-name-input"
               list=${guide ? guideListId : auxiliary ? "" : "schedule-staff-names"}
               .value=${assignment.staffName}
+              placeholder=${ke166Unfilled ? "KE166机动督导未安排" : ""}
               aria-label="${assignment.position}人员"
               @change=${(event: Event) => this.updateAssignment(assignment.id, "staffName", event)}
             />

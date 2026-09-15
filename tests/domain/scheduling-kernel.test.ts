@@ -11,8 +11,83 @@ import { generateSchedule } from "../helpers/generate-schedule";
 import { activeFlightPositions } from "../../src/domain/flights/schedule-position-rules";
 import { getDutyRosterForDate } from "../../src/domain/duty-roster/roster";
 import { buildScheduleFeedback } from "../../src/domain/feedback/schedule-feedback";
+import { prepareSchedule } from "../../src/domain/kernel/schedule-preparation";
+import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-in-rule-registry";
 
 describe("scheduler domain", { timeout: 15_000 }, () => {
+  it("uses delivery rather than declaration corrections for a combined role", async () => {
+    const state = createDefaultState();
+    const qualified = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 2);
+    state.staff = qualified;
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
+    state.flights = [
+      {
+        id: "late-combined",
+        flightNo: "LATE100",
+        startTime: "21:00",
+        endTime: "23:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "late-combined-rule",
+        flightNo: "LATE100",
+        name: "H04",
+        remark: "申报/送资料",
+        category: "常规",
+        qualifiedStaffIds: qualified.map((person) => person.id),
+        minPassengers: 0,
+        fatiguePoints: 1,
+      },
+    ];
+    state.settings.latePriorityFlightNumbers = ["LATE100"];
+    state.settings.minimumRegularTransitionMinutes = 0;
+    state.settings.workloadBalanceEnabled = false;
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-08-18",
+        cxPreflightStaffId: null,
+        dutyStaffId: null,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: qualified[0]!.id,
+        flightNo: "LATE100",
+        kind: "declaration",
+        delta: 100,
+      },
+      {
+        month: "2026-08",
+        staffId: qualified[1]!.id,
+        flightNo: "LATE100",
+        kind: "delivery",
+        delta: 1,
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-08-18");
+
+    expect(result.unfilledCount).toBe(0);
+    expect(
+      result.assignments.find(
+        (assignment) => assignment.positionRuleId === "late-combined-rule"
+      )?.staffId
+    ).toBe(qualified[0]!.id);
+  });
+
   it("uses a manual late-priority correction to select the lower-count qualified worker", async () => {
     const state = createDefaultState();
     const qualified = state.staff
@@ -2546,6 +2621,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = false;
     state.settings.positionRotationEnabled = false;
+    state.settings.tr121H02CooldownWorkdays = 0;
     state.settings.lateShiftRecoveryEnabled = true;
     state.settings.lateShiftEndTime = "23:00";
     expect(
@@ -4355,6 +4431,122 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     ).toBe(12);
   });
 
+  it("keeps the schedule when no KE166 mobile supervisor is available", async () => {
+    const state = createDefaultState();
+    const counterWorker = state.staff[0]!;
+    state.staff = [counterWorker];
+    counterWorker.dutyQualified = false;
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "08:30",
+        endTime: "10:30",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        qualifiedStaffIds: [],
+        fatiguePoints: 5,
+      },
+      {
+        ...base,
+        id: "ke166-counter",
+        flightNo: "KE166",
+        name: "H04",
+        category: "常规",
+        qualifiedStaffIds: [counterWorker.id],
+        fatiguePoints: 7,
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-07-18");
+
+    expect(
+      result.assignments.find(
+        (assignment) => assignment.positionRuleId === "ke166-counter"
+      )
+    ).toMatchObject({ staffId: counterWorker.id, status: "assigned" });
+    expect(
+      result.assignments.find(
+        (assignment) => assignment.positionRuleId === "ke166-supervisor"
+      )
+    ).toMatchObject({ staffId: null, status: "unfilled" });
+    expect(result.warnings).toContain(
+      "KE166机动督导未安排，岗位已留空，请人工复核"
+    );
+  });
+
+  it("keeps an early-start half-rest worker eligible for a late KE166 supervisor shift", async () => {
+    const state = createDefaultState();
+    const worker = state.staff[0]!;
+    state.staff = [worker];
+    worker.dutyQualified = false;
+    state.flights = [
+      {
+        id: "ke166-late",
+        flightNo: "KE166",
+        startTime: "21:00",
+        endTime: "23:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-late-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        qualifiedStaffIds: [worker.id],
+        fatiguePoints: 5,
+      },
+      {
+        ...base,
+        id: "ke166-late-counter",
+        flightNo: "KE166",
+        name: "H04",
+        category: "常规",
+        qualifiedStaffIds: [worker.id],
+        fatiguePoints: 7,
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-09-14", {
+      preferences: {
+        halfRestStaffIds: [worker.id],
+        halfRestModes: { [worker.id]: "late-start" },
+      },
+    });
+    const preparation = prepareSchedule(
+      state,
+      "2026-09-14",
+      evaluateAutomaticHardConstraints,
+      {
+        halfRestStaffIds: [worker.id],
+        halfRestModes: { [worker.id]: "late-start" },
+      }
+    );
+    expect(preparation.runFacts.halfRest.activeStaffIds).toContain(worker.id);
+    expect(
+      result.assignments.find(
+        (assignment) => assignment.positionRuleId === "ke166-late-supervisor"
+      )
+    ).toMatchObject({ staffId: worker.id, status: "assigned" });
+  });
+
   it("prefers another KE166 mobile supervisor when the first qualified worker is on duty next workday", async () => {
     const state = createDefaultState();
     const [protectedWorker, alternate] = state.staff
@@ -4605,7 +4797,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(feedback.text).toContain("当前连续第2次");
   });
 
-  it("keeps the duty identity on the first configured priority position after a repeated duty target", async () => {
+  it("moves a cooling duty worker to the next configured late target", async () => {
     const state = createDefaultState();
     const [dutyWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
@@ -4716,11 +4908,11 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(
       assignments.find((item) => item.positionRuleId === "second-priority")
         ?.staffId
-    ).toBe(alternate!.id);
+    ).toBe(dutyWorker!.id);
     expect(
       assignments.find((item) => item.positionRuleId === "first-priority")
         ?.staffId
-    ).toBe(dutyWorker!.id);
+    ).toBe(alternate!.id);
   });
 
   it("does not change KE166 mobile supervisor reuse when a worker is marked as team leader", async () => {
@@ -7449,7 +7641,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     ).not.toBe(duty!.id);
   });
 
-  it("keeps the configured duty target even when late-priority frequency would prefer another person", async () => {
+  it("uses the next configured duty target while the first H02 target is cooling down", async () => {
     const state = createDefaultState();
     const [duty, other] = state.staff
       .filter((person) => person.status === "正常")
@@ -7538,10 +7730,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
     expect(
       assignments.find((assignment) => assignment.positionRuleId === "tr-h02")
-    ).toMatchObject({ staffId: duty!.id, position: "H02" });
+    ).toMatchObject({ staffId: other!.id, position: "H02" });
     expect(
       assignments.find((assignment) => assignment.positionRuleId === "tw-one")
-    ).toMatchObject({ staffId: other!.id, position: "G20" });
+    ).toMatchObject({ staffId: duty!.id, position: "G20" });
   });
 
   it("keeps KE166 ordinary positions available while selecting the lower-frequency priority-position worker", async () => {

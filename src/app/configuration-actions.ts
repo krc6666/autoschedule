@@ -245,6 +245,10 @@ export function deleteStaff(state: AppState, id: string): boolean {
     state.latePriorityFrequencyAdjustments.filter(
       (adjustment) => adjustment.staffId !== id
     );
+  state.settings.sameFlightStaffExclusions =
+    state.settings.sameFlightStaffExclusions.filter(
+      (rule) => rule.firstStaffId !== id && rule.secondStaffId !== id
+    );
   state.dutyRosterOverrides = state.dutyRosterOverrides.map((item) => ({
     ...item,
     cxPreflightStaffId:
@@ -523,6 +527,9 @@ export function updateConfigurationField(
       state.settings.crossFlightPriorityPolicies.forEach(
         (policy) => (policy.flightNo = rename(policy.flightNo))
       );
+      state.settings.sameFlightStaffExclusions.forEach(
+        (rule) => (rule.flightNo = rename(rule.flightNo))
+      );
       state.latePriorityFrequencyAdjustments.forEach(
         (adjustment) => (adjustment.flightNo = rename(adjustment.flightNo))
       );
@@ -563,6 +570,10 @@ export function updateConfigurationField(
         item.standbyStaffIds = item.standbyStaffIds.map((staffId) =>
           staffId === id ? value : staffId
         ) as [string | null, string | null];
+      });
+      state.settings.sameFlightStaffExclusions.forEach((rule) => {
+        if (rule.firstStaffId === id) rule.firstStaffId = value;
+        if (rule.secondStaffId === id) rule.secondStaffId = value;
       });
     }
     (person as unknown as Record<string, unknown>)[field] = value;

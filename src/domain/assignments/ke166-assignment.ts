@@ -22,6 +22,7 @@ import {
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
 import { assignmentWarningMessage } from "../reviews/schedule-warning-message";
+import { halfRestPeriodViolation } from "../rules/half-rest";
 
 interface CounterPlacementPlan {
   target: Assignment;
@@ -275,6 +276,7 @@ async function findSupervisorCounterPlan(
             (supervisorOrder.get(right.id) ?? supervisorIds.length)
           : left.id.localeCompare(right.id, undefined, { numeric: true }),
       maxParticipants: 5,
+      acceptTimeLimitedFeasible: true,
     });
     if (!result.changes) continue;
     const changes = counterPlacementChanges(state, assignments, result.changes);
@@ -307,7 +309,12 @@ export async function assignKe166SupervisorByCounterCoverage(
     eligibleStaffForRule(state, flight, rule)
       .filter(
         (person) =>
-          !facts?.halfRest.activeStaffIds.has(person.id) &&
+          (!facts ||
+            !halfRestPeriodViolation({
+              facts: facts.halfRest,
+              staffId: person.id,
+              startTime: flight.startTime,
+            })) &&
           (!requireNonRepeated ||
             consecutivePositionAssignments(
               state,

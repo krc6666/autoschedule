@@ -13,6 +13,35 @@ import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-
 import { SCHEDULE_SETTING_DEFINITIONS } from "../../src/domain/rules/schedule-settings";
 
 describe("workbook boundary", () => {
+  it("rejects a same-flight exclusion sheet that references missing staff", () => {
+    const state = createDefaultState();
+    const workbook = buildConfigWorkbook(state);
+    workbook.Sheets["同航班人员互斥"] = XLSX.utils.aoa_to_sheet([
+      [
+        "规则ID",
+        "适用航班（空白表示全部）",
+        "人员A编号",
+        "人员A姓名",
+        "人员B编号",
+        "人员B姓名",
+      ],
+      [
+        "bad-pair",
+        "KE166",
+        state.staff[0]!.id,
+        state.staff[0]!.name,
+        "missing",
+        "不存在",
+      ],
+    ]);
+
+    const imported = parseWorkbook(workbook, state.staff);
+
+    expect(imported.settings?.sameFlightStaffExclusions).toBeUndefined();
+    expect(imported.warnings).toContain(
+      "同航班人员互斥第2行：人员B编号“missing”不存在"
+    );
+  });
   it("round-trips manual late-priority frequency corrections by flight and category", () => {
     const state = createDefaultState();
     state.latePriorityFrequencyAdjustments = [
@@ -350,6 +379,7 @@ describe("workbook boundary", () => {
         "机动督导范围",
         "跨工作日资质预留",
         "跨航班重点岗位优先",
+        "同航班人员互斥",
         "末班重点航班范围",
       ])
     );

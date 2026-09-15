@@ -82,6 +82,12 @@ function priority(
     repeatedHighFatiguePosition: false,
     rollingLoadExcess: 0,
     highLoadRecoveryConflict: false,
+    tr121H02Cooldown: {
+      applies: false,
+      inCooldown: false,
+      remainingWorkdays: 0,
+      lastAssignedDate: null,
+    },
     latePriorityFrequency: {
       applies: false,
       targetKinds: [],
@@ -191,8 +197,9 @@ describe("scheduling policy contract", () => {
       stage: "reserved-assignment",
       label: "KE166独立督导优先保留与缺员兼任",
     });
-    expect(candidatePriorityOrder.slice(3, 8)).toEqual([
+    expect(candidatePriorityOrder.slice(3, 9)).toEqual([
       "position-transition",
+      "tr121-h02-cooldown",
       "late-priority-aggregate-rotation",
       "late-priority-frequency",
       "position-frequency",

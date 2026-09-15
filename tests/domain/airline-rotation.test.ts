@@ -31,6 +31,7 @@ describe("airline rotation facts", () => {
     expect(positionRotationGroupKey("FD101", "G08", "申报")).not.toBe(
       positionRotationGroupKey("CX202", "G17", "申报")
     );
+    expect(normalizedRotationPosition("G14", "申报/送资料")).toBe("送资料");
   });
 
   it("does not treat an explicitly declared reporting position as control or number one", () => {

@@ -100,6 +100,7 @@ export type UiCommand =
   | {
       type: "add-policy-item";
       collection:
+        | "same-flight-staff-exclusion"
         | "duty"
         | "recovery-target"
         | "cross-workday-reservation"
@@ -111,6 +112,7 @@ export type UiCommand =
   | {
       type: "delete-policy-item";
       collection:
+        | "same-flight-staff-exclusion"
         | "duty"
         | "recovery-target"
         | "cross-workday-reservation"

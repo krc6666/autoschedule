@@ -40,6 +40,12 @@ export interface HalfRestOptimizationModel {
 
 export const HALF_REST_WARNING_PREFIX = "半休安排：";
 
+/** 半休的“上午”指运营日早班，不包含跨午夜的凌晨航班。 */
+export function isHalfRestMorningStart(startTime: string): boolean {
+  const minutes = timeToMinutes(startTime);
+  return Number.isFinite(minutes) && minutes >= 6 * 60 && minutes < 12 * 60;
+}
+
 export function isHalfRestWarning(message: string): boolean {
   return message.includes(HALF_REST_WARNING_PREFIX);
 }
@@ -116,14 +122,21 @@ export function excludeCandidateForHalfRest(options: {
   facts: HalfRestFacts;
   staffId: string;
   preNoon: boolean;
+  startTime?: string;
   priority: CandidatePriority;
 }): boolean {
   const selected = options.facts.activeStaffIds.has(options.staffId);
   const recoveryConflict = hasHalfRestRecoveryConflict(options.priority);
   const mode =
     options.facts.modesByStaffId.get(options.staffId) ?? "early-finish";
-  if (mode === "late-start") return selected && options.preNoon;
-  return selected && (recoveryConflict || !options.preNoon);
+  const restrictedMorning =
+    mode === "late-start"
+      ? options.startTime !== undefined
+        ? isHalfRestMorningStart(options.startTime)
+        : options.preNoon
+      : options.preNoon;
+  if (mode === "late-start") return selected && restrictedMorning;
+  return selected && (recoveryConflict || !restrictedMorning);
 }
 
 export function halfRestPeriodViolation(options: {
@@ -134,7 +147,7 @@ export function halfRestPeriodViolation(options: {
   if (!options.facts.activeStaffIds.has(options.staffId)) return null;
   const mode =
     options.facts.modesByStaffId.get(options.staffId) ?? "early-finish";
-  const preNoon = isPreNoonFlight({ startTime: options.startTime });
+  const preNoon = isHalfRestMorningStart(options.startTime);
   if (mode === "late-start" && preNoon)
     return "半休时段硬约束：上午半休人员不得安排12点前岗位";
   if (mode === "early-finish" && !preNoon)
@@ -146,7 +159,10 @@ function isAllowedHalfRestPeriod(
   mode: HalfRestMode,
   startTime: string
 ): boolean {
-  const preNoon = isPreNoonFlight({ startTime });
+  const preNoon =
+    mode === "late-start"
+      ? isHalfRestMorningStart(startTime)
+      : isPreNoonFlight({ startTime });
   return mode === "late-start" ? !preNoon : preNoon;
 }
 
@@ -208,7 +224,6 @@ export function halfRestRestrictedStaffIds(options: {
   flight: Flight;
   rule: PositionRule;
 }): readonly string[] {
-  const preNoon = isPreNoonFlight(options.flight);
   return [...options.facts.activeStaffIds].filter((staffId) => {
     const person = options.state.staff.find((item) => item.id === staffId);
     if (
@@ -222,6 +237,10 @@ export function halfRestRestrictedStaffIds(options: {
     )
       return false;
     const mode = options.facts.modesByStaffId.get(staffId) ?? "early-finish";
+    const preNoon =
+      mode === "late-start"
+        ? isHalfRestMorningStart(options.flight.startTime)
+        : isPreNoonFlight(options.flight);
     return mode === "late-start" ? preNoon : !preNoon;
   });
 }
@@ -298,7 +317,7 @@ export function buildHalfRestOptimizationModel(
     const mode = facts.modesByStaffId.get(staffId) ?? "early-finish";
     const targetChoices = staffChoices.filter((choice) =>
       mode === "late-start"
-        ? !isPreNoonFlight({ startTime: choice.startTime })
+        ? !isHalfRestMorningStart(choice.startTime)
         : isPreNoonFlight({ startTime: choice.startTime })
     );
     const workedId = `half-rest:worked:${staffId}`;
@@ -396,13 +415,13 @@ export function halfRestRegressionReasons(
       (assignment) =>
         assignment.status === "assigned" &&
         assignment.staffId === staffId &&
-        isPreNoonFlight(assignment)
+        isPreNoonFlight({ startTime: assignment.startTime })
     );
     const hasMorning = after.some(
       (assignment) =>
         assignment.status === "assigned" &&
         assignment.staffId === staffId &&
-        isPreNoonFlight(assignment)
+        isPreNoonFlight({ startTime: assignment.startTime })
     );
     if (mode === "early-finish" && hadMorning && !hasMorning)
       reasons.push("调整会使半休人员失去12点前岗位");

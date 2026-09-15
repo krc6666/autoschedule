@@ -43,7 +43,7 @@ export function buildLatePriorityCountsWorkbook(
       ["月份", "人员编号", "人员姓名", "航班号", "岗位类别", "最终次数"],
       ...statistics.rows.flatMap((row) =>
         statistics.flightNumbers.flatMap((flightNo) =>
-          LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => [
+          row.flights[flightNo]!.applicableCategories.map((category) => [
             statistics.month,
             row.staff.id,
             row.staff.name,
@@ -93,6 +93,14 @@ export function parseLatePriorityCountsWorkbook(
   const allowedCategories = new Set<string>(
     LATE_PRIORITY_STATISTICS_CATEGORIES
   );
+  const expectedKeys = statistics.rows.flatMap((row) =>
+    statistics.flightNumbers.flatMap((flightNo) =>
+      row.flights[flightNo]!.applicableCategories.map((category) =>
+        [row.staff.id, flightNo, category].join("\u0000")
+      )
+    )
+  );
+  const expectedKeySet = new Set(expectedKeys);
   const seen = new Set<string>();
   const targets: LatePriorityCountTarget[] = [];
 
@@ -131,6 +139,9 @@ export function parseLatePriorityCountsWorkbook(
     if (!allowedCategories.has(category)) {
       errors.push(`第${excelRow}行岗位类别无效：${category || "空"}`);
       valid = false;
+    } else if (!expectedKeySet.has(key)) {
+      errors.push(`第${excelRow}行岗位类别不适用于当前航班：${category}`);
+      valid = false;
     }
     if (!rawCount || !Number.isInteger(finalCount) || finalCount < 0) {
       errors.push(`第${excelRow}行最终次数必须是非负整数`);
@@ -165,22 +176,13 @@ export function parseLatePriorityCountsWorkbook(
     }
   });
 
-  const expectedKeys = statistics.rows.flatMap((row) =>
-    statistics.flightNumbers.flatMap((flightNo) =>
-      LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) =>
-        [row.staff.id, flightNo, category].join("\u0000")
-      )
-    )
-  );
   const missingCount = expectedKeys.filter((key) => !seen.has(key)).length;
   if (missingCount)
     errors.push(
       `文件缺少 ${missingCount} 项人员、航班或岗位类别记录，请使用本页面导出的完整次数文件`
     );
 
-  const flightNumbers = statistics.flightNumbers.filter((flightNo) =>
-    targets.some((target) => target.flightNo === flightNo)
-  );
+  const flightNumbers = statistics.flightNumbers;
   if (!targets.length) errors.push("工作表中没有可导入的次数记录");
   return {
     month,

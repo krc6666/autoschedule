@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assignmentWarningMessage,
   conciseAssignmentWarningReason,
+  rotationCandidateWarningMessage,
 } from "../../src/domain/reviews/schedule-warning-message";
 import { dailyScheduleFailureMessage } from "../../src/domain/solver/solver-user-message";
 
@@ -10,6 +11,36 @@ const TECHNICAL_TERMS =
   /infeasible|changed-assignment-count|双向岗位资质|完整重排方案/;
 
 describe("user-facing schedule warnings", () => {
+  it("names each blocked H02 replacement and its previous late shift without merging reasons", () => {
+    const message = rotationCandidateWarningMessage({
+      staffName: "当前人员",
+      fact: "已连续1次承担KE166/H02",
+      targetFlightNo: "KE166",
+      candidates: [
+        {
+          staffName: "人员甲",
+          reasons: ["严格跨工作日恢复限制不允许该人员承担次班目标岗位"],
+          previousLateWork: { date: "2026-09-18", flightNo: "TR121" },
+        },
+        {
+          staffName: "人员乙",
+          reasons: ["严格跨工作日恢复限制不允许该人员承担次班目标岗位"],
+          previousLateWork: { date: "2026-09-18", flightNo: "TR121" },
+        },
+      ],
+      timedOut: false,
+    });
+    expect(message).toContain(
+      "人员甲 —— 9/18 做过 TR121 末班岗，下一班不能接 KE166"
+    );
+    expect(message).toContain(
+      "人员乙 —— 9/18 做过 TR121 末班岗，下一班不能接 KE166"
+    );
+    expect(message).toContain("这次自动排班没有找到能完成的换人办法");
+    expect(message).not.toMatch(/跨工作日恢复|候选排除|其他人员处于/);
+    expect((message.match(/[。！？]/g) ?? []).length).toBeLessThanOrEqual(2);
+  });
+
   it("keeps a half-rest rejection more specific than a generic qualification reason", () => {
     expect(
       conciseAssignmentWarningReason([

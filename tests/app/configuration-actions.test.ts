@@ -384,4 +384,81 @@ describe("configuration actions", () => {
     expect(result.removed).toBe(0);
     expect(state.flights.map((flight) => flight.id)).toEqual(flightIds);
   });
+
+  it("keeps same-flight exclusion flight scope synchronized when a template is renamed", () => {
+    const state = createDefaultState();
+    const template = state.templates[0]!;
+    const [first, second] = state.staff;
+    state.settings.sameFlightStaffExclusions = [
+      {
+        id: "exclusion-1",
+        firstStaffId: first!.id,
+        secondStaffId: second!.id,
+        flightNo: template.flightNo,
+      },
+    ];
+
+    expect(
+      updateConfigurationField(
+        state,
+        "template",
+        template.id,
+        "flightNo",
+        "NEW937"
+      )
+    ).toBe("updated");
+    expect(state.settings.sameFlightStaffExclusions[0]!.flightNo).toBe(
+      "NEW937"
+    );
+  });
+
+  it("keeps same-flight exclusion people synchronized when a staff id is renamed", () => {
+    const state = createDefaultState();
+    const [first, second] = state.staff;
+    state.settings.sameFlightStaffExclusions = [
+      {
+        id: "exclusion-1",
+        firstStaffId: first!.id,
+        secondStaffId: second!.id,
+        flightNo: "",
+      },
+    ];
+
+    expect(
+      updateConfigurationField(state, "staff", first!.id, "id", "RENAMED")
+    ).toBe("updated");
+    expect(state.settings.sameFlightStaffExclusions[0]).toMatchObject({
+      firstStaffId: "RENAMED",
+      secondStaffId: second!.id,
+    });
+  });
+
+  it("removes same-flight exclusions that reference a deleted staff member", () => {
+    const state = createDefaultState();
+    const [first, second, third] = state.staff;
+    state.settings.sameFlightStaffExclusions = [
+      {
+        id: "remove-me",
+        firstStaffId: first!.id,
+        secondStaffId: second!.id,
+        flightNo: "",
+      },
+      {
+        id: "keep-me",
+        firstStaffId: second!.id,
+        secondStaffId: third!.id,
+        flightNo: "",
+      },
+    ];
+
+    expect(deleteStaff(state, first!.id)).toBe(true);
+    expect(state.settings.sameFlightStaffExclusions).toEqual([
+      {
+        id: "keep-me",
+        firstStaffId: second!.id,
+        secondStaffId: third!.id,
+        flightNo: "",
+      },
+    ]);
+  });
 });

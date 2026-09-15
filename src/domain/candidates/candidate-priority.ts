@@ -46,6 +46,11 @@ import {
   workloadBalancePriority,
   type WorkloadBalanceLoadSnapshot,
 } from "../reviews/workload-balance";
+import {
+  compareTr121H02Cooldown as compareTr121H02CooldownProfile,
+  tr121H02CooldownProfile,
+  type Tr121H02CooldownProfile,
+} from "../rules/tr121-h02-cooldown";
 
 export interface CandidatePriority {
   ke166ReservationConflict: boolean;
@@ -60,6 +65,7 @@ export interface CandidatePriority {
   repeatedHighFatiguePosition: boolean;
   rollingLoadExcess: number;
   highLoadRecoveryConflict: boolean;
+  tr121H02Cooldown: Tr121H02CooldownProfile;
   latePriorityFrequency: LatePriorityFrequencyProfile;
   previousWorkdayLoad: import("../shared/previous-workday-load-model").PreviousWorkdayLoad;
   positionFrequency: {
@@ -214,6 +220,16 @@ export function compareLatePriorityFrequency(
   return compareLatePriorityFrequencyProfile(
     left.latePriorityFrequency,
     right.latePriorityFrequency
+  );
+}
+
+export function compareTr121H02Cooldown(
+  left: CandidatePriority,
+  right: CandidatePriority
+): number {
+  return compareTr121H02CooldownProfile(
+    left.tr121H02Cooldown,
+    right.tr121H02Cooldown
   );
 }
 
@@ -504,6 +520,14 @@ export function buildCandidatePriority(
         rule.remark,
         state
       ),
+    tr121H02Cooldown: tr121H02CooldownProfile(
+      state,
+      person.id,
+      flight.flightNo,
+      rule,
+      date,
+      runFacts.scheduleFrequency
+    ),
     latePriorityFrequency: latePriorityFrequencyProfileForRule(
       state,
       person.id,

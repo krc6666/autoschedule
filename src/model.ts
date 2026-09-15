@@ -7,6 +7,7 @@ import type {
   MobileSupervisorCoverageRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
+  SameFlightStaffExclusion,
 } from "./domain/rules/structured-policy-contract";
 import type { LatePriorityFrequencyKind } from "./domain/reviews/late-priority-policy";
 
@@ -124,6 +125,7 @@ export interface LatePriorityFrequencyAdjustment {
 }
 
 export interface ScheduleSettings {
+  sameFlightStaffExclusions: SameFlightStaffExclusion[];
   maxDailyHours: number;
   historyWindowDays: number;
   nightStart: string;
@@ -140,6 +142,7 @@ export interface ScheduleSettings {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
+  tr121H02CooldownWorkdays: number;
   latePriorityFlightNumbers: string[];
   lateShiftRecoveryEnabled: boolean;
   nextWorkdayRecoveryMode: "prefer" | "forbid";

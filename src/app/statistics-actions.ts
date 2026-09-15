@@ -5,7 +5,6 @@ import {
   type LatePriorityFrequencyKind,
 } from "../domain/reviews/late-priority-policy";
 import { buildMonthlyLatePriorityStatistics } from "../domain/statistics/monthly-late-priority-statistics";
-import { LATE_PRIORITY_STATISTICS_CATEGORIES } from "../domain/statistics/monthly-late-priority-statistics";
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
 import type { AppState } from "../model";
 import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
@@ -39,7 +38,7 @@ export function applyLatePriorityCountsImport(
   const expectedKeys = new Set(
     statistics.rows.flatMap((row) =>
       statistics.flightNumbers.flatMap((flightNo) =>
-        LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) =>
+        row.flights[flightNo]!.applicableCategories.map((category) =>
           [row.staff.id, flightNo, category].join("\u0000")
         )
       )
@@ -110,18 +109,24 @@ export function updateLatePriorityFrequencyAdjustment(
   const normalizedDelta = Math.trunc(delta);
   if (!normalizedDelta || !/^\d{4}-\d{2}$/.test(month) || !staffId || !flightNo)
     return false;
-  if (normalizedDelta < 0) {
-    const row = buildMonthlyLatePriorityStatistics(
-      state,
-      `${month}-01`
-    ).rows.find((item) => item.staff.id === staffId);
-    if (!row || row.categories[latePriorityKindLabel(kind)].effectiveCount <= 0)
-      return false;
-  }
   const normalizedFlightNo = flightNo
     .trim()
     .toUpperCase()
     .replaceAll(/\s+/g, "");
+  const category = latePriorityKindLabel(kind);
+  const row = buildMonthlyLatePriorityStatistics(
+    state,
+    `${month}-01`
+  ).rows.find((item) => item.staff.id === staffId);
+  const flight = row?.flights[normalizedFlightNo];
+  if (
+    !flight?.applicableCategories.includes(category) ||
+    !flight.categories[category].qualified
+  )
+    return false;
+  if (normalizedDelta < 0) {
+    if (flight.categories[category].effectiveCount <= 0) return false;
+  }
   const existing = state.latePriorityFrequencyAdjustments.find(
     (item) =>
       item.month === month &&

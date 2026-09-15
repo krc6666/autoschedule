@@ -30,7 +30,10 @@ import type {
 import type { SolverResult } from "../solver/solver-port";
 import type { SchedulePreparation } from "./schedule-preparation";
 import { assertDailyScheduleSafety } from "./daily-schedule-safety";
-import { HALF_REST_WARNING_PREFIX } from "../rules/half-rest";
+import {
+  HALF_REST_WARNING_PREFIX,
+  isHalfRestMorningStart,
+} from "../rules/half-rest";
 
 export interface DailySchedulePlan {
   assignments: Assignment[];
@@ -363,11 +366,12 @@ export function materializeDailySchedulePlan({
           (assignment) =>
             assignment.status === "assigned" &&
             assignment.staffId === staffId &&
-            !isPreNoonFlight(assignment)
+            !isHalfRestMorningStart(assignment.startTime)
         );
         const hasLateCandidate = model.staffChoices.some(
           (choice) =>
-            choice.person.id === staffId && !isPreNoonFlight(choice.task.flight)
+            choice.person.id === staffId &&
+            !isHalfRestMorningStart(choice.task.flight.startTime)
         );
         if (hasLate) return [];
         return [

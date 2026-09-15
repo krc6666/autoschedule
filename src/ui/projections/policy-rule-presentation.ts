@@ -43,6 +43,8 @@ const USER_RULE_STAGES: Readonly<
 const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
   "staff-eligibility":
     "人员状态、岗位资质、夜班能力、时间冲突和每日工时都必须符合要求。",
+  "same-flight-staff-exclusion":
+    "规则页配置的两个人不得被自动安排在同一航班；指定航班时只限制该航班，留空时限制所有航班。人工调整可以突破，但会持续标红提醒。",
   "minimum-flight-transition":
     "常规跨航班连续工作必须留足准备时间；符合条件的下午分流按提前撤岗配置接续。",
   "strict-next-workday-recovery":
@@ -62,6 +64,8 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "同一时段航班发生人员冲突时，优先保护规则页配置航班的重点岗位轮换；其他航班轮换可以让步，但不会突破硬约束或制造空缺。",
   "position-transition":
     "严格衔接不符合要求时阻止安排；12 点前无人替代时保留原因供复核。",
+  "tr121-h02-cooldown":
+    "TR121/H02 一号承担后优先避开随后设定数量的已归档工作班；没有完整替代方案时保留岗位并选择最久未承担者。",
   "late-priority-aggregate-rotation":
     "先避开上一班承担过末班重岗位的人，再平衡本月和最近 8 班的四类合计次数。",
   "late-shift-recovery":

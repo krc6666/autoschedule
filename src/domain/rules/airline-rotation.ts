@@ -1,5 +1,6 @@
 import type { Assignment, PositionRule } from "../../model";
 import { normalizedPolicyValue } from "../reviews/schedule-protection";
+import { isCombinedDeclarationDeliveryPosition } from "./priority-position-semantics";
 
 /** Returns the carrier code from a normalized flight number such as CX931. */
 export function airlineCode(flightNo: string): string {
@@ -24,6 +25,8 @@ export function normalizedRotationPosition(
   position: string,
   remark: string
 ): string {
+  if (isCombinedDeclarationDeliveryPosition({ name: position, remark }))
+    return "送资料";
   const semanticRemark = semanticRotationPosition(remark);
   if (semanticRemark) return semanticRemark;
   const semanticPosition = semanticRotationPosition(position);

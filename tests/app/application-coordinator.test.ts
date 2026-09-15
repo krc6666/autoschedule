@@ -420,14 +420,14 @@ describe("application scheduling exclusivity", () => {
   it("installs only the complete safe result selected by stop-and-adopt", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
-    const safeResult: ScheduleResult = {
-      ...certifiedResult("2026-09-12"),
-      warnings: ["已安全复核"],
-    };
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
       { preferences }
     );
+    const safeResult: ScheduleResult = {
+      ...certifiedResult(coordinator.view().date),
+      warnings: ["已安全复核"],
+    };
     Object.defineProperty(coordinator, "scheduleRunner", {
       value: {
         calculate: vi.fn().mockResolvedValue({

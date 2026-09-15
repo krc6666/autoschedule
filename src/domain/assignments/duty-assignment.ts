@@ -9,7 +9,11 @@ import {
 import { getDutyRosterForDate } from "../duty-roster/roster";
 import { isSupervisorPosition } from "../flights/schedule-position-rules";
 import { durationHours, timeToMinutes } from "../shared/time";
-import { consecutivePositionAssignments } from "../statistics/schedule-frequency";
+import {
+  consecutivePositionAssignments,
+  type ScheduleFrequencyFacts,
+} from "../statistics/schedule-frequency";
+import { tr121H02CooldownProfile } from "../rules/tr121-h02-cooldown";
 
 function repeatsPriorityPosition(
   state: ScheduleGenerationFacts,
@@ -116,7 +120,8 @@ export function preferredDutyLateTasks(
   state: ScheduleGenerationFacts,
   date: string,
   tasks: AssignmentTask[],
-  knownDutyStaffId?: string | null
+  knownDutyStaffId?: string | null,
+  frequencyFacts?: ScheduleFrequencyFacts
 ): AssignmentTask[] {
   const dutyStaffId =
     knownDutyStaffId === undefined
@@ -175,7 +180,33 @@ export function preferredDutyLateTasks(
       if (!ordered.includes(target)) ordered.push(target);
     });
   }
-  return ordered
+  const orderedWithCooldown = frequencyFacts
+    ? [
+        ...ordered.filter(
+          (task) =>
+            !tr121H02CooldownProfile(
+              state,
+              dutyStaffId,
+              task.flight.flightNo,
+              task.rule,
+              date,
+              frequencyFacts
+            ).inCooldown
+        ),
+        ...ordered.filter(
+          (task) =>
+            tr121H02CooldownProfile(
+              state,
+              dutyStaffId,
+              task.flight.flightNo,
+              task.rule,
+              date,
+              frequencyFacts
+            ).inCooldown
+        ),
+      ]
+    : ordered;
+  return orderedWithCooldown
     .map((task, index) => ({ task, index }))
     .sort(
       (left, right) =>

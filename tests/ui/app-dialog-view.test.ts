@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
 import { analyzeManualSwap } from "../../src/domain/reviews/manual-swap-analysis";
+import { schedulingDecision } from "../../src/domain/rules/schedule-rule-contract";
 import "../../src/ui/components/app-dialog";
 import { mountElement } from "./lit-test-helpers";
 
@@ -148,6 +149,13 @@ describe("application dialog", () => {
       status: "assigned" as const,
     }));
     const analysis = analyzeManualSwap(model, "2026-08-21", "swap-0", "swap-1");
+    model.assignments[0]!.decisionTrace = [
+      schedulingDecision(
+        "position-rotation",
+        "fallback",
+        "甲连续承担TR121/H02。\n乙 —— 8/19 做过 TR121 末班岗，下一班不能接 TR121\n这次自动排班没有找到能完成的换人办法，原安排保留。"
+      ),
+    ];
     const element = await mountElement<
       HTMLElement & { updateComplete: Promise<unknown> }
     >("autoschedule-app-dialog", {
@@ -163,6 +171,8 @@ describe("application dialog", () => {
     expect(element.textContent).toContain("调整原因分析");
     expect(element.textContent).toContain("选择交换人员");
     expect(element.textContent).toContain("可以安全调整");
+    expect(element.textContent).toContain("乙 —— 8/19 做过 TR121 末班岗");
+    expect(element.textContent).toContain("自动排班没换成的人");
     expect(
       element.querySelector<HTMLButtonElement>(
         'button[aria-label="确认交换岗位"]'

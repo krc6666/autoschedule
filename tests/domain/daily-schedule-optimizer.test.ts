@@ -336,6 +336,45 @@ describe("daily schedule module interfaces", () => {
     ).toBe(false);
   });
 
+  it("backfills a morning vacancy while preserving the late-start worker's later shifts", async () => {
+    const state = modelState([
+      flight("morning", "AM100", "08:00", "10:00", ["A1"]),
+      flight("evening", "PM200", "18:00", "20:00", ["B1"]),
+      flight("overnight", "AM300", "01:00", "03:00", ["C1"]),
+    ]);
+    const halfRestWorker = state.staff[0]!;
+    halfRestWorker.id = "half-rest-worker";
+    halfRestWorker.name = "叶琳";
+    halfRestWorker.teamLeader = false;
+    const regularWorker = {
+      ...halfRestWorker,
+      id: "morning-backfill",
+      name: "上午补位",
+    };
+    state.staff = [halfRestWorker, regularWorker];
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds =
+        rule.flightNo === "AM100" ? [regularWorker.id] : [halfRestWorker.id];
+    });
+
+    const result = await generateSchedule(state, "2026-09-14", {
+      preferences: {
+        halfRestStaffIds: [halfRestWorker.id],
+        halfRestModes: { [halfRestWorker.id]: "late-start" },
+      },
+    });
+
+    expect(
+      result.assignments.find((assignment) => assignment.flightNo === "AM100")
+    ).toMatchObject({ staffId: regularWorker.id, status: "assigned" });
+    expect(
+      result.assignments.find((assignment) => assignment.flightNo === "PM200")
+    ).toMatchObject({ staffId: halfRestWorker.id, status: "assigned" });
+    expect(
+      result.assignments.find((assignment) => assignment.flightNo === "AM300")
+    ).toMatchObject({ staffId: halfRestWorker.id, status: "assigned" });
+  });
+
   it("keeps the minimum one allowed-period assignment for non-team-leaders", async () => {
     const state = modelState([
       flight("morning", "AM100", "08:00", "10:00", ["A1"]),

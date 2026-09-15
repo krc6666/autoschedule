@@ -150,6 +150,47 @@ describe("statistics actions", () => {
     ]);
   });
 
+  it("rejects a declaration correction for a combined-only flight", () => {
+    const state = createDefaultState();
+    const combinedRule = state.positionRules.find(
+      (item) => item.flightNo === "TR121" && item.remark === "申报"
+    )!;
+    combinedRule.remark = "申报/送资料";
+    state.positionRules = [combinedRule];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    const staffId = combinedRule.qualifiedStaffIds[0]!;
+
+    expect(
+      updateLatePriorityFrequencyAdjustment(
+        state,
+        "2026-08",
+        staffId,
+        "TR121",
+        "declaration",
+        1
+      )
+    ).toBe(false);
+    expect(
+      updateLatePriorityFrequencyAdjustment(
+        state,
+        "2026-08",
+        staffId,
+        "TR121",
+        "delivery",
+        1
+      )
+    ).toBe(true);
+    expect(state.latePriorityFrequencyAdjustments).toEqual([
+      {
+        month: "2026-08",
+        staffId,
+        flightNo: "TR121",
+        kind: "delivery",
+        delta: 1,
+      },
+    ]);
+  });
+
   it("resets selected-month effective counts to zero and keeps other months", () => {
     const state = createDefaultState();
     const rule = state.positionRules.find(

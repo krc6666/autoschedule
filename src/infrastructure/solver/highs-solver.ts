@@ -437,6 +437,22 @@ export class HighsSolver implements SolverPort {
       const result = await highs.solve();
       const termination = solverTermination(result.status);
       if (termination !== "optimal") {
+        if (termination === "timed-out" && result.solution !== undefined) {
+          const solutionValues = highs.getSolutionValues();
+          finalValues = solutionValues;
+          return {
+            termination: "time-limited-feasible",
+            selectedVariableIds: new Set(
+              problem.variables.flatMap((variable, index) =>
+                variable.type !== "continuous" && solutionValues[index]! > 0.5
+                  ? [variable.id]
+                  : []
+              )
+            ),
+            objectiveValues,
+            diagnostic: `姹傝В鐩爣 ${objective.id} 超时但已有可行解`,
+          };
+        }
         return {
           termination,
           selectedVariableIds: new Set(),
@@ -657,6 +673,12 @@ export class HighsSolver implements SolverPort {
               diagnostic: `求解目标 ${objective.id} 已完成但没有有效完整解`,
             };
           const gapKind = resultGapKind(objective, result);
+          if (
+            gapKind === "rejected" &&
+            objective.optimality === "best-effort" &&
+            finalValues
+          )
+            return timeLimitedResult(objective, "previous-optimal");
           if (gapKind === "rejected")
             return {
               termination: "failed",

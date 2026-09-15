@@ -46,10 +46,17 @@ export interface ReassignmentOptimizationOptions {
   validateChanges?(changes: readonly RotationStaffChange[]): readonly string[];
   maxParticipants?: number;
   timeoutMs?: number;
+  acceptTimeLimitedFeasible?: boolean;
 }
 
 export interface ReassignmentOptimizationResult {
   changes: RotationStaffChange[] | null;
   attemptedReasons: string[];
-  termination: "optimal" | "infeasible" | "timed-out" | "failed";
+  candidateRejections?: {
+    staffId: string;
+    staffName: string;
+    reasons: string[];
+  }[];
+  termination:
+    "optimal" | "infeasible" | "timed-out" | "time-limited-feasible" | "failed";
 }

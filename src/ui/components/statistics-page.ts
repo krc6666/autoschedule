@@ -6,6 +6,7 @@ import {
   latePriorityStatisticsFlightNumbers,
   type LatePriorityStatisticsCategory,
   type MonthlyLatePriorityFlightStatistics,
+  type MonthlyLatePriorityStatisticsRow,
 } from "../../domain/statistics/monthly-late-priority-statistics";
 import { buildMonthlyRelaxedShiftStatistics } from "../../domain/statistics/relaxed-shift-statistics";
 import type { AppState } from "../../model";
@@ -22,6 +23,8 @@ export class StatisticsPageElement extends LightDomElement {
   date = "";
   private readonly expandedLatePriorityCells = new Set<string>();
   private selectedLatePriorityStatisticsMonth = "";
+  private selectedLatePriorityCategory:
+    "全部" | LatePriorityStatisticsCategory = "全部";
 
   protected override render() {
     return html`
@@ -113,6 +116,7 @@ export class StatisticsPageElement extends LightDomElement {
       this.model,
       this.latePriorityStatisticsDate()
     );
+    const displayRows = this.latePriorityDisplayRows(statistics.rows);
     return html`<section
       class="workspace-section late-priority-statistics"
       data-late-priority-flights=${flightNumbers.join(",")}
@@ -140,6 +144,28 @@ export class StatisticsPageElement extends LightDomElement {
                 )}
             />
           </label>
+          <div
+            class="late-priority-category-filter"
+            role="group"
+            aria-label="末班重点岗位统计类别"
+          >
+            ${(["全部", ...LATE_PRIORITY_STATISTICS_CATEGORIES] as const).map(
+              (category) =>
+                html`<button
+                  class=${`btn btn-sm ${
+                    this.selectedLatePriorityCategory === category
+                      ? "btn-primary"
+                      : "btn-outline-secondary"
+                  }`}
+                  type="button"
+                  aria-label=${`末班重点岗位统计类别：${category}`}
+                  aria-pressed=${this.selectedLatePriorityCategory === category}
+                  @click=${() => this.selectLatePriorityCategory(category)}
+                >
+                  ${category}
+                </button>`
+            )}
+          </div>
           ${
             flightNumbers.length && statistics.rows.length
               ? html`<button
@@ -187,7 +213,7 @@ export class StatisticsPageElement extends LightDomElement {
       </div>
       ${
         flightNumbers.length
-          ? statistics.rows.length
+          ? displayRows.length
             ? html`${this.latePriorityRangeSummary(statistics.ranges)}
                 <div class="table-responsive">
                   <table
@@ -196,19 +222,21 @@ export class StatisticsPageElement extends LightDomElement {
                     <thead>
                       <tr>
                         <th>人员</th>
-                        <th>四类合计</th>
+                        <th>${this.latePriorityCategoryColumnLabel()}</th>
                         ${flightNumbers.map((flightNo) => html`<th>${flightNo}</th>`)}
                       </tr>
                     </thead>
                     <tbody>
-                      ${statistics.rows.map(
+                      ${displayRows.map(
                         (row) =>
                           html`<tr>
                             <td data-label="人员">
                               <strong>${row.staff.name}</strong>
                             </td>
-                            <td data-label="四类合计">
-                              <strong>${row.totalCount}</strong>
+                            <td
+                              data-label=${this.latePriorityCategoryColumnLabel()}
+                            >
+                              <strong>${this.latePriorityRowCount(row)}</strong>
                             </td>
                             ${flightNumbers.map(
                               (flightNo) =>
@@ -273,9 +301,11 @@ export class StatisticsPageElement extends LightDomElement {
       .open=${this.expandedLatePriorityCells.has(detailKey)}
       @toggle=${(event: Event) => this.trackLatePriorityDetailToggle(detailKey, (event.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary title="展开四类岗位次数">${flight.totalCount}</summary>
+      <summary title="展开重点岗位次数">
+        ${this.latePriorityFlightCount(flight)}
+      </summary>
       <div class="late-priority-flight-breakdown">
-        ${LATE_PRIORITY_STATISTICS_CATEGORIES.map((category) => {
+        ${flight.applicableCategories.map((category) => {
           const own = flight.categories[category];
           return html`<div
             class="late-priority-adjustment-row"
@@ -316,6 +346,29 @@ export class StatisticsPageElement extends LightDomElement {
     </details>`;
   }
 
+  private latePriorityDisplayRows(
+    rows: readonly MonthlyLatePriorityStatisticsRow[]
+  ): MonthlyLatePriorityStatisticsRow[] {
+    if (this.selectedLatePriorityCategory === "全部") return [...rows];
+    const category = this.selectedLatePriorityCategory;
+    return rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.categories[category].qualified)
+      .sort(
+        (left, right) =>
+          this.latePriorityRowCount(right.row) -
+            this.latePriorityRowCount(left.row) || left.index - right.index
+      )
+      .map(({ row }) => row);
+  }
+
+  private latePriorityFlightCount(
+    flight: MonthlyLatePriorityFlightStatistics
+  ): number {
+    if (this.selectedLatePriorityCategory === "全部") return flight.totalCount;
+    return flight.categories[this.selectedLatePriorityCategory].effectiveCount;
+  }
+
   private latePriorityStatisticsMonth(): string {
     return this.selectedLatePriorityStatisticsMonth || this.date.slice(0, 7);
   }
@@ -332,6 +385,28 @@ export class StatisticsPageElement extends LightDomElement {
     if (!/^\d{4}-\d{2}$/.test(month)) return;
     this.selectedLatePriorityStatisticsMonth = month;
     this.requestUpdate();
+  }
+
+  private selectLatePriorityCategory(
+    category: "全部" | LatePriorityStatisticsCategory
+  ): void {
+    this.selectedLatePriorityCategory = category;
+    this.requestUpdate();
+  }
+
+  private latePriorityCategoryColumnLabel(): string {
+    return this.selectedLatePriorityCategory === "全部"
+      ? "四类合计"
+      : this.selectedLatePriorityCategory;
+  }
+
+  private latePriorityRowCount(row: MonthlyLatePriorityStatisticsRow): number {
+    if (this.selectedLatePriorityCategory === "全部") return row.totalCount;
+    const category = this.selectedLatePriorityCategory;
+    return Object.values(row.flights).reduce(
+      (total, flight) => total + flight.categories[category].effectiveCount,
+      0
+    );
   }
 
   private adjustmentButtons(

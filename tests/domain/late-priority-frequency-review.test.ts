@@ -196,6 +196,35 @@ describe("late priority frequency review", () => {
     ).toBe(true);
   });
 
+  it("reviews a combined role as delivery rather than declaration", async () => {
+    const { state, underused, assignments } = setup();
+    const combinedRule = state.positionRules.find(
+      (rule) => rule.id === "late-rule"
+    )!;
+    combinedRule.remark = "申报/送资料";
+    state.history.forEach((record) => {
+      record.remark = "申报/送资料";
+    });
+    const primary = assignments.find((item) => item.id === "late-primary")!;
+    primary.remark = "申报/送资料";
+
+    const warnings = await reviewLatePriorityFrequency(
+      defaultHighsSolver,
+      state,
+      assignments,
+      DATE,
+      new Set()
+    );
+
+    expect(warnings).toEqual([]);
+    expect(primary.staffId).toBe(underused.id);
+    const message = primary.decisionTrace?.find(
+      (decision) => decision.ruleId === "late-priority-frequency"
+    )?.message;
+    expect(message).toContain("本月跨航班送资料");
+    expect(message).not.toContain("本月跨航班申报");
+  });
+
   it("does not warn when the current late role is already assigned to a lowest-frequency worker", async () => {
     const { state, underused, assignments } = setup();
     const primary = assignments.find((item) => item.id === "late-primary")!;

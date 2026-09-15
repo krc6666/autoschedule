@@ -40,11 +40,17 @@ export async function optimizeReassignment(
   options: ReassignmentOptimizationOptions
 ): Promise<ReassignmentOptimizationResult> {
   const deadline = Date.now() + (options.timeoutMs ?? 4_000);
-  const { choices, movable, fixed, candidateRejectionReasons } =
-    prepareReassignmentChoices(options);
+  const {
+    choices,
+    movable,
+    fixed,
+    candidateRejectionReasons,
+    candidateRejections,
+  } = prepareReassignmentChoices(options);
   if (!choices.some(({ assignment }) => assignment.id === options.primary.id)) {
     return {
       changes: null,
+      candidateRejections,
       attemptedReasons: candidateRejectionReasons.length
         ? candidateRejectionReasons
         : ["没有具备连续腾挪岗位资质的人员"],
@@ -97,12 +103,16 @@ export async function optimizeReassignment(
         timeoutMs: Math.max(1, deadline - Date.now()),
       })
     );
-    if (result.termination !== "optimal") {
+    const acceptsTimeLimitedFeasible =
+      options.acceptTimeLimitedFeasible === true &&
+      result.termination === "time-limited-feasible";
+    if (result.termination !== "optimal" && !acceptsTimeLimitedFeasible) {
       if (result.diagnostic) attemptedReasons.push(result.diagnostic);
       if (result.termination === "infeasible")
         attemptedReasons.push("没有具备双向岗位资质的完整重排方案");
       return {
         changes: null,
+        candidateRejections,
         attemptedReasons: [...new Set(attemptedReasons)],
         termination:
           result.termination === "time-limited-feasible" ||
@@ -141,8 +151,11 @@ export async function optimizeReassignment(
     if (!reasons.length) {
       return {
         changes,
+        candidateRejections,
         attemptedReasons: [...new Set(attemptedReasons)],
-        termination: "optimal",
+        termination: acceptsTimeLimitedFeasible
+          ? "time-limited-feasible"
+          : "optimal",
       };
     }
     attemptedReasons.push(...reasons);
@@ -152,6 +165,7 @@ export async function optimizeReassignment(
   attemptedReasons.push("整体重排达到时间上限，未提交部分结果");
   return {
     changes: null,
+    candidateRejections,
     attemptedReasons: [...new Set(attemptedReasons)],
     termination: "timed-out",
   };

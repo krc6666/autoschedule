@@ -518,6 +518,50 @@ describe("HiGHS native lexicographic model reuse", () => {
     expect(native.instances[0]!.solve).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the previous complete solution when a best-effort result exceeds its accepted gap", async () => {
+    native.results.push(
+      { status: "optimal", solutionStatus: "feasible", mipGap: 0 },
+      {
+        status: "optimal",
+        solutionStatus: "feasible",
+        mipGap: 0.06,
+        objective: 106,
+        mipDualBound: 100,
+      }
+    );
+    native.solutions.push([1, 0], [1, 1]);
+
+    const result = await new HighsSolver().solve({
+      strategy: "native-lexicographic",
+      variables: [{ id: "protected" }, { id: "outside-gap" }],
+      constraints: [],
+      objectives: [
+        {
+          id: "protect",
+          direction: "maximize",
+          terms: [{ variableId: "protected", coefficient: 1 }],
+          optimality: "required",
+        },
+        {
+          id: "improve",
+          direction: "maximize",
+          terms: [{ variableId: "outside-gap", coefficient: 1 }],
+          optimality: "best-effort",
+          acceptedGap: { relative: 0.05 },
+        },
+      ],
+      timeoutMs: 5_000,
+    });
+
+    expect(result.termination).toBe("time-limited-feasible");
+    expect([...result.selectedVariableIds]).toEqual(["protected"]);
+    expect(result.bestEffort).toEqual({
+      stoppedAtObjectiveId: "improve",
+      completedObjectiveIds: ["protect"],
+      solutionSource: "previous-optimal",
+    });
+  });
+
   it("rejects a required timeout even when HiGHS has an incumbent", async () => {
     native.results.push({
       status: "timelimit",

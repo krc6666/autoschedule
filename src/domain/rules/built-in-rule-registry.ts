@@ -7,6 +7,7 @@ import {
   diagnoseSameAirlinePriorityEligibility,
   diagnoseAutomaticStaffEligibility,
   diagnoseMinimumFlightTransitionEligibility,
+  diagnoseSameFlightStaffExclusionEligibility,
 } from "../candidates/assignment-eligibility";
 import type {
   AssignmentEligibilityDiagnostic,
@@ -25,6 +26,7 @@ import {
   comparePreviousWorkdayLoadPriority,
   compareScarceQualification,
   compareStrictPositionTransition,
+  compareTr121H02Cooldown,
   compareWorkloadBalance,
   type CandidatePriority,
 } from "../candidates/candidate-priority";
@@ -196,6 +198,12 @@ const RULE_EXECUTION: Readonly<
       execute: diagnoseAutomaticStaffEligibility,
     },
   ],
+  "same-flight-staff-exclusion": [
+    {
+      kind: "hard-constraint",
+      execute: diagnoseSameFlightStaffExclusionEligibility,
+    },
+  ],
   "minimum-flight-transition": [
     {
       kind: "hard-constraint",
@@ -272,6 +280,7 @@ const RULE_EXECUTION: Readonly<
     { kind: "daily-model", id: "cross-flight-priority" },
   ],
   "position-transition": [candidate(compareStrictPositionTransition)],
+  "tr121-h02-cooldown": [candidate(compareTr121H02Cooldown)],
   "late-priority-aggregate-rotation": [
     candidate(compareLatePriorityAggregateRotation),
   ],

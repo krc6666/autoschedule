@@ -16,6 +16,75 @@ import "../../src/ui/components/schedule-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("schedule page", () => {
+  it("marks an unfilled KE166 mobile supervisor cell red with a dedicated message", async () => {
+    const state = createDefaultState();
+    const flight = {
+      id: "flight-ke166",
+      flightNo: "KE166",
+      startTime: "09:00",
+      endTime: "11:00",
+      bookedPassengers: 0,
+      positions: ["督导"],
+      remark: "",
+    };
+    const rule = {
+      ...state.positionRules[0]!,
+      id: "rule-ke166-mobile",
+      flightNo: "KE166",
+      name: "督导",
+      category: "机动督导" as const,
+      qualifiedStaffIds: [],
+    };
+    state.flights = [flight];
+    state.positionRules = [rule];
+    state.assignments = [
+      {
+        id: "ke166-missing",
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: null,
+        staffName: "",
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        manualRemark: "",
+        status: "unfilled",
+      },
+    ];
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-08-01",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+    });
+    const grid = element.querySelector<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-grid");
+    await grid?.updateComplete;
+    const personCell = element.querySelector(
+      ".schedule-person-cell.is-ke166-unfilled"
+    );
+    const input = personCell?.querySelector<HTMLInputElement>(
+      ".schedule-name-input"
+    );
+
+    expect(personCell).not.toBeNull();
+    expect(input?.placeholder).toBe("KE166机动督导未安排");
+    const styles = readFileSync(
+      join(process.cwd(), "src", "styles.css"),
+      "utf8"
+    );
+    expect(styles).toMatch(/\.schedule-person-cell\.is-ke166-unfilled\s*\{/);
+  });
+
   it("warns when a refreshed page is showing a restored old schedule", async () => {
     const state = createDefaultState();
     const flight = state.flights[0]!;
@@ -972,6 +1041,23 @@ describe("schedule page", () => {
         .querySelector(".schedule-soft-warning-icon")
         ?.getAttribute("title")
     ).toContain("上一班末班重点岗位人员作为最后兜底接替");
+    const rotationWarning =
+      "甲在KE166/H02连续承担。\n乙 —— 9/18 做过 TR121 末班岗，下一班不能接 KE166\n这次自动排班没有找到能完成的换人办法，原安排保留。";
+    assignment.decisionTrace = [
+      schedulingDecision(
+        "late-shift-recovery",
+        "fallback",
+        "这一条是另一种提醒"
+      ),
+      schedulingDecision("position-rotation", "fallback", rotationWarning),
+    ];
+    element.model = { ...state, assignments: [...state.assignments] };
+    await element.updateComplete;
+    const rotationIcon = element.querySelector(".schedule-soft-warning-icon");
+    expect(rotationIcon?.getAttribute("title")).toBe(rotationWarning);
+    expect(rotationIcon?.closest("button")?.getAttribute("title")).toContain(
+      rotationWarning
+    );
     const warningButton = element.querySelector<HTMLButtonElement>(
       'button[aria-label="分析这个岗位的调换方案"]'
     );

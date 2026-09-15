@@ -12,6 +12,7 @@ const WARNING_CODES: ReadonlySet<AssignmentEligibilityViolationCode> = new Set([
   "daily-hours",
   "minimum-flight-transition",
   "position-transition",
+  "same-flight-staff-exclusion",
 ]);
 
 export interface ManualAssignmentEvaluation {

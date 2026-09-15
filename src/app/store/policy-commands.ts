@@ -4,6 +4,7 @@ import {
   addDutyPriority,
   addLateShiftRecoveryPositionRule,
   addMobileSupervisorCoverageRule,
+  addSameFlightStaffExclusion,
   addNextWorkdayRecoveryTarget,
   addTransitionPolicy,
   applySchedulePolicy,
@@ -12,6 +13,7 @@ import {
   deleteCrossFlightPriorityPolicy,
   deleteLateShiftRecoveryPositionRule,
   deleteMobileSupervisorCoverageRule,
+  deleteSameFlightStaffExclusion,
   deleteNextWorkdayRecoveryTarget,
   deleteTransitionPolicy,
   moveDutyPriority,
@@ -27,6 +29,9 @@ export function createPolicyCommands(command: StateCommand) {
   return {
     apply: (input: SchedulePolicyInput) =>
       command((state) => applySchedulePolicy(state, input)),
+    addSameFlightStaffExclusion: () => command(addSameFlightStaffExclusion),
+    deleteSameFlightStaffExclusion: (id: string) =>
+      command((state) => deleteSameFlightStaffExclusion(state, id)),
     addDutyPriority: () => command(addDutyPriority),
     moveDutyPriority: (id: string, direction: -1 | 1) =>
       command((state) => moveDutyPriority(state, id, direction)),

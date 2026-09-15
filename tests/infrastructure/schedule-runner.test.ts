@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
-import type { AppState } from "../../src/model";
 import { runScheduleInBackground } from "../../src/infrastructure/schedule-runner";
 import type { ScheduleWorkerResponse } from "../../src/infrastructure/schedule-worker-protocol";
 
@@ -126,7 +125,7 @@ describe("background schedule runner", () => {
     ).toBe(true);
   });
 
-  it("falls back to the main thread when posting schedule data fails", async () => {
+  it("rejects with the original reason when posting schedule data fails", async () => {
     const terminate = vi.fn();
     class PostingFailureWorker extends ControlledWorker {
       override terminate = terminate;
@@ -142,110 +141,89 @@ describe("background schedule runner", () => {
       () => undefined,
       () => undefined
     );
-    const outcome = await run.result;
-    expect(outcome.kind).toBe("completed");
-    if (outcome.kind !== "completed") throw new Error("expected completed run");
-    expect(outcome.result.assignments.length).toBeGreaterThan(0);
-    expect(terminate).toHaveBeenCalledOnce();
-  }, 60_000);
 
-  it("falls back to the main thread when the worker file cannot be loaded", async () => {
+    await expect(run.result).rejects.toThrow(
+      "Worker 数据发送失败：DataCloneError: 无法复制排班数据"
+    );
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects with a fallback reason when the browser omits worker error details", async () => {
     const { run, worker } = createRun();
     queueMicrotask(() => worker.onerror?.({ message: "" } as ErrorEvent));
 
-    const outcome = await run.result;
-    expect(outcome.kind).toBe("completed");
-    if (outcome.kind !== "completed") throw new Error("expected completed run");
-    expect(outcome.result.assignments.length).toBeGreaterThan(0);
-    expect(worker.terminate).toHaveBeenCalledOnce();
-  }, 60_000);
-
-  it("retries on the main thread when the worker returns an error", async () => {
-    const { run, worker } = createRun();
-
-    worker.emit({ type: "error", message: "worker failed" });
-
-    const outcome = await run.result;
-
-    expect(outcome.kind).toBe("completed");
-    if (outcome.kind !== "completed") throw new Error("expected completed run");
-    expect(outcome.result.assignments.length).toBeGreaterThan(0);
-    expect(worker.terminate).toHaveBeenCalledOnce();
-  }, 60_000);
-
-  it("retries on the main thread when the worker raises a runtime error", async () => {
-    const { run, worker } = createRun();
-
-    worker.onerror?.({ message: "worker crashed" } as ErrorEvent);
-
-    const outcome = await run.result;
-
-    expect(outcome.kind).toBe("completed");
-    if (outcome.kind !== "completed") throw new Error("expected completed run");
-    expect(outcome.result.assignments.length).toBeGreaterThan(0);
-    expect(worker.terminate).toHaveBeenCalledOnce();
-  }, 60_000);
-
-  it("rejects only after the main-thread retry also fails", async () => {
-    const brokenState = {
-      ...createDefaultState(),
-      flights: null,
-    } as unknown as AppState;
-    vi.stubGlobal("Worker", ControlledWorker);
-    const run = runScheduleInBackground(
-      brokenState,
-      "2026-08-01",
-      () => undefined,
-      () => undefined
+    await expect(run.result).rejects.toThrow(
+      "Worker 运行失败：排班后台线程运行失败"
     );
-    const worker = ControlledWorker.instances.at(-1)!;
-    worker.emit({ type: "error", message: "worker failed" });
+    expect(worker.terminate).toHaveBeenCalledOnce();
+  });
 
-    let error: unknown;
-    try {
-      await run.result;
-    } catch (caught) {
-      error = caught;
-    }
-
-    expect(error).toBeDefined();
-    expect(String(error)).toContain("worker failed");
-  }, 30_000);
-
-  it("preserves an onerror reason when the main-thread retry also fails", async () => {
-    const brokenState = {
-      ...createDefaultState(),
-      flights: null,
-    } as unknown as AppState;
-    vi.stubGlobal("Worker", ControlledWorker);
-    const run = runScheduleInBackground(
-      brokenState,
-      "2026-08-01",
-      () => undefined,
-      () => undefined
-    );
-    const worker = ControlledWorker.instances.at(-1)!;
-    worker.onerror?.({ message: "worker crashed" } as ErrorEvent);
-
-    let error: unknown;
-    try {
-      await run.result;
-    } catch (caught) {
-      error = caught;
-    }
-
-    expect(error).toBeDefined();
-    expect(String(error)).toContain("worker crashed");
-    expect(String(error)).toContain("state.flights is not iterable");
-  }, 30_000);
-
-  it("does not expose a new result when stopped during the main-thread retry", async () => {
+  it("rejects a worker-reported error, clears its safe result, and allows a later run", async () => {
     const { run, worker } = createRun();
+    const safeResult = { assignments: [], warnings: [], unfilledCount: 0 };
+    worker.emit({ type: "safe-result", result: safeResult });
+    expect(run.hasLatestSafeResult()).toBe(true);
+
     worker.emit({ type: "error", message: "worker failed" });
 
-    expect(run.stopWithoutResult()).toBe(true);
-    await expect(run.result).resolves.toEqual({
-      kind: "stopped-without-result",
+    await expect(run.result).rejects.toThrow("Worker 运行失败：worker failed");
+    expect(run.hasLatestSafeResult()).toBe(false);
+    expect(run.stopWithLatestResult()).toBe(false);
+    expect(worker.terminate).toHaveBeenCalledOnce();
+
+    const { run: nextRun, worker: nextWorker } = createRun();
+    nextWorker.emit({
+      type: "result",
+      result: { assignments: [], warnings: [], unfilledCount: 0 },
     });
-  }, 30_000);
+    await expect(nextRun.result).resolves.toMatchObject({ kind: "completed" });
+  });
+
+  it("rejects with the original onerror reason", async () => {
+    const { run, worker } = createRun();
+
+    worker.onerror?.({
+      error: new Error("worker crashed from wasm"),
+      message: "Script error.",
+    } as ErrorEvent);
+
+    await expect(run.result).rejects.toThrow(
+      "Worker 运行失败：Error: worker crashed from wasm"
+    );
+    expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects with the original reason when worker construction fails", async () => {
+    class ConstructionFailureWorker {
+      constructor() {
+        throw new DOMException("Worker 脚本被安全策略拦截", "SecurityError");
+      }
+    }
+    vi.stubGlobal("Worker", ConstructionFailureWorker);
+    const run = runScheduleInBackground(
+      createDefaultState(),
+      "2026-08-01",
+      () => undefined,
+      () => undefined
+    );
+
+    await expect(run.result).rejects.toThrow(
+      "Worker 创建失败：SecurityError: Worker 脚本被安全策略拦截"
+    );
+  });
+
+  it("keeps the main-thread fallback when Worker is unavailable", async () => {
+    vi.stubGlobal("Worker", undefined);
+    const run = runScheduleInBackground(
+      createDefaultState(),
+      "2026-08-01",
+      () => undefined,
+      () => undefined
+    );
+
+    const outcome = await run.result;
+    expect(outcome.kind).toBe("completed");
+    if (outcome.kind !== "completed") throw new Error("expected completed run");
+    expect(outcome.result.assignments.length).toBeGreaterThan(0);
+  }, 60_000);
 });

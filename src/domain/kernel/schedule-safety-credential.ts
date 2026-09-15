@@ -38,6 +38,7 @@ function contextFingerprint(context: ScheduleGuardContext): string {
   const ke166Snapshot = context.ke166SnapshotFacts;
   const scarceQualification = context.scarceQualificationFacts;
   const dutyPosition = context.dutyPositionFacts;
+  const sameFlightStaffExclusion = context.sameFlightStaffExclusionFacts;
   return fingerprint({
     phase: context.phase,
     halfRestFacts: halfRest
@@ -221,6 +222,10 @@ function contextFingerprint(context: ScheduleGuardContext): string {
           scheduleFrequency: latePriorityFrequency.scheduleFrequency
             ? {
                 date: latePriorityFrequency.scheduleFrequency.date,
+                recentArchivedWorkdayDates: [
+                  ...latePriorityFrequency.scheduleFrequency
+                    .recentArchivedWorkdayDates,
+                ],
                 recentConsecutiveWorkdays: [
                   ...latePriorityFrequency.scheduleFrequency
                     .recentConsecutiveWorkdays,
@@ -385,6 +390,12 @@ function contextFingerprint(context: ScheduleGuardContext): string {
             }))
             .sort((left, right) => left.id.localeCompare(right.id)),
           scheduleFrequencyDate: highFatiguePosition.scheduleFrequency?.date,
+          recentArchivedWorkdayDates: highFatiguePosition.scheduleFrequency
+            ? [
+                ...highFatiguePosition.scheduleFrequency
+                  .recentArchivedWorkdayDates,
+              ]
+            : undefined,
           recentFrequencyRecordIds: highFatiguePosition.scheduleFrequency
             ? [
                 ...highFatiguePosition.scheduleFrequency
@@ -506,6 +517,19 @@ function contextFingerprint(context: ScheduleGuardContext): string {
             dutyPosition.state.settings.dutyPositionPriorities.map(
               (priority) => ({ ...priority })
             ),
+        }
+      : undefined,
+    sameFlightStaffExclusionFacts: sameFlightStaffExclusion
+      ? {
+          exclusions: [
+            ...sameFlightStaffExclusion.state.settings
+              .sameFlightStaffExclusions,
+          ]
+            .map((exclusion) => ({ ...exclusion }))
+            .sort((left, right) => left.id.localeCompare(right.id)),
+          staffIds: sameFlightStaffExclusion.state.staff
+            .map((person) => person.id)
+            .sort(),
         }
       : undefined,
   });

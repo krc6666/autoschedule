@@ -1,5 +1,6 @@
 import type { PositionRule } from "../../model";
 import { timeToMinutes } from "../shared/time";
+import { isCombinedDeclarationDeliveryPosition } from "../rules/priority-position-semantics";
 import { isPriorityRotationPosition } from "./position-rotation-policy";
 
 const NEXT_DAY_EARLY_HOUR_CUTOFF_MINUTES = 6 * 60;
@@ -135,9 +136,12 @@ export function latePriorityFrequencyKinds(
   target: Pick<PositionRule, "name" | "remark">
 ): readonly LatePriorityFrequencyKind[] {
   const searchable = `${target.name} ${target.remark}`;
-  return LATE_PRIORITY_KIND_DEFINITIONS.flatMap((definition) =>
+  const kinds = LATE_PRIORITY_KIND_DEFINITIONS.flatMap((definition) =>
     searchable.includes(definition.keyword) ? [definition.kind] : []
   );
+  return isCombinedDeclarationDeliveryPosition(target)
+    ? kinds.filter((kind) => kind !== "declaration")
+    : kinds;
 }
 
 export function isSupervisorPosition(

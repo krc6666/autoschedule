@@ -472,7 +472,7 @@ export function parseWorkbook(
   const weeklyFlightPlans = parseWeeklyFlightPlans(workbook);
   const positionRules = parsePositions(workbook);
   const history = parseHistory(workbook, effectiveStaff);
-  const parsedRules = parseScheduleRuleSettings(workbook);
+  const parsedRules = parseScheduleRuleSettings(workbook, effectiveStaff);
   const latePriorityFrequencyAdjustments =
     parseLatePriorityFrequencyAdjustments(workbook);
   const warnings = [...parsedRules.warnings];

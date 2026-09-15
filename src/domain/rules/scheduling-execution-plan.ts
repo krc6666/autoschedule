@@ -36,6 +36,7 @@ export interface PlannedScheduleMutation {
 
 export interface DailyObjectiveBuckets {
   readonly ke166Reservation: readonly LexicographicObjective[];
+  readonly ke166Availability?: readonly LexicographicObjective[];
   readonly duty: readonly LexicographicObjective[];
   readonly coverage: readonly LexicographicObjective[];
   readonly crossWorkdayReservation: readonly LexicographicObjective[];
@@ -197,10 +198,13 @@ export function dailyObjectiveIsBestEffort(objectiveId: string): boolean {
 export function orderDailyObjectiveBuckets(
   buckets: DailyObjectiveBuckets
 ): LexicographicObjective[] {
+  const coverageBeforeKe166 = (buckets.ke166Availability?.length ?? 0) > 0;
   return [
+    ...(coverageBeforeKe166 ? buckets.coverage.slice(0, 2) : []),
     ...buckets.ke166Reservation,
+    ...(buckets.ke166Availability ?? []),
     ...buckets.duty,
-    ...buckets.coverage,
+    ...(coverageBeforeKe166 ? buckets.coverage.slice(2) : buckets.coverage),
     ...buckets.crossWorkdayReservation,
     ...buckets.strictTransition,
     ...buckets.crossFlightPriority,

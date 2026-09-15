@@ -210,6 +210,7 @@ export async function finalizeSchedule({
   ledger.commit({ type: "replace", assignments: resultAssignments });
   const finalGuardContext: ScheduleGuardContext = {
     phase: "final",
+    sameFlightStaffExclusionFacts: { state },
     halfRestFacts: runFacts.halfRest,
     airlineRotationFacts: {
       positionRules: state.positionRules,

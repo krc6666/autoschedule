@@ -24,6 +24,7 @@ import {
   halfRestRegressionReasons,
   strictRecoveryHalfRestBackfillCount,
 } from "../rules/half-rest";
+import { worsensTr121H02Cooldown } from "../rules/tr121-h02-cooldown";
 
 function dutyReliefProfile(
   state: ScheduleGenerationFacts,
@@ -380,6 +381,13 @@ function plannedAssignmentSafetyReasons(
         frequencyFacts
       )
     );
+  }
+  if (
+    !(review === "coverage" && plannedAssigned > originalAssigned) &&
+    frequencyFacts &&
+    worsensTr121H02Cooldown(state, assignments, planned, date, frequencyFacts)
+  ) {
+    reasons.push("调整会扩大 TR121/H02 冷却违反");
   }
   const reservationBefore = new Map(
     crossWorkdayReservationStatuses(state, assignments).map((status) => [

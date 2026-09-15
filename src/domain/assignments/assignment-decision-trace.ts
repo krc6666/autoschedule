@@ -30,6 +30,7 @@ import {
   isKe166MobileSupervisor,
   type AssignmentTask,
 } from "../flights/schedule-tasks";
+import { tr121H02CooldownProfile } from "../rules/tr121-h02-cooldown";
 
 export interface AssignmentDecisionTraceContext {
   state: ScheduleGenerationFacts;
@@ -205,6 +206,29 @@ function appendProtectionFallbacks(
   );
 }
 
+function appendTr121H02CooldownFallback(
+  trace: SchedulingDecision[],
+  context: AssignmentDecisionTraceContext
+): void {
+  const { state, date, task, selected, runFacts } = context;
+  const profile = tr121H02CooldownProfile(
+    state,
+    selected.id,
+    task.flight.flightNo,
+    task.rule,
+    date,
+    runFacts.scheduleFrequency
+  );
+  if (!profile.inCooldown) return;
+  trace.push(
+    schedulingDecision(
+      "tr121-h02-cooldown",
+      "fallback",
+      `${selected.name}最近工作班已承担${task.flight.flightNo}/${task.rule.name}，本次因岗位完整性需要突破冷却，距冷却结束还剩${profile.remainingWorkdays}个工作班`
+    )
+  );
+}
+
 function appendLateShiftPositionReliefDecision(
   trace: SchedulingDecision[],
   context: AssignmentDecisionTraceContext
@@ -338,6 +362,7 @@ export function buildAssignmentDecisionTrace(
   const trace: SchedulingDecision[] = [];
   appendReservedAssignmentDecisions(trace, context);
   appendProtectionFallbacks(trace, context);
+  appendTr121H02CooldownFallback(trace, context);
   appendLateShiftPositionReliefDecision(trace, context);
   appendDecisiveRule(trace, context);
   appendCrossWorkdayFallback(trace, context);

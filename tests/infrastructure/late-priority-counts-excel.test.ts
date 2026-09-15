@@ -45,6 +45,64 @@ describe("late-priority counts workbook", () => {
     });
   });
 
+  it("exports a combined-only flight as delivery without a declaration row", () => {
+    const state = createDefaultState();
+    const combinedRule = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "申报"
+    )!;
+    combinedRule.remark = "申报/送资料";
+    state.positionRules = [combinedRule];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+
+    const workbook = buildLatePriorityCountsWorkbook(state, "2026-08-20");
+    const preview = parseLatePriorityCountsWorkbook(
+      workbook,
+      state,
+      "2026-08-20"
+    );
+
+    expect(preview.canApply).toBe(true);
+    expect(new Set(preview.targets.map((target) => target.category))).toEqual(
+      new Set(["送资料"])
+    );
+  });
+
+  it("rejects an old declaration row for a combined-only flight", () => {
+    const state = createDefaultState();
+    const combinedRule = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "申报"
+    )!;
+    combinedRule.remark = "申报/送资料";
+    const staff = state.staff.find(
+      (person) => person.id === combinedRule.qualifiedStaffIds[0]
+    )!;
+    combinedRule.qualifiedStaffIds = [staff.id];
+    state.staff = [staff];
+    state.positionRules = [combinedRule];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["月份", "人员编号", "人员姓名", "航班号", "岗位类别", "最终次数"],
+        ["2026-08", staff.id, staff.name, "TR121", "送资料", 0],
+        ["2026-08", staff.id, staff.name, "TR121", "申报", 0],
+      ]),
+      "末班重点岗位次数"
+    );
+
+    const preview = parseLatePriorityCountsWorkbook(
+      workbook,
+      state,
+      "2026-08-20"
+    );
+
+    expect(preview.canApply).toBe(false);
+    expect(preview.errors.join("\n")).toContain(
+      "岗位类别不适用于当前航班：申报"
+    );
+  });
+
   it("blocks invalid, duplicate, unknown, and wrong-month rows", () => {
     const state = createDefaultState();
     state.settings.latePriorityFlightNumbers = ["TR121"];

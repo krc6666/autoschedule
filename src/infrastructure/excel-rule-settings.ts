@@ -5,7 +5,7 @@ import {
   type ScalarScheduleSettingKey,
 } from "../domain/rules/schedule-settings";
 import { normalizeTime } from "../domain/shared/time";
-import type { AppState, ScheduleSettings } from "../model";
+import type { AppState, ScheduleSettings, Staff } from "../model";
 import type {
   CrossWorkdayQualificationReservation,
   CrossFlightPriorityPolicy,
@@ -14,6 +14,7 @@ import type {
   MobileSupervisorCoverageRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
+  SameFlightStaffExclusion,
 } from "../domain/rules/structured-policy-contract";
 import { createId, normalizeText, splitList } from "../utils";
 import { normalizeLatePriorityFlightNumber } from "../domain/reviews/late-priority-policy";
@@ -36,6 +37,7 @@ const RULE_SHEET_NAMES = {
   crossWorkdayReservations: "跨工作日资质预留",
   latePriorityFlightScope: "末班重点航班范围",
   crossFlightPriority: "跨航班重点岗位优先",
+  sameFlightStaffExclusions: "同航班人员互斥",
 } as const;
 
 interface ParsedRuleSheet<T> {
@@ -495,8 +497,50 @@ function parseCrossFlightPriorityPolicies(
   );
 }
 
+function parseSameFlightStaffExclusions(
+  workbook: XLSX.WorkBook,
+  staff: readonly Staff[]
+): ParsedRuleSheet<SameFlightStaffExclusion> {
+  const staffIds = new Set(staff.map((person) => person.id));
+  return parseRuleSheet(
+    workbook,
+    RULE_SHEET_NAMES.sameFlightStaffExclusions,
+    (row, header) => {
+      const firstStaffId = cell(row, header, ["人员A编号", "人员A"], 2);
+      const secondStaffId = cell(row, header, ["人员B编号", "人员B"], 4);
+      const errors = [
+        !firstStaffId ? "人员A编号不能为空" : "",
+        !secondStaffId ? "人员B编号不能为空" : "",
+        firstStaffId && !staffIds.has(firstStaffId)
+          ? `人员A编号“${firstStaffId}”不存在`
+          : "",
+        secondStaffId && !staffIds.has(secondStaffId)
+          ? `人员B编号“${secondStaffId}”不存在`
+          : "",
+        firstStaffId && firstStaffId === secondStaffId
+          ? "两个人员不能相同"
+          : "",
+      ].filter(Boolean);
+      if (errors.length) return { errors };
+      return {
+        errors: [],
+        value: {
+          id: ruleId(
+            cell(row, header, ["规则ID", "ID"], 0),
+            "same-flight-staff-exclusion"
+          ),
+          flightNo: cell(row, header, ["适用航班", "航班号"], 1).toUpperCase(),
+          firstStaffId,
+          secondStaffId,
+        },
+      };
+    }
+  );
+}
+
 export function parseScheduleRuleSettings(
-  workbook: XLSX.WorkBook
+  workbook: XLSX.WorkBook,
+  staff: readonly Staff[] = []
 ): ParsedScheduleRuleSettings {
   const scalar = parseScalarSettings(workbook);
   const transitions = parseTransitionPolicies(workbook);
@@ -507,6 +551,10 @@ export function parseScheduleRuleSettings(
   const crossWorkdayReservations = parseCrossWorkdayReservations(workbook);
   const latePriorityFlightScope = parseLatePriorityFlightScope(workbook);
   const crossFlightPriority = parseCrossFlightPriorityPolicies(workbook);
+  const sameFlightStaffExclusions = parseSameFlightStaffExclusions(
+    workbook,
+    staff
+  );
   const recognized =
     scalar.present ||
     transitions.present ||
@@ -516,7 +564,8 @@ export function parseScheduleRuleSettings(
     supervisorCoverage.present ||
     crossWorkdayReservations.present ||
     latePriorityFlightScope.present ||
-    crossFlightPriority.present;
+    crossFlightPriority.present ||
+    sameFlightStaffExclusions.present;
   const hasImportableSettings =
     Boolean(scalar.settings && Object.keys(scalar.settings).length) ||
     transitions.value !== undefined ||
@@ -526,7 +575,8 @@ export function parseScheduleRuleSettings(
     supervisorCoverage.value !== undefined ||
     crossWorkdayReservations.value !== undefined ||
     latePriorityFlightScope.value !== undefined ||
-    crossFlightPriority.value !== undefined;
+    crossFlightPriority.value !== undefined ||
+    sameFlightStaffExclusions.value !== undefined;
   const settings: Partial<ScheduleSettings> | undefined = hasImportableSettings
     ? { ...(scalar.settings ?? {}) }
     : undefined;
@@ -547,6 +597,8 @@ export function parseScheduleRuleSettings(
     settings.latePriorityFlightNumbers = latePriorityFlightScope.value;
   if (settings && crossFlightPriority.value !== undefined)
     settings.crossFlightPriorityPolicies = crossFlightPriority.value;
+  if (settings && sameFlightStaffExclusions.value !== undefined)
+    settings.sameFlightStaffExclusions = sameFlightStaffExclusions.value;
   return {
     settings,
     recognized,
@@ -560,6 +612,7 @@ export function parseScheduleRuleSettings(
       ...crossWorkdayReservations.warnings,
       ...latePriorityFlightScope.warnings,
       ...crossFlightPriority.warnings,
+      ...sameFlightStaffExclusions.warnings,
     ],
   };
 }
@@ -736,5 +789,30 @@ export function appendScheduleRuleSheets(
       ]),
     ],
     [32, 10, 18, 40]
+  );
+  append(
+    workbook,
+    RULE_SHEET_NAMES.sameFlightStaffExclusions,
+    [
+      [
+        "规则ID",
+        "适用航班（空白表示全部）",
+        "人员A编号",
+        "人员A姓名",
+        "人员B编号",
+        "人员B姓名",
+      ],
+      ...state.settings.sameFlightStaffExclusions.map((exclusion) => [
+        exclusion.id,
+        exclusion.flightNo,
+        exclusion.firstStaffId,
+        state.staff.find((person) => person.id === exclusion.firstStaffId)
+          ?.name ?? "",
+        exclusion.secondStaffId,
+        state.staff.find((person) => person.id === exclusion.secondStaffId)
+          ?.name ?? "",
+      ]),
+    ],
+    [32, 24, 16, 16, 16, 16]
   );
 }

@@ -16,6 +16,7 @@ export type ScalarScheduleSettingKey = Exclude<
   | "crossWorkdayQualificationReservations"
   | "crossFlightPriorityPolicies"
   | "latePriorityFlightNumbers"
+  | "sameFlightStaffExclusions"
 >;
 
 export interface ScheduleSettingDefinition {
@@ -150,6 +151,16 @@ export const SCHEDULE_SETTING_DEFINITIONS: readonly ScheduleSettingDefinition[] 
       defaultValue: true,
     },
     {
+      key: "tr121H02CooldownWorkdays",
+      label: "TR121/H02 冷却工作班数",
+      type: "number",
+      description: "承担 TR121/H02 后优先避开的后续已归档工作班数，0 表示关闭",
+      defaultValue: 3,
+      min: 0,
+      max: 30,
+      integer: true,
+    },
+    {
       key: "lateShiftRecoveryEnabled",
       label: "启用跨工作日恢复",
       type: "boolean",
@@ -250,6 +261,7 @@ function scalarDefaults(): Omit<
   | "crossWorkdayQualificationReservations"
   | "crossFlightPriorityPolicies"
   | "latePriorityFlightNumbers"
+  | "sameFlightStaffExclusions"
 > {
   return Object.fromEntries(
     SCHEDULE_SETTING_DEFINITIONS.map((definition) => [

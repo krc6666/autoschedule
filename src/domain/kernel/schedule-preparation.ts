@@ -86,7 +86,8 @@ export function prepareSchedule(
     state,
     date,
     tasks,
-    dutyStaffId
+    dutyStaffId,
+    runFacts.scheduleFrequency
   ).filter((task) => task.key !== preferredDutyMorningTaskKey);
   return {
     flights,

@@ -4,6 +4,7 @@ import type { AppState, Assignment } from "../../src/model";
 import { reviewConsecutivePositionRotation } from "../../src/domain/reviews/position-rotation-review";
 import { generateSchedule } from "../helpers/generate-schedule";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
+import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 
 function disableUnrelatedProtections(state: AppState): void {
   state.settings.lateShiftRecoveryEnabled = false;
@@ -147,6 +148,120 @@ function latePairScenario(ordinaryFatigue = 4) {
 }
 
 describe("consecutive priority-position rotation review", () => {
+  it("names separately the previous late work behind rejected KE166/H02 replacements", async () => {
+    const state = createDefaultState();
+    const [current, first, second] = state.staff
+      .filter((person) => person.status === "正常")
+      .slice(0, 3);
+    state.staff = [current!, first!, second!];
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
+    disableUnrelatedProtections(state);
+    state.settings.lateShiftRecoveryEnabled = true;
+    state.settings.nextWorkdayRecoveryMode = "forbid";
+    state.settings.nextWorkdayRecoveryTargets = [
+      {
+        id: "ke166-one",
+        enabled: true,
+        flightNo: "KE166",
+        positionKeyword: "一号",
+      },
+    ];
+    state.settings.lateShiftRecoveryPositionRules = [
+      {
+        id: "late",
+        enabled: true,
+        flightNo: "TR121",
+        matchField: "remark",
+        keyword: "申报",
+        nextWorkdayCutoffTime: "",
+      },
+    ];
+    state.flights = [
+      {
+        id: "flight",
+        flightNo: "KE166",
+        startTime: "21:00",
+        endTime: "23:55",
+        positions: ["H02"],
+        bookedPassengers: 0,
+        remark: "",
+      },
+    ];
+    state.positionRules = [
+      {
+        ...state.positionRules[0]!,
+        id: "h02",
+        flightNo: "KE166",
+        name: "H02",
+        remark: "一号",
+        category: "常规",
+        qualifiedStaffIds: state.staff.map((person) => person.id),
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-h02",
+        date: "2026-09-18",
+        flightNo: "KE166",
+        position: "H02",
+        staffId: current!.id,
+        staffName: current!.name,
+        startTime: "21:00",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "一号",
+      },
+      ...[first!, second!].map((person) => ({
+        id: `late-${person.id}`,
+        date: "2026-09-18",
+        flightNo: "TR121",
+        position: "H04",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:00",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "申报",
+      })),
+    ];
+    const primary = assignment(
+      "h02-today",
+      "h02",
+      "H02",
+      current!.id,
+      current!.name,
+      "一号"
+    );
+    primary.flightNo = "KE166";
+    primary.startTime = "21:00";
+    primary.endTime = "23:55";
+    state.assignments = [primary];
+    const warnings = await reviewConsecutivePositionRotation(
+      defaultHighsSolver,
+      state,
+      state.assignments,
+      "2026-09-20",
+      new Set(),
+      createScheduleRunFacts(state, "2026-09-20")
+    );
+    expect(primary.staffId).toBe(current!.id);
+    expect(warnings[0]).toContain(
+      `${first!.name} —— 9/18 做过 TR121 末班岗，下一班不能接 KE166`
+    );
+    expect(warnings[0]).toContain(
+      `${second!.name} —— 9/18 做过 TR121 末班岗，下一班不能接 KE166`
+    );
+    expect(
+      primary.decisionTrace?.find((item) => item.ruleId === "position-rotation")
+        ?.message
+    ).toBe(warnings[0]);
+  });
+
   it("rotates a repeated priority position even when the safe swap has equal fatigue", async () => {
     const {
       state,

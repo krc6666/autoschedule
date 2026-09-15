@@ -162,6 +162,176 @@ describe("statistics page", () => {
     ).toBe("1");
   });
 
+  it("switches the summary table display between all categories and one category", async () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => item.status === "正常")!;
+    const numberOne = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "一号"
+    )!;
+    const delivery = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "送资料"
+    )!;
+    numberOne.qualifiedStaffIds = [person.id];
+    delivery.qualifiedStaffIds = [person.id];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    state.history = [numberOne, delivery].map((rule, index) => ({
+      id: `display-filter-${index}`,
+      date: "2026-07-16",
+      flightNo: "TR121",
+      position: rule.name,
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "21:55",
+      endTime: "23:55",
+      workHours: 2,
+      fatiguePoints: 5,
+      remark: rule.remark,
+    }));
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-07-18" });
+    const workspace = element.querySelector<HTMLElement>(
+      ".late-priority-statistics"
+    )!;
+    const summary = () =>
+      workspace.querySelector(".late-priority-summary-table")!;
+    const summaryValue = () =>
+      [...summary().querySelectorAll("tbody tr")]
+        .find((row) =>
+          row.querySelector(
+            `.late-priority-count-detail[data-staff-id="${person.id}"]`
+          )
+        )
+        ?.querySelector("td:nth-child(2)")
+        ?.textContent?.trim();
+    expect(
+      workspace
+        .querySelector('button[aria-pressed="true"]')
+        ?.textContent?.trim()
+    ).toBe("全部");
+    expect(
+      [...summary().querySelectorAll("th")].map((cell) =>
+        cell.textContent?.trim()
+      )
+    ).toEqual(["人员", "四类合计", "TR121"]);
+    expect(summaryValue()).toBe("2");
+
+    workspace
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="末班重点岗位统计类别：送资料"]'
+      )
+      ?.click();
+    await element.updateComplete;
+    expect(
+      workspace
+        .querySelector('button[aria-pressed="true"]')
+        ?.textContent?.trim()
+    ).toBe("送资料");
+    expect(
+      [...summary().querySelectorAll("th")].map((cell) =>
+        cell.textContent?.trim()
+      )
+    ).toEqual(["人员", "送资料", "TR121"]);
+    expect(summaryValue()).toBe("1");
+
+    workspace
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="末班重点岗位统计类别：一号"]'
+      )
+      ?.click();
+    await element.updateComplete;
+    expect(summaryValue()).toBe("1");
+  });
+
+  it("filters to qualified staff and sorts the selected category by count", async () => {
+    const state = createDefaultState();
+    const [most, next, other] = state.staff.filter(
+      (item) => item.status === "正常"
+    );
+    const mostStaff = most!;
+    const nextStaff = next!;
+    const otherStaff = other!;
+    const delivery = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "送资料"
+    )!;
+    const numberOne = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "一号"
+    )!;
+    delivery.qualifiedStaffIds = [mostStaff.id, nextStaff.id];
+    numberOne.qualifiedStaffIds = [otherStaff.id];
+    state.positionRules = [delivery, numberOne];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    state.history = [
+      {
+        id: "delivery-most-1",
+        person: mostStaff,
+        date: "2026-07-10",
+        numberOne: false,
+      },
+      {
+        id: "delivery-most-2",
+        person: mostStaff,
+        date: "2026-07-12",
+        numberOne: false,
+      },
+      {
+        id: "delivery-next",
+        person: nextStaff,
+        date: "2026-07-14",
+        numberOne: false,
+      },
+      {
+        id: "number-one-other",
+        person: otherStaff,
+        date: "2026-07-16",
+        numberOne: true,
+      },
+    ].map(({ id, person, date, numberOne: isNumberOne }) => ({
+      id,
+      date,
+      flightNo: "TR121",
+      position: isNumberOne ? numberOne.name : delivery.name,
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "21:55",
+      endTime: "23:55",
+      workHours: 2,
+      fatiguePoints: 5,
+      remark: isNumberOne ? numberOne.remark : delivery.remark,
+    }));
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-07-18" });
+    const workspace = element.querySelector<HTMLElement>(
+      ".late-priority-statistics"
+    )!;
+    workspace
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="末班重点岗位统计类别：送资料"]'
+      )
+      ?.click();
+    await element.updateComplete;
+
+    const rows = [
+      ...workspace.querySelectorAll(".late-priority-summary-table tbody tr"),
+    ];
+    expect(
+      rows.map((row) => row.querySelector("td")?.textContent?.trim())
+    ).toEqual([mostStaff.name, nextStaff.name]);
+    expect(
+      rows.map((row) =>
+        row.querySelector("td:nth-child(2)")?.textContent?.trim()
+      )
+    ).toEqual(["2", "1"]);
+    expect(
+      workspace
+        .querySelector(
+          `.late-priority-summary-table tbody tr:first-child .late-priority-count-detail[data-staff-id="${mostStaff.id}"] summary`
+        )
+        ?.textContent?.trim()
+    ).toBe("2");
+  });
+
   it("shows correction, actual, and final as zero after a monthly reset", async () => {
     const state = createDefaultState();
     const rule = state.positionRules.find(
@@ -359,6 +529,57 @@ describe("statistics page", () => {
       workspace?.querySelector(
         `[data-staff-id="${staffId}"][data-flight-no="TW616"]`
       )
+    ).not.toBeNull();
+  });
+
+  it("shows only delivery for a combined-only flight", async () => {
+    const state = createDefaultState();
+    const combinedRule = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "申报"
+    )!;
+    combinedRule.remark = "申报/送资料";
+    state.positionRules = [combinedRule];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-08-18" });
+    const detail = element.querySelector(
+      `.late-priority-count-detail[data-flight-no="TR121"]`
+    )!;
+
+    expect(
+      detail.querySelector('[data-late-priority-category="送资料"]')
+    ).not.toBeNull();
+    expect(
+      detail.querySelector('[data-late-priority-category="申报"]')
+    ).toBeNull();
+  });
+
+  it("keeps declaration visible when a combined flight also has a separate declaration role", async () => {
+    const state = createDefaultState();
+    const combinedRule = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "送资料"
+    )!;
+    combinedRule.remark = "申报/送资料";
+    const declarationRule = state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.remark === "申报"
+    )!;
+    state.positionRules = [combinedRule, declarationRule];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-08-18" });
+    const detail = element.querySelector(
+      `.late-priority-count-detail[data-flight-no="TR121"]`
+    )!;
+
+    expect(
+      detail.querySelector('[data-late-priority-category="送资料"]')
+    ).not.toBeNull();
+    expect(
+      detail.querySelector('[data-late-priority-category="申报"]')
     ).not.toBeNull();
   });
 

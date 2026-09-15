@@ -24,6 +24,7 @@ import { generateSchedule } from "../helpers/generate-schedule";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import { plannedScheduleProgress } from "../../src/domain/kernel/schedule-pipeline";
 import { applyStaffStatusChange } from "../../src/domain/kernel/schedule-state";
+import { buildMonthlyLatePriorityStatistics } from "../../src/domain/statistics/monthly-late-priority-statistics";
 import { createScheduleScaleState } from "./fixtures/schedule-scale";
 
 function clockTime(totalMinutes: number): string {
@@ -329,11 +330,20 @@ describe("scheduler performance safeguards", () => {
     const state = createImportedLatePriorityPressureState();
     const workbook = importedLatePriorityWorkbook(state, date);
     const preview = parseLatePriorityCountsWorkbook(workbook, state, date);
+    const statistics = buildMonthlyLatePriorityStatistics(state, date);
+    const expectedTargetCount = statistics.rows.reduce(
+      (total, row) =>
+        total +
+        statistics.flightNumbers.reduce(
+          (flightTotal, flightNo) =>
+            flightTotal + row.flights[flightNo]!.applicableCategories.length,
+          0
+        ),
+      0
+    );
 
     expect(preview.canApply).toBe(true);
-    expect(preview.targets).toHaveLength(
-      state.staff.length * state.settings.latePriorityFlightNumbers.length * 4
-    );
+    expect(preview.targets).toHaveLength(expectedTargetCount);
     expect(applyLatePriorityCountsImport(state, preview)).toBe(true);
     expect(state.latePriorityFrequencyAdjustments).toHaveLength(
       (state.staff.length - 1) * state.settings.latePriorityFlightNumbers.length

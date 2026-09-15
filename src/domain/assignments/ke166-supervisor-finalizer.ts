@@ -18,6 +18,7 @@ import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registr
 import type { SolverPort } from "../solver/solver-port";
 import { durationHours } from "../shared/time";
 import type { SchedulePreparation } from "../kernel/schedule-preparation";
+import { halfRestPeriodViolation } from "../rules/half-rest";
 
 export interface FinalizeKe166SupervisorsOptions {
   solver: SolverPort;
@@ -94,7 +95,12 @@ export async function finalizeKe166Supervisors({
     };
     const orderedCandidates = selection.candidates
       .filter(
-        (person) => !preparation.runFacts.halfRest.activeStaffIds.has(person.id)
+        (person) =>
+          !halfRestPeriodViolation({
+            facts: preparation.runFacts.halfRest,
+            staffId: person.id,
+            startTime: task.flight.startTime,
+          })
       )
       .sort(
         (left, right) =>

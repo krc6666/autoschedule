@@ -79,10 +79,9 @@ describe("monthly late priority statistics", () => {
     state.positionRules = state.positionRules.map((rule) =>
       rule.flightNo === "TR121" && rule.name === "一号"
         ? { ...rule, qualifiedStaffIds: [staff.id] }
-        : rule.flightNo === "TW616" && rule.name === "申报"
-          ? { ...rule, qualifiedStaffIds: [staff.id] }
-          : rule
+        : rule
     );
+    addLateFlight(state, "TW616", staff.id);
     state.latePriorityFrequencyAdjustments = [
       {
         month: "2026-08",
@@ -325,7 +324,7 @@ describe("monthly late priority statistics", () => {
       ]);
   });
 
-  it("lets a combined declaration and delivery role enter both categories", () => {
+  it("counts a combined declaration and delivery role once as delivery", () => {
     const state = createDefaultState();
     const combinedRule = state.positionRules.find(
       (rule) => rule.flightNo === "TR121" && rule.name === "H04"
@@ -354,15 +353,74 @@ describe("monthly late priority statistics", () => {
         status: "assigned",
       },
     ];
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId,
+        flightNo: "TR121",
+        kind: "declaration",
+        delta: 5,
+      },
+    ];
 
     const statistics = buildMonthlyLatePriorityStatistics(state, DATE);
     const row = statistics.rows.find((item) => item.staff.id === staffId)!;
-    expect(row.categories.申报.details).toEqual([
-      expect.objectContaining({ date: DATE }),
-    ]);
+    expect(row.categories.申报.details).toEqual([]);
     expect(row.categories.送资料.details).toEqual([
       expect.objectContaining({ date: DATE }),
     ]);
+    expect(row.flights.TR121!.categories.申报.manualCorrection).toBe(0);
+    expect(row.flights.TR121!.totalCount).toBe(1);
+    expect(row.totalCount).toBe(1);
+  });
+
+  it("keeps separate declaration and delivery roles as two counts", () => {
+    const state = createDefaultState();
+    const staffId = state.staff[0]!.id;
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "separate-declaration",
+        flightNo: "TARGET",
+        name: "D01",
+        remark: "申报",
+        category: "常规",
+        qualifiedStaffIds: [staffId],
+      },
+      {
+        ...base,
+        id: "separate-delivery",
+        flightNo: "TARGET",
+        name: "D02",
+        remark: "送资料",
+        category: "常规",
+        qualifiedStaffIds: [staffId],
+      },
+    ];
+    state.settings.latePriorityFlightNumbers = ["TARGET"];
+    state.activeScheduleDate = DATE;
+    state.assignments = state.positionRules.map((rule) => ({
+      id: `assignment-${rule.id}`,
+      flightId: "target-flight",
+      flightNo: "TARGET",
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId,
+      staffName: "测试人员",
+      startTime: "21:55",
+      endTime: "23:55",
+      workHours: 2,
+      fatiguePoints: 5,
+      remark: rule.remark,
+      manualRemark: "",
+      status: "assigned" as const,
+    }));
+
+    const row = buildMonthlyLatePriorityStatistics(state, DATE).rows[0]!;
+
+    expect(row.categories.申报.details).toHaveLength(1);
+    expect(row.categories.送资料.details).toHaveLength(1);
     expect(row.totalCount).toBe(2);
   });
 

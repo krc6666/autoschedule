@@ -1225,7 +1225,7 @@ describe("schedule ledger", () => {
     expect(warningSink).toHaveLength(1);
   });
 
-  it("rejects an incomplete KE166 supervisor snapshot", () => {
+  it("records a warning without rejecting an incomplete KE166 supervisor snapshot", () => {
     const state = createDefaultState();
     const flight = {
       id: "flight-ke166",
@@ -1259,16 +1259,21 @@ describe("schedule ledger", () => {
       position: rule.name,
       status: "unfilled" as const,
     };
+    const warningSink: string[] = [];
     const ledger = createScheduleLedger([], {
       guards: [createKe166SnapshotScheduleGuard()],
       guardContext: {
         phase: "final",
         ke166SnapshotFacts: { state, date: "2026-08-04" },
+        warningSink,
       },
     });
     expect(() =>
       ledger.commit({ type: "append", assignments: [missing] })
-    ).toThrow(/KE166/);
+    ).not.toThrow();
+    expect(warningSink).toEqual([
+      "KE166机动督导未安排，岗位已留空，请人工复核",
+    ]);
   });
 
   it("keeps scarce qualification as a warning and does not reject the snapshot", () => {

@@ -30,6 +30,20 @@ export interface ActiveScheduleRun {
   hasLatestSafeResult(): boolean;
 }
 
+function workerFailureError(
+  context: string,
+  reason: unknown,
+  fallbackMessage: string
+): Error {
+  const detail =
+    reason instanceof Error
+      ? `${reason.name || "Error"}: ${reason.message || fallbackMessage}`
+      : String(reason ?? "").trim() || fallbackMessage;
+  return new Error(`${context}：${detail}`, {
+    ...(reason instanceof Error ? { cause: reason } : {}),
+  });
+}
+
 export function runScheduleInBackground(
   state: AppState,
   date: string,
@@ -41,8 +55,6 @@ export function runScheduleInBackground(
   const runPreferences = normalizeScheduleRunPreferences(preferences);
   let stopped = false;
   let settled = false;
-  let retryStarted = false;
-  let workerFailure: unknown;
   let latestSafeResult: ScheduleResult | undefined;
   let worker: Worker | undefined;
   let resolveResult!: (outcome: ScheduleRunOutcome) => void;
@@ -84,34 +96,20 @@ export function runScheduleInBackground(
     } catch (error) {
       if (settled) return;
       settled = true;
-      if (workerFailure !== undefined) {
-        const workerError =
-          workerFailure instanceof Error
-            ? workerFailure
-            : new Error(String(workerFailure));
-        const mainError =
-          error instanceof Error ? error : new Error(String(error));
-        const combined = new Error(
-          `Worker 运行失败（${workerError.message}）；主线程重试也失败（${mainError.message}）`,
-          { cause: mainError }
-        );
-        (combined as Error & { workerCause?: unknown }).workerCause =
-          workerFailure;
-        rejectResult(combined);
-      } else {
-        rejectResult(error);
-      }
+      rejectResult(error);
     }
   };
 
-  const retryOnMainThread = (): void => {
-    if (retryStarted || settled) return;
-    retryStarted = true;
-    terminateWorker();
-    // A worker safe snapshot is deliberately discarded. The retry must
-    // produce its own final result before anything can be adopted.
+  const rejectWorkerFailure = (
+    context: string,
+    reason: unknown,
+    fallbackMessage = "排班后台线程运行失败"
+  ): void => {
+    if (settled) return;
+    settled = true;
     latestSafeResult = undefined;
-    void runOnMainThread();
+    terminateWorker();
+    rejectResult(workerFailureError(context, reason, fallbackMessage));
   };
 
   const activeRun: ActiveScheduleRun = {
@@ -145,45 +143,47 @@ export function runScheduleInBackground(
     worker = new Worker(new URL("../schedule.worker.ts", import.meta.url), {
       type: "module",
     });
-    worker.onmessage = (event: MessageEvent<ScheduleWorkerResponse>): void => {
-      if (!worker || settled) return;
-      const message = event.data;
-      if (message.type === "progress") {
-        onProgress(message.stage, message.percent);
-        return;
-      }
-      if (message.type === "safe-result") {
-        latestSafeResult = message.result;
-        onSafeResultAvailable();
-        return;
-      }
-      if (message.type === "result") {
-        terminateWorker();
-        settled = true;
-        resolveResult({ kind: "completed", result: message.result });
-        return;
-      }
-      if (message.type === "error") {
-        workerFailure = new Error(message.message);
-      }
-      retryOnMainThread();
-    };
-    worker.onerror = (event): void => {
-      if (settled) return;
-      workerFailure =
-        event.error ?? new Error(event.message || "排班后台线程运行失败");
-      retryOnMainThread();
-    };
+  } catch (error) {
+    rejectWorkerFailure("Worker 创建失败", error);
+    return activeRun;
+  }
+
+  worker.onmessage = (event: MessageEvent<ScheduleWorkerResponse>): void => {
+    if (!worker || settled) return;
+    const message = event.data;
+    if (message.type === "progress") {
+      onProgress(message.stage, message.percent);
+      return;
+    }
+    if (message.type === "safe-result") {
+      latestSafeResult = message.result;
+      onSafeResultAvailable();
+      return;
+    }
+    if (message.type === "result") {
+      terminateWorker();
+      settled = true;
+      resolveResult({ kind: "completed", result: message.result });
+      return;
+    }
+    rejectWorkerFailure("Worker 运行失败", message.message);
+  };
+  worker.onerror = (event): void => {
+    rejectWorkerFailure(
+      "Worker 运行失败",
+      event.error ?? event.message,
+      "排班后台线程运行失败"
+    );
+  };
+
+  try {
     worker.postMessage({
       state: schedulingFacts,
       date,
       preferences: runPreferences,
     } satisfies ScheduleWorkerRequest);
   } catch (error) {
-    workerFailure = error;
-    retryOnMainThread();
+    rejectWorkerFailure("Worker 数据发送失败", error);
   }
-  return {
-    ...activeRun,
-  };
+  return activeRun;
 }

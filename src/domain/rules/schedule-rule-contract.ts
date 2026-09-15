@@ -37,6 +37,12 @@ export const SCHEDULING_RULES = [
     feedbackMode: "aggregated",
   },
   {
+    id: "same-flight-staff-exclusion",
+    stage: "hard-constraint",
+    label: "同航班人员互斥",
+    feedbackMode: "aggregated",
+  },
+  {
     id: "minimum-flight-transition",
     stage: "hard-constraint",
     label: "普通岗位最小航班衔接间隔",
@@ -108,6 +114,12 @@ export const SCHEDULING_RULES = [
     stage: "protection",
     label: "跨航班重点岗位优先",
     feedbackMode: "aggregated",
+  },
+  {
+    id: "tr121-h02-cooldown",
+    stage: "protection",
+    label: "TR121/H02 工作班冷却",
+    feedbackMode: "decision-only",
   },
   {
     id: "late-priority-aggregate-rotation",

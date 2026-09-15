@@ -3,6 +3,7 @@ import { html, nothing } from "lit";
 import type { ApplicationDialog } from "../../app/application-view-state";
 import type { AppState } from "../../model";
 import { dispatchUiCommand } from "../events/ui-command";
+import { plainSwapAnalysisReason } from "../../domain/reviews/schedule-warning-message";
 import { LightDomElement } from "./light-dom-element";
 
 type SwapAnalysisDialog = Extract<ApplicationDialog, { kind: "swap-analysis" }>;
@@ -29,6 +30,12 @@ export class SwapAnalysisDialogElement extends LightDomElement {
         assignment.staffId !== source.staffId
     );
     const analysis = this.dialog.analysis;
+    const rotationWarning = source.decisionTrace?.find(
+      (decision) =>
+        decision.ruleId === "position-rotation" &&
+        decision.outcome === "fallback" &&
+        decision.message.includes("\n")
+    )?.message;
     const outcomeLabel =
       analysis?.outcome === "safe"
         ? "可以安全调整"
@@ -52,6 +59,16 @@ export class SwapAnalysisDialogElement extends LightDomElement {
             ${source.staffName}</strong
           >
         </div>
+        ${
+          rotationWarning
+            ? html`<section class="swap-analysis-details">
+                <h3>自动排班没换成的人</h3>
+                <ul>
+                  ${rotationWarning.split("\n").map((line) => html`<li>${line}</li>`)}
+                </ul>
+              </section>`
+            : nothing
+        }
         <label class="form-label" for="swap-analysis-target"
           >选择交换人员</label
         >
@@ -116,7 +133,7 @@ export class SwapAnalysisDialogElement extends LightDomElement {
           (reason) =>
             html`<li>
               <i class="bi bi-${icon}" aria-hidden="true"></i
-              ><span>${reason}</span>
+              ><span>${plainSwapAnalysisReason(reason)}</span>
             </li>`
         )}
       </ul>

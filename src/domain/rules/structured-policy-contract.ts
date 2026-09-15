@@ -58,7 +58,16 @@ export interface CrossFlightPriorityPolicy {
   positions: string[];
 }
 
+export interface SameFlightStaffExclusion {
+  id: string;
+  firstStaffId: string;
+  secondStaffId: string;
+  /** Empty means every flight. */
+  flightNo: string;
+}
+
 export interface StructuredSchedulePolicies {
+  sameFlightStaffExclusions: SameFlightStaffExclusion[];
   positionTransitionPolicies: PositionTransitionPolicy[];
   dutyPositionPriorities: DutyPositionPriority[];
   nextWorkdayRecoveryTargets: NextWorkdayRecoveryTarget[];
@@ -69,6 +78,7 @@ export interface StructuredSchedulePolicies {
 }
 
 export const STRUCTURED_POLICY_KEYS = [
+  "sameFlightStaffExclusions",
   "positionTransitionPolicies",
   "dutyPositionPriorities",
   "nextWorkdayRecoveryTargets",

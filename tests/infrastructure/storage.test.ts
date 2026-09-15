@@ -44,6 +44,37 @@ describe("state persistence", () => {
     ]);
   });
 
+  it("fills the default TR121/H02 cooldown when loading an older state", () => {
+    const persisted = JSON.parse(JSON.stringify(createDefaultState()));
+    delete persisted.settings.tr121H02CooldownWorkdays;
+    const loaded = loadState({ getItem: () => JSON.stringify(persisted) });
+    expect(loaded.settings.tr121H02CooldownWorkdays).toBe(3);
+  });
+
+  it("restores same-flight exclusions and defaults older state to none", () => {
+    const state = createDefaultState();
+    state.settings.sameFlightStaffExclusions = [
+      {
+        id: "pair-1",
+        firstStaffId: state.staff[0]!.id,
+        secondStaffId: state.staff[1]!.id,
+        flightNo: "KE166",
+      },
+    ];
+    let value = "";
+    saveState(state, { setItem: (_key, next) => (value = next) });
+    expect(
+      loadState({ getItem: () => value }).settings.sameFlightStaffExclusions
+    ).toEqual(state.settings.sameFlightStaffExclusions);
+
+    const legacy = JSON.parse(JSON.stringify(state));
+    delete legacy.settings.sameFlightStaffExclusions;
+    expect(
+      loadState({ getItem: () => JSON.stringify(legacy) }).settings
+        .sameFlightStaffExclusions
+    ).toEqual([]);
+  });
+
   it("records a report when persisted JSON cannot be parsed", () => {
     loadState({ getItem: () => "{not-json" });
 

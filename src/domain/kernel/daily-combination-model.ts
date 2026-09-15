@@ -31,6 +31,7 @@ import {
   airlineCode,
   isSameAirlinePriorityPosition,
 } from "../rules/airline-rotation";
+import { sameFlightStaffExclusionApplies } from "../rules/same-flight-staff-exclusion";
 
 export interface DailyCombinationChoice {
   id: string;
@@ -326,6 +327,50 @@ function sameAirlinePriorityConstraints(
       })),
       upperBound: 1,
     });
+  }
+  return constraints;
+}
+
+function sameFlightStaffExclusionConstraints(
+  state: ScheduleGenerationFacts,
+  staffChoices: readonly DailyCombinationChoice[]
+): LinearConstraint[] {
+  const constraints: LinearConstraint[] = [];
+  for (const [exclusionIndex, exclusion] of (
+    state.settings.sameFlightStaffExclusions ?? []
+  ).entries()) {
+    const relevant = staffChoices.filter(
+      (choice) =>
+        (choice.person.id === exclusion.firstStaffId ||
+          choice.person.id === exclusion.secondStaffId) &&
+        sameFlightStaffExclusionApplies(exclusion, choice.task.flight.flightNo)
+    );
+    const byFlightId = new Map<string, DailyCombinationChoice[]>();
+    for (const choice of relevant) {
+      const own = byFlightId.get(choice.task.flight.id) ?? [];
+      own.push(choice);
+      byFlightId.set(choice.task.flight.id, own);
+    }
+    for (const [flightId, choices] of byFlightId) {
+      const firstChoices = choices.filter(
+        (choice) => choice.person.id === exclusion.firstStaffId
+      );
+      const secondChoices = choices.filter(
+        (choice) => choice.person.id === exclusion.secondStaffId
+      );
+      for (const firstChoice of firstChoices) {
+        for (const secondChoice of secondChoices) {
+          constraints.push({
+            id: `same-flight-staff-exclusion:${exclusionIndex}:${flightId}:${firstChoice.id}:${secondChoice.id}`,
+            terms: [firstChoice, secondChoice].map((choice) => ({
+              variableId: choice.id,
+              coefficient: 1,
+            })),
+            upperBound: 1,
+          });
+        }
+      }
+    }
   }
   return constraints;
 }
@@ -812,6 +857,7 @@ export function buildDailyCombinationModel(
     incompatibilityConstraints: [
       ...incompatibilityConstraints(state, staffChoices),
       ...sameAirlinePriorityConstraints(staffChoices),
+      ...sameFlightStaffExclusionConstraints(state, staffChoices),
     ],
     constraints,
     objectiveTerms,

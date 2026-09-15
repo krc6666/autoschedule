@@ -31,6 +31,11 @@ export interface PreparedReassignmentChoices {
   movable: Assignment[];
   fixed: Assignment[];
   candidateRejectionReasons: string[];
+  candidateRejections: {
+    staffId: string;
+    staffName: string;
+    reasons: string[];
+  }[];
 }
 
 function projectedAssignment(
@@ -123,7 +128,10 @@ function createChoices(
   options: ReassignmentOptimizationOptions,
   movable: readonly Assignment[],
   fixed: readonly Assignment[]
-): Pick<PreparedReassignmentChoices, "choices" | "candidateRejectionReasons"> {
+): Pick<
+  PreparedReassignmentChoices,
+  "choices" | "candidateRejectionReasons" | "candidateRejections"
+> {
   const permittedConcurrentAssignmentIds =
     options.permittedConcurrentAssignmentIds ?? new Set<string>();
   const activeStaff = options.state.staff.filter(
@@ -131,45 +139,76 @@ function createChoices(
   );
   const choices: ReassignmentChoiceFacts[] = [];
   const candidateRejectionReasons: string[] = [];
+  const candidateRejections: PreparedReassignmentChoices["candidateRejections"] =
+    [];
   for (const assignment of movable) {
     const flight = options.state.flights.find(
       (item) => item.id === assignment.flightId
     );
     const rule = assignmentRule(options.state, assignment);
     if (!flight || !rule) continue;
+    const recordRejection = (person: Staff, reasons: string[]) => {
+      candidateRejectionReasons.push(...reasons);
+      if (
+        assignment.id === options.primary.id &&
+        person.id !== assignment.staffId &&
+        reasons.length
+      ) {
+        candidateRejections.push({
+          staffId: person.id,
+          staffName: person.name,
+          reasons,
+        });
+      }
+    };
     const candidates = activeStaff
-      .filter(
-        (person) =>
-          diagnoseBaseAssignmentEligibility(options.state, flight, rule, person)
-            .eligible
-      )
+      .filter((person) => {
+        const diagnostic = diagnoseBaseAssignmentEligibility(
+          options.state,
+          flight,
+          rule,
+          person
+        );
+        if (!diagnostic.eligible && rule.qualifiedStaffIds.includes(person.id))
+          recordRejection(
+            person,
+            diagnostic.violations.map((item) => item.message)
+          );
+        return diagnostic.eligible;
+      })
       .filter(
         (person) => options.candidateAllowed?.(assignment, person) ?? true
       )
-      .filter(
-        (person) =>
-          person.id === assignment.staffId ||
-          diagnoseSameAirlinePriorityEligibility(
-            {
-              state: options.state,
-              assignments: options.assignments,
-              flight,
-              rule,
-              person,
-            },
-            new Set([assignment.id])
-          ).eligible
-      )
-      .filter(
-        (person) =>
-          !conflictsWithFixedAssignment(
-            options,
-            assignment,
+      .filter((person) => {
+        if (person.id === assignment.staffId) return true;
+        const diagnostic = diagnoseSameAirlinePriorityEligibility(
+          {
+            state: options.state,
+            assignments: options.assignments,
+            flight,
+            rule,
             person,
-            fixed,
-            permittedConcurrentAssignmentIds
-          )
-      )
+          },
+          new Set([assignment.id])
+        );
+        if (!diagnostic.eligible)
+          recordRejection(
+            person,
+            diagnostic.violations.map((item) => item.message)
+          );
+        return diagnostic.eligible;
+      })
+      .filter((person) => {
+        const conflict = conflictsWithFixedAssignment(
+          options,
+          assignment,
+          person,
+          fixed,
+          permittedConcurrentAssignmentIds
+        );
+        if (conflict) recordRejection(person, ["这个时段已经安排了其他岗位"]);
+        return !conflict;
+      })
       .filter((person) => {
         if (person.id === assignment.staffId) return true;
         const projected = projectedAssignment(assignment, person);
@@ -194,7 +233,7 @@ function createChoices(
             fixed.filter((item) => item.staffId === person.id)
           ),
         ];
-        candidateRejectionReasons.push(...reasons);
+        recordRejection(person, reasons);
         return reasons.length === 0;
       })
       .filter((person) => {
@@ -202,7 +241,7 @@ function createChoices(
         if (person.id === assignment.staffId) return false;
         if (options.primaryCandidateAllowed(person)) return true;
         const reason = options.primaryCandidateRejectionReason?.(person);
-        if (reason) candidateRejectionReasons.push(reason);
+        recordRejection(person, [reason ?? "换上后仍会连续承担这个岗位"]);
         return false;
       })
       .sort((left, right) =>
@@ -230,6 +269,7 @@ function createChoices(
   return {
     choices,
     candidateRejectionReasons: [...new Set(candidateRejectionReasons)],
+    candidateRejections,
   };
 }
 

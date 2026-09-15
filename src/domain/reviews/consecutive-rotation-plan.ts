@@ -22,6 +22,11 @@ export interface ConsecutiveRotationPlan {
 export interface ConsecutiveRotationPlanSearchResult {
   plan: ConsecutiveRotationPlan | null;
   attemptedReasons: string[];
+  candidateRejections?: {
+    staffId: string;
+    staffName: string;
+    reasons: string[];
+  }[];
   termination: "optimal" | "infeasible" | "timed-out" | "failed";
 }
 
@@ -230,12 +235,14 @@ export async function findConsecutiveRotationPlan({
       ]
     : [{ fatigueRelief: false, protectedReplacementFallback: false }];
 
+  let lastCandidateRejections: ConsecutiveRotationPlanSearchResult["candidateRejections"];
   for (const attempt of attempts) {
     const result = await run(
       attempt.fatigueRelief,
       attempt.protectedReplacementFallback
     );
     attemptedReasons.push(...result.attemptedReasons);
+    lastCandidateRejections = result.candidateRejections;
     if (result.changes) {
       return {
         plan: {
@@ -255,6 +262,7 @@ export async function findConsecutiveRotationPlan({
     if (result.termination === "timed-out" || result.termination === "failed")
       return {
         plan: null,
+        candidateRejections: result.candidateRejections,
         attemptedReasons: [...new Set(attemptedReasons)],
         termination: result.termination,
       };
@@ -262,6 +270,7 @@ export async function findConsecutiveRotationPlan({
 
   return {
     plan: null,
+    candidateRejections: lastCandidateRejections,
     attemptedReasons: [...new Set(attemptedReasons)],
     termination: "infeasible",
   };

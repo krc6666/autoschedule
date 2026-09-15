@@ -5,6 +5,7 @@ import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   NextWorkdayRecoveryTarget,
+  SameFlightStaffExclusion,
 } from "../domain/rules/structured-policy-contract";
 import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
 import { markActiveScheduleStale } from "../domain/kernel/schedule-lifecycle";
@@ -19,6 +20,7 @@ import {
 
 export type PolicyValue = string | number | boolean;
 export type PolicyEntity =
+  | "same-flight-staff-exclusion"
   | "duty-priority"
   | "recovery-target"
   | "late-shift-recovery-position"
@@ -39,6 +41,7 @@ export interface SchedulePolicyInput {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
+  tr121H02CooldownWorkdays?: number;
   latePriorityFlightNumbers: string[];
   lateShiftRecoveryEnabled: boolean;
   nextWorkdayRecoveryMode?: "prefer" | "forbid";
@@ -69,6 +72,65 @@ export function applySchedulePolicy(
 ): boolean {
   state.settings = applyScheduleSettingsPatch(state.settings, input);
   return markActiveScheduleStale(state);
+}
+
+export function addSameFlightStaffExclusion(
+  state: AppState
+): SameFlightStaffExclusion {
+  const [first, second] = state.staff;
+  const exclusion: SameFlightStaffExclusion = {
+    id: createId("same-flight-staff-exclusion"),
+    firstStaffId: first?.id ?? "",
+    secondStaffId: second?.id ?? "",
+    flightNo: "",
+  };
+  return appendPolicyItem(
+    state,
+    state.settings.sameFlightStaffExclusions,
+    exclusion
+  );
+}
+
+export function deleteSameFlightStaffExclusion(
+  state: AppState,
+  id: string
+): boolean {
+  return deletePolicyItem(state, state.settings.sameFlightStaffExclusions, id);
+}
+
+function updateSameFlightStaffExclusion(
+  state: AppState,
+  id: string,
+  field: string,
+  value: PolicyValue
+): boolean {
+  return updatePolicyItem(
+    state,
+    state.settings.sameFlightStaffExclusions,
+    id,
+    (exclusion) => {
+      if (field === "flightNo")
+        return replacePolicyValue(
+          exclusion,
+          "flightNo",
+          normalizeText(value).toUpperCase()
+        );
+      if (field === "firstStaffId" || field === "secondStaffId") {
+        const staffId = normalizeText(value);
+        const otherStaffId =
+          field === "firstStaffId"
+            ? exclusion.secondStaffId
+            : exclusion.firstStaffId;
+        if (
+          !state.staff.some((person) => person.id === staffId) ||
+          staffId === otherStaffId
+        )
+          return "invalid";
+        return replacePolicyValue(exclusion, field, staffId);
+      }
+      return "invalid";
+    }
+  );
 }
 
 export function addDutyPriority(state: AppState): DutyPositionPriority {
@@ -538,6 +600,7 @@ type PolicyEntityUpdater = (
 const POLICY_ENTITY_UPDATERS: Readonly<
   Record<PolicyEntity, PolicyEntityUpdater>
 > = {
+  "same-flight-staff-exclusion": updateSameFlightStaffExclusion,
   "duty-priority": updateDutyPriority,
   "recovery-target": updateNextWorkdayRecoveryTarget,
   "late-shift-recovery-position": updateLateShiftRecoveryPositionRule,

@@ -9,6 +9,7 @@ import {
   createTemporaryAssignment,
   updateAssignmentField,
 } from "../../src/app/schedule-actions";
+import { generateSchedule } from "../helpers/generate-schedule";
 
 function supervisorSchedule(): AppState {
   const state = createDefaultState();
@@ -176,6 +177,91 @@ describe("督导机动补位编辑", () => {
 });
 
 describe("人工调整后的规则证据", () => {
+  it("允许人工突破同航班人员互斥并报警，自动重排后恢复互斥", async () => {
+    const state = createDefaultState();
+    const [first, second] = state.staff.filter(
+      (person) => person.status === "正常"
+    );
+    const flight = {
+      ...state.flights[0]!,
+      id: "flight-f100",
+      flightNo: "F100",
+      startTime: "08:00",
+      endTime: "10:00",
+      positions: ["G01", "G02"],
+    };
+    const rules = ["G01", "G02"].map((name, index) => ({
+      ...state.positionRules[0]!,
+      id: `rule-${name.toLowerCase()}`,
+      flightNo: flight.flightNo,
+      name,
+      category: "常规" as const,
+      remark: "",
+      qualifiedStaffIds: [index === 0 ? first!.id : second!.id],
+      fatiguePoints: 1,
+    }));
+    state.staff = [first!, second!];
+    state.flights = [flight];
+    state.templates = [];
+    state.positionRules = rules;
+    state.activeScheduleDate = "2026-09-15";
+    state.settings.workloadBalanceEnabled = false;
+    state.settings.positionRotationEnabled = false;
+    state.settings.lateShiftRecoveryEnabled = false;
+    state.settings.sameFlightStaffExclusions = [
+      {
+        id: "pair-1",
+        firstStaffId: first!.id,
+        secondStaffId: second!.id,
+        flightNo: "",
+      },
+    ];
+    state.assignments = rules.map((rule, index) => ({
+      id: `assignment-${index}`,
+      flightId: flight.id,
+      flightNo: flight.flightNo,
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId: index === 0 ? first!.id : null,
+      staffName: index === 0 ? first!.name : "",
+      startTime: flight.startTime,
+      endTime: flight.endTime,
+      workHours: index === 0 ? 2 : 0,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: index === 0 ? ("assigned" as const) : ("unfilled" as const),
+    }));
+
+    const manual = assignStaff(state, "assignment-1", second!.id);
+
+    expect(manual).toMatchObject({
+      changed: true,
+      warning: expect.stringContaining(
+        `${first!.name}与${second!.name}不能同时安排在F100`
+      ),
+    });
+    expect(state.assignments[1]?.manualOverrideWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "same-flight-staff-exclusion",
+          message: expect.stringContaining("本次为人工突破"),
+        }),
+      ])
+    );
+
+    const automatic = await generateSchedule(state, "2026-09-15");
+    expect(
+      automatic.assignments.filter(
+        (assignment) => assignment.status === "assigned"
+      )
+    ).toHaveLength(1);
+    expect(
+      automatic.assignments.flatMap(
+        (assignment) => assignment.manualOverrideWarnings ?? []
+      )
+    ).toEqual([]);
+  });
   it("临时岗位只接受已配置人员并保留人员编号用于统计", () => {
     const state = createDefaultState();
     const person = state.staff[0]!;

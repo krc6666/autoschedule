@@ -8,6 +8,33 @@ import "../../src/ui/components/policy-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("rules page", () => {
+  it("renders configurable same-flight staff exclusions with an optional flight", async () => {
+    const state = createDefaultState();
+    state.settings.sameFlightStaffExclusions = [
+      {
+        id: "pair-1",
+        firstStaffId: state.staff[0]!.id,
+        secondStaffId: state.staff[1]!.id,
+        flightNo: "KE166",
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-policy-page", { model: state });
+    const card = element.querySelector<HTMLElement>(
+      "[data-same-flight-staff-exclusions]"
+    );
+
+    expect(card?.textContent).toContain("同航班人员互斥");
+    expect(card?.textContent).toContain("新增互斥规则");
+    const selects = card?.querySelectorAll<HTMLSelectElement>("select");
+    expect(selects).toHaveLength(3);
+    expect(selects?.[0]?.value).toBe(state.staff[0]!.id);
+    expect(selects?.[1]?.value).toBe(state.staff[1]!.id);
+    expect(selects?.[2]?.value).toBe("KE166");
+    expect(selects?.[2]?.textContent).toContain("全部航班");
+    expect(card?.querySelector('button[aria-label="删除"]')).not.toBeNull();
+  });
   it("projects settings, structured rules, and the central rule ledger", async () => {
     const state = createDefaultState();
     const element = await mountElement<
@@ -33,6 +60,12 @@ describe("rules page", () => {
       )
     ).toBeNull();
     expect(text).toContain("普通岗位最小衔接间隔");
+    expect(text).toContain("TR121/H02 冷却工作班数");
+    expect(
+      element.querySelector<HTMLInputElement>(
+        'input[data-policy-setting="tr121H02CooldownWorkdays"]'
+      )?.value
+    ).toBe(String(state.settings.tr121H02CooldownWorkdays));
     expect(text).toContain("每日工时上限");
     expect(
       element.querySelector<HTMLInputElement>(

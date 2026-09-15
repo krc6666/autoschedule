@@ -31,6 +31,20 @@ describe("workbook actions", () => {
         positions: ["督导", "H02"],
       },
     ];
+    source.settings.sameFlightStaffExclusions = [
+      {
+        id: "same-flight-pair",
+        firstStaffId: source.staff[0]!.id,
+        secondStaffId: source.staff[1]!.id,
+        flightNo: "KE166",
+      },
+      {
+        id: "all-flight-pair",
+        firstStaffId: source.staff[2]!.id,
+        secondStaffId: source.staff[3]!.id,
+        flightNo: "",
+      },
+    ];
     source.staff[0]!.standbyQualified = false;
     source.positionRules[0]!.fatiguePoints = 9;
     source.weeklyFlightPlans = replaceWeeklyFlightPlan(
@@ -85,6 +99,9 @@ describe("workbook actions", () => {
     expect(target.weeklyFlightPlans).toEqual(source.weeklyFlightPlans);
     expect(target.dutyRosterOverrides).toEqual(preservedRoster);
     expect(target.settings.positionTransitionPolicies[0]!.mode).toBe("forbid");
+    expect(target.settings.sameFlightStaffExclusions).toEqual(
+      source.settings.sameFlightStaffExclusions
+    );
   });
 
   it("applies recognized empty configuration sheets as explicit clears", () => {

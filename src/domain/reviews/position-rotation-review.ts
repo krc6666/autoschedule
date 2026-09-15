@@ -33,7 +33,11 @@ import {
   type RotationStaffChange,
 } from "./rotation-review-safety";
 import type { SolverPort } from "../solver/solver-port";
-import { assignmentWarningMessage } from "./schedule-warning-message";
+import {
+  assignmentWarningMessage,
+  rotationCandidateWarningMessage,
+  rotationWarningCandidates,
+} from "./schedule-warning-message";
 import { countedWorkloadAssignments } from "../shared/workload-accounting";
 
 type RotationKind = "priority" | "high-fatigue" | "ordinary";
@@ -351,10 +355,26 @@ export async function reviewConsecutivePositionRotation(
       kind,
       search.attemptedReasons
     );
+    const warningMessage =
+      search.candidateRejections && kind === "priority"
+        ? rotationCandidateWarningMessage({
+            staffName: primary.staffName,
+            fact: `已连续${runs}次承担${primary.flightNo}/${primary.position}`,
+            targetFlightNo: primary.flightNo,
+            candidates: rotationWarningCandidates(
+              state,
+              primary,
+              date,
+              search.candidateRejections,
+              facts
+            ),
+            timedOut: search.termination !== "infeasible",
+          })
+        : message;
     replaceAssignmentDecisions(primary, "position-rotation", [
-      schedulingDecision("position-rotation", "fallback", message),
+      schedulingDecision("position-rotation", "fallback", warningMessage),
     ]);
-    warnings.push(message);
+    warnings.push(warningMessage);
   }
   return warnings;
 }

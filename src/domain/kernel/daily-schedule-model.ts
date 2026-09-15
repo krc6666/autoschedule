@@ -1,6 +1,8 @@
 import type { Staff } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { diagnoseBaseAssignmentEligibility } from "../candidates/assignment-eligibility";
+import { createAssignedPosition } from "../assignments/assignment-factory";
+import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import {
   buildCandidatePriority,
   compareLatePriorityAggregateCurrentMonth,
@@ -13,8 +15,10 @@ import {
 import {
   isPreNoonFlight,
   isKe166MobileSupervisor,
+  isNumberedRegularPosition,
   type AssignmentTask,
 } from "../flights/schedule-tasks";
+import { canMobileSupervisorCoverPosition } from "../coverage/mobile-supervisor-coverage";
 import {
   createCandidateRulePlan,
   type CandidateRulePlanItem,
@@ -66,6 +70,8 @@ import {
   buildHalfRestOptimizationModel,
   excludeCandidateForHalfRest,
   halfRestRestrictedStaffIds,
+  halfRestPeriodViolation,
+  isHalfRestMorningStart,
   isStrictRecoveryHalfRestBackfill,
 } from "../rules/half-rest";
 
@@ -161,6 +167,125 @@ function crossFlightPriorityObjectives(
         ]
       : [];
   });
+}
+
+function ke166SupervisorAvailabilityModel(
+  state: ScheduleGenerationFacts,
+  preparation: SchedulePreparation,
+  choices: readonly DailyScheduleStaffChoice[]
+): {
+  variables: SolverProblem["variables"][number][];
+  constraints: LinearConstraint[];
+  objectives: LexicographicObjective[];
+} {
+  const variables: SolverProblem["variables"][number][] = [];
+  const constraints: LinearConstraint[] = [];
+  const objectives: LexicographicObjective[] = [];
+  for (const [taskIndex, task] of preparation.tasks.entries()) {
+    if (!isKe166MobileSupervisor(task.flight, task.rule)) continue;
+    const eligibleIds = preparation.eligibleStaffIds.get(task.key);
+    const availableIds: string[] = [];
+    for (const person of state.staff) {
+      if (
+        !eligibleIds?.has(person.id) ||
+        halfRestPeriodViolation({
+          facts: preparation.runFacts.halfRest,
+          staffId: person.id,
+          startTime: task.flight.startTime,
+        })
+      )
+        continue;
+      const availableId = `ke166-available:${taskIndex}:${person.id}`;
+      variables.push({ id: availableId });
+      availableIds.push(availableId);
+      const ownChoices = choices.filter(
+        (choice) => choice.person.id === person.id
+      );
+      const compatibleCounterIds = new Set(
+        ownChoices
+          .filter(
+            (choice) =>
+              choice.task.flight.id === task.flight.id &&
+              isNumberedRegularPosition(choice.task.rule) &&
+              canMobileSupervisorCoverPosition(state, {
+                flightNo: task.flight.flightNo,
+                position: choice.task.rule.name,
+                remark: choice.task.rule.remark,
+              })
+          )
+          .map((choice) => choice.id)
+      );
+      constraints.push({
+        id: `ke166-hours:${taskIndex}:${person.id}`,
+        terms: [
+          {
+            variableId: availableId,
+            coefficient: durationHours(
+              task.flight.startTime,
+              task.flight.endTime
+            ),
+          },
+          ...ownChoices.map((choice) => ({
+            variableId: choice.id,
+            coefficient: compatibleCounterIds.has(choice.id)
+              ? 0
+              : choice.workHours,
+          })),
+        ],
+        upperBound: state.settings.maxDailyHours,
+      });
+      for (const choice of choices) {
+        if (choice.person.id !== person.id) continue;
+        if (compatibleCounterIds.has(choice.id)) continue;
+        const assignment = createAssignedPosition(
+          choice.task,
+          person,
+          choice.workHours,
+          [],
+          []
+        );
+        if (
+          evaluateAutomaticHardConstraints({
+            state,
+            assignments: [assignment],
+            flight: task.flight,
+            rule: task.rule,
+            person,
+            workHours: durationHours(
+              task.flight.startTime,
+              task.flight.endTime
+            ),
+          }).eligible
+        )
+          continue;
+        constraints.push({
+          id: `ke166-available:${taskIndex}:${person.id}:${choice.id}`,
+          terms: [availableId, choice.id].map((variableId) => ({
+            variableId,
+            coefficient: 1,
+          })),
+          upperBound: 1,
+        });
+      }
+    }
+    if (!availableIds.length) continue;
+    const coveredId = `ke166-covered:${taskIndex}`;
+    variables.push({ id: coveredId });
+    constraints.push({
+      id: `ke166-covered:${taskIndex}`,
+      terms: [
+        { variableId: coveredId, coefficient: 1 },
+        ...availableIds.map((variableId) => ({ variableId, coefficient: -1 })),
+      ],
+      upperBound: 0,
+    });
+    objectives.push({
+      id: `ke166-supervisor:available:${taskIndex}`,
+      direction: "maximize",
+      terms: [{ variableId: coveredId, coefficient: 1 }],
+    });
+  }
+  return { variables, constraints, objectives };
 }
 
 export interface BuildDailyScheduleModelOptions {
@@ -277,6 +402,7 @@ function staffChoicesForTasks(
           facts: preparation.runFacts.halfRest,
           staffId: person.id,
           preNoon,
+          startTime: task.flight.startTime,
           priority,
         })
       ) {
@@ -335,10 +461,11 @@ function dutyModel(
   const constraints: LinearConstraint[] = [];
   const morningChoices = staffChoices.filter(
     (choice) =>
-      choice.person.id === dutyStaffId && isPreNoonFlight(choice.task.flight)
+      choice.person.id === dutyStaffId &&
+      isHalfRestMorningStart(choice.task.flight.startTime)
   );
   const hasMorningTasks = preparation.tasks.some((task) =>
-    isPreNoonFlight(task.flight)
+    isHalfRestMorningStart(task.flight.startTime)
   );
   const dutyMorningBlockedByHalfRest =
     hasMorningTasks &&
@@ -1129,6 +1256,11 @@ export function buildDailyScheduleModel({
     scheduledTasks
   );
   const staffChoices = staffChoiceBuild.choices;
+  const ke166Availability = ke166SupervisorAvailabilityModel(
+    state,
+    preparation,
+    staffChoices
+  );
   const vacancyChoices = scheduledTasks.map((task, index) => ({
     id: `vacancy:${index}`,
     task,
@@ -1321,6 +1453,7 @@ export function buildDailyScheduleModel({
           objective.id.startsWith(`${recoveryId}:`)
       ) &&
       ![
+        "candidate:tr121-h02-cooldown",
         "candidate:late-priority-aggregate-rotation",
         "candidate:late-priority-frequency",
       ].some(
@@ -1331,6 +1464,7 @@ export function buildDailyScheduleModel({
   );
   const protectedFairnessObjectives = candidateObjectives.filter((objective) =>
     [
+      "candidate:tr121-h02-cooldown",
       "candidate:late-priority-aggregate-rotation",
       "candidate:late-priority-frequency",
     ].some(
@@ -1349,6 +1483,7 @@ export function buildDailyScheduleModel({
     simplifyLexicographicObjectives(
       orderDailyObjectiveBuckets({
         ke166Reservation: ke166ReservationObjectives,
+        ke166Availability: ke166Availability.objectives,
         duty: duty.objectives,
         coverage: coverageObjectives,
         crossWorkdayReservation: crossWorkdayReservation.objectives,
@@ -1377,6 +1512,7 @@ export function buildDailyScheduleModel({
         ...combinations.variables,
         ...workload.variables,
         ...crossWorkdayReservation.variables,
+        ...ke166Availability.variables,
         ...halfRest.variables,
       ],
       constraints: [
@@ -1393,6 +1529,7 @@ export function buildDailyScheduleModel({
         ...combinations.constraints,
         ...workload.constraints,
         ...crossWorkdayReservation.constraints,
+        ...ke166Availability.constraints,
         ...duty.constraints,
         ...halfRest.constraints,
       ],

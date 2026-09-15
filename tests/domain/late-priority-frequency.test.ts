@@ -89,6 +89,55 @@ describe("late priority frequency statistics", () => {
     ).toBe(0);
   });
 
+  it("treats combined history and corrections as delivery only", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    const combinedRule = rule("H04", "申报/送资料");
+    combinedRule.qualifiedStaffIds = [person.id];
+    state.positionRules = [combinedRule];
+    state.settings.latePriorityFlightNumbers = ["TARGET"];
+    state.history = [
+      record(
+        "combined-history",
+        person.id,
+        "TARGET",
+        "H04",
+        "申报/送资料",
+        "21:55",
+        "23:55"
+      ),
+    ];
+    state.latePriorityFrequencyAdjustments = [
+      {
+        month: "2026-08",
+        staffId: person.id,
+        flightNo: "TARGET",
+        kind: "declaration",
+        delta: 5,
+      },
+      {
+        month: "2026-08",
+        staffId: person.id,
+        flightNo: "TARGET",
+        kind: "delivery",
+        delta: 2,
+      },
+    ];
+
+    const profile = latePriorityFrequencyProfileForRule(
+      state,
+      person.id,
+      { startTime: "21:55", endTime: "23:55" },
+      combinedRule,
+      DATE
+    );
+
+    expect(profile.targetKinds).toEqual(["delivery"]);
+    expect(profile.counts.declaration.currentMonthCount).toBe(0);
+    expect(profile.counts.delivery.currentMonthCount).toBe(3);
+    expect(profile.totalCurrentMonthCount).toBe(3);
+  });
+
   it("avoids someone who carried any selected late-priority role on the previous workday before comparing aggregate totals", () => {
     const state = createDefaultState();
     const [previousWorker, historicallyBusierWorker] = state.staff.slice(0, 2);

@@ -6,12 +6,14 @@ import type {
   MobileSupervisorCoverageRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
+  SameFlightStaffExclusion,
   StructuredSchedulePolicies,
 } from "./structured-policy-contract";
 
 const CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 const DEFAULT_STRUCTURED_POLICIES: StructuredSchedulePolicies = {
+  sameFlightStaffExclusions: [],
   crossWorkdayQualificationReservations: [],
   crossFlightPriorityPolicies: [],
   lateShiftRecoveryPositionRules: [
@@ -122,6 +124,37 @@ const DEFAULT_STRUCTURED_POLICIES: StructuredSchedulePolicies = {
     },
   ],
 };
+
+function normalizeSameFlightStaffExclusions(
+  value: unknown,
+  fallback: SameFlightStaffExclusion[]
+): SameFlightStaffExclusion[] {
+  const unique = new Map<string, SameFlightStaffExclusion>();
+  sourceArray(value, fallback)
+    .filter((item) => item && typeof item === "object")
+    .forEach((item, index) => {
+      const exclusion = item as Partial<SameFlightStaffExclusion>;
+      const firstStaffId = String(exclusion.firstStaffId ?? "").trim();
+      const secondStaffId = String(exclusion.secondStaffId ?? "").trim();
+      if (!firstStaffId || !secondStaffId || firstStaffId === secondStaffId)
+        return;
+      const flightNo = String(exclusion.flightNo ?? "")
+        .trim()
+        .toUpperCase();
+      const pair = [firstStaffId, secondStaffId].sort();
+      const key = `${pair[0]}\u0000${pair[1]}\u0000${flightNo}`;
+      if (unique.has(key)) return;
+      unique.set(key, {
+        id:
+          String(exclusion.id ?? "").trim() ||
+          `same-flight-staff-exclusion-${index + 1}`,
+        firstStaffId: pair[0]!,
+        secondStaffId: pair[1]!,
+        flightNo,
+      });
+    });
+  return [...unique.values()];
+}
 
 export function createDefaultStructuredPolicies(): StructuredSchedulePolicies {
   return structuredClone(DEFAULT_STRUCTURED_POLICIES);
@@ -315,6 +348,10 @@ export function normalizeStructuredPolicies(
   fallback = createDefaultStructuredPolicies()
 ): StructuredSchedulePolicies {
   return {
+    sameFlightStaffExclusions: normalizeSameFlightStaffExclusions(
+      input.sameFlightStaffExclusions,
+      fallback.sameFlightStaffExclusions
+    ),
     positionTransitionPolicies: normalizeTransitionPolicies(
       input.positionTransitionPolicies,
       fallback.positionTransitionPolicies

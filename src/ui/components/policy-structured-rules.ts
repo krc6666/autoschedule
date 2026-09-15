@@ -10,6 +10,7 @@ import { LightDomElement } from "./light-dom-element";
 import { dynamicSelectValue } from "./dynamic-select";
 
 type Collection =
+  | "same-flight-staff-exclusion"
   | "duty"
   | "recovery-target"
   | "cross-workday-reservation"
@@ -28,10 +29,73 @@ export class PolicyStructuredRulesElement extends LightDomElement {
 
   protected override render() {
     return html`
-      ${this.dutyPriorities()} ${this.crossFlightPriorities()}
-      ${this.crossWorkdayReservations()} ${this.recoveryRules()}
-      ${this.supervisorRules()} ${this.transitionRules()}
+      ${this.sameFlightStaffExclusions()} ${this.dutyPriorities()}
+      ${this.crossFlightPriorities()} ${this.crossWorkdayReservations()}
+      ${this.recoveryRules()} ${this.supervisorRules()}
+      ${this.transitionRules()}
     `;
+  }
+
+  private sameFlightStaffExclusions() {
+    const items = this.model.settings.sameFlightStaffExclusions;
+    if (
+      !matchesPolicySearch(
+        this.query,
+        "同航班人员互斥",
+        "两人不能同时安排在同一个航班",
+        "人员 A",
+        "人员 B",
+        "适用航班",
+        "全部航班",
+        "新增互斥规则",
+        items.map((item) => [
+          this.model.staff.find((person) => person.id === item.firstStaffId)
+            ?.name,
+          this.model.staff.find((person) => person.id === item.secondStaffId)
+            ?.name,
+          item.flightNo,
+        ])
+      )
+    )
+      return nothing;
+    return html`<details
+      class="policy-rule-card"
+      data-same-flight-staff-exclusions
+      ?open=${Boolean(normalizePolicySearchQuery(this.query))}
+    >
+      <summary>
+        <span
+          ><strong>同航班人员互斥</strong
+          ><small>${items.length} 条规则 · 自动排班硬禁止</small></span
+        ><i class="bi bi-chevron-down"></i>
+      </summary>
+      <div class="policy-rule-content">
+        <div class="d-flex justify-content-end mb-2">
+          ${this.addButton("same-flight-staff-exclusion", "新增互斥规则")}
+        </div>
+        <div class="supervisor-coverage-list">
+          ${items.map(
+            (item) =>
+              html`<div class="supervisor-coverage-row">
+                ${this.staffSelect(
+                item.id,
+                "firstStaffId",
+                item.firstStaffId,
+                "人员 A"
+              )}
+                ${this.staffSelect(
+                item.id,
+                "secondStaffId",
+                item.secondStaffId,
+                "人员 B"
+              )}
+                ${this.flightScopeSelect(item.id, item.flightNo)}
+                ${this.deleteButton("same-flight-staff-exclusion", item.id)}
+              </div>`
+          )}
+        </div>
+      </div>
+    </details>`;
   }
 
   private crossFlightPriorities() {
@@ -540,6 +604,46 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     );
   }
 
+  private staffSelect(
+    id: string,
+    field: "firstStaffId" | "secondStaffId",
+    value: string,
+    label: string
+  ) {
+    return this.select(
+      "same-flight-staff-exclusion",
+      id,
+      field,
+      value,
+      label,
+      this.model.staff.map((person) => [person.id, person.name] as const)
+    );
+  }
+
+  private flightScopeSelect(id: string, value: string) {
+    const flightNumbers = [
+      ...new Set(
+        [
+          ...this.model.flights.map((flight) => flight.flightNo.trim()),
+          ...this.model.templates.map((flight) => flight.flightNo.trim()),
+          ...this.model.positionRules.map((rule) => rule.flightNo.trim()),
+        ].filter(Boolean)
+      ),
+    ];
+    if (value && !flightNumbers.includes(value)) flightNumbers.unshift(value);
+    return this.select(
+      "same-flight-staff-exclusion",
+      id,
+      "flightNo",
+      value,
+      "适用航班",
+      [
+        ["", "全部航班"],
+        ...flightNumbers.map((flightNo) => [flightNo, flightNo] as const),
+      ]
+    );
+  }
+
   private positionCheckboxes(id: string, flightNo: string, selected: string[]) {
     const choices = [
       ...new Set(
@@ -557,13 +661,13 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       <legend class="form-label mb-1">优先岗位</legend>
       <div class="d-flex flex-wrap gap-2">
         ${choices.map(
-        (position) =>
-          html`<label class="form-check mb-0"
-            ><input
-              class="form-check-input"
-              type="checkbox"
-              .checked=${selected.includes(position)}
-              @change=${(event: Event) => {
+          (position) =>
+            html`<label class="form-check mb-0"
+              ><input
+                class="form-check-input"
+                type="checkbox"
+                .checked=${selected.includes(position)}
+                @change=${(event: Event) => {
                 const checked = (event.currentTarget as HTMLInputElement)
                   .checked;
                 const next = checked
@@ -577,9 +681,9 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                   value: next.join(","),
                 });
               }}
-            /><span class="form-check-label">${position}</span></label
-          >`
-      )}
+              /><span class="form-check-label">${position}</span></label
+            >`
+        )}
       </div>
     </fieldset>`;
   }

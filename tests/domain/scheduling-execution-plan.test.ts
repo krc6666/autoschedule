@@ -26,6 +26,7 @@ describe("compiled scheduling execution plan", () => {
       "duty-position",
       "scarce-qualification",
       "position-transition",
+      "tr121-h02-cooldown",
       "late-priority-aggregate-rotation",
       "late-priority-frequency",
       "position-frequency",
