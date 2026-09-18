@@ -31,6 +31,16 @@ export function isCrossFlightPriorityAssignment(
   );
 }
 
+export function crossFlightPriorityPolicyRank(
+  state: HistoryRuleFacts,
+  assignment: Pick<Assignment, "flightNo" | "position">
+): number | null {
+  const rank = enabledCrossFlightPriorityPolicies(state).findIndex((policy) =>
+    crossFlightPriorityPolicyMatches(policy, assignment)
+  );
+  return rank < 0 ? null : rank;
+}
+
 export function crossFlightPriorityPolicyMatches(
   policy: CrossFlightPriorityPolicy,
   assignment: Pick<Assignment, "flightNo" | "position">

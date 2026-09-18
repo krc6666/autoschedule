@@ -1,4 +1,11 @@
-import type { AppState, Flight, PositionRule, Staff } from "./model";
+import type {
+  AppState,
+  Flight,
+  GroupWorkspace,
+  PositionRule,
+  SharedScheduleData,
+  Staff,
+} from "./model";
 import { createDefaultScheduleSettings } from "./domain/rules/schedule-settings";
 import { latePriorityFlightScopeCandidates } from "./domain/statistics/late-priority-flight-scope";
 import { createEmptyWeeklyFlightPlans } from "./domain/flights/weekly-flight-plan";
@@ -190,25 +197,58 @@ export function createDefaultState(): AppState {
   const settings = createDefaultScheduleSettings();
   settings.latePriorityFlightNumbers =
     latePriorityFlightScopeCandidates(positionRules);
-  return {
-    version: 5,
-    staff: structuredClone(defaultStaff),
-    flights: structuredClone(defaultFlights),
-    templates: defaultFlights.map(
-      ({ id, bookedPassengers: _bookedPassengers, ...flight }) => ({
-        ...structuredClone(flight),
-        id: `template-${id}`,
-      })
-    ),
-    weeklyFlightPlans: createEmptyWeeklyFlightPlans(),
-    positionRules,
+  const staff = structuredClone(defaultStaff);
+  const flights = structuredClone(defaultFlights);
+  const templates = defaultFlights.map(
+    ({ id, bookedPassengers: _bookedPassengers, ...flight }) => ({
+      ...structuredClone(flight),
+      id: `template-${id}`,
+    })
+  );
+  const weeklyFlightPlans = createEmptyWeeklyFlightPlans();
+  const shared: SharedScheduleData = {
+    templates: structuredClone(templates),
+    weeklyFlightPlans: structuredClone(weeklyFlightPlans),
+    positionRules: structuredClone(positionRules),
+    settings: structuredClone(settings),
+  };
+  const groupA: GroupWorkspace = {
+    flights: structuredClone(flights),
+    staff: structuredClone(staff),
     history: [],
     dutyRosterOverrides: [],
     latePriorityFrequencyAdjustments: [],
     assignments: [],
     activeScheduleDate: null,
     schedulePolicyStale: false,
-    settings,
+  };
+  const groupB: GroupWorkspace = {
+    flights: [],
+    staff: [],
+    history: [],
+    dutyRosterOverrides: [],
+    latePriorityFrequencyAdjustments: [],
+    assignments: [],
+    activeScheduleDate: null,
+    schedulePolicyStale: false,
+  };
+  return {
+    version: 6,
+    shared,
+    groups: { A: groupA, B: groupB },
+    activeGroupId: "A",
+    staff,
+    flights,
+    templates: shared.templates,
+    weeklyFlightPlans: shared.weeklyFlightPlans,
+    positionRules: shared.positionRules,
+    history: groupA.history,
+    dutyRosterOverrides: groupA.dutyRosterOverrides,
+    latePriorityFrequencyAdjustments: groupA.latePriorityFrequencyAdjustments,
+    assignments: groupA.assignments,
+    activeScheduleDate: groupA.activeScheduleDate,
+    schedulePolicyStale: groupA.schedulePolicyStale,
+    settings: shared.settings,
     updatedAt: new Date().toISOString(),
   };
 }

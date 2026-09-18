@@ -267,6 +267,85 @@ describe("workbook actions", () => {
     expect(state.dutyRosterOverrides).toEqual([]);
   });
 
+  it("rejects staff ids already owned by the other group before changing the active group", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    state.groups.B.staff = [{ ...person, name: "B组同编号人员" }];
+    const originalStaff = structuredClone(state.staff);
+
+    const result = applyWorkbookImport(
+      state,
+      { staff: [{ ...person, name: "导入A组人员" }], warnings: [] },
+      "config"
+    );
+
+    expect(result.changedConfig).toBe(false);
+    expect(result.rejected).toBe(1);
+    expect(result.errors?.join(" ")).toContain(person.id);
+    expect(state.staff).toEqual(originalStaff);
+  });
+
+  it("preserves the other group's qualifications when importing shared position rules", () => {
+    const state = createDefaultState();
+    const currentId = state.staff[0]!.id;
+    const otherId = "B-qualified";
+    state.groups.B.staff = [
+      { ...state.staff[1]!, id: otherId, name: "B组资质人员" },
+    ];
+    const existing = state.positionRules[0]!;
+    existing.qualifiedStaffIds = [currentId, otherId];
+    const importedRule = {
+      ...existing,
+      id: "imported-rule",
+      qualifiedStaffIds: [state.staff[1]!.id],
+    };
+
+    applyWorkbookImport(
+      state,
+      { positionRules: [importedRule], warnings: [] },
+      "config"
+    );
+
+    expect(state.positionRules[0]!.qualifiedStaffIds).toEqual([
+      otherId,
+      state.staff[1]!.id,
+    ]);
+  });
+
+  it("preserves the other group's personnel rules when importing shared settings", () => {
+    const state = createDefaultState();
+    const otherA = { ...state.staff[0]!, id: "B-1", name: "B组一" };
+    const otherB = { ...state.staff[1]!, id: "B-2", name: "B组二" };
+    state.groups.B.staff = [otherA, otherB];
+    const otherRule = {
+      id: "b-pair",
+      flightNo: "KE166",
+      firstStaffId: otherA.id,
+      secondStaffId: otherB.id,
+    };
+    state.settings.sameFlightStaffExclusions = [otherRule];
+    const currentRule = {
+      id: "a-pair",
+      flightNo: "CX937",
+      firstStaffId: state.staff[0]!.id,
+      secondStaffId: state.staff[1]!.id,
+    };
+
+    applyWorkbookImport(
+      state,
+      {
+        settings: { sameFlightStaffExclusions: [currentRule] },
+        warnings: [],
+      },
+      "config"
+    );
+
+    expect(state.settings.sameFlightStaffExclusions).toEqual([
+      otherRule,
+      currentRule,
+    ]);
+  });
+
   it("merges imported rule settings, preserves omitted settings, and clears the active schedule", () => {
     const state = createDefaultState();
     const originalAdminMode = state.settings.adminSupportEnabled;

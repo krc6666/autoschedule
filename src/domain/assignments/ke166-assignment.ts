@@ -1,7 +1,10 @@
 import type { Assignment, Flight, PositionRule } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { createId } from "../../utils";
-import { eligibleStaffForRule } from "../candidates/assignment-eligibility";
+import {
+  canAssignStaff,
+  eligibleStaffForRule,
+} from "../candidates/assignment-eligibility";
 import { canMobileSupervisorCoverPosition } from "../coverage/mobile-supervisor-coverage";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { totalFatiguePriority } from "../reviews/schedule-protection";
@@ -9,7 +12,7 @@ import {
   isKe166MobileSupervisor,
   isNumberedRegularPosition,
 } from "../flights/schedule-tasks";
-import { durationHours } from "../shared/time";
+import { durationHours, intervalsOverlap } from "../shared/time";
 import { consecutivePositionAssignments } from "../statistics/schedule-frequency";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
@@ -23,6 +26,7 @@ import { optimizeReassignment } from "../solver/reassignment-optimizer";
 import type { SolverPort } from "../solver/solver-port";
 import { assignmentWarningMessage } from "../reviews/schedule-warning-message";
 import { halfRestPeriodViolation } from "../rules/half-rest";
+import { crossFlightPriorityPolicyRank } from "../rules/cross-flight-priority";
 
 interface CounterPlacementPlan {
   target: Assignment;
@@ -83,6 +87,85 @@ export function assessKe166AssignmentSnapshot(
       ? [assignment.id]
       : [];
   });
+}
+
+export function assessKe166DistinctStaffCapacitySnapshot(
+  state: ScheduleGenerationFacts,
+  assignments: readonly Assignment[]
+): string[] {
+  const plannedState: ScheduleGenerationFacts = {
+    ...state,
+    assignments: assignments.map((assignment) => ({ ...assignment })),
+  };
+  const violations: string[] = [];
+  for (const supervisor of assignments) {
+    if (
+      supervisor.status !== "assigned" ||
+      !supervisor.staffId ||
+      !supervisor.positionRuleId
+    )
+      continue;
+    const supervisorFlight = state.flights.find(
+      (flight) => flight.id === supervisor.flightId
+    );
+    const supervisorRule = state.positionRules.find(
+      (rule) => rule.id === supervisor.positionRuleId
+    );
+    if (
+      !supervisorFlight ||
+      !supervisorRule ||
+      !isKe166MobileSupervisor(supervisorFlight, supervisorRule)
+    )
+      continue;
+    const counter = assignments.find(
+      (assignment) =>
+        assignment.supervisorSourceAssignmentId === supervisor.id &&
+        assignment.staffId === supervisor.staffId &&
+        assignment.status === "assigned"
+    );
+    if (!counter?.positionRuleId) continue;
+    const counterRule = state.positionRules.find(
+      (rule) => rule.id === counter.positionRuleId
+    );
+    const counterRank = crossFlightPriorityPolicyRank(state, counter);
+    if (!counterRule || counterRank === null) continue;
+    const canUseSeparateRegular = eligibleStaffForRule(
+      plannedState,
+      supervisorFlight,
+      counterRule
+    )
+      .filter(
+        (person) =>
+          person.staffType === "常规" && person.id !== supervisor.staffId
+      )
+      .some((person) => {
+        const blockingAssignments = assignments.filter(
+          (assignment) =>
+            assignment.id !== counter.id &&
+            assignment.staffId === person.id &&
+            assignment.status === "assigned" &&
+            intervalsOverlap(
+              assignment.startTime,
+              assignment.endTime,
+              counter.startTime,
+              counter.endTime
+            )
+        );
+        if (!blockingAssignments.length)
+          return canAssignStaff(plannedState, counter.id, person.id) === null;
+        if (blockingAssignments.length !== 1) return false;
+        const blocking = blockingAssignments[0]!;
+        const blockingRank = crossFlightPriorityPolicyRank(state, blocking);
+        return (
+          blockingRank !== null &&
+          blockingRank > counterRank &&
+          canAssignStaff(plannedState, counter.id, person.id, blocking.id) ===
+            null
+        );
+      });
+    if (canUseSeparateRegular) violations.push(counter.id);
+  }
+  return [...new Set(violations)];
 }
 
 function isAutomaticRegularAssignment(

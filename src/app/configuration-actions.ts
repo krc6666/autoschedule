@@ -196,7 +196,8 @@ export function applyFlightPlanReconciliation(
 }
 
 export function addStaff(state: AppState): void {
-  const numericIds = state.staff
+  const numericIds = Object.values(state.groups)
+    .flatMap((group) => group.staff)
     .map((item) => Number(item.id))
     .filter(Number.isFinite);
   const id = String(Math.max(0, ...numericIds) + 1);
@@ -215,9 +216,13 @@ export function addStaff(state: AppState): void {
 }
 
 export function addAdministrativeStaff(state: AppState): void {
+  const allStaffIds = new Set(
+    Object.values(state.groups).flatMap((group) =>
+      group.staff.map((person) => person.id)
+    )
+  );
   let sequence = 1;
-  while (state.staff.some((person) => person.id === `A${sequence}`))
-    sequence += 1;
+  while (allStaffIds.has(`A${sequence}`)) sequence += 1;
   state.staff.push({
     id: `A${sequence}`,
     name: `行政支援${sequence}`,
@@ -402,8 +407,20 @@ export function saveQualified(
 ): boolean {
   const rule = state.positionRules.find((item) => item.id === id);
   if (!rule) return false;
+  const currentStaffIds = new Set(state.staff.map((person) => person.id));
+  const otherGroupStaffIds = new Set(
+    Object.entries(state.groups)
+      .filter(([groupId]) => groupId !== state.activeGroupId)
+      .flatMap(([, group]) => group.staff.map((person) => person.id))
+  );
   rule.manual = manual;
-  rule.qualifiedStaffIds = [...staffIds];
+  rule.qualifiedStaffIds = [
+    ...rule.qualifiedStaffIds.filter(
+      (staffId) =>
+        !currentStaffIds.has(staffId) && otherGroupStaffIds.has(staffId)
+    ),
+    ...staffIds.filter((staffId) => currentStaffIds.has(staffId)),
+  ];
   clearSchedule(state);
   return true;
 }
@@ -552,7 +569,12 @@ export function updateConfigurationField(
       return "updated";
     }
     if (field === "id" && typeof value === "string" && value !== id) {
-      if (state.staff.some((item) => item.id === value)) return "duplicate";
+      if (
+        Object.values(state.groups).some((group) =>
+          group.staff.some((item) => item.id === value)
+        )
+      )
+        return "duplicate";
       state.positionRules.forEach((rule) => {
         rule.qualifiedStaffIds = rule.qualifiedStaffIds.map((staffId) =>
           staffId === id ? value : staffId

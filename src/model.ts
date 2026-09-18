@@ -163,8 +163,41 @@ export interface ScheduleSettings {
   maxTodayFatigueDifference: number;
 }
 
+export type ScheduleGroupId = "A" | "B";
+
+/** Facts shared by both groups. Group workspaces must not copy these values. */
+export interface SharedScheduleData {
+  templates: FlightTemplate[];
+  weeklyFlightPlans: WeeklyFlightPlanEntry[];
+  positionRules: PositionRule[];
+  settings: ScheduleSettings;
+}
+
+/** Facts that belong exclusively to one personnel group. */
+export interface GroupWorkspace {
+  flights: Flight[];
+  staff: Staff[];
+  history: HistoryRecord[];
+  dutyRosterOverrides: DutyRosterOverride[];
+  latePriorityFrequencyAdjustments: LatePriorityFrequencyAdjustment[];
+  assignments: Assignment[];
+  activeScheduleDate: string | null;
+  schedulePolicyStale: boolean;
+  scheduleRuleFingerprint?: string;
+}
+
+export type GroupWorkspaces = Record<ScheduleGroupId, GroupWorkspace>;
+
 export interface AppState {
-  version: 5;
+  version: 6;
+  /** Shared configuration and the two isolated group workspaces. */
+  shared: SharedScheduleData;
+  groups: GroupWorkspaces;
+  activeGroupId: ScheduleGroupId;
+  /**
+   * Legacy current-workspace projection kept during the staged migration.
+   * Consumers move to `shared`/`groups` in the following phase.
+   */
   staff: Staff[];
   flights: Flight[];
   templates: FlightTemplate[];

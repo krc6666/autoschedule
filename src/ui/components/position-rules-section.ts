@@ -202,10 +202,10 @@ export class PositionRulesSectionElement extends LightDomElement {
   }
 
   private ruleRow(rule: PositionRule, index: number, count: number) {
-    const names = rule.qualifiedStaffIds.map(
-      (id) =>
-        this.model.staff.find((person) => person.id === id)?.name ?? `#${id}`
-    );
+    const names = rule.qualifiedStaffIds.flatMap((id) => {
+      const person = this.model.staff.find((item) => item.id === id);
+      return person ? [person.name] : [];
+    });
     const qualification =
       rule.category === "引导"
         ? html`<span class="guide-source-label"

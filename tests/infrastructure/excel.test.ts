@@ -11,8 +11,64 @@ import {
 } from "../../src/infrastructure/excel";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 import { SCHEDULE_SETTING_DEFINITIONS } from "../../src/domain/rules/schedule-settings";
+import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
 
 describe("workbook boundary", () => {
+  it("exports the active group's staff and flights while keeping shared sheets available", () => {
+    const initial = createDefaultState();
+    initial.groups.B.staff = [
+      { ...initial.staff[0]!, id: "b-only", name: "B组人员" },
+    ];
+    initial.positionRules[0]!.qualifiedStaffIds.push("b-only");
+    initial.shared.positionRules[0]!.qualifiedStaffIds.push("b-only");
+    initial.groups.B.flights = [
+      {
+        ...initial.flights[0]!,
+        id: "b-flight",
+        flightNo: "B-FLIGHT",
+      },
+    ];
+    const store = createAutoscheduleStore(initial);
+    store.getState().switchGroup("B");
+
+    const workbook = buildConfigWorkbook(store.getState().model);
+    const staffSheetName = workbook.SheetNames[0]!;
+    const flightSheetName = workbook.SheetNames[1]!;
+    const staffRows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets[staffSheetName]!,
+      { header: 1 }
+    );
+    const flightRows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets[flightSheetName]!,
+      { header: 1 }
+    );
+
+    expect(staffRows.some((row) => row.includes("b-only"))).toBe(true);
+    expect(staffRows.some((row) => row.includes(initial.staff[1]!.id))).toBe(
+      false
+    );
+    expect(flightRows.some((row) => row.includes("B-FLIGHT"))).toBe(true);
+    expect(
+      flightRows.some((row) => row.includes(initial.flights[1]!.flightNo))
+    ).toBe(false);
+    expect(workbook.SheetNames).toContain("岗位配置");
+    const positionRows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["岗位配置"]!,
+      { header: 1 }
+    );
+    const qualifiedCells = positionRows
+      .slice(1)
+      .map((row) => String(row[4] ?? ""));
+    expect(
+      qualifiedCells.some((cell) => cell.split(",").includes("b-only"))
+    ).toBe(true);
+    expect(
+      qualifiedCells.some((cell) =>
+        cell.split(",").includes(initial.staff[0]!.id)
+      )
+    ).toBe(false);
+  });
+
   it("rejects a same-flight exclusion sheet that references missing staff", () => {
     const state = createDefaultState();
     const workbook = buildConfigWorkbook(state);

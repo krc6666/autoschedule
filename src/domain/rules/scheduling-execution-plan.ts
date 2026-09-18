@@ -35,6 +35,7 @@ export interface PlannedScheduleMutation {
 }
 
 export interface DailyObjectiveBuckets {
+  readonly ke166Capacity?: readonly LexicographicObjective[];
   readonly ke166Reservation: readonly LexicographicObjective[];
   readonly ke166Availability?: readonly LexicographicObjective[];
   readonly duty: readonly LexicographicObjective[];
@@ -200,6 +201,7 @@ export function orderDailyObjectiveBuckets(
 ): LexicographicObjective[] {
   const coverageBeforeKe166 = (buckets.ke166Availability?.length ?? 0) > 0;
   return [
+    ...(buckets.ke166Capacity ?? []),
     ...(coverageBeforeKe166 ? buckets.coverage.slice(0, 2) : []),
     ...buckets.ke166Reservation,
     ...(buckets.ke166Availability ?? []),

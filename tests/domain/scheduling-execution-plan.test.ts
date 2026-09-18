@@ -87,6 +87,9 @@ describe("compiled scheduling execution plan", () => {
 
   it("orders duty relief as rest, priority-position avoidance, then fatigue", () => {
     const plan = orderDailyObjectiveBuckets({
+      ke166Capacity: [
+        { id: "ke166-capacity", direction: "maximize", terms: [] },
+      ],
       ke166Reservation: [{ id: "ke166", direction: "minimize", terms: [] }],
       duty: [{ id: "duty", direction: "maximize", terms: [] }],
       coverage: [{ id: "coverage", direction: "minimize", terms: [] }],
@@ -133,6 +136,7 @@ describe("compiled scheduling execution plan", () => {
     });
 
     expect(plan.map((objective) => objective.id)).toEqual([
+      "ke166-capacity",
       "ke166",
       "duty",
       "coverage",

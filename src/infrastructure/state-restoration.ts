@@ -7,10 +7,12 @@ import type {
   DutyRosterOverride,
   Flight,
   FlightTemplate,
+  GroupWorkspace,
   HistoryRecord,
   LatePriorityFrequencyAdjustment,
   PositionRule,
   ScheduleSettings,
+  SharedScheduleData,
   Staff,
   WeeklyFlightPlanEntry,
 } from "../model";
@@ -35,7 +37,7 @@ import { scheduleRuleFingerprint } from "../domain/rules/schedule-rule-fingerpri
 
 type PersistedSettings = Partial<ScheduleSettings>;
 type PersistedAppState = Record<string, unknown> & {
-  version: 1 | 2 | 3 | 4 | 5;
+  version: 1 | 2 | 3 | 4 | 5 | 6;
 };
 
 const LATE_PRIORITY_KINDS = new Set([
@@ -92,7 +94,8 @@ function isPersistedState(value: unknown): value is PersistedAppState {
     value.version === 2 ||
     value.version === 3 ||
     value.version === 4 ||
-    value.version === 5
+    value.version === 5 ||
+    value.version === 6
   );
 }
 
@@ -600,6 +603,124 @@ function restoreDutyRosterOverrides(value: unknown[]): DutyRosterOverride[] {
   });
 }
 
+function emptyGroupWorkspace(): GroupWorkspace {
+  return {
+    flights: [],
+    staff: [],
+    history: [],
+    dutyRosterOverrides: [],
+    latePriorityFrequencyAdjustments: [],
+    assignments: [],
+    activeScheduleDate: null,
+    schedulePolicyStale: false,
+  };
+}
+
+function groupWorkspaceFromState(state: AppState): GroupWorkspace {
+  return {
+    flights: structuredClone(state.flights),
+    staff: structuredClone(state.staff),
+    history: structuredClone(state.history),
+    dutyRosterOverrides: structuredClone(state.dutyRosterOverrides),
+    latePriorityFrequencyAdjustments: structuredClone(
+      state.latePriorityFrequencyAdjustments
+    ),
+    assignments: structuredClone(state.assignments),
+    activeScheduleDate: state.activeScheduleDate,
+    schedulePolicyStale: state.schedulePolicyStale,
+    scheduleRuleFingerprint: state.scheduleRuleFingerprint,
+  };
+}
+
+function sharedScheduleDataFromState(state: AppState): SharedScheduleData {
+  return {
+    templates: structuredClone(state.templates),
+    weeklyFlightPlans: structuredClone(state.weeklyFlightPlans),
+    positionRules: structuredClone(state.positionRules),
+    settings: structuredClone(state.settings),
+  };
+}
+
+function restoreGroupWorkspace(
+  value: unknown,
+  fallback: GroupWorkspace,
+  base: AppState,
+  issues: StateRestorationIssue[]
+): GroupWorkspace {
+  if (!isRecord(value)) return structuredClone(fallback);
+  const staff = restoredCollection(value.staff, fallback.staff, restoreStaff);
+  const flights = restoredCollection(
+    value.flights,
+    fallback.flights,
+    restoreFlights
+  );
+  const positionRules = base.positionRules;
+  const history = migrateLegacyHistoryMetadata(
+    restoredCollection(value.history, fallback.history, restoreHistory),
+    positionRules
+  );
+  const workspaceState = {
+    ...base,
+    flights,
+    staff,
+    history,
+    assignments: [],
+  };
+  const rawAssignments = Array.isArray(value.assignments)
+    ? value.assignments
+    : [];
+  const assignments = restoreAssignments(
+    workspaceState,
+    rawAssignments,
+    issues
+  );
+  return {
+    flights,
+    staff,
+    history,
+    dutyRosterOverrides: restoredCollection(
+      value.dutyRosterOverrides,
+      fallback.dutyRosterOverrides,
+      restoreDutyRosterOverrides
+    ),
+    latePriorityFrequencyAdjustments: restoreLatePriorityFrequencyAdjustments(
+      value.latePriorityFrequencyAdjustments
+    ),
+    assignments,
+    activeScheduleDate:
+      value.activeScheduleDate === null ||
+      typeof value.activeScheduleDate === "string"
+        ? value.activeScheduleDate
+        : fallback.activeScheduleDate,
+    schedulePolicyStale:
+      typeof value.schedulePolicyStale === "boolean"
+        ? value.schedulePolicyStale
+        : fallback.schedulePolicyStale,
+    scheduleRuleFingerprint:
+      typeof value.scheduleRuleFingerprint === "string"
+        ? value.scheduleRuleFingerprint
+        : undefined,
+  };
+}
+
+function projectActiveGroup(next: AppState): void {
+  const active = next.groups[next.activeGroupId];
+  if (!active) {
+    next.activeGroupId = "A";
+    return projectActiveGroup(next);
+  }
+  next.flights = active.flights;
+  next.staff = active.staff;
+  next.history = active.history;
+  next.dutyRosterOverrides = active.dutyRosterOverrides;
+  next.latePriorityFrequencyAdjustments =
+    active.latePriorityFrequencyAdjustments;
+  next.assignments = active.assignments;
+  next.activeScheduleDate = active.activeScheduleDate;
+  next.schedulePolicyStale = active.schedulePolicyStale;
+  next.scheduleRuleFingerprint = active.scheduleRuleFingerprint;
+}
+
 export function restorePersistedState(
   value: unknown,
   fallback: AppState
@@ -623,7 +744,10 @@ export function restorePersistedState(
     positionRules
   );
   const next: AppState = {
-    version: 5,
+    version: 6,
+    shared: structuredClone(fallback.shared),
+    groups: structuredClone(fallback.groups),
+    activeGroupId: "A",
     staff: restoredCollection(value.staff, fallback.staff, restoreStaff),
     flights: restoredCollection(
       value.flights,
@@ -707,6 +831,34 @@ export function restorePersistedState(
   }
   if (!next.assignments.length) {
     next.scheduleRuleFingerprint = undefined;
+  }
+  next.shared = sharedScheduleDataFromState(next);
+  if (value.version >= 6 && isRecord(value.groups)) {
+    const persistedActiveGroup = value.activeGroupId === "B" ? "B" : "A";
+    const groupA =
+      persistedActiveGroup === "A"
+        ? groupWorkspaceFromState(next)
+        : restoreGroupWorkspace(
+            value.groups.A,
+            groupWorkspaceFromState(next),
+            next,
+            issues
+          );
+    const groupB = restoreGroupWorkspace(
+      value.groups.B,
+      emptyGroupWorkspace(),
+      next,
+      issues
+    );
+    next.groups = { A: groupA, B: groupB };
+    next.activeGroupId = persistedActiveGroup;
+    projectActiveGroup(next);
+  } else {
+    next.groups = {
+      A: groupWorkspaceFromState(next),
+      B: emptyGroupWorkspace(),
+    };
+    next.activeGroupId = "A";
   }
   return next;
 }

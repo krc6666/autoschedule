@@ -5,6 +5,7 @@ import type { ApplicationViewState } from "../../app/application-view-state";
 import type { AppSection, AppState } from "../../model";
 import {
   UI_COMMAND_EVENT,
+  dispatchUiCommand,
   type UiCommand,
   type UiCommandEvent,
 } from "../events/ui-command";
@@ -62,6 +63,21 @@ export class AutoscheduleAppElement extends LightDomElement {
       (item) => item.id === this.view.section
     );
     return html`
+      <div class="group-switcher" role="group" aria-label="排班组">
+        <label class="small text-secondary" for="active-group">当前组</label>
+        <select
+          id="active-group"
+          class="form-select form-select-sm"
+          @change=${this.switchGroup}
+        >
+          <option value="A" ?selected=${this.model.activeGroupId === "A"}>
+            A 组
+          </option>
+          <option value="B" ?selected=${this.model.activeGroupId === "B"}>
+            B 组
+          </option>
+        </select>
+      </div>
       <header class="app-header border-bottom bg-white sticky-top">
         <div
           class="container-fluid app-container d-flex align-items-center gap-3 py-2"
@@ -154,6 +170,12 @@ export class AutoscheduleAppElement extends LightDomElement {
         .dialog=${this.view.dialog}
       ></autoschedule-app-dialog>
     `;
+  }
+
+  private switchGroup(event: Event): void {
+    const groupId = (event.currentTarget as HTMLSelectElement).value as
+      "A" | "B";
+    dispatchUiCommand(this, { type: "switch-group", groupId });
   }
 
   private page(section: AppSection) {

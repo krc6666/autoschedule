@@ -54,6 +54,7 @@ describe("autoschedule store", () => {
     initial.flights = initial.flights.filter(
       (flight) => flight.flightNo !== template.flightNo
     );
+    initial.groups.A.flights = structuredClone(initial.flights);
     const store = createAutoscheduleStore(initial);
     const reconciliation = buildFlightPlanReconciliation(
       store.getState().model,
@@ -74,5 +75,54 @@ describe("autoschedule store", () => {
         .getState()
         .model.flights.some((flight) => flight.flightNo === template.flightNo)
     ).toBe(true);
+  });
+
+  it("切换组前后只交换当前组投影，且保存后两组互不串历史", () => {
+    const initial = createDefaultState();
+    initial.groups.B.staff = [
+      { ...initial.staff[0]!, id: "b-only", name: "B组人员" },
+    ];
+    initial.groups.B.flights = [];
+    const store = createAutoscheduleStore(initial);
+
+    store.getState().configuration.addStaff();
+    expect(store.getState().isDirty()).toBe(true);
+    expect(store.getState().model.staff.length).toBeGreaterThan(
+      initial.groups.A.staff.length
+    );
+
+    store.getState().switchGroup("B");
+    expect(store.getState().model.activeGroupId).toBe("B");
+    expect(store.getState().model.staff.map((item) => item.id)).toEqual([
+      "b-only",
+    ]);
+    expect(store.getState().model.history).toEqual([]);
+
+    store.getState().switchGroup("A");
+    expect(
+      store.getState().model.staff.some((item) => item.id === "b-only")
+    ).toBe(false);
+    expect(store.getState().model.staff.length).toBeGreaterThan(
+      initial.groups.A.staff.length
+    );
+  });
+
+  it("replaces imported current-group data into the active workspace projection", () => {
+    const initial = createDefaultState();
+    const store = createAutoscheduleStore(initial);
+    const imported = structuredClone(store.getState().model);
+    const importedStaff = [
+      { ...initial.staff[0]!, id: "imported-a", name: "导入A组人员" },
+    ];
+    imported.staff = importedStaff;
+    imported.flights = [];
+    imported.history = [];
+    imported.assignments = [];
+
+    store.getState().replaceModel(imported);
+
+    expect(store.getState().model.staff).toEqual(importedStaff);
+    expect(store.getState().model.groups.A.staff).toEqual(importedStaff);
+    expect(store.getState().model.groups.A.flights).toEqual([]);
   });
 });

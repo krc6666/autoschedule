@@ -1,7 +1,7 @@
 import type { SchedulePolicyInput } from "../../app/policy-actions";
 import type { WorkbookImportMode } from "../../app/workbook-import-controller";
 import type { DutyRosterSlot } from "../../domain/duty-roster/roster";
-import type { AppSection, IsoWeekday } from "../../model";
+import type { AppSection, IsoWeekday, ScheduleGroupId } from "../../model";
 import type { HalfRestMode } from "../../domain/shared/schedule-run-preferences";
 
 export type EditableValue = string | number | boolean;
@@ -9,6 +9,7 @@ export type EditableValue = string | number | boolean;
 export type UiCommand =
   | { type: "navigate"; section: AppSection }
   | { type: "change-date"; date: string }
+  | { type: "switch-group"; groupId: ScheduleGroupId }
   | { type: "open-import"; mode: WorkbookImportMode; date?: string }
   | {
       type: "import-file";

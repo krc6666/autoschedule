@@ -9,6 +9,7 @@ import {
   copyPositionRules,
   deleteTemplate,
   deleteStaff,
+  saveQualified,
   setWeeklyFlightPlanFlight,
   updateConfigurationField,
 } from "../../src/app/configuration-actions";
@@ -157,6 +158,46 @@ describe("configuration actions", () => {
     ).toBe("updated");
     expect(regular.standbyQualified).toBe(false);
     expect(state.dutyRosterOverrides).toEqual([]);
+  });
+
+  it("rejects a staff id that belongs to the other group", () => {
+    const state = createDefaultState();
+    const current = state.staff[0]!;
+    state.groups.B.staff = [{ ...current, id: "B-1", name: "B组人员" }];
+
+    expect(
+      updateConfigurationField(state, "staff", current.id, "id", "B-1")
+    ).toBe("duplicate");
+    expect(current.id).not.toBe("B-1");
+  });
+
+  it("allocates new staff ids without colliding with the other group", () => {
+    const state = createDefaultState();
+    state.groups.B.staff = [
+      { ...state.staff[0]!, id: "19", name: "B组常规人员" },
+      { ...state.staff[0]!, id: "A1", name: "B组行政支援" },
+    ];
+
+    addStaff(state);
+    addAdministrativeStaff(state);
+
+    expect(state.staff.at(-2)?.id).toBe("20");
+    expect(state.staff.at(-1)?.id).toBe("A2");
+  });
+
+  it("updates only the active group's qualifications in shared position rules", () => {
+    const state = createDefaultState();
+    const rule = state.positionRules[0]!;
+    const otherGroupId = "B-qualified";
+    state.groups.B.staff = [
+      { ...state.staff[0]!, id: otherGroupId, name: "B组资质人员" },
+    ];
+    rule.qualifiedStaffIds = [state.staff[0]!.id, otherGroupId];
+
+    expect(saveQualified(state, rule.id, false, [state.staff[1]!.id])).toBe(
+      true
+    );
+    expect(rule.qualifiedStaffIds).toEqual([otherGroupId, state.staff[1]!.id]);
   });
 
   it("applies a flight template and invalidates the active schedule", () => {

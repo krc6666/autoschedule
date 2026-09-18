@@ -63,6 +63,7 @@ import {
 } from "../reviews/cross-workday-qualification-reservation";
 import {
   crossFlightPriorityPolicyMatches,
+  crossFlightPriorityPolicyRank,
   enabledCrossFlightPriorityPolicies,
 } from "../rules/cross-flight-priority";
 import { intervalsOverlap } from "../shared/time";
@@ -172,19 +173,80 @@ function crossFlightPriorityObjectives(
 function ke166SupervisorAvailabilityModel(
   state: ScheduleGenerationFacts,
   preparation: SchedulePreparation,
-  choices: readonly DailyScheduleStaffChoice[]
+  choices: readonly DailyScheduleStaffChoice[],
+  vacancyChoices: readonly DailyScheduleVacancyChoice[]
 ): {
   variables: SolverProblem["variables"][number][];
   constraints: LinearConstraint[];
-  objectives: LexicographicObjective[];
+  capacityObjectives: LexicographicObjective[];
+  availabilityObjectives: LexicographicObjective[];
 } {
   const variables: SolverProblem["variables"][number][] = [];
   const constraints: LinearConstraint[] = [];
-  const objectives: LexicographicObjective[] = [];
+  const capacityObjectives: LexicographicObjective[] = [];
+  const availabilityObjectives: LexicographicObjective[] = [];
   for (const [taskIndex, task] of preparation.tasks.entries()) {
     if (!isKe166MobileSupervisor(task.flight, task.rule)) continue;
     const eligibleIds = preparation.eligibleStaffIds.get(task.key);
     const availableIds: string[] = [];
+    const independentIds: string[] = [];
+    const compatibleCounterChoiceIds = new Set(
+      choices
+        .filter(
+          (choice) =>
+            choice.task.flight.id === task.flight.id &&
+            isNumberedRegularPosition(choice.task.rule) &&
+            canMobileSupervisorCoverPosition(state, {
+              flightNo: task.flight.flightNo,
+              position: choice.task.rule.name,
+              remark: choice.task.rule.remark,
+            })
+        )
+        .map((choice) => choice.id)
+    );
+    const protectedCounterRank = choices.reduce<number | null>(
+      (lowestRank, choice) => {
+        if (!compatibleCounterChoiceIds.has(choice.id)) return lowestRank;
+        const rank = crossFlightPriorityPolicyRank(state, {
+          flightNo: choice.task.flight.flightNo,
+          position: choice.task.rule.name,
+        });
+        if (rank === null) return lowestRank;
+        return lowestRank === null ? rank : Math.min(lowestRank, rank);
+      },
+      null
+    );
+    const hasLowerOverlappingPriorityTask =
+      protectedCounterRank !== null &&
+      preparation.tasks.some((otherTask) => {
+        const rank = crossFlightPriorityPolicyRank(state, {
+          flightNo: otherTask.flight.flightNo,
+          position: otherTask.rule.name,
+        });
+        return (
+          rank !== null &&
+          rank > protectedCounterRank &&
+          intervalsOverlap(
+            otherTask.flight.startTime,
+            otherTask.flight.endTime,
+            task.flight.startTime,
+            task.flight.endTime
+          )
+        );
+      });
+    const protectedCounterChoiceIds = new Set(
+      choices
+        .filter(
+          (choice) =>
+            hasLowerOverlappingPriorityTask &&
+            compatibleCounterChoiceIds.has(choice.id) &&
+            crossFlightPriorityPolicyRank(state, {
+              flightNo: choice.task.flight.flightNo,
+              position: choice.task.rule.name,
+            }) === protectedCounterRank
+        )
+        .map((choice) => choice.id)
+    );
     for (const person of state.staff) {
       if (
         !eligibleIds?.has(person.id) ||
@@ -203,18 +265,30 @@ function ke166SupervisorAvailabilityModel(
       );
       const compatibleCounterIds = new Set(
         ownChoices
-          .filter(
-            (choice) =>
-              choice.task.flight.id === task.flight.id &&
-              isNumberedRegularPosition(choice.task.rule) &&
-              canMobileSupervisorCoverPosition(state, {
-                flightNo: task.flight.flightNo,
-                position: choice.task.rule.name,
-                remark: choice.task.rule.remark,
-              })
-          )
+          .filter((choice) => compatibleCounterChoiceIds.has(choice.id))
           .map((choice) => choice.id)
       );
+      const independentId = `ke166-independent:${taskIndex}:${person.id}`;
+      variables.push({ id: independentId });
+      independentIds.push(independentId);
+      constraints.push({
+        id: `ke166-independent-available:${taskIndex}:${person.id}`,
+        terms: [
+          { variableId: independentId, coefficient: 1 },
+          { variableId: availableId, coefficient: -1 },
+        ],
+        upperBound: 0,
+      });
+      for (const compatibleCounterId of compatibleCounterIds) {
+        constraints.push({
+          id: `ke166-independent-counter:${taskIndex}:${person.id}:${compatibleCounterId}`,
+          terms: [independentId, compatibleCounterId].map((variableId) => ({
+            variableId,
+            coefficient: 1,
+          })),
+          upperBound: 1,
+        });
+      }
       constraints.push({
         id: `ke166-hours:${taskIndex}:${person.id}`,
         terms: [
@@ -269,6 +343,55 @@ function ke166SupervisorAvailabilityModel(
       }
     }
     if (!availableIds.length) continue;
+    if (protectedCounterChoiceIds.size && protectedCounterRank !== null) {
+      const independentCoveredId = `ke166-independent-covered:${taskIndex}`;
+      variables.push({ id: independentCoveredId });
+      constraints.push({
+        id: `ke166-independent-covered:${taskIndex}`,
+        terms: [
+          { variableId: independentCoveredId, coefficient: 1 },
+          ...independentIds.map((variableId) => ({
+            variableId,
+            coefficient: -1,
+          })),
+        ],
+        upperBound: 0,
+      });
+      capacityObjectives.push({
+        id: `ke166-supervisor:distinct-staff-capacity:${taskIndex}`,
+        direction: "maximize",
+        terms: [
+          { variableId: independentCoveredId, coefficient: 1 },
+          ...[...protectedCounterChoiceIds].map((variableId) => ({
+            variableId,
+            coefficient: 1,
+          })),
+        ],
+      });
+      capacityObjectives.push({
+        id: `ke166-supervisor:preserve-higher-priority-capacity:${taskIndex}`,
+        direction: "minimize",
+        terms: vacancyChoices
+          .filter((choice) => {
+            if (
+              choice.task.rule.category === "行政支援" ||
+              !intervalsOverlap(
+                choice.task.flight.startTime,
+                choice.task.flight.endTime,
+                task.flight.startTime,
+                task.flight.endTime
+              )
+            )
+              return false;
+            const rank = crossFlightPriorityPolicyRank(state, {
+              flightNo: choice.task.flight.flightNo,
+              position: choice.task.rule.name,
+            });
+            return rank === null || rank <= protectedCounterRank;
+          })
+          .map((choice) => ({ variableId: choice.id, coefficient: 1 })),
+      });
+    }
     const coveredId = `ke166-covered:${taskIndex}`;
     variables.push({ id: coveredId });
     constraints.push({
@@ -279,13 +402,18 @@ function ke166SupervisorAvailabilityModel(
       ],
       upperBound: 0,
     });
-    objectives.push({
+    availabilityObjectives.push({
       id: `ke166-supervisor:available:${taskIndex}`,
       direction: "maximize",
       terms: [{ variableId: coveredId, coefficient: 1 }],
     });
   }
-  return { variables, constraints, objectives };
+  return {
+    variables,
+    constraints,
+    capacityObjectives,
+    availabilityObjectives,
+  };
 }
 
 export interface BuildDailyScheduleModelOptions {
@@ -1256,15 +1384,16 @@ export function buildDailyScheduleModel({
     scheduledTasks
   );
   const staffChoices = staffChoiceBuild.choices;
-  const ke166Availability = ke166SupervisorAvailabilityModel(
-    state,
-    preparation,
-    staffChoices
-  );
   const vacancyChoices = scheduledTasks.map((task, index) => ({
     id: `vacancy:${index}`,
     task,
   }));
+  const ke166Availability = ke166SupervisorAvailabilityModel(
+    state,
+    preparation,
+    staffChoices,
+    vacancyChoices
+  );
   const strictRecoveryTargetTaskKeys = new Set(
     scheduledTasks
       .filter(
@@ -1482,8 +1611,9 @@ export function buildDailyScheduleModel({
   const objectives = applyDailyObjectiveOptimality(
     simplifyLexicographicObjectives(
       orderDailyObjectiveBuckets({
+        ke166Capacity: ke166Availability.capacityObjectives,
         ke166Reservation: ke166ReservationObjectives,
-        ke166Availability: ke166Availability.objectives,
+        ke166Availability: ke166Availability.availabilityObjectives,
         duty: duty.objectives,
         coverage: coverageObjectives,
         crossWorkdayReservation: crossWorkdayReservation.objectives,

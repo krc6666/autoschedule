@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultState } from "../../src/defaults";
 import {
   crossFlightPriorityCandidateScore,
+  crossFlightPriorityPolicyRank,
   crossFlightPriorityReassignmentReasons,
 } from "../../src/domain/rules/cross-flight-priority";
 import { reviewLateShiftRecovery } from "../../src/domain/reviews/late-shift-recovery-review";
@@ -37,6 +38,27 @@ function assignment(
 }
 
 describe("cross-flight priority", () => {
+  it("uses the configured top-to-bottom order as the priority rank", () => {
+    const state = createDefaultState();
+    state.settings.crossFlightPriorityPolicies = [
+      { id: "ke", enabled: true, flightNo: "KE166", positions: ["H03"] },
+      { id: "cx", enabled: true, flightNo: "CX937", positions: ["G20"] },
+    ];
+
+    expect(
+      crossFlightPriorityPolicyRank(state, {
+        flightNo: "KE166",
+        position: "H03",
+      })
+    ).toBe(0);
+    expect(
+      crossFlightPriorityPolicyRank(state, {
+        flightNo: "CX937",
+        position: "G20",
+      })
+    ).toBe(1);
+  });
+
   it("blocks moving a protected worker when the replacement has worse rotation frequency", () => {
     const state = createDefaultState();
     state.activeScheduleDate = "2026-08-21";

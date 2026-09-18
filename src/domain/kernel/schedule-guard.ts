@@ -36,7 +36,10 @@ import {
   assessSameDayLateObligationSnapshot,
   assessLateShiftPositionReliefSnapshot,
 } from "./daily-same-day-late-obligation-model";
-import { assessKe166AssignmentSnapshot } from "../assignments/ke166-assignment";
+import {
+  assessKe166AssignmentSnapshot,
+  assessKe166DistinctStaffCapacitySnapshot,
+} from "../assignments/ke166-assignment";
 import { assessDutyPositionSnapshot } from "../assignments/duty-assignment";
 import { assessScarceQualificationSnapshot } from "../candidates/candidate-priority";
 import { timeToMinutes } from "../shared/time";
@@ -840,14 +843,24 @@ export function createKe166SnapshotScheduleGuard(): ScheduleGuard {
     ) => {
       const facts = context.ke166SnapshotFacts;
       if (!facts || context.phase !== "final") return [];
-      return assessKe166AssignmentSnapshot(facts.state, assignments).map(
-        (assignmentId) => ({
+      return [
+        ...assessKe166DistinctStaffCapacitySnapshot(
+          facts.state,
+          assignments
+        ).map((assignmentId) => ({
           ruleId: "ke166-supervisor",
-          severity: "warning" as const,
           assignmentId,
-          message: `KE166机动督导未安排，岗位已留空，请人工复核`,
-        })
-      );
+          message: `KE166机动督导兼任时仍有第二名常规真人可用，拒绝把该人员让给较低优先航班`,
+        })),
+        ...assessKe166AssignmentSnapshot(facts.state, assignments).map(
+          (assignmentId) => ({
+            ruleId: "ke166-supervisor",
+            severity: "warning" as const,
+            assignmentId,
+            message: `KE166机动督导未安排，岗位已留空，请人工复核`,
+          })
+        ),
+      ];
     },
   });
 }

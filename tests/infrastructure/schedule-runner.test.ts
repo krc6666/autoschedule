@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
+import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
 import { runScheduleInBackground } from "../../src/infrastructure/schedule-runner";
 import type { ScheduleWorkerResponse } from "../../src/infrastructure/schedule-worker-protocol";
 
@@ -36,6 +37,46 @@ function createRun(halfRestStaffIds: string[] = []) {
 }
 
 describe("background schedule runner", () => {
+  it("sends only the active group's staff and history to the worker", () => {
+    const initial = createDefaultState();
+    initial.groups.B.staff = [
+      { ...initial.staff[0]!, id: "b-only", name: "B组人员" },
+    ];
+    initial.groups.B.history = [
+      {
+        id: "b-history",
+        date: "2026-08-01",
+        flightNo: "B-FLIGHT",
+        position: "G01",
+        staffId: "b-only",
+        staffName: "B组人员",
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+      },
+    ];
+    const store = createAutoscheduleStore(initial);
+    store.getState().switchGroup("B");
+    vi.stubGlobal("Worker", ControlledWorker);
+
+    const run = runScheduleInBackground(
+      store.getState().model,
+      "2026-08-01",
+      () => undefined,
+      () => undefined
+    );
+    const request =
+      ControlledWorker.instances.at(-1)!.postMessage.mock.calls[0]![0];
+
+    expect(
+      request.state.staff.map((person: { id: string }) => person.id)
+    ).toEqual(["b-only"]);
+    expect(request.state.history).toEqual(initial.groups.B.history);
+    run.stopWithoutResult();
+  });
+
   it("projects application state to schedule-generation facts before posting", () => {
     const state = createDefaultState();
     const selectedId = state.staff.find(

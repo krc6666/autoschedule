@@ -550,6 +550,7 @@ export async function importWorkbook(
 
 export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
   const workbook = XLSX.utils.book_new();
+  const activeStaffIds = new Set(state.staff.map((person) => person.id));
   append(
     workbook,
     "人员信息",
@@ -650,7 +651,11 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
         rule.category,
         rule.name,
         rule.remark,
-        rule.manual ? "手动输入项" : rule.qualifiedStaffIds.join(","),
+        rule.manual
+          ? "手动输入项"
+          : rule.qualifiedStaffIds
+              .filter((staffId) => activeStaffIds.has(staffId))
+              .join(","),
         rule.fatiguePoints,
         rule.minPassengers,
         rule.earlyReleaseMinutes,
@@ -658,7 +663,18 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
     ],
     [12, 18, 16, 24, 48, 12, 18, 18]
   );
-  appendScheduleRuleSheets(workbook, state);
+  appendScheduleRuleSheets(workbook, {
+    ...state,
+    settings: {
+      ...state.settings,
+      sameFlightStaffExclusions:
+        state.settings.sameFlightStaffExclusions.filter(
+          (rule) =>
+            activeStaffIds.has(rule.firstStaffId) &&
+            activeStaffIds.has(rule.secondStaffId)
+        ),
+    },
+  });
   append(
     workbook,
     "末班重点次数修正",

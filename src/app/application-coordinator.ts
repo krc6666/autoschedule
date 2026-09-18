@@ -268,6 +268,23 @@ export class ApplicationCoordinator implements ApplicationContext {
           historyEditDate: null,
         });
         return true;
+      case "switch-group":
+        if (this.store.getState().isDirty()) {
+          if (!this.confirm("当前组有未保存的班表或配置，是否先保存再切换？")) {
+            this.toast("已取消切换，当前组数据未改变", "warning");
+            return true;
+          }
+          this.commit("当前组已保存");
+        }
+        this.store.getState().switchGroup(command.groupId);
+        this.commit(`已切换到${command.groupId}组`);
+        this.updateView({
+          halfRestStaffIds: [],
+          halfRestModes: {},
+          historyEditDate: null,
+          restoredScheduleNotice: false,
+        });
+        return true;
       case "close-dialog":
         this.updateView({ dialog: null });
         return true;

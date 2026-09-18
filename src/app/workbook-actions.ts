@@ -30,6 +30,53 @@ export interface AppliedWorkbookImport {
   errors?: string[];
 }
 
+function mergePositionRuleQualifications(
+  current: AppState["positionRules"],
+  imported: AppState["positionRules"],
+  activeStaffIds: Set<string>,
+  otherStaffIds: Set<string>
+): AppState["positionRules"] {
+  const ruleKey = (rule: AppState["positionRules"][number]) =>
+    `${rule.flightNo.trim().toUpperCase()}|${rule.name.trim()}|${rule.category}`;
+  const currentByKey = new Map(current.map((rule) => [ruleKey(rule), rule]));
+  return imported.map((rule) => {
+    const existing = currentByKey.get(ruleKey(rule));
+    return {
+      ...rule,
+      qualifiedStaffIds: rule.manual
+        ? rule.qualifiedStaffIds
+        : [
+            ...(existing?.qualifiedStaffIds ?? []).filter((staffId) =>
+              otherStaffIds.has(staffId)
+            ),
+            ...rule.qualifiedStaffIds.filter((staffId) =>
+              activeStaffIds.has(staffId)
+            ),
+          ],
+    };
+  });
+}
+
+function mergeActiveGroupPersonnelRules(
+  current: AppState["settings"]["sameFlightStaffExclusions"],
+  imported: AppState["settings"]["sameFlightStaffExclusions"],
+  activeStaffIds: Set<string>,
+  otherStaffIds: Set<string>
+): AppState["settings"]["sameFlightStaffExclusions"] {
+  return [
+    ...current.filter(
+      (rule) =>
+        otherStaffIds.has(rule.firstStaffId) &&
+        otherStaffIds.has(rule.secondStaffId)
+    ),
+    ...imported.filter(
+      (rule) =>
+        activeStaffIds.has(rule.firstStaffId) &&
+        activeStaffIds.has(rule.secondStaffId)
+    ),
+  ];
+}
+
 function importedHistoryAssignments(
   state: AppState,
   records: readonly HistoryRecord[]
@@ -229,19 +276,57 @@ export function applyWorkbookImport(
 ): AppliedWorkbookImport {
   const importConfig = mode !== "history";
   const importHistory = mode !== "config";
+  const activeStaffIds = new Set(
+    (imported.staff ?? state.staff).map((person) => person.id)
+  );
+  const otherGroupId = state.activeGroupId === "A" ? "B" : "A";
+  const otherStaffIds = new Set(
+    state.groups[otherGroupId].staff.map((person) => person.id)
+  );
+  if (importConfig && imported.staff !== undefined) {
+    const duplicateStaffIds = [
+      ...new Set(
+        imported.staff
+          .filter((person) => otherStaffIds.has(person.id))
+          .map((person) => person.id)
+      ),
+    ];
+    if (duplicateStaffIds.length)
+      return {
+        changedConfig: false,
+        recognized: "",
+        rejected: duplicateStaffIds.length,
+        errors: [
+          `人员编号已属于另一组：${duplicateStaffIds.join("、")}，本次导入未写入`,
+        ],
+      };
+  }
   if (importConfig && imported.staff !== undefined) {
     state.staff = imported.staff;
     clearUnqualifiedStandbyOverrides(state);
   }
   if (importConfig && imported.positionRules !== undefined)
-    state.positionRules = orderPositionRules(imported.positionRules);
+    state.positionRules = orderPositionRules(
+      mergePositionRuleQualifications(
+        state.positionRules,
+        imported.positionRules,
+        activeStaffIds,
+        otherStaffIds
+      )
+    );
   if (importConfig && imported.templates !== undefined)
     state.templates = imported.templates;
-  if (importConfig && imported.settings)
-    state.settings = applyScheduleSettingsPatch(
-      state.settings,
-      imported.settings
-    );
+  if (importConfig && imported.settings) {
+    const settingsPatch = { ...imported.settings };
+    if (imported.settings.sameFlightStaffExclusions !== undefined)
+      settingsPatch.sameFlightStaffExclusions = mergeActiveGroupPersonnelRules(
+        state.settings.sameFlightStaffExclusions,
+        imported.settings.sameFlightStaffExclusions,
+        activeStaffIds,
+        otherStaffIds
+      );
+    state.settings = applyScheduleSettingsPatch(state.settings, settingsPatch);
+  }
   if (importConfig && imported.latePriorityFrequencyAdjustments !== undefined)
     state.latePriorityFrequencyAdjustments =
       imported.latePriorityFrequencyAdjustments;

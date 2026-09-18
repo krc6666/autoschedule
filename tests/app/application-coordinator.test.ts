@@ -44,6 +44,39 @@ function certifiedResult(
 }
 
 describe("application persistence feedback", () => {
+  it("切换组前提示保存未保存改动，确认后只显示目标组数据", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    state.groups.B.staff = [
+      { ...state.staff[0]!, id: "group-b", name: "B组人员" },
+    ];
+    state.groups.B.flights = [];
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences, confirm: vi.fn(() => true) }
+    );
+
+    coordinator.store.getState().configuration.addStaff();
+    await coordinator.handle({ type: "switch-group", groupId: "B" });
+
+    expect(coordinator.model().activeGroupId).toBe("B");
+    expect(coordinator.model().staff.map((person) => person.id)).toEqual([
+      "group-b",
+    ]);
+    expect(coordinator.view().halfRestStaffIds).toEqual([]);
+  });
+
+  it("取消切组确认时保留当前组", async () => {
+    const state = createDefaultState();
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences, confirm: vi.fn(() => false) }
+    );
+    coordinator.store.getState().configuration.addStaff();
+    await coordinator.handle({ type: "switch-group", groupId: "B" });
+    expect(coordinator.model().activeGroupId).toBe("A");
+  });
+
   it("applies a validated late-priority count preview through the records controller", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
@@ -823,11 +856,11 @@ describe("next workday flight picker workflow", () => {
   it("keeps the original model when the selected next schedule fails", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const original = structuredClone(state);
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
       { preferences: nextWorkdayPreferences, confirm: () => true }
     );
+    const original = structuredClone(coordinator.model());
     Object.defineProperty(coordinator, "scheduleRunner", {
       value: {
         calculate: vi.fn().mockRejectedValue(new Error("测试失败")),
@@ -851,11 +884,11 @@ describe("next workday flight picker workflow", () => {
   it("keeps the original model when the run is stopped, even with a latest result", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const original = structuredClone(state);
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
       { preferences: nextWorkdayPreferences, confirm: () => true }
     );
+    const original = structuredClone(coordinator.model());
     Object.defineProperty(coordinator, "scheduleRunner", {
       value: {
         calculate: vi.fn().mockResolvedValue({
@@ -1003,11 +1036,11 @@ describe("current schedule flight picker workflow", () => {
   it("opens every local flight and defaults to the current day's selection without mutating state", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const original = structuredClone(state);
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
       { preferences: currentPreferences, confirm: () => true }
     );
+    const original = structuredClone(coordinator.model());
     const calculate = vi.fn();
     Object.defineProperty(coordinator, "scheduleRunner", {
       value: { calculate, isRunning: () => false },
@@ -1108,11 +1141,11 @@ describe("current schedule flight picker workflow", () => {
   it("keeps the original flights and schedule when recalculation fails", async () => {
     vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const original = structuredClone(state);
     const coordinator = new ApplicationCoordinator(
       createAutoscheduleStore(state),
       { preferences: currentPreferences, confirm: () => true }
     );
+    const original = structuredClone(coordinator.model());
     Object.defineProperty(coordinator, "scheduleRunner", {
       value: {
         calculate: vi.fn().mockRejectedValue(new Error("测试失败")),

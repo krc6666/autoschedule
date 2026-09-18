@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { createDefaultState } from "../../src/defaults";
 import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-in-rule-registry";
 import { optimizeDailySchedule } from "../../src/domain/kernel/daily-schedule-optimizer";
+import { createScheduleLedger } from "../../src/domain/kernel/schedule-ledger";
+import { createKe166SnapshotScheduleGuard } from "../../src/domain/kernel/schedule-guard";
 import { prepareSchedule } from "../../src/domain/kernel/schedule-preparation";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import { generateSchedule } from "../helpers/generate-schedule";
@@ -148,10 +150,287 @@ function scenario(withCounter = true, extraSupervisor = false) {
   };
 }
 
+function morningPriorityScenario(
+  helperType: "常规" | "行政支援" | null = "常规"
+) {
+  const state = createDefaultState();
+  const supervisor = state.staff[0]!;
+  const helper = state.staff[1]!;
+  state.staff = [
+    {
+      ...supervisor,
+      status: "正常" as const,
+      staffType: "常规" as const,
+      teamLeader: false,
+      nightShift: true,
+      dutyQualified: false,
+    },
+    ...(helperType
+      ? [
+          {
+            ...helper,
+            status: "正常" as const,
+            staffType: helperType,
+            teamLeader: false,
+            nightShift: true,
+            dutyQualified: false,
+          },
+        ]
+      : []),
+  ];
+  state.settings.minimumRegularTransitionMinutes = 0;
+  state.settings.lateShiftRecoveryEnabled = false;
+  state.settings.positionRotationEnabled = false;
+  state.settings.workloadBalanceEnabled = false;
+  state.settings.sameFlightStaffExclusions = [];
+  state.settings.crossFlightPriorityPolicies = [
+    {
+      id: "ke166-first",
+      enabled: true,
+      flightNo: "KE166",
+      positions: ["H03"],
+    },
+    {
+      id: "cx937-second",
+      enabled: true,
+      flightNo: "CX937",
+      positions: ["G20"],
+    },
+  ];
+  state.dutyRosterOverrides = [
+    {
+      date: "2026-09-24",
+      cxPreflightStaffId: null,
+      dutyStaffId: null,
+      standbyStaffIds: [null, null],
+    },
+  ];
+  state.flights = [
+    {
+      id: "ke",
+      flightNo: "KE166",
+      startTime: "09:15",
+      endTime: "11:15",
+      bookedPassengers: 100,
+      positions: [],
+      remark: "",
+    },
+    {
+      id: "cx",
+      flightNo: "CX937",
+      startTime: "09:25",
+      endTime: "11:25",
+      bookedPassengers: 100,
+      positions: [],
+      remark: "",
+    },
+  ];
+  const base = state.positionRules[0]!;
+  state.positionRules = [
+    {
+      ...base,
+      id: "ke-supervisor",
+      flightNo: "KE166",
+      name: "督导",
+      category: "机动督导",
+      qualifiedStaffIds: [supervisor.id],
+      fatiguePoints: 5,
+    },
+    {
+      ...base,
+      id: "ke-counter",
+      flightNo: "KE166",
+      name: "H03",
+      remark: "",
+      category: "常规",
+      qualifiedStaffIds: [supervisor.id, ...(helperType ? [helper.id] : [])],
+      fatiguePoints: 2,
+    },
+    {
+      ...base,
+      id: "cx-counter",
+      flightNo: "CX937",
+      name: "G20",
+      remark: "",
+      category: "常规",
+      qualifiedStaffIds: helperType ? [helper.id] : [],
+      fatiguePoints: 2,
+    },
+  ];
+  return { state, supervisor, helper };
+}
+
 describe(
   "KE166 supervisor capacity in the initial schedule",
   { timeout: 30_000 },
   () => {
+    it("keeps a separate regular worker on KE166 even when CX937 must stay vacant", async () => {
+      const {
+        state,
+        supervisor,
+        helper: flexibleWorker,
+      } = morningPriorityScenario();
+
+      const result = await generateSchedule(state, "2026-09-24");
+
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-supervisor"
+        )
+      ).toMatchObject({ staffId: supervisor.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-counter"
+        )
+      ).toMatchObject({ staffId: flexibleWorker.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-counter"
+        )?.supervisorSourceAssignmentId
+      ).toBeUndefined();
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "cx-counter"
+        )
+      ).toMatchObject({ staffId: null, status: "unfilled" });
+    });
+
+    it("does not count administrative support as the second KE166 worker", async () => {
+      const {
+        state,
+        supervisor,
+        helper: administrativeSupport,
+      } = morningPriorityScenario("行政支援");
+
+      const result = await generateSchedule(state, "2026-09-24");
+
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-supervisor"
+        )
+      ).toMatchObject({ staffId: supervisor.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-counter"
+        )
+      ).toMatchObject({ staffId: supervisor.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-counter"
+        )?.supervisorSourceAssignmentId
+      ).toBeTruthy();
+      expect(
+        result.assignments.some(
+          (assignment) => assignment.staffId === administrativeSupport.id
+        )
+      ).toBe(false);
+    });
+
+    it("rejects a post-stage move that sends the reserved KE166 worker to CX937", async () => {
+      const {
+        state,
+        supervisor,
+        helper: flexibleWorker,
+      } = morningPriorityScenario();
+      const result = await generateSchedule(state, "2026-09-24");
+      const supervisorAssignment = result.assignments.find(
+        (assignment) => assignment.positionRuleId === "ke-supervisor"
+      )!;
+      const illegal = result.assignments.map((assignment) => {
+        if (assignment.positionRuleId === "ke-counter")
+          return {
+            ...assignment,
+            staffId: supervisor.id,
+            staffName: supervisor.name,
+            supervisorSourceAssignmentId: supervisorAssignment.id,
+          };
+        if (assignment.positionRuleId === "cx-counter")
+          return {
+            ...assignment,
+            staffId: flexibleWorker.id,
+            staffName: flexibleWorker.name,
+            status: "assigned" as const,
+          };
+        return assignment;
+      });
+      const ledger = createScheduleLedger(result.assignments, {
+        guards: [createKe166SnapshotScheduleGuard()],
+        guardContext: {
+          phase: "final",
+          ke166SnapshotFacts: { state, date: "2026-09-24" },
+        },
+      });
+
+      expect(() =>
+        ledger.commit({ type: "replace", assignments: illegal })
+      ).toThrow(/KE166.*真人/);
+      expect(ledger.snapshot()).toEqual(result.assignments);
+    });
+
+    it("leaves the lower-priority CX937 position vacant without emptying an unrelated unique position", async () => {
+      const { state, needed, replacement } = scenario();
+      const fixedWorker = state.staff[0]!;
+      state.settings.crossFlightPriorityPolicies = [
+        {
+          id: "ke166-first",
+          enabled: true,
+          flightNo: "KE166",
+          positions: ["H04"],
+        },
+        {
+          id: "cx937-second",
+          enabled: true,
+          flightNo: "CX937",
+          positions: ["G01"],
+        },
+      ];
+
+      const result = await generateSchedule(state, "2026-09-18");
+
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "fixed"
+        )
+      ).toMatchObject({ staffId: fixedWorker.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-supervisor"
+        )
+      ).toMatchObject({ staffId: needed, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-counter"
+        )
+      ).toMatchObject({ staffId: replacement, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "cx"
+        )
+      ).toMatchObject({ staffId: null, status: "unfilled" });
+    });
+
+    it("keeps the legal dual-role fallback when no second regular worker exists", async () => {
+      const { state, supervisor } = morningPriorityScenario(null);
+
+      const result = await generateSchedule(state, "2026-09-24");
+
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-supervisor"
+        )
+      ).toMatchObject({ staffId: supervisor.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-counter"
+        )
+      ).toMatchObject({ staffId: supervisor.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-counter"
+        )?.supervisorSourceAssignmentId
+      ).toBeTruthy();
+    });
+
     it("reserves a compatible KE counter while keeping CX937 staffed", async () => {
       const { state, needed, replacement } = scenario();
       state.settings.latePriorityFlightNumbers = ["TR121"];
