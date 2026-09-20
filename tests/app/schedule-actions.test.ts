@@ -894,6 +894,28 @@ describe("引导人员人工调整", () => {
     });
   });
 
+  it("允许复用同航班分流岗位上的常规人员", () => {
+    const state = guideSchedule();
+    const guide = state.assignments.find(
+      (assignment) => assignment.id === "guide-assignment"
+    )!;
+    const lower = state.staff[1]!;
+    state.positionRules.find((rule) => rule.id === "lower")!.category = "分流";
+    guide.staffId = state.staff[0]!.id;
+    guide.staffName = state.staff[0]!.name;
+
+    expect(
+      updateAssignmentField(state, guide.id, "staffName", lower.name)
+    ).toMatchObject({ changed: true });
+    expect(guide).toMatchObject({
+      staffId: lower.id,
+      staffName: lower.name,
+      status: "manual",
+      workHours: 0,
+      fatiguePoints: 0,
+    });
+  });
+
   it("拒绝未参加该航班和不存在的引导人员", () => {
     const state = guideSchedule();
     const guide = state.assignments.find(
@@ -903,9 +925,96 @@ describe("引导人员人工调整", () => {
 
     expect(
       updateAssignmentField(state, guide.id, "staffName", outsider.name).error
-    ).toContain("未在该航班承担常规岗位");
+    ).toContain("未在该航班承担可复用岗位");
     expect(
       updateAssignmentField(state, guide.id, "staffName", "不存在人员").error
     ).toContain("只能复用同一航班");
+  });
+
+  it("允许复用行政支援岗位上的常规人员", () => {
+    const state = guideSchedule();
+    state.settings.adminSupportEnabled = true;
+    const guide = state.assignments.find(
+      (assignment) => assignment.id === "guide-assignment"
+    )!;
+    const lower = state.staff[1]!;
+    state.positionRules.find((rule) => rule.id === "lower")!.category =
+      "行政支援";
+    guide.staffId = state.staff[0]!.id;
+    guide.staffName = state.staff[0]!.name;
+
+    expect(
+      updateAssignmentField(state, guide.id, "staffName", lower.name)
+    ).toMatchObject({ changed: true });
+    expect(guide).toMatchObject({
+      staffId: lower.id,
+      staffName: lower.name,
+      status: "manual",
+    });
+  });
+
+  it("行政支援岗位填入常规人员后优先刷新引导", () => {
+    const state = guideSchedule();
+    state.settings.adminSupportEnabled = true;
+    const guide = state.assignments.find(
+      (assignment) => assignment.id === "guide-assignment"
+    )!;
+    const supportWorker = state.staff[2]!;
+    const base = state.positionRules[0]!;
+    state.positionRules.splice(2, 0, {
+      ...base,
+      id: "administrative",
+      flightNo: "F1",
+      name: "行政补位",
+      category: "行政支援",
+      qualifiedStaffIds: [supportWorker.id],
+    });
+    state.assignments.splice(2, 0, {
+      id: "administrative-assignment",
+      flightId: "flight",
+      flightNo: "F1",
+      positionRuleId: "administrative",
+      position: "行政补位",
+      staffId: null,
+      staffName: "",
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "manual",
+    });
+
+    expect(
+      assignStaff(state, "administrative-assignment", supportWorker.id)
+    ).toMatchObject({ changed: true });
+    expect(guide).toMatchObject({
+      staffId: supportWorker.id,
+      staffName: supportWorker.name,
+      status: "assigned",
+    });
+  });
+
+  it("拒绝行政支援人员成为引导", () => {
+    const state = guideSchedule();
+    const guide = state.assignments.find(
+      (assignment) => assignment.id === "guide-assignment"
+    )!;
+    const lower = state.staff[1]!;
+    lower.staffType = "行政支援";
+    state.settings.adminSupportEnabled = true;
+    guide.staffId = state.staff[0]!.id;
+    guide.staffName = state.staff[0]!.name;
+
+    const result = updateAssignmentField(
+      state,
+      guide.id,
+      "staffName",
+      lower.name
+    );
+    expect(result.changed).toBe(false);
+    expect(result.error).toBeTruthy();
+    expect(guide.staffId).toBe(state.staff[0]!.id);
   });
 });

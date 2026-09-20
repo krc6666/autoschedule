@@ -55,7 +55,7 @@ export interface CrossFlightPriorityPolicy {
   id: string;
   enabled: boolean;
   flightNo: string;
-  positions: string[];
+  staffIds: string[];
 }
 
 export interface SameFlightStaffExclusion {

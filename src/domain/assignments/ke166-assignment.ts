@@ -127,8 +127,7 @@ export function assessKe166DistinctStaffCapacitySnapshot(
     const counterRule = state.positionRules.find(
       (rule) => rule.id === counter.positionRuleId
     );
-    const counterRank = crossFlightPriorityPolicyRank(state, counter);
-    if (!counterRule || counterRank === null) continue;
+    if (!counterRule) continue;
     const canUseSeparateRegular = eligibleStaffForRule(
       plannedState,
       supervisorFlight,
@@ -139,6 +138,11 @@ export function assessKe166DistinctStaffCapacitySnapshot(
           person.staffType === "常规" && person.id !== supervisor.staffId
       )
       .some((person) => {
+        const ke166Rank = crossFlightPriorityPolicyRank(state, {
+          flightNo: supervisorFlight.flightNo,
+          staffId: person.id,
+        });
+        if (ke166Rank === null) return false;
         const blockingAssignments = assignments.filter(
           (assignment) =>
             assignment.id !== counter.id &&
@@ -158,7 +162,7 @@ export function assessKe166DistinctStaffCapacitySnapshot(
         const blockingRank = crossFlightPriorityPolicyRank(state, blocking);
         return (
           blockingRank !== null &&
-          blockingRank > counterRank &&
+          blockingRank > ke166Rank &&
           canAssignStaff(plannedState, counter.id, person.id, blocking.id) ===
             null
         );

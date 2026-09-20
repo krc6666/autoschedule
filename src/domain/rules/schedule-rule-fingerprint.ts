@@ -4,7 +4,7 @@ import type { AppState } from "../../model";
  * Bump this when the meaning of a scheduling rule changes in code without a
  * corresponding persisted configuration change.
  */
-export const SCHEDULE_RULE_FINGERPRINT_VERSION = "rules-v1";
+export const SCHEDULE_RULE_FINGERPRINT_VERSION = "rules-v2";
 
 type FingerprintState = Pick<
   AppState,

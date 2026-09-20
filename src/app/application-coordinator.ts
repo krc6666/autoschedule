@@ -50,6 +50,9 @@ const COMMANDS_ALLOWED_DURING_HISTORY_EDIT = new Set<UiCommand["type"]>([
   "update-assignment",
   "create-temporary-assignment",
   "delete-temporary-assignment",
+  "export-schedule",
+  "export-share-html",
+  "export-share-png",
   "save-history-edit",
   "cancel-history-edit",
 ]);

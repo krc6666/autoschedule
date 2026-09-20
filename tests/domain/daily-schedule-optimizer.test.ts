@@ -979,7 +979,7 @@ describe("daily schedule module interfaces", () => {
     ).toHaveLength(2);
   });
 
-  it("adds a cross-flight protection objective for an overlapping non-priority task", () => {
+  it("adds a cross-flight protection objective for selected staff on the priority flight", () => {
     const state = modelState([
       flight("ke", "KE166", "08:00", "10:00", ["H02"]),
       flight("cx", "CX931", "08:00", "10:00", ["G20"]),
@@ -989,7 +989,13 @@ describe("daily schedule module interfaces", () => {
         id: "priority-1",
         enabled: true,
         flightNo: "KE166",
-        positions: ["H02"],
+        staffIds: ["worker"],
+      },
+      {
+        id: "priority-2",
+        enabled: true,
+        flightNo: "CX931",
+        staffIds: ["worker"],
       },
     ];
     const preparation = prepareSchedule(
@@ -1010,9 +1016,10 @@ describe("daily schedule module interfaces", () => {
       objective?.terms.some(
         (term) =>
           model?.staffChoices.find((choice) => choice.id === term.variableId)
-            ?.task.flight.flightNo === "CX931"
+            ?.task.flight.flightNo === "KE166"
       )
     ).toBe(true);
+    expect(objective?.direction).toBe("maximize");
     state.settings.crossFlightPriorityPolicies = [];
     const withoutPolicy = buildDailyScheduleModel({
       state,
@@ -1025,6 +1032,42 @@ describe("daily schedule module interfaces", () => {
         item.id.startsWith("cross-flight-priority:")
       )
     ).toBe(false);
+  });
+
+  it("assigns selected staff to the priority flight instead of an overlapping alternative", async () => {
+    const state = modelState([
+      flight("ke", "KE166", "08:00", "10:00", ["H02"]),
+      flight("cx", "CX931", "08:00", "10:00", ["G20"]),
+    ]);
+    state.staff.push({ ...state.staff[0]!, id: "worker-2", name: "替代人员" });
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds = ["worker", "worker-2"];
+    });
+    state.settings.crossFlightPriorityPolicies = [
+      {
+        id: "priority-1",
+        enabled: true,
+        flightNo: "KE166",
+        staffIds: ["worker"],
+      },
+      {
+        id: "priority-2",
+        enabled: true,
+        flightNo: "CX931",
+        staffIds: ["worker"],
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-08-03");
+
+    expect(
+      result.assignments.find((assignment) => assignment.flightNo === "KE166")
+        ?.staffId
+    ).toBe("worker");
+    expect(
+      result.assignments.find((assignment) => assignment.flightNo === "CX931")
+        ?.staffId
+    ).toBe("worker-2");
   });
 
   it("adds hard same-airline control/number-one separation across all later flights", () => {
@@ -1090,7 +1133,7 @@ describe("daily schedule module interfaces", () => {
         id: "priority-1",
         enabled: true,
         flightNo: "KE166",
-        positions: ["H02"],
+        staffIds: ["worker"],
       },
     ];
     const date = "2026-08-03";
@@ -1128,9 +1171,7 @@ describe("daily schedule module interfaces", () => {
       expect.objectContaining({
         ruleId: "cross-flight-priority",
         outcome: "preserved",
-        message: expect.stringContaining(
-          "如有同等或更优替代人员，可在完整安全复核后调整"
-        ),
+        message: expect.stringContaining("该人员也能承担同时段的CX931"),
       })
     );
   });

@@ -42,7 +42,7 @@ describe("application dialog", () => {
         id: "preview-priority",
         enabled: true,
         flightNo: "KE166",
-        positions: ["督导"],
+        staffIds: ["staff-1"],
       },
     ];
     const expectedCount =

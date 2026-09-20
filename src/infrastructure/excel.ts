@@ -667,6 +667,13 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
     ...state,
     settings: {
       ...state.settings,
+      crossFlightPriorityPolicies:
+        state.settings.crossFlightPriorityPolicies.map((rule) => ({
+          ...rule,
+          staffIds: rule.staffIds.filter((staffId) =>
+            activeStaffIds.has(staffId)
+          ),
+        })),
       sameFlightStaffExclusions:
         state.settings.sameFlightStaffExclusions.filter(
           (rule) =>

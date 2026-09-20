@@ -1,9 +1,11 @@
-import type { Flight, PositionRule, Staff } from "../../model";
+import type { Flight, PositionRule } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { createId } from "../../utils";
 import type { ScheduleLedger } from "./schedule-ledger";
 import {
   assignmentRule,
+  compareGuideSourceAssignments,
+  guideSourceStaff,
   makeUnfilled,
 } from "../flights/schedule-position-rules";
 import { isKe166MobileSupervisor } from "../flights/schedule-tasks";
@@ -52,29 +54,25 @@ export function placePassivePosition({
         .filter((staffId): staffId is string => Boolean(staffId))
     );
     const selected = assignments
-      .filter(
-        (item) =>
-          item.flightId === flight.id &&
-          item.staffId &&
-          item.status === "assigned" &&
-          !usedReusableStaff.has(item.staffId)
-      )
+      .filter((item) => item.flightId === flight.id)
       .map((item) => ({
         assignment: item,
-        sourceRule: assignmentRule(state, item),
-        person: state.staff.find((person) => person.id === item.staffId),
+        person: guideSourceStaff(state, item),
       }))
-      .filter((item): item is typeof item & { person: Staff } =>
-        Boolean(
-          item.sourceRule?.category === "常规" &&
-          item.person?.status === "正常" &&
-          item.person.staffType === "常规"
-        )
+      .filter(
+        (
+          item
+        ): item is typeof item & {
+          person: NonNullable<typeof item.person>;
+        } => Boolean(item.person && !usedReusableStaff.has(item.person.id))
       )
-      .sort(
-        (left, right) =>
-          (displayIndex.get(right.assignment.positionRuleId ?? "") ?? -1) -
-          (displayIndex.get(left.assignment.positionRuleId ?? "") ?? -1)
+      .sort((left, right) =>
+        compareGuideSourceAssignments(
+          state,
+          displayIndex,
+          left.assignment,
+          right.assignment
+        )
       )[0]?.person;
     const assignment = selected
       ? {
@@ -100,9 +98,7 @@ export function placePassivePosition({
         };
     ledger.commit({ type: "append", assignments: [assignment] });
     if (!selected)
-      warnings.push(
-        `${flight.flightNo} / ${rule.name} 没有可复用的常规岗位人员`
-      );
+      warnings.push(`${flight.flightNo} / ${rule.name} 没有可复用的常规人员`);
     return true;
   }
   if (rule.manual && !ke166MobileSupervisor) {

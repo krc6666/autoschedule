@@ -8,6 +8,35 @@ import "../../src/ui/components/policy-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("rules page", () => {
+  it("configures cross-flight priority by current-group people instead of positions", async () => {
+    const state = createDefaultState();
+    const selected = state.staff[0]!;
+    state.settings.crossFlightPriorityPolicies = [
+      {
+        id: "priority-1",
+        enabled: true,
+        flightNo: "KE166",
+        staffIds: [selected.id, "B-1"],
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-policy-page", { model: state });
+    const card = element.querySelector<HTMLElement>(
+      "[data-cross-flight-priorities]"
+    )!;
+
+    expect(card.textContent).toContain("跨航班重点人员优先");
+    expect(card.textContent).toContain("优先人员");
+    expect(card.textContent).toContain(`${selected.name}（${selected.id}）`);
+    expect(card.textContent).not.toContain("优先岗位");
+    expect(card.textContent).not.toContain("B-1");
+    expect(
+      card.querySelector<HTMLInputElement>('input[type="checkbox"]:checked')
+        ?.checked
+    ).toBe(true);
+  });
+
   it("renders configurable same-flight staff exclusions with an optional flight", async () => {
     const state = createDefaultState();
     state.settings.sameFlightStaffExclusions = [

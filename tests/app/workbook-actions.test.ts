@@ -28,7 +28,7 @@ describe("workbook actions", () => {
         id: "imported-priority",
         enabled: false,
         flightNo: "KE166",
-        positions: ["督导", "H02"],
+        staffIds: source.staff.slice(0, 2).map((person) => person.id),
       },
     ];
     source.settings.sameFlightStaffExclusions = [
@@ -343,6 +343,62 @@ describe("workbook actions", () => {
     expect(state.settings.sameFlightStaffExclusions).toEqual([
       otherRule,
       currentRule,
+    ]);
+  });
+
+  it("preserves the other group's selected people when importing cross-flight priority rows", () => {
+    const state = createDefaultState();
+    const otherId = "B-priority";
+    state.groups.B.staff = [
+      { ...state.staff[0]!, id: otherId, name: "B组重点人员" },
+    ];
+    state.settings.crossFlightPriorityPolicies = [
+      {
+        id: "priority-1",
+        enabled: true,
+        flightNo: "KE166",
+        staffIds: [state.staff[0]!.id, otherId],
+      },
+    ];
+
+    applyWorkbookImport(
+      state,
+      {
+        settings: {
+          crossFlightPriorityPolicies: [
+            {
+              id: "priority-1",
+              enabled: true,
+              flightNo: "KE166",
+              staffIds: [state.staff[1]!.id],
+            },
+          ],
+        },
+        warnings: [],
+      },
+      "config"
+    );
+
+    expect(state.settings.crossFlightPriorityPolicies[0]!.staffIds).toEqual([
+      otherId,
+      state.staff[1]!.id,
+    ]);
+
+    applyWorkbookImport(
+      state,
+      {
+        settings: { crossFlightPriorityPolicies: [] },
+        warnings: [],
+      },
+      "config"
+    );
+    expect(state.settings.crossFlightPriorityPolicies).toEqual([
+      {
+        id: "priority-1",
+        enabled: true,
+        flightNo: "KE166",
+        staffIds: [otherId],
+      },
     ]);
   });
 

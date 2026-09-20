@@ -254,6 +254,9 @@ export function deleteStaff(state: AppState, id: string): boolean {
     state.settings.sameFlightStaffExclusions.filter(
       (rule) => rule.firstStaffId !== id && rule.secondStaffId !== id
     );
+  state.settings.crossFlightPriorityPolicies.forEach((rule) => {
+    rule.staffIds = rule.staffIds.filter((staffId) => staffId !== id);
+  });
   state.dutyRosterOverrides = state.dutyRosterOverrides.map((item) => ({
     ...item,
     cxPreflightStaffId:
@@ -596,6 +599,11 @@ export function updateConfigurationField(
       state.settings.sameFlightStaffExclusions.forEach((rule) => {
         if (rule.firstStaffId === id) rule.firstStaffId = value;
         if (rule.secondStaffId === id) rule.secondStaffId = value;
+      });
+      state.settings.crossFlightPriorityPolicies.forEach((rule) => {
+        rule.staffIds = rule.staffIds.map((staffId) =>
+          staffId === id ? value : staffId
+        );
       });
     }
     (person as unknown as Record<string, unknown>)[field] = value;

@@ -2,7 +2,10 @@ import { html } from "lit";
 import { styleMap } from "lit/directives/style-map.js";
 
 import { assignmentRule } from "../../domain/flights/schedule-position-rules";
-import { isKe166MobileSupervisor } from "../../domain/flights/schedule-tasks";
+import {
+  isKe166MobileSupervisor,
+  meetsPassengerThreshold,
+} from "../../domain/flights/schedule-tasks";
 import { isHalfRestWarning } from "../../domain/rules/half-rest";
 import type { AppState, Assignment } from "../../model";
 import { visiblePositionRemark } from "../../utils";
@@ -135,8 +138,22 @@ export class ScheduleGridElement extends LightDomElement {
     const ke166Unfilled =
       assignment.status === "unfilled" &&
       Boolean(flight && rule && isKe166MobileSupervisor(flight, rule));
+    const belowPassengerThreshold = Boolean(
+      flight && rule && !meetsPassengerThreshold(flight, rule)
+    );
+    const visiblyUnfilled =
+      !assignment.staffName &&
+      (!belowPassengerThreshold ||
+        halfRestUnfilled ||
+        ke166Unfilled ||
+        Boolean(warning) ||
+        Boolean(manualWarning));
     const stateClasses = [
-      assignment.staffName ? "is-assigned" : "is-unfilled",
+      assignment.staffName
+        ? "is-assigned"
+        : visiblyUnfilled
+          ? "is-unfilled"
+          : "",
       guide ? "is-guide" : "",
       administrative ? "is-admin-support" : "",
       diversion ? "is-diversion" : "",

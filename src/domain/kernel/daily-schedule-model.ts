@@ -121,48 +121,37 @@ interface CrossWorkdayReservationModel {
 
 function crossFlightPriorityObjectives(
   state: ScheduleGenerationFacts,
-  tasks: readonly AssignmentTask[],
   choices: readonly DailyScheduleStaffChoice[]
 ): LexicographicObjective[] {
   return enabledCrossFlightPriorityPolicies(state).flatMap((policy) => {
-    const protectedTasks = tasks.filter((task) =>
+    const protectedChoices = choices.filter((choice) =>
       crossFlightPriorityPolicyMatches(policy, {
-        flightNo: task.flight.flightNo,
-        position: task.rule.name,
+        flightNo: choice.task.flight.flightNo,
+        staffId: choice.person.id,
       })
     );
-    if (!protectedTasks.length) return [];
-    const terms = choices.flatMap((choice) => {
-      if (
-        crossFlightPriorityPolicyMatches(policy, {
-          flightNo: choice.task.flight.flightNo,
-          position: choice.task.rule.name,
-        })
-      )
-        return [];
-      const canProtectOverlappingTask = choices.some(
-        (protectedChoice) =>
-          protectedChoice.person.id === choice.person.id &&
-          protectedTasks.some(
-            (task) =>
-              task.key === protectedChoice.task.key &&
-              intervalsOverlap(
-                choice.task.flight.startTime,
-                choice.task.flight.endTime,
-                task.flight.startTime,
-                task.flight.endTime
-              )
+    if (!protectedChoices.length) return [];
+    const terms = protectedChoices.flatMap((protectedChoice) => {
+      const hasOverlappingAlternative = choices.some(
+        (choice) =>
+          choice.person.id === protectedChoice.person.id &&
+          choice.task.flight.id !== protectedChoice.task.flight.id &&
+          intervalsOverlap(
+            choice.task.flight.startTime,
+            choice.task.flight.endTime,
+            protectedChoice.task.flight.startTime,
+            protectedChoice.task.flight.endTime
           )
       );
-      return canProtectOverlappingTask
-        ? [{ variableId: choice.id, coefficient: 1 }]
+      return hasOverlappingAlternative
+        ? [{ variableId: protectedChoice.id, coefficient: 1 }]
         : [];
     });
     return terms.length
       ? [
           {
             id: `cross-flight-priority:${policy.id}`,
-            direction: "minimize" as const,
+            direction: "maximize" as const,
             terms,
           },
         ]
@@ -209,7 +198,7 @@ function ke166SupervisorAvailabilityModel(
         if (!compatibleCounterChoiceIds.has(choice.id)) return lowestRank;
         const rank = crossFlightPriorityPolicyRank(state, {
           flightNo: choice.task.flight.flightNo,
-          position: choice.task.rule.name,
+          staffId: choice.person.id,
         });
         if (rank === null) return lowestRank;
         return lowestRank === null ? rank : Math.min(lowestRank, rank);
@@ -218,22 +207,28 @@ function ke166SupervisorAvailabilityModel(
     );
     const hasLowerOverlappingPriorityTask =
       protectedCounterRank !== null &&
-      preparation.tasks.some((otherTask) => {
-        const rank = crossFlightPriorityPolicyRank(state, {
-          flightNo: otherTask.flight.flightNo,
-          position: otherTask.rule.name,
-        });
-        return (
-          rank !== null &&
+      enabledCrossFlightPriorityPolicies(state).some(
+        (policy, rank) =>
           rank > protectedCounterRank &&
-          intervalsOverlap(
-            otherTask.flight.startTime,
-            otherTask.flight.endTime,
-            task.flight.startTime,
-            task.flight.endTime
+          policy.staffIds.some((staffId) =>
+            choices.some(
+              (choice) =>
+                compatibleCounterChoiceIds.has(choice.id) &&
+                choice.person.id === staffId
+            )
+          ) &&
+          preparation.tasks.some(
+            (otherTask) =>
+              otherTask.flight.flightNo.trim().toUpperCase() ===
+                policy.flightNo &&
+              intervalsOverlap(
+                otherTask.flight.startTime,
+                otherTask.flight.endTime,
+                task.flight.startTime,
+                task.flight.endTime
+              )
           )
-        );
-      });
+      );
     const protectedCounterChoiceIds = new Set(
       choices
         .filter(
@@ -242,7 +237,7 @@ function ke166SupervisorAvailabilityModel(
             compatibleCounterChoiceIds.has(choice.id) &&
             crossFlightPriorityPolicyRank(state, {
               flightNo: choice.task.flight.flightNo,
-              position: choice.task.rule.name,
+              staffId: choice.person.id,
             }) === protectedCounterRank
         )
         .map((choice) => choice.id)
@@ -383,11 +378,17 @@ function ke166SupervisorAvailabilityModel(
               )
             )
               return false;
-            const rank = crossFlightPriorityPolicyRank(state, {
-              flightNo: choice.task.flight.flightNo,
-              position: choice.task.rule.name,
-            });
-            return rank === null || rank <= protectedCounterRank;
+            const rank = enabledCrossFlightPriorityPolicies(state).findIndex(
+              (policy) =>
+                policy.flightNo ===
+                  choice.task.flight.flightNo.trim().toUpperCase() &&
+                choices.some(
+                  (staffChoice) =>
+                    compatibleCounterChoiceIds.has(staffChoice.id) &&
+                    policy.staffIds.includes(staffChoice.person.id)
+                )
+            );
+            return rank < 0 || rank <= protectedCounterRank;
           })
           .map((choice) => ({ variableId: choice.id, coefficient: 1 })),
       });
@@ -1512,19 +1513,6 @@ export function buildDailyScheduleModel({
           "minimum-flight-transition:diversion-usage"
         ) ?? [],
     },
-    ...enabledCrossFlightPriorityPolicies(state).map((policy) => ({
-      id: `cross-flight-priority-vacancies:${policy.id}`,
-      direction: "minimize" as const,
-      terms: vacancyChoices.map((choice) => ({
-        variableId: choice.id,
-        coefficient: crossFlightPriorityPolicyMatches(policy, {
-          flightNo: choice.task.flight.flightNo,
-          position: choice.task.rule.name,
-        })
-          ? 1
-          : 0,
-      })),
-    })),
     ...(distinctPreNoonScarcityCoefficients.size > 1
       ? [
           {
@@ -1563,7 +1551,6 @@ export function buildDailyScheduleModel({
   );
   const crossFlightPriority = crossFlightPriorityObjectives(
     state,
-    scheduledTasks,
     staffChoices
   );
   const ke166ReservationObjectives = candidateObjectives.filter(

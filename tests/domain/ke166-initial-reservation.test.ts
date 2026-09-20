@@ -188,13 +188,13 @@ function morningPriorityScenario(
       id: "ke166-first",
       enabled: true,
       flightNo: "KE166",
-      positions: ["H03"],
+      staffIds: [helper.id],
     },
     {
       id: "cx937-second",
       enabled: true,
       flightNo: "CX937",
-      positions: ["G20"],
+      staffIds: [helper.id],
     },
   ];
   state.dutyRosterOverrides = [
@@ -375,13 +375,13 @@ describe(
           id: "ke166-first",
           enabled: true,
           flightNo: "KE166",
-          positions: ["H04"],
+          staffIds: [replacement],
         },
         {
           id: "cx937-second",
           enabled: true,
           flightNo: "CX937",
-          positions: ["G01"],
+          staffIds: [replacement],
         },
       ];
 

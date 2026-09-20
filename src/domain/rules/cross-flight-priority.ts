@@ -2,38 +2,31 @@ import type { Assignment } from "../../model";
 import type { HistoryRuleFacts } from "../shared/scheduling-facts";
 import type { CrossFlightPriorityPolicy } from "./structured-policy-contract";
 import { intervalsOverlap } from "../shared/time";
-import {
-  comparePositionFrequency,
-  consecutivePositionAssignments,
-  samePositionFrequencyProfile,
-  type ScheduleFrequencyFacts,
-} from "../statistics/schedule-frequency";
-
-function normalizePosition(value: string): string {
-  return value.trim().replace(/^HO(?=\d)/i, "H0");
-}
+import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
 
 export function enabledCrossFlightPriorityPolicies(state: HistoryRuleFacts) {
   return state.settings.crossFlightPriorityPolicies.filter(
     (policy) =>
-      policy.enabled && policy.flightNo.trim() && policy.positions.length
+      policy.enabled && policy.flightNo.trim() && policy.staffIds.length
   );
 }
 
 export function isCrossFlightPriorityAssignment(
   state: HistoryRuleFacts,
-  assignment: Pick<Assignment, "flightNo" | "position">
+  assignment: Pick<Assignment, "flightNo" | "staffId">
 ): boolean {
   const flightNo = assignment.flightNo.trim().toUpperCase();
-  const position = normalizePosition(assignment.position);
   return enabledCrossFlightPriorityPolicies(state).some((policy) =>
-    crossFlightPriorityPolicyMatches(policy, { flightNo, position })
+    crossFlightPriorityPolicyMatches(policy, {
+      flightNo,
+      staffId: assignment.staffId,
+    })
   );
 }
 
 export function crossFlightPriorityPolicyRank(
   state: HistoryRuleFacts,
-  assignment: Pick<Assignment, "flightNo" | "position">
+  assignment: Pick<Assignment, "flightNo" | "staffId">
 ): number | null {
   const rank = enabledCrossFlightPriorityPolicies(state).findIndex((policy) =>
     crossFlightPriorityPolicyMatches(policy, assignment)
@@ -43,13 +36,13 @@ export function crossFlightPriorityPolicyRank(
 
 export function crossFlightPriorityPolicyMatches(
   policy: CrossFlightPriorityPolicy,
-  assignment: Pick<Assignment, "flightNo" | "position">
+  assignment: Pick<Assignment, "flightNo" | "staffId">
 ): boolean {
   const flightNo = assignment.flightNo.trim().toUpperCase();
-  const position = normalizePosition(assignment.position);
   return (
     policy.flightNo === flightNo &&
-    policy.positions.some((item) => normalizePosition(item) === position)
+    Boolean(assignment.staffId) &&
+    policy.staffIds.includes(assignment.staffId!)
   );
 }
 
@@ -57,86 +50,49 @@ export function crossFlightPriorityReassignmentReasons(
   state: HistoryRuleFacts,
   original: readonly Assignment[],
   planned: readonly Assignment[],
-  date: string,
-  frequencyFacts?: ScheduleFrequencyFacts
+  _date: string,
+  _frequencyFacts?: ScheduleFrequencyFacts
 ): string[] {
   const reasons: string[] = [];
   for (const policy of enabledCrossFlightPriorityPolicies(state)) {
-    const protectedOriginal = original.filter(
-      (assignment) =>
-        assignment.staffId &&
-        assignment.flightNo.trim().toUpperCase() === policy.flightNo &&
-        policy.positions.some(
-          (position) =>
-            normalizePosition(position) ===
-            normalizePosition(assignment.position)
-        )
+    const protectedOriginal = original.filter((assignment) =>
+      crossFlightPriorityPolicyMatches(policy, assignment)
     );
     for (const before of protectedOriginal) {
-      const after = planned.find((assignment) => assignment.id === before.id);
-      if (!after || after.staffId === before.staffId || !before.staffId)
-        continue;
-      const replacement = planned.find(
+      if (!before.staffId) continue;
+      const retainedInPriorityFlight = planned.some(
         (assignment) =>
-          assignment.staffId === before.staffId && assignment.id !== before.id
+          assignment.staffId === before.staffId &&
+          assignment.flightNo.trim().toUpperCase() === policy.flightNo
       );
-      if (!replacement) continue;
+      if (retainedInPriorityFlight) continue;
+      const replacements = planned.filter(
+        (assignment) =>
+          assignment.staffId === before.staffId &&
+          assignment.flightNo.trim().toUpperCase() !== policy.flightNo &&
+          intervalsOverlap(
+            assignment.startTime,
+            assignment.endTime,
+            before.startTime,
+            before.endTime
+          )
+      );
+      if (!replacements.length) continue;
+      const protectedRank =
+        enabledCrossFlightPriorityPolicies(state).indexOf(policy);
       if (
-        !intervalsOverlap(
-          replacement.startTime,
-          replacement.endTime,
-          before.startTime,
-          before.endTime
-        )
+        replacements.some((replacement) => {
+          const replacementRank = crossFlightPriorityPolicyRank(
+            state,
+            replacement
+          );
+          return replacementRank !== null && replacementRank < protectedRank;
+        })
       )
         continue;
-      if (!after.staffId) continue;
-      const beforeFrequency = samePositionFrequencyProfile(
-        state,
-        before.staffId,
-        before.flightNo,
-        before.position,
-        before.remark,
-        date,
-        frequencyFacts
+      reasons.push(
+        `调整会把重点人员调离${policy.flightNo}，优先保留原航班安排`
       );
-      const afterFrequency = samePositionFrequencyProfile(
-        state,
-        after.staffId,
-        before.flightNo,
-        before.position,
-        before.remark,
-        date,
-        frequencyFacts
-      );
-      const frequencyDifference = comparePositionFrequency(
-        afterFrequency,
-        beforeFrequency
-      );
-      const beforeConsecutive = consecutivePositionAssignments(
-        state,
-        before.staffId,
-        before.flightNo,
-        before.position,
-        before.remark,
-        date,
-        frequencyFacts
-      );
-      const afterConsecutive = consecutivePositionAssignments(
-        state,
-        after.staffId,
-        before.flightNo,
-        before.position,
-        before.remark,
-        date,
-        frequencyFacts
-      );
-      if (
-        frequencyDifference < 0 ||
-        (frequencyDifference === 0 && afterConsecutive <= beforeConsecutive)
-      )
-        continue;
-      reasons.push(`调整会破坏${policy.flightNo}重点岗位轮换，优先保留原人员`);
     }
   }
   return [...new Set(reasons)];
@@ -144,7 +100,7 @@ export function crossFlightPriorityReassignmentReasons(
 
 export function crossFlightPriorityCandidateScore(
   state: HistoryRuleFacts,
-  assignment: Pick<Assignment, "flightNo" | "position">
+  assignment: Pick<Assignment, "flightNo" | "staffId">
 ): number {
   return isCrossFlightPriorityAssignment(state, assignment) ? 1 : 0;
 }

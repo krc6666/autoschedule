@@ -209,7 +209,8 @@ export class PositionRulesSectionElement extends LightDomElement {
     const qualification =
       rule.category === "引导"
         ? html`<span class="guide-source-label"
-            ><i class="bi bi-arrow-down"></i>同航班最下方常规岗位人员</span
+            ><i class="bi bi-arrow-down"></i
+            >行政支援岗位常规人员优先，否则取同航班最下方人员</span
           >`
         : html`<button
             class="qualified-button"

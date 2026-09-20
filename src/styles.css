@@ -1799,8 +1799,9 @@ autoschedule-schedule-grid {
   background: transparent;
 }
 .schedule-cell.is-unfilled {
-  border-color: var(--as-border);
-  background: #fff;
+  border-color: #d94343;
+  background: #fff0f0;
+  box-shadow: inset 3px 0 0 #d94343;
 }
 .schedule-cell.is-half-rest-unfilled {
   border-color: #d94343;
@@ -1823,6 +1824,12 @@ autoschedule-schedule-grid {
 .schedule-cell.is-manual-override-warning {
   background: #fff7df;
   box-shadow: inset 3px 0 0 #d88a00;
+}
+.schedule-cell.is-unfilled.is-soft-rule-warning,
+.schedule-cell.is-unfilled.is-manual-override-warning {
+  border-color: #d94343;
+  background: #fff0f0;
+  box-shadow: inset 3px 0 0 #d94343;
 }
 .schedule-person-cell.is-early-departure-last {
   background: #e8f5e9;

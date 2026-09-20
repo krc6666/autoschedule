@@ -259,7 +259,7 @@ export function addCrossFlightPriorityPolicy(
     id: createId("cross-flight-priority"),
     enabled: true,
     flightNo: state.flights[0]?.flightNo ?? "",
-    positions: [],
+    staffIds: [],
   };
   return appendPolicyItem(
     state,
@@ -311,11 +311,23 @@ function updateCrossFlightPriorityPolicy(
           "flightNo",
           normalizeText(value).toUpperCase()
         );
-      if (field === "positions") {
-        const positions = splitList(value);
-        if (policy.positions.join("\u0000") === positions.join("\u0000"))
+      if (field === "staffIds") {
+        const currentStaffIds = new Set(state.staff.map((person) => person.id));
+        const otherGroupStaffIds = new Set(
+          Object.entries(state.groups)
+            .filter(([groupId]) => groupId !== state.activeGroupId)
+            .flatMap(([, group]) => group.staff.map((person) => person.id))
+        );
+        const staffIds = [
+          ...policy.staffIds.filter(
+            (staffId) =>
+              !currentStaffIds.has(staffId) && otherGroupStaffIds.has(staffId)
+          ),
+          ...splitList(value).filter((staffId) => currentStaffIds.has(staffId)),
+        ];
+        if (policy.staffIds.join("\u0000") === staffIds.join("\u0000"))
           return "unchanged";
-        policy.positions = positions;
+        policy.staffIds = staffIds;
         return "changed";
       }
       return "invalid";

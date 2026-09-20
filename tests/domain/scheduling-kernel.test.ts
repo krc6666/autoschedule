@@ -4151,7 +4151,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(result.unfilledCount).toBe(0);
   });
 
-  it("fills guide rules from the bottom-most distinct regular positions", async () => {
+  it("fills guide rules from the bottom-most distinct positions when no support source exists", async () => {
     const state = createDefaultState();
     const [topWorker, bottomWorker, diversionWorker] = state.staff;
     state.staff = [topWorker!, bottomWorker!, diversionWorker!];
@@ -4213,16 +4213,74 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(
       result.assignments.find((item) => item.positionRuleId === "guide-one")
         ?.staffId
-    ).toBe(bottomWorker!.id);
+    ).toBe(diversionWorker!.id);
     expect(
       result.assignments.find((item) => item.positionRuleId === "guide-two")
         ?.staffId
-    ).toBe(topWorker!.id);
+    ).toBe(bottomWorker!.id);
     expect(
       result.assignments
         .filter((item) => item.positionRuleId?.startsWith("guide-"))
         .every((item) => item.workHours === 0 && item.fatiguePoints === 0)
     ).toBe(true);
+  });
+
+  it("prioritizes a regular worker on an administrative support position for guide reuse", async () => {
+    const state = createDefaultState();
+    const [supportWorker, bottomWorker, administrativeWorker] = state.staff;
+    administrativeWorker!.staffType = "行政支援";
+    state.staff = [supportWorker!, bottomWorker!, administrativeWorker!];
+    state.settings.adminSupportEnabled = true;
+    state.flights = [
+      {
+        id: "flight",
+        flightNo: "F1",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "administrative-source",
+        flightNo: "F1",
+        name: "行政补位",
+        category: "行政支援",
+        qualifiedStaffIds: [supportWorker!.id, administrativeWorker!.id],
+      },
+      {
+        ...base,
+        id: "regular-bottom",
+        flightNo: "F1",
+        name: "G01",
+        category: "常规",
+        qualifiedStaffIds: [bottomWorker!.id],
+      },
+      {
+        ...base,
+        id: "guide",
+        flightNo: "F1",
+        name: "柜台引导",
+        category: "引导",
+        qualifiedStaffIds: [],
+      },
+    ];
+
+    const assignments = (await generateSchedule(state, "2026-07-18"))
+      .assignments;
+
+    expect(
+      assignments.find(
+        (item) => item.positionRuleId === "administrative-source"
+      )
+    ).toMatchObject({ status: "assigned", staffId: supportWorker!.id });
+    expect(
+      assignments.find((item) => item.positionRuleId === "guide")?.staffId
+    ).toBe(supportWorker!.id);
   });
 
   it("keeps the configured supervisor at the top without generating a fill position", async () => {

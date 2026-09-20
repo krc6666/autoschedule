@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultState } from "../../src/defaults";
 import {
   addCrossWorkdayQualificationReservation,
+  addCrossFlightPriorityPolicy,
   addDutyPriority,
   addLateShiftRecoveryPositionRule,
   addMobileSupervisorCoverageRule,
@@ -75,6 +76,27 @@ function addActiveSchedule(state: ReturnType<typeof createDefaultState>): void {
 }
 
 describe("policy actions", () => {
+  it("edits only the active group's people in a shared cross-flight priority row", () => {
+    const state = createDefaultState();
+    const otherGroupStaffId = "B-1";
+    state.groups.B.staff = [
+      { ...state.staff[0]!, id: otherGroupStaffId, name: "B组人员" },
+    ];
+    const policy = addCrossFlightPriorityPolicy(state);
+    policy.staffIds = [state.staff[0]!.id, otherGroupStaffId];
+
+    expect(
+      updatePolicyEntityField(
+        state,
+        "cross-flight-priority",
+        policy.id,
+        "staffIds",
+        state.staff[1]!.id
+      )
+    ).toBe("saved");
+    expect(policy.staffIds).toEqual([otherGroupStaffId, state.staff[1]!.id]);
+  });
+
   it("adds, edits, and deletes configurable same-flight staff exclusions", () => {
     const state = createDefaultState();
     addActiveSchedule(state);

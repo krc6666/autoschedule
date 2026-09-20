@@ -3,7 +3,9 @@ import { buildStaffLoads } from "../../domain/statistics/fatigue";
 import { currentEarlyDepartureLastAssignmentIds } from "../../domain/statistics/relaxed-shift-statistics";
 import { buildScheduleFeedback } from "../../domain/feedback/schedule-feedback";
 import {
-  assignmentRule,
+  activeFlightRules,
+  compareGuideSourceAssignments,
+  guideSourceStaff,
   isFixedBottomPosition,
 } from "../../domain/flights/schedule-position-rules";
 import { countedWorkloadAssignments } from "../../domain/shared/workload-accounting";
@@ -63,19 +65,30 @@ export function buildSchedulePageModel(
     const assignments = state.assignments.filter(
       (item) => item.flightId === flight.id
     );
+    const displayIndex = new Map(
+      activeFlightRules(state, flight).map((rule, index) => [rule.id, index])
+    );
     const guideCandidates = assignments
+      .map((assignment) => ({
+        assignment,
+        person: guideSourceStaff(state, assignment),
+      }))
       .filter(
-        (assignment) =>
-          assignment.status === "assigned" &&
-          assignment.staffId &&
-          assignmentRule(state, assignment)?.category === "常规"
+        (
+          item
+        ): item is typeof item & {
+          person: Staff;
+        } => Boolean(item.person)
       )
-      .map((assignment) =>
-        state.staff.find((person) => person.id === assignment.staffId)
+      .sort((left, right) =>
+        compareGuideSourceAssignments(
+          state,
+          displayIndex,
+          left.assignment,
+          right.assignment
+        )
       )
-      .filter((person): person is Staff =>
-        Boolean(person?.status === "正常" && person.staffType === "常规")
-      )
+      .map((item) => item.person)
       .filter(
         (person, index, people) =>
           people.findIndex((candidate) => candidate.id === person.id) === index

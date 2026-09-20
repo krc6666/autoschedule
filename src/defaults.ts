@@ -233,7 +233,7 @@ export function createDefaultState(): AppState {
     schedulePolicyStale: false,
   };
   return {
-    version: 6,
+    version: 7,
     shared,
     groups: { A: groupA, B: groupB },
     activeGroupId: "A",

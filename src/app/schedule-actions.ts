@@ -10,6 +10,8 @@ import {
 import { clearAutomaticAssignmentEvidence } from "../domain/assignments/assignment-evidence";
 import {
   activeFlightRules,
+  compareGuideSourceAssignments,
+  guideSourceStaff,
   isAuxiliaryCategory,
   isGuideAssignment,
 } from "../domain/flights/schedule-position-rules";
@@ -23,7 +25,7 @@ import {
   isNextWorkdayCutoffConflict,
   nextWorkdayCutoffProtection,
 } from "../domain/reviews/cross-day-recovery";
-import type { AppState, Staff } from "../model";
+import type { AppState } from "../model";
 import type { Flight, HistoryRecord, ScheduleResult } from "../model";
 import { replaceHistoryForDate } from "./history-actions";
 import { installGeneratedSchedule } from "../domain/kernel/schedule-lifecycle";
@@ -146,36 +148,33 @@ function refreshSameFlightGuides(state: AppState, flightIds: string[]): void {
         index,
       ])
     );
+    guideAssignments.sort(
+      (left, right) =>
+        (displayIndex.get(left.positionRuleId ?? "") ?? 0) -
+        (displayIndex.get(right.positionRuleId ?? "") ?? 0)
+    );
     const usedStaffIds = new Set<string>();
     for (const guide of guideAssignments) {
       const candidates = state.assignments
-        .filter(
-          (item) =>
-            item.flightId === flightId &&
-            item.id !== guide.id &&
-            item.status === "assigned"
-        )
-        .filter((item) => item.staffId && !usedStaffIds.has(item.staffId))
+        .filter((item) => item.flightId === flightId && item.id !== guide.id)
         .map((item) => ({
           assignment: item,
-          sourceRule: item.positionRuleId
-            ? state.positionRules.find(
-                (rule) => rule.id === item.positionRuleId
-              )
-            : undefined,
-          person: state.staff.find((person) => person.id === item.staffId),
+          person: guideSourceStaff(state, item),
         }))
-        .filter((item): item is typeof item & { person: Staff } =>
-          Boolean(
-            item.sourceRule?.category === "常规" &&
-            item.person?.status === "正常" &&
-            item.person.staffType === "常规"
-          )
+        .filter(
+          (
+            item
+          ): item is typeof item & {
+            person: NonNullable<typeof item.person>;
+          } => Boolean(item.person && !usedStaffIds.has(item.person.id))
         )
-        .sort(
-          (left, right) =>
-            (displayIndex.get(right.assignment.positionRuleId ?? "") ?? -1) -
-            (displayIndex.get(left.assignment.positionRuleId ?? "") ?? -1)
+        .sort((left, right) =>
+          compareGuideSourceAssignments(
+            state,
+            displayIndex,
+            left.assignment,
+            right.assignment
+          )
         );
       const manualSelection =
         guide.status === "manual" && guide.staffId
@@ -388,7 +387,7 @@ export function updateAssignmentField(
   if (!person && rule?.category === "引导") {
     return {
       changed: false,
-      error: "引导岗位只能复用同一航班中已排常规岗位的常规人员",
+      error: "引导岗位只能复用同一航班中已经上岗的常规人员",
     };
   }
   if (!person) return { changed: false, error: `人员不存在：${staffName}` };

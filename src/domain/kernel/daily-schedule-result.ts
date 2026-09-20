@@ -274,12 +274,11 @@ function attachCrossFlightPriorityEvidence(
         model.staffChoices.some(
           (choice) =>
             choice.task.flight.id === other.flightId &&
-            choice.task.rule.name === other.position &&
             choice.person.id === assignment.staffId
         )
     );
     if (!competing) continue;
-    const message = `${assignment.staffName}安排在${assignment.flightNo}/${assignment.position}。该岗位与${competing.flightNo}同时争用具备资质人员，因此本次先保障${assignment.flightNo}重点岗位；如有同等或更优替代人员，可在完整安全复核后调整。`;
+    const message = `${assignment.staffName}安排在${assignment.flightNo}/${assignment.position}。该人员也能承担同时段的${competing.flightNo}，因此本次按规则先留在${assignment.flightNo}；如需调整，必须重新通过完整安全复核。`;
     assignment.decisionTrace = [
       ...(assignment.decisionTrace ?? []),
       schedulingDecision("cross-flight-priority", "preserved", message),

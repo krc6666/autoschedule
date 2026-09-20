@@ -36,7 +36,7 @@ const RULE_SHEET_NAMES = {
   supervisorCoverage: "机动督导范围",
   crossWorkdayReservations: "跨工作日资质预留",
   latePriorityFlightScope: "末班重点航班范围",
-  crossFlightPriority: "跨航班重点岗位优先",
+  crossFlightPriority: "跨航班重点人员优先",
   sameFlightStaffExclusions: "同航班人员互斥",
 } as const;
 
@@ -459,8 +459,10 @@ function parseLatePriorityFlightScope(
 }
 
 function parseCrossFlightPriorityPolicies(
-  workbook: XLSX.WorkBook
+  workbook: XLSX.WorkBook,
+  staff: readonly Staff[] = []
 ): ParsedRuleSheet<CrossFlightPriorityPolicy> {
+  const staffIdsSet = new Set(staff.map((person) => person.id));
   return parseRuleSheet(
     workbook,
     RULE_SHEET_NAMES.crossFlightPriority,
@@ -472,13 +474,21 @@ function parseCrossFlightPriorityPolicies(
         ["优先航班号", "航班号"],
         2
       ).toUpperCase();
-      const positions = splitList(
-        cell(row, header, ["优先岗位", "岗位列表"], 3)
-      ).map(normalizePosition);
+      const staffIds = splitList(
+        cell(
+          row,
+          header,
+          ["优先人员编号（逗号分隔）", "优先人员编号", "人员编号"],
+          3
+        )
+      );
       const errors = [
         enabled === undefined ? "启用值必须填写是或否" : "",
         !flightNo ? "优先航班号不能为空" : "",
-        !positions.length ? "优先岗位列表不能为空" : "",
+        !staffIds.length ? "优先人员编号不能为空" : "",
+        ...staffIds
+          .filter((staffId) => staff.length > 0 && !staffIdsSet.has(staffId))
+          .map((staffId) => `优先人员编号“${staffId}”不存在`),
       ].filter(Boolean);
       if (errors.length || enabled === undefined) return { errors };
       return {
@@ -490,7 +500,7 @@ function parseCrossFlightPriorityPolicies(
           ),
           enabled,
           flightNo,
-          positions,
+          staffIds,
         },
       };
     }
@@ -550,7 +560,7 @@ export function parseScheduleRuleSettings(
   const supervisorCoverage = parseSupervisorCoverage(workbook);
   const crossWorkdayReservations = parseCrossWorkdayReservations(workbook);
   const latePriorityFlightScope = parseLatePriorityFlightScope(workbook);
-  const crossFlightPriority = parseCrossFlightPriorityPolicies(workbook);
+  const crossFlightPriority = parseCrossFlightPriorityPolicies(workbook, staff);
   const sameFlightStaffExclusions = parseSameFlightStaffExclusions(
     workbook,
     staff
@@ -780,15 +790,28 @@ export function appendScheduleRuleSheets(
     workbook,
     RULE_SHEET_NAMES.crossFlightPriority,
     [
-      ["规则ID", "启用", "优先航班号", "优先岗位（逗号分隔）"],
+      [
+        "规则ID",
+        "启用",
+        "优先航班号",
+        "优先人员编号（逗号分隔）",
+        "优先人员姓名（仅供核对）",
+      ],
       ...state.settings.crossFlightPriorityPolicies.map((policy) => [
         policy.id,
         policy.enabled ? "是" : "否",
         policy.flightNo,
-        policy.positions.join(","),
+        policy.staffIds.join(","),
+        policy.staffIds
+          .map(
+            (staffId) =>
+              state.staff.find((person) => person.id === staffId)?.name ?? ""
+          )
+          .filter(Boolean)
+          .join(","),
       ]),
     ],
-    [32, 10, 18, 40]
+    [32, 10, 18, 40, 40]
   );
   append(
     workbook,

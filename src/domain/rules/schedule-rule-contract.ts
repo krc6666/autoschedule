@@ -112,7 +112,7 @@ export const SCHEDULING_RULES = [
   {
     id: "cross-flight-priority",
     stage: "protection",
-    label: "跨航班重点岗位优先",
+    label: "跨航班重点人员优先",
     feedbackMode: "aggregated",
   },
   {

@@ -320,12 +320,32 @@ describe("workbook boundary", () => {
         id: "priority-1",
         enabled: true,
         flightNo: "KE166",
-        positions: ["督导", "H02", "H03", "H04"],
+        staffIds: state.staff.slice(0, 4).map((person) => person.id),
       },
     ];
     const imported = parseWorkbook(buildConfigWorkbook(state), state.staff);
     expect(imported.settings?.crossFlightPriorityPolicies).toEqual(
       state.settings.crossFlightPriorityPolicies
+    );
+  });
+
+  it("rejects a cross-flight priority sheet with unknown staff ids", () => {
+    const state = createDefaultState();
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["规则ID", "启用", "优先航班号", "优先人员编号（逗号分隔）"],
+        ["priority-1", "是", "KE166", "missing"],
+      ]),
+      "跨航班重点人员优先"
+    );
+
+    const imported = parseWorkbook(workbook, state.staff);
+
+    expect(imported.settings?.crossFlightPriorityPolicies).toBeUndefined();
+    expect(imported.warnings).toContain(
+      "跨航班重点人员优先第2行：优先人员编号“missing”不存在"
     );
   });
 
@@ -434,7 +454,7 @@ describe("workbook boundary", () => {
         "末班重点岗位",
         "机动督导范围",
         "跨工作日资质预留",
-        "跨航班重点岗位优先",
+        "跨航班重点人员优先",
         "同航班人员互斥",
         "末班重点航班范围",
       ])

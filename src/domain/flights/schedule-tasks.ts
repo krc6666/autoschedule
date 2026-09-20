@@ -14,6 +14,13 @@ export function isPreNoonFlight(target: Pick<Flight, "startTime">): boolean {
   return Number.isFinite(start) && start < PRE_NOON_CUTOFF_MINUTES;
 }
 
+export function meetsPassengerThreshold(
+  flight: Pick<Flight, "bookedPassengers">,
+  rule: Pick<PositionRule, "minPassengers">
+): boolean {
+  return (rule.minPassengers ?? 0) <= flight.bookedPassengers;
+}
+
 export function mustAutoFillPreNoon(
   flight: Flight,
   rule: PositionRule
@@ -21,7 +28,7 @@ export function mustAutoFillPreNoon(
   return (
     isPreNoonFlight(flight) &&
     rule.category === "常规" &&
-    (rule.minPassengers ?? 0) <= flight.bookedPassengers
+    meetsPassengerThreshold(flight, rule)
   );
 }
 
@@ -50,13 +57,12 @@ export function shouldAutoAssign(
   if (mustAutoFillPreNoon(flight, rule)) return true;
   if (rule.category === "行政支援") {
     return (
-      administrativeSupportEnabled &&
-      (rule.minPassengers ?? 0) <= flight.bookedPassengers
+      administrativeSupportEnabled && meetsPassengerThreshold(flight, rule)
     );
   }
   return (
     rule.category !== "引导" &&
     !rule.manual &&
-    (rule.minPassengers ?? 0) <= flight.bookedPassengers
+    meetsPassengerThreshold(flight, rule)
   );
 }

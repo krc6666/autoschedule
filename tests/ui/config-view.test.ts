@@ -33,6 +33,7 @@ describe("configuration page", () => {
     );
     expect(text).toContain("机动督导");
     expect(text).toContain("复制岗位配置");
+    expect(text).toContain("行政支援岗位常规人员优先");
     expect(text).not.toContain(">督导<");
   });
 

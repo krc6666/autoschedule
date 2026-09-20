@@ -9,6 +9,8 @@ import { canMobileSupervisorCoverPosition } from "./mobile-supervisor-coverage";
 import {
   activeFlightRules,
   assignmentRule,
+  compareGuideSourceAssignments,
+  guideSourceStaff,
 } from "../flights/schedule-position-rules";
 import { positionTransitionInsertionCost } from "../reviews/schedule-protection";
 import { isPreNoonFlight } from "../flights/schedule-tasks";
@@ -393,18 +395,26 @@ export function compactRegularAssignments(
     const displayIndex = new Map(
       displayRules.map((rule, index) => [rule.id, index])
     );
-    const regularAssignments = assignments
+    const guideSources = assignments
+      .filter((assignment) => assignment.flightId === flightId)
+      .map((assignment) => ({
+        assignment,
+        person: guideSourceStaff(state, assignment),
+      }))
       .filter(
-        (assignment) =>
-          assignment.flightId === flightId &&
-          assignment.status === "assigned" &&
-          assignment.staffId &&
-          assignmentRule(state, assignment)?.category === "常规"
+        (
+          item
+        ): item is typeof item & {
+          person: NonNullable<typeof item.person>;
+        } => Boolean(item.person)
       )
-      .sort(
-        (left, right) =>
-          (displayIndex.get(right.positionRuleId ?? "") ?? -1) -
-          (displayIndex.get(left.positionRuleId ?? "") ?? -1)
+      .sort((left, right) =>
+        compareGuideSourceAssignments(
+          state,
+          displayIndex,
+          left.assignment,
+          right.assignment
+        )
       );
     const usedStaffIds = new Set<string>();
     assignments
@@ -419,16 +429,15 @@ export function compactRegularAssignments(
           (displayIndex.get(right.positionRuleId ?? "") ?? 0)
       )
       .forEach((guide) => {
-        const source = regularAssignments.find(
-          (assignment) =>
-            assignment.staffId && !usedStaffIds.has(assignment.staffId)
+        const source = guideSources.find(
+          (item) => !usedStaffIds.has(item.person.id)
         );
-        guide.staffId = source?.staffId ?? null;
-        guide.staffName = source?.staffName ?? "";
+        guide.staffId = source?.person.id ?? null;
+        guide.staffName = source?.person.name ?? "";
         guide.workHours = 0;
         guide.status = source ? "assigned" : "unfilled";
         delete guide.systemNotes;
-        if (source?.staffId) usedStaffIds.add(source.staffId);
+        if (source) usedStaffIds.add(source.person.id);
       });
   }
 

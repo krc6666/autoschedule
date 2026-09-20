@@ -78,17 +78,17 @@ export class PolicyStructuredRulesElement extends LightDomElement {
             (item) =>
               html`<div class="supervisor-coverage-row">
                 ${this.staffSelect(
-                item.id,
-                "firstStaffId",
-                item.firstStaffId,
-                "人员 A"
-              )}
+                  item.id,
+                  "firstStaffId",
+                  item.firstStaffId,
+                  "人员 A"
+                )}
                 ${this.staffSelect(
-                item.id,
-                "secondStaffId",
-                item.secondStaffId,
-                "人员 B"
-              )}
+                  item.id,
+                  "secondStaffId",
+                  item.secondStaffId,
+                  "人员 B"
+                )}
                 ${this.flightScopeSelect(item.id, item.flightNo)}
                 ${this.deleteButton("same-flight-staff-exclusion", item.id)}
               </div>`
@@ -103,24 +103,33 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     if (
       !matchesPolicySearch(
         this.query,
-        "跨航班重点岗位优先",
+        "跨航班重点人员优先",
         "优先航班",
-        "优先岗位",
+        "优先人员",
         "新增规则",
-        items.map((item) => [item.flightNo, item.positions])
+        items.map((item) => [
+          item.flightNo,
+          item.staffIds.flatMap((staffId) => {
+            const person = this.model.staff.find(
+              (candidate) => candidate.id === staffId
+            );
+            return person ? [`${person.name} ${person.id}`] : [];
+          }),
+        ])
       )
     )
       return nothing;
     return html`<details
       class="policy-rule-card"
+      data-cross-flight-priorities
       ?open=${Boolean(normalizePolicySearchQuery(this.query))}
     >
       <summary>
         <span
-          ><strong>跨航班重点岗位优先</strong
+          ><strong>跨航班重点人员优先</strong
           ><small
             >${items.filter((item) => item.enabled).length} 条启用 ·
-            同时段冲突时优先保护</small
+            从上到下依次优先；同时段冲突时优先把选中人员留在该航班</small
           ></span
         ><i class="bi bi-chevron-down"></i>
       </summary>
@@ -134,7 +143,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
               html`<div class="supervisor-coverage-row">
                 ${this.toggle("cross-flight-priority", item.id, "enabled", item.enabled, "启用")}
                 ${this.flightSelect("cross-flight-priority", item.id, item.flightNo, "优先航班")}
-                ${this.positionCheckboxes(item.id, item.flightNo, item.positions)}
+                ${this.priorityStaffCheckboxes(item.id, item.staffIds)}
                 <div class="d-flex gap-1">
                   ${this.moveCrossFlightPriority(item.id, -1, index === 0)}${this.moveCrossFlightPriority(item.id, 1, index === items.length - 1)}${this.deleteButton("cross-flight-priority", item.id)}
                 </div>
@@ -644,44 +653,34 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     );
   }
 
-  private positionCheckboxes(id: string, flightNo: string, selected: string[]) {
-    const choices = [
-      ...new Set(
-        this.model.positionRules
-          .filter(
-            (rule) =>
-              rule.flightNo.trim().toUpperCase() ===
-              flightNo.trim().toUpperCase()
-          )
-          .map((rule) => rule.name.trim())
-          .filter(Boolean)
-      ),
-    ];
+  private priorityStaffCheckboxes(id: string, selected: string[]) {
     return html`<fieldset class="form-label">
-      <legend class="form-label mb-1">优先岗位</legend>
+      <legend class="form-label mb-1">优先人员</legend>
       <div class="d-flex flex-wrap gap-2">
-        ${choices.map(
-          (position) =>
+        ${this.model.staff.map(
+          (person) =>
             html`<label class="form-check mb-0"
               ><input
                 class="form-check-input"
                 type="checkbox"
-                .checked=${selected.includes(position)}
+                .checked=${selected.includes(person.id)}
                 @change=${(event: Event) => {
-                const checked = (event.currentTarget as HTMLInputElement)
-                  .checked;
-                const next = checked
-                  ? [...selected, position]
-                  : selected.filter((item) => item !== position);
-                dispatchUiCommand(this, {
-                  type: "update-policy",
-                  entity: "cross-flight-priority",
-                  id,
-                  field: "positions",
-                  value: next.join(","),
-                });
-              }}
-              /><span class="form-check-label">${position}</span></label
+                    const checked = (event.currentTarget as HTMLInputElement)
+                      .checked;
+                    const next = checked
+                      ? [...selected, person.id]
+                      : selected.filter((item) => item !== person.id);
+                    dispatchUiCommand(this, {
+                      type: "update-policy",
+                      entity: "cross-flight-priority",
+                      id,
+                      field: "staffIds",
+                      value: next.join(","),
+                    });
+                  }}
+              /><span class="form-check-label"
+                >${person.name}（${person.id}）</span
+              ></label
             >`
         )}
       </div>

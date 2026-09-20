@@ -77,6 +77,32 @@ function mergeActiveGroupPersonnelRules(
   ];
 }
 
+function mergeActiveGroupCrossFlightPriorityRules(
+  current: AppState["settings"]["crossFlightPriorityPolicies"],
+  imported: AppState["settings"]["crossFlightPriorityPolicies"],
+  activeStaffIds: Set<string>,
+  otherStaffIds: Set<string>
+): AppState["settings"]["crossFlightPriorityPolicies"] {
+  const importedIds = new Set(imported.map((rule) => rule.id));
+  const merged = imported.map((rule) => ({
+    ...rule,
+    staffIds: [
+      ...(current
+        .find((item) => item.id === rule.id)
+        ?.staffIds.filter((staffId) => otherStaffIds.has(staffId)) ?? []),
+      ...rule.staffIds.filter((staffId) => activeStaffIds.has(staffId)),
+    ],
+  }));
+  const retainedOtherGroupRows = current.flatMap((rule) => {
+    if (importedIds.has(rule.id)) return [];
+    const staffIds = rule.staffIds.filter((staffId) =>
+      otherStaffIds.has(staffId)
+    );
+    return staffIds.length ? [{ ...rule, staffIds }] : [];
+  });
+  return [...merged, ...retainedOtherGroupRows];
+}
+
 function importedHistoryAssignments(
   state: AppState,
   records: readonly HistoryRecord[]
@@ -325,6 +351,14 @@ export function applyWorkbookImport(
         activeStaffIds,
         otherStaffIds
       );
+    if (imported.settings.crossFlightPriorityPolicies !== undefined)
+      settingsPatch.crossFlightPriorityPolicies =
+        mergeActiveGroupCrossFlightPriorityRules(
+          state.settings.crossFlightPriorityPolicies,
+          imported.settings.crossFlightPriorityPolicies,
+          activeStaffIds,
+          otherStaffIds
+        );
     state.settings = applyScheduleSettingsPatch(state.settings, settingsPatch);
   }
   if (importConfig && imported.latePriorityFrequencyAdjustments !== undefined)

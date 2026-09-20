@@ -334,10 +334,14 @@ function normalizeCrossFlightPriorityPolicies(
         flightNo: String(policy.flightNo ?? "")
           .trim()
           .toUpperCase(),
-        positions: Array.isArray(policy.positions)
-          ? policy.positions
-              .map((position) => String(position).trim())
-              .filter(Boolean)
+        staffIds: Array.isArray(policy.staffIds)
+          ? [
+              ...new Set(
+                policy.staffIds
+                  .map((staffId) => String(staffId).trim())
+                  .filter(Boolean)
+              ),
+            ]
           : [],
       };
     });

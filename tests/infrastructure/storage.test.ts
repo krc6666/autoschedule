@@ -75,6 +75,31 @@ describe("state persistence", () => {
     ).toEqual([]);
   });
 
+  it("migrates v6 cross-flight position rows without guessing people", () => {
+    const legacy = JSON.parse(JSON.stringify(createDefaultState()));
+    legacy.version = 6;
+    legacy.settings.crossFlightPriorityPolicies = [
+      {
+        id: "legacy-priority",
+        enabled: true,
+        flightNo: "KE166",
+        positions: ["H02", "H03"],
+      },
+    ];
+
+    const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
+
+    expect(loaded.version).toBe(7);
+    expect(loaded.settings.crossFlightPriorityPolicies).toEqual([
+      {
+        id: "legacy-priority",
+        enabled: true,
+        flightNo: "KE166",
+        staffIds: [],
+      },
+    ]);
+  });
+
   it("records a report when persisted JSON cannot be parsed", () => {
     loadState({ getItem: () => "{not-json" });
 
@@ -184,7 +209,7 @@ describe("state persistence", () => {
 
   it("falls back to valid defaults for corrupt persisted data", () => {
     const state = loadState({ getItem: () => "not-json" });
-    expect(state.version).toBe(6);
+    expect(state.version).toBe(7);
     expect(state.staff.length).toBeGreaterThan(0);
     expect(
       state.positionRules.some((rule) => rule.category === "机动督导")
@@ -384,7 +409,7 @@ describe("state persistence", () => {
 
     const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
 
-    expect(loaded.version).toBe(6);
+    expect(loaded.version).toBe(7);
     expect(
       loaded.positionRules.some((rule) => rule.category === "机动督导")
     ).toBe(false);
@@ -451,7 +476,7 @@ describe("state persistence", () => {
 
     const loaded = loadState({ getItem: () => JSON.stringify(legacy) });
 
-    expect(loaded.version).toBe(6);
+    expect(loaded.version).toBe(7);
     expect(loaded.weeklyFlightPlans).toHaveLength(7);
     expect(
       loaded.weeklyFlightPlans.every((entry) => entry.flightNos.length === 0)

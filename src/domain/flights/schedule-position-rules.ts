@@ -1,7 +1,10 @@
-import type { Assignment, Flight, PositionRule } from "../../model";
+import type { Assignment, Flight, PositionRule, Staff } from "../../model";
 import { createId } from "../../utils";
 import { durationHours } from "../shared/time";
-import type { FlightRuleFacts } from "../shared/scheduling-facts";
+import type {
+  FlightRuleFacts,
+  ScheduleGenerationFacts,
+} from "../shared/scheduling-facts";
 
 export function isAuxiliaryCategory(
   category: PositionRule["category"] | undefined
@@ -31,6 +34,36 @@ export function isGuideAssignment(
   assignment: Assignment
 ): boolean {
   return assignmentRule(state, assignment)?.category === "引导";
+}
+
+export function guideSourceStaff(
+  state: Pick<ScheduleGenerationFacts, "positionRules" | "staff">,
+  assignment: Assignment
+): Staff | undefined {
+  if (assignment.status !== "assigned" || !assignment.staffId) return undefined;
+  const category = assignmentRule(state, assignment)?.category;
+  if (category === "引导") return undefined;
+  const person = state.staff.find((item) => item.id === assignment.staffId);
+  return person?.status === "正常" && person.staffType === "常规"
+    ? person
+    : undefined;
+}
+
+export function compareGuideSourceAssignments(
+  state: Pick<FlightRuleFacts, "positionRules">,
+  displayIndex: ReadonlyMap<string, number>,
+  left: Assignment,
+  right: Assignment
+): number {
+  const leftAdministrative =
+    assignmentRule(state, left)?.category === "行政支援";
+  const rightAdministrative =
+    assignmentRule(state, right)?.category === "行政支援";
+  return (
+    Number(rightAdministrative) - Number(leftAdministrative) ||
+    (displayIndex.get(right.positionRuleId ?? "") ?? -1) -
+      (displayIndex.get(left.positionRuleId ?? "") ?? -1)
+  );
 }
 
 export function isReusableAssignment(

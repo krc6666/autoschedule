@@ -61,7 +61,7 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
   "cross-workday-qualification-reservation":
     "当天岗位填满后，优先保留下一工作班稀缺岗位所需的合格人员。",
   "cross-flight-priority":
-    "同一时段航班发生人员冲突时，优先保护规则页配置航班的重点岗位轮换；其他航班轮换可以让步，但不会突破硬约束或制造空缺。",
+    "同一时段航班发生人员冲突时，优先把规则页选中的重点人员留在配置航班；不会突破硬约束，一般情况下也不制造空缺。",
   "position-transition":
     "严格衔接不符合要求时阻止安排；12 点前无人替代时保留原因供复核。",
   "tr121-h02-cooldown":

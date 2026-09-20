@@ -16,8 +16,7 @@ function assignment(
   position: string,
   staffId: string,
   startTime = "08:00",
-  endTime = "10:00",
-  remark = ""
+  endTime = "10:00"
 ): Assignment {
   return {
     id,
@@ -31,187 +30,102 @@ function assignment(
     endTime,
     workHours: 2,
     fatiguePoints: 1,
-    remark,
+    remark: "",
     manualRemark: "",
     status: "assigned",
   };
 }
 
-describe("cross-flight priority", () => {
-  it("uses the configured top-to-bottom order as the priority rank", () => {
+describe("cross-flight staff priority", () => {
+  it("uses flight number plus selected staff and top-to-bottom order", () => {
     const state = createDefaultState();
     state.settings.crossFlightPriorityPolicies = [
-      { id: "ke", enabled: true, flightNo: "KE166", positions: ["H03"] },
-      { id: "cx", enabled: true, flightNo: "CX937", positions: ["G20"] },
+      { id: "ke", enabled: true, flightNo: "KE166", staffIds: ["staff-1"] },
+      { id: "cx", enabled: true, flightNo: "CX937", staffIds: ["staff-1"] },
     ];
-
     expect(
       crossFlightPriorityPolicyRank(state, {
         flightNo: "KE166",
-        position: "H03",
+        staffId: "staff-1",
       })
     ).toBe(0);
     expect(
       crossFlightPriorityPolicyRank(state, {
         flightNo: "CX937",
-        position: "G20",
+        staffId: "staff-1",
       })
     ).toBe(1);
-  });
-
-  it("blocks moving a protected worker when the replacement has worse rotation frequency", () => {
-    const state = createDefaultState();
-    state.activeScheduleDate = "2026-08-21";
-    state.settings.crossFlightPriorityPolicies = [
-      { id: "p1", enabled: true, flightNo: "KE166", positions: ["H02"] },
-    ];
-    state.positionRules.push({
-      id: "ke-h02",
-      flightNo: "KE166",
-      name: "H02",
-      category: "常规",
-      remark: "一号",
-      qualifiedStaffIds: ["staff-1", "staff-2"],
-      manual: false,
-      fatiguePoints: 5,
-      minPassengers: 0,
-      earlyReleaseMinutes: 0,
-    });
-    state.history.push(
-      {
-        id: "history-1",
-        date: "2026-08-15",
+    expect(
+      crossFlightPriorityPolicyRank(state, {
         flightNo: "KE166",
-        position: "H02",
         staffId: "staff-2",
-        staffName: "staff-2",
-        startTime: "08:00",
-        endTime: "10:00",
-        workHours: 2,
-        fatiguePoints: 5,
-        remark: "一号",
-      },
-      {
-        id: "history-2",
-        date: "2026-08-16",
+      })
+    ).toBeNull();
+  });
+
+  it("protects selected staff independent of the position name", () => {
+    const state = createDefaultState();
+    state.settings.crossFlightPriorityPolicies = [
+      { id: "ke", enabled: true, flightNo: "KE166", staffIds: ["staff-1"] },
+    ];
+    expect(
+      crossFlightPriorityCandidateScore(state, {
         flightNo: "KE166",
-        position: "H02",
+        staffId: "staff-1",
+      })
+    ).toBe(1);
+    expect(
+      crossFlightPriorityCandidateScore(state, {
+        flightNo: "KE166",
         staffId: "staff-2",
-        staffName: "staff-2",
-        startTime: "08:00",
-        endTime: "10:00",
-        workHours: 2,
-        fatiguePoints: 5,
-        remark: "一号",
-      }
-    );
-    const original = [
-      assignment("ke", "KE166", "H02", "staff-1", "08:00", "10:00", "一号"),
+      })
+    ).toBe(0);
+  });
+
+  it("blocks a later review from moving selected staff to an overlapping flight", () => {
+    const state = createDefaultState();
+    state.settings.crossFlightPriorityPolicies = [
+      { id: "ke", enabled: true, flightNo: "KE166", staffIds: ["staff-1"] },
     ];
+    const original = [assignment("ke-h02", "KE166", "H02", "staff-1")];
     const planned = [
-      assignment("ke", "KE166", "H02", "staff-2", "08:00", "10:00", "一号"),
-      assignment("cx", "CX931", "G20", "staff-1"),
+      assignment("ke-h02", "KE166", "H02", "staff-2"),
+      assignment("cx-g20", "CX937", "G20", "staff-1"),
     ];
     expect(
       crossFlightPriorityReassignmentReasons(
         state,
         original,
         planned,
-        "2026-08-21"
+        "2026-09-18"
       )
-    ).toEqual(["调整会破坏KE166重点岗位轮换，优先保留原人员"]);
+    ).toEqual(["调整会把重点人员调离KE166，优先保留原航班安排"]);
   });
 
-  it("allows a same-frequency qualified replacement for any configured priority position", () => {
+  it("allows selected staff to change positions inside the priority flight", () => {
     const state = createDefaultState();
     state.settings.crossFlightPriorityPolicies = [
-      { id: "p1", enabled: true, flightNo: "AA100", positions: ["控制"] },
-    ];
-    state.positionRules.push({
-      id: "aa-control",
-      flightNo: "AA100",
-      name: "控制",
-      category: "常规",
-      remark: "控制",
-      qualifiedStaffIds: ["staff-1", "staff-2"],
-      manual: false,
-      fatiguePoints: 5,
-      minPassengers: 0,
-      earlyReleaseMinutes: 0,
-    });
-    const original = [assignment("priority", "AA100", "控制", "staff-1")];
-    const planned = [
-      assignment("priority", "AA100", "控制", "staff-2"),
-      assignment("other", "BB200", "P1", "staff-1"),
-    ];
-    expect(
-      crossFlightPriorityReassignmentReasons(
-        state,
-        original,
-        planned,
-        "2026-08-21"
-      )
-    ).toEqual([]);
-  });
-
-  it("allows a lower-frequency replacement for a configured priority position", () => {
-    const state = createDefaultState();
-    state.settings.crossFlightPriorityPolicies = [
-      { id: "p1", enabled: true, flightNo: "AA100", positions: ["P1"] },
-    ];
-    state.history.push({
-      id: "history-priority",
-      date: "2026-08-15",
-      flightNo: "AA100",
-      position: "P1",
-      staffId: "staff-1",
-      staffName: "staff-1",
-      startTime: "08:00",
-      endTime: "10:00",
-      workHours: 2,
-      fatiguePoints: 5,
-      remark: "",
-    });
-    const original = [assignment("priority", "AA100", "P1", "staff-1")];
-    const planned = [
-      assignment("priority", "AA100", "P1", "staff-2"),
-      assignment("other", "BB200", "P2", "staff-1"),
-    ];
-
-    expect(
-      crossFlightPriorityReassignmentReasons(
-        state,
-        original,
-        planned,
-        "2026-08-21"
-      )
-    ).toEqual([]);
-  });
-
-  it("allows a safe exchange inside the protected flight", () => {
-    const state = createDefaultState();
-    state.settings.crossFlightPriorityPolicies = [
-      { id: "p1", enabled: true, flightNo: "KE166", positions: ["H02", "H03"] },
+      { id: "ke", enabled: true, flightNo: "KE166", staffIds: ["staff-1"] },
     ];
     const original = [
-      assignment("h02", "KE166", "H02", "staff-1"),
-      assignment("h03", "KE166", "H03", "staff-2"),
+      assignment("ke-h02", "KE166", "H02", "staff-1"),
+      assignment("ke-h03", "KE166", "H03", "staff-2"),
     ];
     const planned = [
-      assignment("h02", "KE166", "H02", "staff-2"),
-      assignment("h03", "KE166", "H03", "staff-1"),
+      assignment("ke-h02", "KE166", "H02", "staff-2"),
+      assignment("ke-h03", "KE166", "H03", "staff-1"),
     ];
     expect(
       crossFlightPriorityReassignmentReasons(
         state,
         original,
         planned,
-        "2026-08-21"
+        "2026-09-18"
       )
     ).toEqual([]);
   });
 
-  it("lets the recovery review replace a protected-position worker with an equally rotated qualified worker", async () => {
+  it("keeps selected staff on the priority flight when a recovery review tries to swap flights", async () => {
     const state = createDefaultState();
     const [protectedWorker, replacementWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -245,7 +159,12 @@ describe("cross-flight priority", () => {
       },
     ];
     state.settings.crossFlightPriorityPolicies = [
-      { id: "p1", enabled: true, flightNo: "AA100", positions: ["控制"] },
+      {
+        id: "priority-person",
+        enabled: true,
+        flightNo: "AA100",
+        staffIds: [protectedWorker!.id],
+      },
     ];
     state.flights = [
       {
@@ -322,7 +241,7 @@ describe("cross-flight priority", () => {
     };
     const assignments = [priority, overlapping];
 
-    const warnings = await reviewLateShiftRecovery(
+    await reviewLateShiftRecovery(
       defaultHighsSolver,
       state,
       assignments,
@@ -330,57 +249,48 @@ describe("cross-flight priority", () => {
       new Set()
     );
 
-    expect(warnings).toEqual([]);
-    expect(priority.staffId).toBe(replacementWorker!.id);
-    expect(overlapping.staffId).toBe(protectedWorker!.id);
-    expect(
-      assignments.every((item) => item.status === "assigned" && item.staffId)
-    ).toBe(true);
-    expect(priority.decisionTrace).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          ruleId: "late-shift-recovery",
-          outcome: "selected",
-        }),
-      ])
-    );
+    expect(priority.staffId).toBe(protectedWorker!.id);
+    expect(overlapping.staffId).toBe(replacementWorker!.id);
   });
 
-  it("is inactive without configuration and remains generic", () => {
-    const state = createDefaultState();
-    expect(
-      crossFlightPriorityCandidateScore(state, {
-        flightNo: "KE166",
-        position: "H02",
-      })
-    ).toBe(0);
-    state.settings.crossFlightPriorityPolicies = [
-      { id: "p1", enabled: true, flightNo: "AB123", positions: ["P1"] },
-    ];
-    expect(
-      crossFlightPriorityCandidateScore(state, {
-        flightNo: "AB123",
-        position: "P1",
-      })
-    ).toBe(1);
-  });
-
-  it("does not block a non-overlapping handoff", () => {
+  it("allows moving selected staff to a non-overlapping flight", () => {
     const state = createDefaultState();
     state.settings.crossFlightPriorityPolicies = [
-      { id: "p1", enabled: true, flightNo: "KE166", positions: ["H02"] },
+      { id: "ke", enabled: true, flightNo: "KE166", staffIds: ["staff-1"] },
     ];
-    const original = [assignment("ke", "KE166", "H02", "staff-1")];
+    const original = [assignment("ke-h02", "KE166", "H02", "staff-1")];
     const planned = [
-      assignment("ke", "KE166", "H02", "staff-2"),
-      assignment("cx", "CX931", "G20", "staff-1", "12:00", "14:00"),
+      assignment("ke-h02", "KE166", "H02", "staff-2"),
+      assignment("cx-g20", "CX937", "G20", "staff-1", "12:00", "14:00"),
     ];
     expect(
       crossFlightPriorityReassignmentReasons(
         state,
         original,
         planned,
-        "2026-08-21"
+        "2026-09-18"
+      )
+    ).toEqual([]);
+  });
+
+  it("allows a later review to move selected staff from a lower row to a higher row", () => {
+    const state = createDefaultState();
+    state.settings.crossFlightPriorityPolicies = [
+      { id: "ke", enabled: true, flightNo: "KE166", staffIds: ["staff-1"] },
+      { id: "cx", enabled: true, flightNo: "CX937", staffIds: ["staff-1"] },
+    ];
+    const original = [assignment("cx-g20", "CX937", "G20", "staff-1")];
+    const planned = [
+      assignment("cx-g20", "CX937", "G20", "staff-2"),
+      assignment("ke-h02", "KE166", "H02", "staff-1"),
+    ];
+
+    expect(
+      crossFlightPriorityReassignmentReasons(
+        state,
+        original,
+        planned,
+        "2026-09-20"
       )
     ).toEqual([]);
   });

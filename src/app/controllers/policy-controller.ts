@@ -56,7 +56,7 @@ export class PolicyController implements UiCommandController {
         return true;
       case "move-cross-flight-priority":
         if (policy.moveCrossFlightPriority(command.id, command.direction))
-          this.context.commit("跨航班重点岗位优先顺序已调整");
+          this.context.commit("跨航班重点人员优先顺序已调整");
         return true;
       default:
         return false;

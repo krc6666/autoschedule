@@ -7,6 +7,7 @@ import {
 import {
   administrativeSupportAutomaticRule,
   assignmentRule,
+  guideSourceStaff,
 } from "../flights/schedule-position-rules";
 import {
   positionTransitionCost,
@@ -534,11 +535,13 @@ export function diagnoseManualAssignmentEligibility(
     const source = others.find(
       (item) =>
         item.flightId === assignment.flightId &&
-        item.status === "assigned" &&
-        assignmentRule(state, item)?.category === "常规"
+        Boolean(guideSourceStaff(state, item))
     );
     if (!source)
-      return violation("guide-source", `${person.name} 未在该航班承担常规岗位`);
+      return violation(
+        "guide-source",
+        `${person.name} 未在该航班承担可复用岗位`
+      );
   }
   const factOptions = {
     state,

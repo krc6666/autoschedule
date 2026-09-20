@@ -14,6 +14,25 @@ import {
   parseLatePriorityCountsWorkbook,
 } from "../../src/infrastructure/late-priority-counts-excel";
 
+const historicalExportMocks = vi.hoisted(() => ({
+  buildScheduleWorkbook: vi.fn(() => ({ SheetNames: [], Sheets: {} })),
+  writeWorkbook: vi.fn(),
+  exportShareHtml: vi.fn(),
+  exportSharePng: vi.fn(async () => undefined),
+}));
+
+vi.mock("../../src/infrastructure/excel", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/infrastructure/excel")>()),
+  buildScheduleWorkbook: historicalExportMocks.buildScheduleWorkbook,
+  writeWorkbook: historicalExportMocks.writeWorkbook,
+}));
+
+vi.mock("../../src/infrastructure/share", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/infrastructure/share")>()),
+  exportShareHtml: historicalExportMocks.exportShareHtml,
+  exportSharePng: historicalExportMocks.exportSharePng,
+}));
+
 const preferences: ApplicationPreferences = {
   loadScheduleDate: () => null,
   saveScheduleDate: () => undefined,
@@ -405,6 +424,53 @@ describe("historical schedule editing", () => {
 
     expect(coordinator.view().historyEditDate).toBe("2026-08-20");
     expect(coordinator.model().history).toEqual(state.history);
+  });
+
+  it("exports the target historical draft while keeping mutating commands blocked", async () => {
+    historicalExportMocks.buildScheduleWorkbook.mockClear();
+    historicalExportMocks.writeWorkbook.mockClear();
+    historicalExportMocks.exportShareHtml.mockClear();
+    historicalExportMocks.exportSharePng.mockClear();
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(editableHistoricalState()),
+      { preferences: historicalPreferences, confirm: () => true }
+    );
+
+    await coordinator.handle({
+      type: "edit-history-date",
+      date: "2026-08-20",
+    });
+    const historicalDraft = coordinator.model();
+
+    await coordinator.handle({ type: "export-schedule" });
+    await coordinator.handle({ type: "export-share-html" });
+    await coordinator.handle({ type: "export-share-png" });
+
+    expect(historicalExportMocks.buildScheduleWorkbook).toHaveBeenCalledWith(
+      historicalDraft,
+      "2026-08-20"
+    );
+    expect(historicalExportMocks.writeWorkbook).toHaveBeenCalledWith(
+      expect.anything(),
+      "保障明细_2026-08-20.xlsx"
+    );
+    expect(historicalExportMocks.exportShareHtml).toHaveBeenCalledWith(
+      historicalDraft,
+      "2026-08-20"
+    );
+    expect(historicalExportMocks.exportSharePng).toHaveBeenCalledWith(
+      historicalDraft,
+      "2026-08-20"
+    );
+    expect(coordinator.view().historyEditDate).toBe("2026-08-20");
+
+    await coordinator.handle({ type: "open-reschedule-flight-picker" });
+
+    expect(coordinator.view().dialog).toBeNull();
+    expect(coordinator.view().toast).toMatchObject({
+      tone: "warning",
+      message: "历史排班正在编辑，请先保存或取消编辑",
+    });
   });
 });
 

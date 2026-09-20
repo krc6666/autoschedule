@@ -502,4 +502,29 @@ describe("configuration actions", () => {
       },
     ]);
   });
+
+  it("keeps cross-flight priority people synchronized on rename and delete", () => {
+    const state = createDefaultState();
+    const [first, second] = state.staff;
+    state.settings.crossFlightPriorityPolicies = [
+      {
+        id: "priority-1",
+        enabled: true,
+        flightNo: "KE166",
+        staffIds: [first!.id, second!.id],
+      },
+    ];
+
+    expect(
+      updateConfigurationField(state, "staff", first!.id, "id", "RENAMED")
+    ).toBe("updated");
+    expect(state.settings.crossFlightPriorityPolicies[0]!.staffIds).toEqual([
+      "RENAMED",
+      second!.id,
+    ]);
+    expect(deleteStaff(state, "RENAMED")).toBe(true);
+    expect(state.settings.crossFlightPriorityPolicies[0]!.staffIds).toEqual([
+      second!.id,
+    ]);
+  });
 });

@@ -37,7 +37,7 @@ import { scheduleRuleFingerprint } from "../domain/rules/schedule-rule-fingerpri
 
 type PersistedSettings = Partial<ScheduleSettings>;
 type PersistedAppState = Record<string, unknown> & {
-  version: 1 | 2 | 3 | 4 | 5 | 6;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
 };
 
 const LATE_PRIORITY_KINDS = new Set([
@@ -95,7 +95,8 @@ function isPersistedState(value: unknown): value is PersistedAppState {
     value.version === 3 ||
     value.version === 4 ||
     value.version === 5 ||
-    value.version === 6
+    value.version === 6 ||
+    value.version === 7
   );
 }
 
@@ -116,6 +117,21 @@ function migrateSettings(
     ? (parsed.settings as PersistedSettings)
     : {};
   const migrated = { ...fallback.settings, ...persistedSettings };
+  if (
+    parsed.version < 7 &&
+    Array.isArray(migrated.crossFlightPriorityPolicies)
+  ) {
+    migrated.crossFlightPriorityPolicies =
+      migrated.crossFlightPriorityPolicies.map((item) => {
+        const record: Record<string, unknown> = isRecord(item) ? item : {};
+        return {
+          id: String(record.id ?? ""),
+          enabled: record.enabled !== false,
+          flightNo: String(record.flightNo ?? ""),
+          staffIds: [],
+        };
+      });
+  }
   Reflect.deleteProperty(migrated, "highLoadTransitionMode");
   Reflect.deleteProperty(migrated, "rollingLoadMode");
   Reflect.deleteProperty(migrated, "lateShiftRecoveryMode");
@@ -744,7 +760,7 @@ export function restorePersistedState(
     positionRules
   );
   const next: AppState = {
-    version: 6,
+    version: 7,
     shared: structuredClone(fallback.shared),
     groups: structuredClone(fallback.groups),
     activeGroupId: "A",

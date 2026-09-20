@@ -96,6 +96,28 @@ describe("schedule settings module", () => {
     ]);
   });
 
+  it("normalizes cross-flight priority rows by staff id", () => {
+    const normalized = normalizeScheduleSettings({
+      crossFlightPriorityPolicies: [
+        {
+          id: " priority ",
+          enabled: true,
+          flightNo: " ke166 ",
+          staffIds: [" 1 ", "2", "1"],
+        },
+      ],
+    });
+
+    expect(normalized.crossFlightPriorityPolicies).toEqual([
+      {
+        id: "priority",
+        enabled: true,
+        flightNo: "KE166",
+        staffIds: ["1", "2"],
+      },
+    ]);
+  });
+
   it("normalizes the same values for every settings adapter", () => {
     const defaults = createDefaultScheduleSettings();
     const input = {

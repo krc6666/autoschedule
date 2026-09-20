@@ -189,7 +189,7 @@ export interface GroupWorkspace {
 export type GroupWorkspaces = Record<ScheduleGroupId, GroupWorkspace>;
 
 export interface AppState {
-  version: 6;
+  version: 7;
   /** Shared configuration and the two isolated group workspaces. */
   shared: SharedScheduleData;
   groups: GroupWorkspaces;

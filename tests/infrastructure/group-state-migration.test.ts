@@ -56,7 +56,7 @@ describe("双组工作区状态迁移", () => {
     const migrated = restorePersistedState(legacy, createDefaultState());
 
     expect(migrated).not.toBeNull();
-    expect(migrated!.version).toBe(6);
+    expect(migrated!.version).toBe(7);
     expect(migrated!.activeGroupId).toBe("A");
     expect(migrated!.groups.A.staff.map((item) => item.id)).toEqual([
       "legacy-a-1",

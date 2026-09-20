@@ -16,6 +16,138 @@ import "../../src/ui/components/schedule-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("schedule page", () => {
+  it("marks only enabled unfilled positions red across passenger thresholds", async () => {
+    const state = createDefaultState();
+    const baseFlight = state.flights[0]!;
+    const baseRule = state.positionRules.find(
+      (item) => item.flightNo === baseFlight.flightNo
+    )!;
+    state.flights = [
+      {
+        ...baseFlight,
+        id: "below-threshold-flight",
+        flightNo: "TEST050",
+        bookedPassengers: 50,
+        positions: ["未达门槛岗位"],
+      },
+      {
+        ...baseFlight,
+        id: "enabled-threshold-flight",
+        flightNo: "TEST120",
+        bookedPassengers: 120,
+        positions: ["已达门槛岗位"],
+      },
+      {
+        ...baseFlight,
+        id: "always-enabled-flight",
+        flightNo: "TEST000",
+        bookedPassengers: 0,
+        positions: ["零门槛岗位"],
+      },
+    ];
+    state.positionRules = [
+      {
+        ...baseRule,
+        id: "below-threshold-rule",
+        flightNo: "TEST050",
+        name: "未达门槛岗位",
+        minPassengers: 100,
+      },
+      {
+        ...baseRule,
+        id: "enabled-threshold-rule",
+        flightNo: "TEST120",
+        name: "已达门槛岗位",
+        minPassengers: 100,
+      },
+      {
+        ...baseRule,
+        id: "always-enabled-rule",
+        flightNo: "TEST000",
+        name: "零门槛岗位",
+        minPassengers: 0,
+      },
+    ];
+    state.assignments = state.positionRules.map((rule, index) => {
+      const flight = state.flights[index]!;
+      return {
+        id: `${rule.id}-vacancy`,
+        flightId: flight.id,
+        flightNo: flight.flightNo,
+        positionRuleId: rule.id,
+        position: rule.name,
+        staffId: null,
+        staffName: "",
+        startTime: flight.startTime,
+        endTime: flight.endTime,
+        workHours: 2,
+        fatiguePoints: rule.fatiguePoints,
+        remark: rule.remark,
+        manualRemark: "",
+        status: "unfilled" as const,
+      };
+    });
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-08-01",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+    });
+    const grid = element.querySelector<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-grid");
+    await grid?.updateComplete;
+
+    const cells = (assignmentId: string) => {
+      const person = element.querySelector(
+        `.schedule-person-cell[data-assignment-id="${assignmentId}"]`
+      );
+      const position = person
+        ?.closest("td")
+        ?.previousElementSibling?.querySelector(".schedule-position-cell");
+      return { person, position };
+    };
+    const belowThreshold = cells("below-threshold-rule-vacancy");
+    const enabledThreshold = cells("enabled-threshold-rule-vacancy");
+    const alwaysEnabled = cells("always-enabled-rule-vacancy");
+
+    expect(belowThreshold.position?.classList.contains("is-unfilled")).toBe(
+      false
+    );
+    expect(belowThreshold.person?.classList.contains("is-unfilled")).toBe(
+      false
+    );
+    expect(
+      belowThreshold.person?.querySelector(".schedule-name-input")
+    ).not.toBeNull();
+    expect(enabledThreshold.position?.classList.contains("is-unfilled")).toBe(
+      true
+    );
+    expect(enabledThreshold.person?.classList.contains("is-unfilled")).toBe(
+      true
+    );
+    expect(alwaysEnabled.position?.classList.contains("is-unfilled")).toBe(
+      true
+    );
+    expect(alwaysEnabled.person?.classList.contains("is-unfilled")).toBe(true);
+    const styles = readFileSync(
+      join(process.cwd(), "src", "styles.css"),
+      "utf8"
+    );
+    const unfilledRule = styles.match(
+      /\.schedule-cell\.is-unfilled(?:\.is-soft-rule-warning|\.is-manual-override-warning)?[^}]*\{(?<declarations>[^}]*)\}/
+    )?.groups?.declarations;
+    expect(unfilledRule).toContain("#fff0f0");
+    expect(unfilledRule).toContain("#d94343");
+    expect(styles).toMatch(
+      /\.schedule-cell\.is-unfilled\.is-soft-rule-warning,[\s\S]*?background:\s*#fff0f0/
+    );
+  });
+
   it("marks an unfilled KE166 mobile supervisor cell red with a dedicated message", async () => {
     const state = createDefaultState();
     const flight = {
@@ -34,6 +166,7 @@ describe("schedule page", () => {
       name: "督导",
       category: "机动督导" as const,
       qualifiedStaffIds: [],
+      minPassengers: 100,
     };
     state.flights = [flight];
     state.positionRules = [rule];
@@ -292,6 +425,7 @@ describe("schedule page", () => {
     const rules = state.positionRules
       .filter((rule) => rule.flightNo === flight.flightNo && !rule.manual)
       .slice(0, 2);
+    rules[0]!.minPassengers = flight.bookedPassengers + 1;
     state.assignments = rules.map((rule, index) => ({
       id: `vacancy-${index}`,
       flightId: flight.id,
@@ -325,6 +459,9 @@ describe("schedule page", () => {
     expect(
       element.querySelector('[data-assignment-id="vacancy-0"]')?.classList
     ).toContain("is-half-rest-unfilled");
+    expect(
+      element.querySelector('[data-assignment-id="vacancy-0"]')?.classList
+    ).toContain("is-unfilled");
     expect(
       element.querySelector('[data-assignment-id="vacancy-1"]')?.classList
     ).not.toContain("is-half-rest-unfilled");

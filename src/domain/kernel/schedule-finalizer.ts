@@ -111,7 +111,7 @@ function rebuildWarnings(
     if (assignment.status !== "unfilled") return [];
     const category = assignmentRule(state, assignment)?.category;
     return [
-      `${assignment.flightNo} / ${assignment.position} ${category === "引导" ? "没有可复用的常规岗位人员" : "无可用人员"}`,
+      `${assignment.flightNo} / ${assignment.position} ${category === "引导" ? "没有可复用的常规人员" : "无可用人员"}`,
     ];
   });
   const reservationWarnings = crossWorkdayReservationStatuses(
