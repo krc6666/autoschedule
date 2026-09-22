@@ -11,7 +11,7 @@ import { historyFatigue } from "../statistics/fatigue";
 import { reviewKe166GroupRotation } from "./ke166-rotation-review";
 import {
   isHighFatigueOrdinaryRotationPosition,
-  isPriorityRotationPosition,
+  isOrdinaryPriorityPosition,
 } from "./position-rotation-policy";
 import {
   comparePreviousWorkdayLoad,
@@ -22,7 +22,7 @@ import {
   comparePositionFrequency,
   consecutivePositionAssignments,
   createScheduleFrequencyFacts,
-  samePositionFrequencyProfile,
+  positionFrequencyProfileForAssignment,
   type ScheduleFrequencyFacts,
 } from "../statistics/schedule-frequency";
 import { assignmentRule } from "../flights/schedule-position-rules";
@@ -47,10 +47,14 @@ function rotationKind(
   assignment: Assignment
 ): RotationKind {
   const rule = assignmentRule(state, assignment)!;
-  if (isPriorityRotationPosition(rule)) return "priority";
+  if (
+    isOrdinaryPriorityPosition(rule, state.settings.ordinaryPriorityPositions)
+  )
+    return "priority";
   return isHighFatigueOrdinaryRotationPosition(
     rule,
-    state.settings.highLoadFatigueThreshold
+    state.settings.highLoadFatigueThreshold,
+    state.settings.ordinaryPriorityPositions
   )
     ? "high-fatigue"
     : "ordinary";
@@ -107,21 +111,17 @@ function targetStaffOrder(
     const leftLoad = loadByStaffId.get(leftId)!;
     const rightLoad = loadByStaffId.get(rightId)!;
     const frequencyDifference = comparePositionFrequency(
-      samePositionFrequencyProfile(
+      positionFrequencyProfileForAssignment(
         state,
+        primary,
         leftId,
-        primary.flightNo,
-        primary.position,
-        primary.remark,
         date,
         frequencyFacts
       ),
-      samePositionFrequencyProfile(
+      positionFrequencyProfileForAssignment(
         state,
+        primary,
         rightId,
-        primary.flightNo,
-        primary.position,
-        primary.remark,
         date,
         frequencyFacts
       )
@@ -132,7 +132,11 @@ function targetStaffOrder(
     );
     const priority = assignmentRule(state, primary);
     return (
-      (priority && isPriorityRotationPosition(priority)
+      (priority &&
+      isOrdinaryPriorityPosition(
+        priority,
+        state.settings.ordinaryPriorityPositions
+      )
         ? frequencyDifference || previousLoadDifference
         : previousLoadDifference || frequencyDifference) ||
       leftLoad.historyFatigue - rightLoad.historyFatigue ||

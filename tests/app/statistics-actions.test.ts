@@ -5,6 +5,7 @@ import {
   resetMonthlyLatePriorityFrequencyCounts,
   updateLatePriorityFrequencyAdjustment,
 } from "../../src/app/statistics-actions";
+import { updateOrdinaryPriorityFrequencyAdjustment } from "../../src/app/statistics-actions";
 import { createDefaultState } from "../../src/defaults";
 import {
   buildMonthlyLatePriorityStatistics,
@@ -12,6 +13,44 @@ import {
 } from "../../src/domain/statistics/monthly-late-priority-statistics";
 
 describe("statistics actions", () => {
+  it("writes ordinary重点 manual counts and marks the active schedule stale", () => {
+    const state = createDefaultState();
+    state.activeScheduleDate = "2026-09-20";
+    state.assignments = [
+      {
+        id: "existing",
+        flightId: "f",
+        flightNo: "CA123",
+        positionRuleId: null,
+        position: "柜台 A",
+        staffId: "1",
+        staffName: "张三",
+        startTime: "08:00",
+        endTime: "09:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "CA", position: "柜台 A" },
+    ];
+    state.schedulePolicyStale = false;
+    expect(
+      updateOrdinaryPriorityFrequencyAdjustment(
+        state,
+        "2026-09",
+        "1",
+        "CA",
+        "柜台 A",
+        1
+      )
+    ).toBe(true);
+    expect(state.ordinaryPriorityFrequencyAdjustments).toHaveLength(1);
+    expect(state.schedulePolicyStale).toBe(true);
+  });
   it("imports final counts by replacing existing corrections instead of accumulating", () => {
     const state = createDefaultState();
     state.settings.latePriorityFlightNumbers = ["TR121"];

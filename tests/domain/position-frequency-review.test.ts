@@ -49,6 +49,9 @@ function frequencyState(): {
       qualifiedStaffIds: [first!.id, second!.id],
     },
   ];
+  state.settings.ordinaryPriorityPositions = [
+    { airlineCode: "TEST100", position: "G20" },
+  ];
   state.history = [];
   return { state, first: first!, second: second! };
 }
@@ -145,6 +148,9 @@ describe("priority-position frequency warning", () => {
         remark: "",
         qualifiedStaffIds: [frequent.id, underused.id],
       },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "TR", position: "督导" },
     ];
     state.history = [
       {
@@ -263,6 +269,34 @@ describe("priority-position frequency warning", () => {
           ruleId: "position-frequency-review",
           outcome: "selected",
           message: expect.stringContaining("差距正在改善"),
+        }),
+      ])
+    );
+  });
+
+  it("alarms when a post-stage edit leaves an overused ordinary-priority worker in place", async () => {
+    const { state, first } = frequencyState();
+    state.history = ["2026-08-10", "2026-08-12", "2026-08-14"].map(
+      (date, index) => record(first, date, index)
+    );
+    const edited = assignment(first);
+
+    const warnings = await reviewSamePositionFrequency(
+      defaultHighsSolver,
+      state,
+      [edited],
+      DATE,
+      new Set([edited.id])
+    );
+
+    expect(warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining("本月承担4次")])
+    );
+    expect(edited.decisionTrace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ruleId: "position-frequency-review",
+          outcome: "fallback",
         }),
       ])
     );

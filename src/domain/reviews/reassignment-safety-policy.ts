@@ -21,7 +21,7 @@ import {
 import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
 import {
   isHighFatigueOrdinaryRotationPosition,
-  isPriorityRotationPosition,
+  isOrdinaryPriorityPosition,
 } from "./position-rotation-policy";
 import {
   hasHighLoadTransition,
@@ -164,7 +164,10 @@ export function reassignmentCandidateSafetyReasons({
   const validLatePriorityRelief = Boolean(
     latePriorityFatigueRelief &&
     primaryAssignment.staffId === latePriorityFatigueRelief.repeatedStaffId &&
-    isPriorityRotationPosition(primaryRule) &&
+    isOrdinaryPriorityPosition(
+      primaryRule,
+      state.settings.ordinaryPriorityPositions
+    ) &&
     isLateEndingWork(primaryAssignment, state)
   );
   const recoveryProtectionMayYield = Boolean(
@@ -172,7 +175,10 @@ export function reassignmentCandidateSafetyReasons({
     latePriorityFatigueRelief &&
     ((assignment.id !== primaryAssignment.id &&
       assignment.staffId === latePriorityFatigueRelief.repeatedStaffId &&
-      !isPriorityRotationPosition(rule) &&
+      !isOrdinaryPriorityPosition(
+        rule,
+        state.settings.ordinaryPriorityPositions
+      ) &&
       assignment.fatiguePoints < primaryAssignment.fatiguePoints) ||
       (latePriorityFatigueRelief.allowProtectedReplacement &&
         assignment.id === primaryAssignment.id &&
@@ -182,7 +188,10 @@ export function reassignmentCandidateSafetyReasons({
     (review === "consecutive" ||
       review === "frequency" ||
       review === "late-frequency") &&
-    isPriorityRotationPosition(primaryRule)
+    isOrdinaryPriorityPosition(
+      primaryRule,
+      state.settings.ordinaryPriorityPositions
+    )
   );
   const reasons: string[] = [];
   const flight = state.flights.find((item) => item.id === assignment.flightId);
@@ -289,10 +298,14 @@ export function reassignmentCandidateSafetyReasons({
       frequencyFacts
     );
     const rotationSensitive =
-      isPriorityRotationPosition(rule) ||
+      isOrdinaryPriorityPosition(
+        rule,
+        state.settings.ordinaryPriorityPositions
+      ) ||
       isHighFatigueOrdinaryRotationPosition(
         rule,
-        state.settings.highLoadFatigueThreshold
+        state.settings.highLoadFatigueThreshold,
+        state.settings.ordinaryPriorityPositions
       );
     const transfersConsecutiveProblem =
       policy.consecutive === "improve-primary" &&
@@ -347,7 +360,10 @@ export function reassignmentCandidateSafetyReasons({
     }
   } else if (
     policy.frequency === "preserve-priority" &&
-    isPriorityRotationPosition(rule) &&
+    isOrdinaryPriorityPosition(
+      rule,
+      state.settings.ordinaryPriorityPositions
+    ) &&
     originalAssignment.staffId
   ) {
     const frequencyBefore = positionFrequencyProfileForAssignment(
@@ -423,7 +439,10 @@ export function reassignmentDynamicSafetyReasons({
     (review === "consecutive" ||
       review === "frequency" ||
       review === "late-frequency") &&
-    isPriorityRotationPosition(primaryRule)
+    isOrdinaryPriorityPosition(
+      primaryRule,
+      state.settings.ordinaryPriorityPositions
+    )
   )
     return reasons;
   if (

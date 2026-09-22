@@ -10,6 +10,8 @@ import { createDefaultScheduleSettings } from "./domain/rules/schedule-settings"
 import { latePriorityFlightScopeCandidates } from "./domain/statistics/late-priority-flight-scope";
 import { createEmptyWeeklyFlightPlans } from "./domain/flights/weekly-flight-plan";
 import { orderPositionRules } from "./utils";
+import { isPriorityRotationPosition } from "./domain/reviews/position-rotation-policy";
+import { airlineCode } from "./domain/rules/airline-rotation";
 
 const allRegular = Array.from({ length: 17 }, (_, index) => String(index + 2));
 
@@ -195,6 +197,17 @@ export function createDefaultState(): AppState {
     structuredClone(defaultPositionRules)
   );
   const settings = createDefaultScheduleSettings();
+  settings.ordinaryPriorityPositions = [
+    ...new Map(
+      positionRules.filter(isPriorityRotationPosition).map((rule) => [
+        `${airlineCode(rule.flightNo)}\u0000${rule.name.trim()}`,
+        {
+          airlineCode: airlineCode(rule.flightNo),
+          position: rule.name.trim(),
+        },
+      ])
+    ).values(),
+  ];
   settings.latePriorityFlightNumbers =
     latePriorityFlightScopeCandidates(positionRules);
   const staff = structuredClone(defaultStaff);
@@ -218,6 +231,7 @@ export function createDefaultState(): AppState {
     history: [],
     dutyRosterOverrides: [],
     latePriorityFrequencyAdjustments: [],
+    ordinaryPriorityFrequencyAdjustments: [],
     assignments: [],
     activeScheduleDate: null,
     schedulePolicyStale: false,
@@ -228,12 +242,13 @@ export function createDefaultState(): AppState {
     history: [],
     dutyRosterOverrides: [],
     latePriorityFrequencyAdjustments: [],
+    ordinaryPriorityFrequencyAdjustments: [],
     assignments: [],
     activeScheduleDate: null,
     schedulePolicyStale: false,
   };
   return {
-    version: 7,
+    version: 8,
     shared,
     groups: { A: groupA, B: groupB },
     activeGroupId: "A",
@@ -245,6 +260,8 @@ export function createDefaultState(): AppState {
     history: groupA.history,
     dutyRosterOverrides: groupA.dutyRosterOverrides,
     latePriorityFrequencyAdjustments: groupA.latePriorityFrequencyAdjustments,
+    ordinaryPriorityFrequencyAdjustments:
+      groupA.ordinaryPriorityFrequencyAdjustments,
     assignments: groupA.assignments,
     activeScheduleDate: groupA.activeScheduleDate,
     schedulePolicyStale: groupA.schedulePolicyStale,

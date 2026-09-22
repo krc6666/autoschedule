@@ -38,7 +38,7 @@ import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import {
   isHighFatigueOrdinaryRotationPosition,
-  isPriorityRotationPosition,
+  isOrdinaryPriorityPosition,
 } from "../reviews/position-rotation-policy";
 import { intervalsOverlap } from "../shared/time";
 import { isKe166MobileSupervisor } from "../flights/schedule-tasks";
@@ -435,7 +435,10 @@ export function buildCandidatePriority(
       state,
       "prefer"
     ),
-    scarceQualification: isPriorityRotationPosition(rule)
+    scarceQualification: isOrdinaryPriorityPosition(
+      rule,
+      state.settings.ordinaryPriorityPositions
+    )
       ? priorityPositionScarceQualification(
           person,
           task,
@@ -477,7 +480,10 @@ export function buildCandidatePriority(
       runFacts.crossDayRecovery
     ),
     repeatedPriorityPosition:
-      isPriorityRotationPosition(rule) &&
+      isOrdinaryPriorityPosition(
+        rule,
+        state.settings.ordinaryPriorityPositions
+      ) &&
       consecutivePositionAssignments(
         state,
         person.id,
@@ -490,7 +496,8 @@ export function buildCandidatePriority(
     repeatedHighFatiguePosition:
       isHighFatigueOrdinaryRotationPosition(
         rule,
-        state.settings.highLoadFatigueThreshold
+        state.settings.highLoadFatigueThreshold,
+        state.settings.ordinaryPriorityPositions
       ) &&
       consecutivePositionAssignments(
         state,

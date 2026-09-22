@@ -20,7 +20,7 @@ import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
 import type { HalfRestFacts } from "../rules/half-rest";
 import { halfRestPeriodViolation } from "../rules/half-rest";
 import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
-import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
+import { isOrdinaryPriorityPosition } from "../reviews/position-rotation-policy";
 
 export function preNoonShortageNote(
   state: ScheduleGenerationFacts,
@@ -294,7 +294,10 @@ export function compactRegularAssignments(
       .filter((placement): placement is RegularPlacement => Boolean(placement));
     const canPlace = (placement: RegularPlacement, slot: RegularSlot) => {
       if (
-        isPriorityRotationPosition(placement.sourceRule) &&
+        isOrdinaryPriorityPosition(
+          placement.sourceRule,
+          state.settings.ordinaryPriorityPositions
+        ) &&
         placement.sourceAssignment.id !== slot.assignment.id
       )
         return false;

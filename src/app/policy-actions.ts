@@ -1,4 +1,9 @@
 import type { AppState } from "../model";
+import { markActiveScheduleStale } from "../domain/kernel/schedule-lifecycle";
+import {
+  normalizeOrdinaryPriorityPositions,
+  ordinaryPriorityPositionKey,
+} from "../domain/reviews/position-rotation-policy";
 import type {
   CrossWorkdayQualificationReservation,
   CrossFlightPriorityPolicy,
@@ -8,7 +13,6 @@ import type {
   SameFlightStaffExclusion,
 } from "../domain/rules/structured-policy-contract";
 import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
-import { markActiveScheduleStale } from "../domain/kernel/schedule-lifecycle";
 import { createId, normalizeText, splitList } from "../utils";
 import {
   appendPolicyItem,
@@ -72,6 +76,58 @@ export function applySchedulePolicy(
 ): boolean {
   state.settings = applyScheduleSettingsPatch(state.settings, input);
   return markActiveScheduleStale(state);
+}
+
+export function addOrdinaryPriorityPosition(state: AppState): void {
+  const first = state.positionRules.find((rule) => rule.category === "常规");
+  if (!first) return;
+  const item = {
+    airlineCode: first.flightNo
+      .trim()
+      .toUpperCase()
+      .replace(/\d+.*$/, ""),
+    position: first.name.trim(),
+  };
+  state.settings.ordinaryPriorityPositions = normalizeOrdinaryPriorityPositions(
+    [...state.settings.ordinaryPriorityPositions, item]
+  );
+  markActiveScheduleStale(state);
+}
+
+export function deleteOrdinaryPriorityPosition(
+  state: AppState,
+  airlineCode: string,
+  position: string
+): boolean {
+  const before = state.settings.ordinaryPriorityPositions.length;
+  state.settings.ordinaryPriorityPositions =
+    state.settings.ordinaryPriorityPositions.filter(
+      (item) =>
+        ordinaryPriorityPositionKey(
+          `${item.airlineCode}0`,
+          item.position,
+          ""
+        ) !== ordinaryPriorityPositionKey(`${airlineCode}0`, position, "")
+    );
+  if (state.settings.ordinaryPriorityPositions.length === before) return false;
+  markActiveScheduleStale(state);
+  return true;
+}
+
+export function updateOrdinaryPriorityPosition(
+  state: AppState,
+  index: number,
+  field: "airlineCode" | "position",
+  value: string
+): boolean {
+  const item = state.settings.ordinaryPriorityPositions[index];
+  if (!item) return false;
+  item[field] = value.trim() as never;
+  state.settings.ordinaryPriorityPositions = normalizeOrdinaryPriorityPositions(
+    state.settings.ordinaryPriorityPositions
+  );
+  markActiveScheduleStale(state);
+  return true;
 }
 
 export function addSameFlightStaffExclusion(

@@ -22,6 +22,7 @@ import {
   applyLatePriorityCountsImport,
   resetMonthlyLatePriorityFrequencyCounts,
   updateLatePriorityFrequencyAdjustment,
+  updateOrdinaryPriorityFrequencyAdjustment,
 } from "../statistics-actions";
 import type { LatePriorityCountsImportPreview } from "../../infrastructure/late-priority-counts-excel";
 
@@ -56,6 +57,23 @@ export function createRecordsCommands(command: StateCommand) {
       ),
     resetMonthlyLatePriorityFrequencyCounts: (date: string) =>
       command((state) => resetMonthlyLatePriorityFrequencyCounts(state, date)),
+    adjustOrdinaryPriorityFrequency: (
+      month: string,
+      staffId: string,
+      airlineCode: string,
+      position: string,
+      delta: number
+    ) =>
+      command((state) =>
+        updateOrdinaryPriorityFrequencyAdjustment(
+          state,
+          month,
+          staffId,
+          airlineCode,
+          position,
+          delta
+        )
+      ),
     applyLatePriorityCountsImport: (preview: LatePriorityCountsImportPreview) =>
       command((state) => applyLatePriorityCountsImport(state, preview)),
     applyDutyRosterImport: (preview: DutyRosterImportPreview) =>

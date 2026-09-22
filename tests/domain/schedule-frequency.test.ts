@@ -5,6 +5,7 @@ import type { HistoryRecord } from "../../src/model";
 import {
   consecutivePositionAssignments,
   createScheduleFrequencyFacts,
+  positionFrequencyProfileForRule,
   samePositionFrequencyProfile,
 } from "../../src/domain/statistics/schedule-frequency";
 
@@ -32,6 +33,64 @@ function historyRecord(
 }
 
 describe("schedule frequency facts", () => {
+  it("uses the ordinary重点集合 and manual ledger across flights of one airline", () => {
+    const state = createDefaultState();
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "CA", position: "柜台 A" },
+    ];
+    state.history = [
+      historyRecord("zhang", "2026-09-01", "zhang", "CA123", "柜台 A"),
+    ];
+    state.ordinaryPriorityFrequencyAdjustments = [
+      {
+        month: "2026-09",
+        staffId: "zhang",
+        airlineCode: "CA",
+        position: "柜台 A",
+        delta: 1,
+      },
+    ];
+    const rule = {
+      category: "常规" as const,
+      name: "柜台 A",
+      remark: "一号",
+      flightNo: "CA456",
+    };
+
+    expect(
+      positionFrequencyProfileForRule(
+        state,
+        "zhang",
+        "CA456",
+        rule,
+        "2026-09-20"
+      )
+    ).toMatchObject({ currentMonthCount: 2 });
+    expect(
+      positionFrequencyProfileForRule(state, "li", "CA456", rule, "2026-09-20")
+    ).toMatchObject({ currentMonthCount: 0 });
+  });
+
+  it("does not treat a keyword-only position outside the collection as priority", () => {
+    const state = createDefaultState();
+    state.settings.ordinaryPriorityPositions = [];
+    const rule = {
+      category: "常规" as const,
+      name: "H02",
+      remark: "一号",
+      flightNo: "CA123",
+    };
+    expect(
+      positionFrequencyProfileForRule(
+        state,
+        "zhang",
+        "CA123",
+        rule,
+        "2026-09-20"
+      )
+    ).toEqual({ currentMonthCount: 0, recentWorkdayCount: 0 });
+  });
+
   it("preserves consecutive and frequency results when history is indexed", () => {
     const state = createDefaultState();
     state.history = [

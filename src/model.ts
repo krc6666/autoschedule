@@ -124,6 +124,20 @@ export interface LatePriorityFrequencyAdjustment {
   resetBaseline?: number;
 }
 
+export interface OrdinaryPriorityPosition {
+  airlineCode: string;
+  position: string;
+}
+
+export interface OrdinaryPriorityFrequencyAdjustment {
+  month: string;
+  staffId: string;
+  airlineCode: string;
+  position: string;
+  delta: number;
+  resetBaseline?: number;
+}
+
 export interface ScheduleSettings {
   sameFlightStaffExclusions: SameFlightStaffExclusion[];
   maxDailyHours: number;
@@ -142,6 +156,7 @@ export interface ScheduleSettings {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
+  ordinaryPriorityPositions: OrdinaryPriorityPosition[];
   tr121H02CooldownWorkdays: number;
   latePriorityFlightNumbers: string[];
   lateShiftRecoveryEnabled: boolean;
@@ -180,6 +195,7 @@ export interface GroupWorkspace {
   history: HistoryRecord[];
   dutyRosterOverrides: DutyRosterOverride[];
   latePriorityFrequencyAdjustments: LatePriorityFrequencyAdjustment[];
+  ordinaryPriorityFrequencyAdjustments: OrdinaryPriorityFrequencyAdjustment[];
   assignments: Assignment[];
   activeScheduleDate: string | null;
   schedulePolicyStale: boolean;
@@ -189,7 +205,7 @@ export interface GroupWorkspace {
 export type GroupWorkspaces = Record<ScheduleGroupId, GroupWorkspace>;
 
 export interface AppState {
-  version: 7;
+  version: 8;
   /** Shared configuration and the two isolated group workspaces. */
   shared: SharedScheduleData;
   groups: GroupWorkspaces;
@@ -206,6 +222,7 @@ export interface AppState {
   history: HistoryRecord[];
   dutyRosterOverrides: DutyRosterOverride[];
   latePriorityFrequencyAdjustments: LatePriorityFrequencyAdjustment[];
+  ordinaryPriorityFrequencyAdjustments: OrdinaryPriorityFrequencyAdjustment[];
   assignments: Assignment[];
   activeScheduleDate: string | null;
   schedulePolicyStale: boolean;

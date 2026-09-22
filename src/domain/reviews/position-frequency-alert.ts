@@ -1,12 +1,13 @@
-import type { Assignment, HistoryRecord, Staff } from "../../model";
+import type { Assignment, Staff } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { eligibleStaffForRule } from "../candidates/assignment-eligibility";
 import { assignmentRule } from "../flights/schedule-position-rules";
-import { recentArchivedWorkdays } from "../statistics/fatigue";
-import { normalizedPolicyValue } from "./schedule-protection";
+import {
+  createScheduleFrequencyFacts,
+  positionFrequencyProfileForAssignment,
+} from "../statistics/schedule-frequency";
 
 export const POSITION_FREQUENCY_ALERT_WORKDAY_COUNT = 8;
-const ARCHIVED_ALERT_WORKDAY_COUNT = POSITION_FREQUENCY_ALERT_WORKDAY_COUNT - 1;
 const FREQUENCY_ALERT_DIFFERENCE = 2;
 const SOLE_QUALIFIED_HIGH_FREQUENCY_COUNT = 3;
 
@@ -25,15 +26,6 @@ export interface PositionFrequencyAlertAssessment {
   soleQualified: boolean;
 }
 
-function samePosition(record: HistoryRecord, assignment: Assignment): boolean {
-  return (
-    normalizedPolicyValue(record.flightNo) ===
-      normalizedPolicyValue(assignment.flightNo) &&
-    normalizedPolicyValue(record.position) ===
-      normalizedPolicyValue(assignment.position)
-  );
-}
-
 function spread(values: readonly number[]): number {
   return values.length ? Math.max(...values) - Math.min(...values) : 0;
 }
@@ -50,29 +42,20 @@ export function assessPositionFrequencyAlert(
   if (!eligibleStaff.some((person) => person.id === assignment.staffId))
     return null;
 
-  const recentDates = new Set(
-    recentArchivedWorkdays(
-      state.history,
-      date,
-      ARCHIVED_ALERT_WORKDAY_COUNT
-    ).map((record) => record.date)
-  );
-  const currentMonth = /^\d{4}-\d{2}/.exec(date)?.[0] ?? "";
-  const matchingHistory = state.history.filter(
-    (record) => record.date < date && samePosition(record, assignment)
-  );
+  const frequencyFacts = createScheduleFrequencyFacts(state, date);
   const counts = eligibleStaff.map((person) => {
-    const records = matchingHistory.filter(
-      (record) => record.staffId === person.id
+    const profile = positionFrequencyProfileForAssignment(
+      state,
+      assignment,
+      person.id,
+      date,
+      frequencyFacts
     );
     const current = person.id === assignment.staffId ? 1 : 0;
     return {
       person,
-      monthBefore: records.filter((record) =>
-        record.date.startsWith(currentMonth)
-      ).length,
-      recentBefore: records.filter((record) => recentDates.has(record.date))
-        .length,
+      monthBefore: profile.currentMonthCount,
+      recentBefore: profile.recentWorkdayCount,
       current,
     };
   });

@@ -6,6 +6,7 @@ import type {
   FlightTemplate,
   HistoryRecord,
   LatePriorityFrequencyAdjustment,
+  OrdinaryPriorityFrequencyAdjustment,
   PositionRule,
   ScheduleSettings,
   Staff,
@@ -23,6 +24,7 @@ export interface SchedulingFacts {
   history: HistoryRecord[];
   dutyRosterOverrides: DutyRosterOverride[];
   latePriorityFrequencyAdjustments: LatePriorityFrequencyAdjustment[];
+  ordinaryPriorityFrequencyAdjustments?: OrdinaryPriorityFrequencyAdjustment[];
   assignments: Assignment[];
   settings: ScheduleSettings;
   activeScheduleDate: string | null;
@@ -37,6 +39,7 @@ export type ScheduleGenerationFacts = Pick<
   | "history"
   | "dutyRosterOverrides"
   | "latePriorityFrequencyAdjustments"
+  | "ordinaryPriorityFrequencyAdjustments"
   | "assignments"
   | "settings"
 >;
@@ -58,12 +61,15 @@ export type FlightRuleFacts = Pick<
 
 export type HistoryRuleFacts = Pick<
   ScheduleGenerationFacts,
-  "history" | "settings"
+  "history" | "settings" | "ordinaryPriorityFrequencyAdjustments"
 >;
 
 export type PositionFrequencyFacts = Pick<
   ScheduleGenerationFacts,
-  "history" | "positionRules" | "settings"
+  | "history"
+  | "positionRules"
+  | "settings"
+  | "ordinaryPriorityFrequencyAdjustments"
 >;
 
 export type ScheduleSettingsFacts = Pick<ScheduleGenerationFacts, "settings">;
@@ -104,6 +110,7 @@ export function createScheduleGenerationFacts(
     | "history"
     | "dutyRosterOverrides"
     | "latePriorityFrequencyAdjustments"
+    | "ordinaryPriorityFrequencyAdjustments"
     | "assignments"
     | "settings"
   >
@@ -116,6 +123,8 @@ export function createScheduleGenerationFacts(
     history: state.history,
     dutyRosterOverrides: state.dutyRosterOverrides,
     latePriorityFrequencyAdjustments: state.latePriorityFrequencyAdjustments,
+    ordinaryPriorityFrequencyAdjustments:
+      state.ordinaryPriorityFrequencyAdjustments,
     assignments: state.assignments,
     settings: state.settings,
   };
@@ -131,6 +140,7 @@ export function createSchedulingFacts(
     | "history"
     | "dutyRosterOverrides"
     | "latePriorityFrequencyAdjustments"
+    | "ordinaryPriorityFrequencyAdjustments"
     | "assignments"
     | "settings"
     | "activeScheduleDate"

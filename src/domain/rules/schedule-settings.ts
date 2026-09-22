@@ -16,6 +16,7 @@ export type ScalarScheduleSettingKey = Exclude<
   | "crossWorkdayQualificationReservations"
   | "crossFlightPriorityPolicies"
   | "latePriorityFlightNumbers"
+  | "ordinaryPriorityPositions"
   | "sameFlightStaffExclusions"
 >;
 
@@ -261,6 +262,7 @@ function scalarDefaults(): Omit<
   | "crossWorkdayQualificationReservations"
   | "crossFlightPriorityPolicies"
   | "latePriorityFlightNumbers"
+  | "ordinaryPriorityPositions"
   | "sameFlightStaffExclusions"
 > {
   return Object.fromEntries(
@@ -276,6 +278,7 @@ export function createDefaultScheduleSettings(): ScheduleSettings {
     ...scalarDefaults(),
     adminSupportEnabled: false,
     latePriorityFlightNumbers: [],
+    ordinaryPriorityPositions: [],
     ...createDefaultStructuredPolicies(),
   });
 }
@@ -324,6 +327,19 @@ export function normalizeScheduleSettings(
       ? input.latePriorityFlightNumbers
       : fallback.latePriorityFlightNumbers
   );
+  result.ordinaryPriorityPositions = Array.isArray(
+    input.ordinaryPriorityPositions
+  )
+    ? input.ordinaryPriorityPositions
+        .filter((item) => item && typeof item === "object")
+        .map((item) => ({
+          airlineCode: String(item.airlineCode ?? "")
+            .trim()
+            .toUpperCase(),
+          position: String(item.position ?? "").trim(),
+        }))
+        .filter((item) => item.airlineCode && item.position)
+    : structuredClone(fallback.ordinaryPriorityPositions);
   Object.assign(result, normalizeStructuredPolicies(input, fallback));
   return result;
 }

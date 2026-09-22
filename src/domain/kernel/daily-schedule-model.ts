@@ -42,7 +42,7 @@ import {
 } from "../reviews/workload-balance";
 import {
   isDutyReliefPriorityPosition,
-  isPriorityRotationPosition,
+  isOrdinaryPriorityPosition,
 } from "../reviews/position-rotation-policy";
 import { LATE_PRIORITY_FREQUENCY_ORDER } from "../reviews/late-priority-policy";
 import {
@@ -1529,7 +1529,10 @@ export function buildDailyScheduleModel({
         variableId: choice.id,
         coefficient:
           isPreNoonFlight(choice.task.flight) &&
-          isPriorityRotationPosition(choice.task.rule)
+          isOrdinaryPriorityPosition(
+            choice.task.rule,
+            state.settings.ordinaryPriorityPositions
+          )
             ? 1
             : 0,
       })),

@@ -20,6 +20,9 @@ import {
   moveCrossWorkdayQualificationReservation,
   moveCrossFlightPriorityPolicy,
   updatePolicyEntityField,
+  addOrdinaryPriorityPosition,
+  deleteOrdinaryPriorityPosition,
+  updateOrdinaryPriorityPosition,
   type PolicyValue,
   type SchedulePolicyInput,
 } from "../policy-actions";
@@ -70,6 +73,19 @@ export function createPolicyCommands(command: StateCommand) {
     ) =>
       command((state) =>
         updatePolicyEntityField(state, entity, id, field, value)
+      ),
+    addOrdinaryPriorityPosition: () => command(addOrdinaryPriorityPosition),
+    deleteOrdinaryPriorityPosition: (airlineCode: string, position: string) =>
+      command((state) =>
+        deleteOrdinaryPriorityPosition(state, airlineCode, position)
+      ),
+    updateOrdinaryPriorityPosition: (
+      index: number,
+      field: "airlineCode" | "position",
+      value: string
+    ) =>
+      command((state) =>
+        updateOrdinaryPriorityPosition(state, index, field, value)
       ),
   };
 }

@@ -62,6 +62,8 @@ function reconcileInitialProjection(model: AppState): void {
   active.dutyRosterOverrides = model.dutyRosterOverrides;
   active.latePriorityFrequencyAdjustments =
     model.latePriorityFrequencyAdjustments;
+  active.ordinaryPriorityFrequencyAdjustments =
+    model.ordinaryPriorityFrequencyAdjustments;
   active.assignments = model.assignments;
   active.activeScheduleDate = model.activeScheduleDate;
   active.schedulePolicyStale = model.schedulePolicyStale;
@@ -82,6 +84,8 @@ function syncActiveGroupProjection(model: AppState): void {
   group.dutyRosterOverrides = model.dutyRosterOverrides;
   group.latePriorityFrequencyAdjustments =
     model.latePriorityFrequencyAdjustments;
+  group.ordinaryPriorityFrequencyAdjustments =
+    model.ordinaryPriorityFrequencyAdjustments;
   group.assignments = model.assignments;
   group.activeScheduleDate = model.activeScheduleDate;
   group.schedulePolicyStale = model.schedulePolicyStale;
@@ -102,6 +106,8 @@ function activateGroupProjection(
   model.dutyRosterOverrides = group.dutyRosterOverrides;
   model.latePriorityFrequencyAdjustments =
     group.latePriorityFrequencyAdjustments;
+  model.ordinaryPriorityFrequencyAdjustments =
+    group.ordinaryPriorityFrequencyAdjustments;
   model.assignments = group.assignments;
   model.activeScheduleDate = group.activeScheduleDate;
   model.schedulePolicyStale = group.schedulePolicyStale;

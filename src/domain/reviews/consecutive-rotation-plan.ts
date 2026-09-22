@@ -1,6 +1,6 @@
 import type { Assignment, Staff } from "../../model";
 import { isLateEndingWork } from "./cross-day-recovery";
-import { isPriorityRotationPosition } from "./position-rotation-policy";
+import { isOrdinaryPriorityPosition } from "./position-rotation-policy";
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { diagnoseSameAirlinePriorityEligibility } from "../candidates/assignment-eligibility";
 import {
@@ -99,7 +99,10 @@ function usesFatigueRelief(
       change.staffId === originalStaffId &&
       assignment.id !== primary.id &&
       rule &&
-      !isPriorityRotationPosition(rule) &&
+      !isOrdinaryPriorityPosition(
+        rule,
+        state.settings.ordinaryPriorityPositions
+      ) &&
       assignment.fatiguePoints < primary.fatiguePoints
     );
   });
@@ -157,7 +160,10 @@ export async function findConsecutiveRotationPlan({
     return {
       plan: null,
       attemptedReasons: [
-        isPriorityRotationPosition(primaryRule)
+        isOrdinaryPriorityPosition(
+          primaryRule,
+          state.settings.ordinaryPriorityPositions
+        )
           ? "没有满足同航司重点岗位互斥且能降低连续次数的替代人员"
           : "唯一合格人员或没有可安全接替的人员",
       ],
@@ -165,7 +171,10 @@ export async function findConsecutiveRotationPlan({
     };
   }
   const latePriorityReliefApplies =
-    isPriorityRotationPosition(primaryRule) && isLateEndingWork(primary, state);
+    isOrdinaryPriorityPosition(
+      primaryRule,
+      state.settings.ordinaryPriorityPositions
+    ) && isLateEndingWork(primary, state);
   const run = async (
     allowFatigueRelief: boolean,
     allowProtectedReplacement: boolean

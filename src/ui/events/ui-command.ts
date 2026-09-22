@@ -25,6 +25,26 @@ export type UiCommand =
   | { type: "export-config" }
   | { type: "export-late-priority-counts"; date: string }
   | { type: "apply-late-priority-counts-import" }
+  | { type: "add-ordinary-priority-position" }
+  | {
+      type: "delete-ordinary-priority-position";
+      airlineCode: string;
+      position: string;
+    }
+  | {
+      type: "update-ordinary-priority-position";
+      index: number;
+      field: "airlineCode" | "position";
+      value: string;
+    }
+  | {
+      type: "adjust-ordinary-priority-frequency";
+      month: string;
+      staffId: string;
+      airlineCode: string;
+      position: string;
+      delta: number;
+    }
   | { type: "export-schedule" }
   | { type: "export-share-html" }
   | { type: "export-share-png" }

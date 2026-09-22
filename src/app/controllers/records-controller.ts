@@ -217,6 +217,18 @@ export class RecordsController implements UiCommandController {
         )
           this.context.commit();
         return true;
+      case "adjust-ordinary-priority-frequency":
+        if (
+          records.adjustOrdinaryPriorityFrequency(
+            command.month,
+            command.staffId,
+            command.airlineCode,
+            command.position,
+            command.delta
+          )
+        )
+          this.context.commit();
+        return true;
       case "reset-monthly-late-priority-frequency-counts":
         if (
           this.context.confirm(

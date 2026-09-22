@@ -27,6 +27,29 @@ export class PolicyController implements UiCommandController {
         )
           this.context.commit();
         return true;
+      case "add-ordinary-priority-position":
+        policy.addOrdinaryPriorityPosition();
+        this.context.commit("普通重点岗位已新增");
+        return true;
+      case "delete-ordinary-priority-position":
+        if (
+          policy.deleteOrdinaryPriorityPosition(
+            command.airlineCode,
+            command.position
+          )
+        )
+          this.context.commit("普通重点岗位已删除");
+        return true;
+      case "update-ordinary-priority-position":
+        if (
+          policy.updateOrdinaryPriorityPosition(
+            command.index,
+            command.field,
+            command.value
+          )
+        )
+          this.context.commit("普通重点岗位已更新");
+        return true;
       case "add-policy-item":
         if (command.collection === "same-flight-staff-exclusion")
           policy.addSameFlightStaffExclusion();

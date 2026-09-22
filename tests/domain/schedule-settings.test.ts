@@ -21,6 +21,7 @@ describe("schedule settings module", () => {
       "crossFlightPriorityPolicies",
       "sameFlightStaffExclusions",
       "latePriorityFlightNumbers",
+      "ordinaryPriorityPositions",
     ]);
     const scalarKeys = Object.keys(createDefaultScheduleSettings())
       .filter((key) => !complexKeys.has(key))

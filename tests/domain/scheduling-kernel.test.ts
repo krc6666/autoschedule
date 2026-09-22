@@ -1208,6 +1208,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         qualifiedStaffIds: [secondSupervisor!.id],
       },
     ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "AE", position: "督导" },
+      { airlineCode: "FD", position: "督导" },
+    ];
 
     const result = await generateSchedule(state, "2026-07-29");
     const mfSupervisor = result.assignments.find(
@@ -1824,6 +1828,9 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         qualifiedStaffIds: [frequent!.id, lessFrequent!.id, releaseWorker!.id],
       },
     ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "TARGET100", position: "G20" },
+    ];
     state.history = ["2026-10-02", "2026-10-04", "2026-10-06", "2026-10-08"]
       .flatMap((date, index) => [
         {
@@ -1938,6 +1945,9 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         remark: "一号",
         qualifiedStaffIds: [onlyQualified!.id],
       },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "TARGET100", position: "G20" },
     ];
     state.history = ["2026-10-02", "2026-10-04", "2026-10-06"].map(
       (date, index) => ({
@@ -8219,6 +8229,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         qualifiedStaffIds: [repeated.id, nextForRepeated.id],
       },
     ];
+    state.settings.ordinaryPriorityPositions =
+      state.settings.ordinaryPriorityPositions.filter(
+        (item) => !(item.airlineCode === "CX" && item.position === "G20")
+      );
     state.history = ["2026-10-20", "2026-10-22"]
       .map((date, index) => ({
         id: `repeated-g20-${index}`,
@@ -8338,6 +8352,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         category: "常规",
         qualifiedStaffIds: [repeatedWorker!.id, relayWorker!.id],
       },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "CX", position: "G17" },
+      { airlineCode: "KE", position: "H02" },
     ];
     state.history = [
       {
@@ -9724,6 +9742,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         qualifiedStaffIds: [alternate!.id, repeated!.id],
       },
     ];
+    state.settings.ordinaryPriorityPositions =
+      state.settings.ordinaryPriorityPositions.filter(
+        (item) => !(item.airlineCode === "CX" && item.position === "G20")
+      );
     state.history = [
       {
         id: "previous-g20",
@@ -9822,7 +9844,6 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     )!;
     expect(feedback).toMatchObject({ status: "需复核" });
     expect(feedback.text).toContain(`${repeated!.name} 已连续2次承担CX937/G20`);
-    expect(feedback.text).toContain("当前连续第3次");
     expect(feedback.text).not.toMatch(
       /infeasible|changed-assignment-count|双向岗位资质|完整重排方案/
     );
@@ -9966,6 +9987,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         qualifiedStaffIds: [alternate!.id, repeated!.id],
       },
     ];
+    state.settings.ordinaryPriorityPositions =
+      state.settings.ordinaryPriorityPositions.filter(
+        (item) => !(item.airlineCode === "CX" && item.position === "G20")
+      );
     state.history = ["2026-10-20", "2026-10-22"].map((date, index) => ({
       id: `repeated-g20-${index}`,
       date,

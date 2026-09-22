@@ -7,6 +7,8 @@ import {
 import { buildMonthlyLatePriorityStatistics } from "../domain/statistics/monthly-late-priority-statistics";
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
 import type { AppState } from "../model";
+import { mergeOrdinaryPriorityFrequencyAdjustments } from "../domain/statistics/ordinary-priority-frequency-adjustment";
+import { ordinaryPriorityPositionKey } from "../domain/reviews/position-rotation-policy";
 import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
 
 function normalizedFlightNo(flightNo: string): string {
@@ -210,6 +212,48 @@ export function resetMonthlyLatePriorityFrequencyCounts(
     mergeLatePriorityFrequencyAdjustments([...preserved, ...resetAdjustments]);
   if (JSON.stringify(state.latePriorityFrequencyAdjustments) === before)
     return false;
+  markActiveScheduleStale(state);
+  return true;
+}
+
+export function updateOrdinaryPriorityFrequencyAdjustment(
+  state: AppState,
+  month: string,
+  staffId: string,
+  airlineCode: string,
+  position: string,
+  delta: number
+): boolean {
+  const normalizedDelta = Math.trunc(delta);
+  if (!normalizedDelta || !/^\d{4}-\d{2}$/.test(month)) return false;
+  const key = ordinaryPriorityPositionKey(`${airlineCode}0`, position, "");
+  const configured = state.settings.ordinaryPriorityPositions.some(
+    (item) =>
+      ordinaryPriorityPositionKey(`${item.airlineCode}0`, item.position, "") ===
+      key
+  );
+  if (!configured || !state.staff.some((person) => person.id === staffId))
+    return false;
+  const existing = state.ordinaryPriorityFrequencyAdjustments.find(
+    (item) =>
+      item.month === month &&
+      item.staffId === staffId &&
+      ordinaryPriorityPositionKey(`${item.airlineCode}0`, item.position, "") ===
+        key
+  );
+  if (existing) existing.delta += normalizedDelta;
+  else
+    state.ordinaryPriorityFrequencyAdjustments.push({
+      month,
+      staffId,
+      airlineCode: airlineCode.trim().toUpperCase(),
+      position: position.trim(),
+      delta: normalizedDelta,
+    });
+  state.ordinaryPriorityFrequencyAdjustments =
+    mergeOrdinaryPriorityFrequencyAdjustments(
+      state.ordinaryPriorityFrequencyAdjustments
+    );
   markActiveScheduleStale(state);
   return true;
 }

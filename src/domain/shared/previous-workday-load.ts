@@ -5,7 +5,7 @@ import type {
   PreviousWorkdayLoad,
   PreviousWorkdayLoadFacts,
 } from "./previous-workday-load-model";
-import { isPriorityRotationPosition } from "../reviews/position-rotation-policy";
+import { isOrdinaryPriorityPosition } from "../reviews/position-rotation-policy";
 import { timeToMinutes } from "./time";
 
 export type {
@@ -47,11 +47,15 @@ export function createPreviousWorkdayLoadFacts(
     if (record.historyCoverage !== "late-priority-only")
       current.workHours += record.workHours;
     if (
-      isPriorityRotationPosition({
-        category: "常规",
-        name: record.position,
-        remark: record.remark,
-      })
+      isOrdinaryPriorityPosition(
+        {
+          category: "常规",
+          flightNo: record.flightNo,
+          name: record.position,
+          remark: record.remark,
+        },
+        state.settings.ordinaryPriorityPositions
+      )
     ) {
       current.priorityPositionCount += 1;
     }

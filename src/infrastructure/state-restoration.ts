@@ -10,6 +10,7 @@ import type {
   GroupWorkspace,
   HistoryRecord,
   LatePriorityFrequencyAdjustment,
+  OrdinaryPriorityFrequencyAdjustment,
   PositionRule,
   ScheduleSettings,
   SharedScheduleData,
@@ -33,11 +34,17 @@ import {
   replaceWeeklyFlightPlan,
 } from "../domain/flights/weekly-flight-plan";
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
+import { mergeOrdinaryPriorityFrequencyAdjustments } from "../domain/statistics/ordinary-priority-frequency-adjustment";
+import {
+  isPriorityRotationPosition,
+  normalizeOrdinaryPriorityPositions,
+} from "../domain/reviews/position-rotation-policy";
+import { airlineCode } from "../domain/rules/airline-rotation";
 import { scheduleRuleFingerprint } from "../domain/rules/schedule-rule-fingerprint";
 
 type PersistedSettings = Partial<ScheduleSettings>;
 type PersistedAppState = Record<string, unknown> & {
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 };
 
 const LATE_PRIORITY_KINDS = new Set([
@@ -83,6 +90,41 @@ function restoreLatePriorityFrequencyAdjustments(
   );
 }
 
+function restoreOrdinaryPriorityFrequencyAdjustments(
+  value: unknown
+): OrdinaryPriorityFrequencyAdjustment[] {
+  if (!Array.isArray(value)) return [];
+  return mergeOrdinaryPriorityFrequencyAdjustments(
+    value.flatMap((item): OrdinaryPriorityFrequencyAdjustment[] => {
+      if (
+        !isRecord(item) ||
+        !/^\d{4}-\d{2}$/.test(String(item.month)) ||
+        typeof item.staffId !== "string" ||
+        typeof item.airlineCode !== "string" ||
+        typeof item.position !== "string" ||
+        typeof item.delta !== "number" ||
+        !Number.isFinite(item.delta)
+      )
+        return [];
+      return [
+        {
+          month: String(item.month),
+          staffId: item.staffId,
+          airlineCode: item.airlineCode,
+          position: item.position,
+          delta: Math.trunc(item.delta),
+          resetBaseline:
+            typeof item.resetBaseline === "number" &&
+            Number.isFinite(item.resetBaseline) &&
+            item.resetBaseline > 0
+              ? Math.trunc(item.resetBaseline)
+              : undefined,
+        },
+      ];
+    })
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -96,7 +138,8 @@ function isPersistedState(value: unknown): value is PersistedAppState {
     value.version === 4 ||
     value.version === 5 ||
     value.version === 6 ||
-    value.version === 7
+    value.version === 7 ||
+    value.version === 8
   );
 }
 
@@ -150,6 +193,14 @@ function migrateSettings(
   if (parsed.version < 4) {
     migrated.latePriorityFlightNumbers =
       latePriorityFlightScopeCandidates(positionRules);
+  }
+  if (parsed.version < 8) {
+    migrated.ordinaryPriorityPositions = normalizeOrdinaryPriorityPositions(
+      positionRules.filter(isPriorityRotationPosition).map((rule) => ({
+        airlineCode: airlineCode(rule.flightNo),
+        position: rule.name.trim(),
+      }))
+    );
   }
   return normalizeScheduleSettings(migrated, fallback.settings);
 }
@@ -626,6 +677,7 @@ function emptyGroupWorkspace(): GroupWorkspace {
     history: [],
     dutyRosterOverrides: [],
     latePriorityFrequencyAdjustments: [],
+    ordinaryPriorityFrequencyAdjustments: [],
     assignments: [],
     activeScheduleDate: null,
     schedulePolicyStale: false,
@@ -640,6 +692,9 @@ function groupWorkspaceFromState(state: AppState): GroupWorkspace {
     dutyRosterOverrides: structuredClone(state.dutyRosterOverrides),
     latePriorityFrequencyAdjustments: structuredClone(
       state.latePriorityFrequencyAdjustments
+    ),
+    ordinaryPriorityFrequencyAdjustments: structuredClone(
+      state.ordinaryPriorityFrequencyAdjustments
     ),
     assignments: structuredClone(state.assignments),
     activeScheduleDate: state.activeScheduleDate,
@@ -702,6 +757,10 @@ function restoreGroupWorkspace(
     latePriorityFrequencyAdjustments: restoreLatePriorityFrequencyAdjustments(
       value.latePriorityFrequencyAdjustments
     ),
+    ordinaryPriorityFrequencyAdjustments:
+      restoreOrdinaryPriorityFrequencyAdjustments(
+        value.ordinaryPriorityFrequencyAdjustments
+      ),
     assignments,
     activeScheduleDate:
       value.activeScheduleDate === null ||
@@ -731,6 +790,8 @@ function projectActiveGroup(next: AppState): void {
   next.dutyRosterOverrides = active.dutyRosterOverrides;
   next.latePriorityFrequencyAdjustments =
     active.latePriorityFrequencyAdjustments;
+  next.ordinaryPriorityFrequencyAdjustments =
+    active.ordinaryPriorityFrequencyAdjustments;
   next.assignments = active.assignments;
   next.activeScheduleDate = active.activeScheduleDate;
   next.schedulePolicyStale = active.schedulePolicyStale;
@@ -760,7 +821,7 @@ export function restorePersistedState(
     positionRules
   );
   const next: AppState = {
-    version: 7,
+    version: 8,
     shared: structuredClone(fallback.shared),
     groups: structuredClone(fallback.groups),
     activeGroupId: "A",
@@ -789,6 +850,10 @@ export function restorePersistedState(
     latePriorityFrequencyAdjustments: restoreLatePriorityFrequencyAdjustments(
       value.latePriorityFrequencyAdjustments
     ),
+    ordinaryPriorityFrequencyAdjustments:
+      restoreOrdinaryPriorityFrequencyAdjustments(
+        value.ordinaryPriorityFrequencyAdjustments
+      ),
     assignments: [],
     activeScheduleDate:
       value.activeScheduleDate === null ||

@@ -1958,11 +1958,13 @@ describe("daily schedule solver performance model", () => {
   });
 
   it("keeps a morning priority position ahead of an ordinary position when a vacancy is unavoidable", async () => {
-    const problem = await captureProblem(
-      modelState([
-        flight("morning", "AA100", "08:00", "10:00", ["督导", "G01"]),
-      ])
-    );
+    const state = modelState([
+      flight("morning", "AA100", "08:00", "10:00", ["督导", "G01"]),
+    ]);
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "AA", position: "督导" },
+    ];
+    const problem = await captureProblem(state);
     const objective = problem.objectives.find(
       (item) => item.id === "pre-noon-priority-vacancies"
     );

@@ -5,12 +5,12 @@ import {
   rebuildAutomaticAssignmentEvidence,
   replaceAssignmentDecisions,
 } from "../assignments/assignment-evidence";
-import { isPriorityRotationPosition } from "./position-rotation-policy";
+import { isOrdinaryPriorityPosition } from "./position-rotation-policy";
 import {
   comparePositionFrequency,
   createScheduleFrequencyFacts,
   POSITION_FREQUENCY_WORKDAY_COUNT,
-  samePositionFrequencyProfile,
+  positionFrequencyProfileForAssignment,
   type PositionFrequencyProfile,
   type ScheduleFrequencyFacts,
 } from "../statistics/schedule-frequency";
@@ -65,7 +65,10 @@ function applyFrequencyAlertEvidence(
     const rule = assignmentRule(state, assignment);
     if (
       !rule ||
-      !isPriorityRotationPosition(rule) ||
+      !isOrdinaryPriorityPosition(
+        rule,
+        state.settings.ordinaryPriorityPositions
+      ) ||
       assignment.status !== "assigned" ||
       !assignment.staffId
     )
@@ -118,21 +121,17 @@ function candidateFrequencyOrder(
 ): (left: Staff, right: Staff) => number {
   return (left, right) =>
     comparePositionFrequency(
-      samePositionFrequencyProfile(
+      positionFrequencyProfileForAssignment(
         state,
+        primary,
         left.id,
-        primary.flightNo,
-        primary.position,
-        primary.remark,
         date,
         facts
       ),
-      samePositionFrequencyProfile(
+      positionFrequencyProfileForAssignment(
         state,
+        primary,
         right.id,
-        primary.flightNo,
-        primary.position,
-        primary.remark,
         date,
         facts
       )
@@ -211,16 +210,20 @@ export async function reviewSamePositionFrequency(
     )
     .filter((assignment) => {
       const rule = assignmentRule(state, assignment);
-      return Boolean(rule && isPriorityRotationPosition(rule));
+      return Boolean(
+        rule &&
+        isOrdinaryPriorityPosition(
+          rule,
+          state.settings.ordinaryPriorityPositions
+        )
+      );
     })
     .map((assignment) => ({
       assignment,
-      frequency: samePositionFrequencyProfile(
+      frequency: positionFrequencyProfileForAssignment(
         state,
+        assignment,
         assignment.staffId!,
-        assignment.flightNo,
-        assignment.position,
-        assignment.remark,
         date,
         frequencyFacts
       ),
@@ -236,12 +239,10 @@ export async function reviewSamePositionFrequency(
 
   for (const { assignment: primary } of primaryAssignments) {
     if (reviewed.has(primary.id) || !primary.staffId) continue;
-    const frequency = samePositionFrequencyProfile(
+    const frequency = positionFrequencyProfileForAssignment(
       state,
+      primary,
       primary.staffId,
-      primary.flightNo,
-      primary.position,
-      primary.remark,
       date,
       frequencyFacts
     );
@@ -256,12 +257,10 @@ export async function reviewSamePositionFrequency(
     const lowerFrequencyConfigured = configuredOthers.filter(
       (person) =>
         comparePositionFrequency(
-          samePositionFrequencyProfile(
+          positionFrequencyProfileForAssignment(
             state,
+            primary,
             person.id,
-            primary.flightNo,
-            primary.position,
-            primary.remark,
             date,
             frequencyFacts
           ),

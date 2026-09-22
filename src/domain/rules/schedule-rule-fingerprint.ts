@@ -4,7 +4,7 @@ import type { AppState } from "../../model";
  * Bump this when the meaning of a scheduling rule changes in code without a
  * corresponding persisted configuration change.
  */
-export const SCHEDULE_RULE_FINGERPRINT_VERSION = "rules-v2";
+export const SCHEDULE_RULE_FINGERPRINT_VERSION = "rules-v3";
 
 type FingerprintState = Pick<
   AppState,
@@ -14,7 +14,8 @@ type FingerprintState = Pick<
   | "dutyRosterOverrides"
   | "latePriorityFrequencyAdjustments"
   | "settings"
->;
+> &
+  Partial<Pick<AppState, "ordinaryPriorityFrequencyAdjustments">>;
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -74,6 +75,13 @@ export function scheduleRuleFingerprint(state: FingerprintState): string {
       ].sort((left, right) =>
         `${left.month}|${left.staffId}|${left.flightNo}|${left.kind}`.localeCompare(
           `${right.month}|${right.staffId}|${right.flightNo}|${right.kind}`
+        )
+      ),
+      ordinaryPriorityFrequencyAdjustments: [
+        ...(state.ordinaryPriorityFrequencyAdjustments ?? []),
+      ].sort((left, right) =>
+        `${left.month}|${left.staffId}|${left.airlineCode}|${left.position}`.localeCompare(
+          `${right.month}|${right.staffId}|${right.airlineCode}|${right.position}`
         )
       ),
       settings: state.settings,

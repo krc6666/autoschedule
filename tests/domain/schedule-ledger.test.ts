@@ -1077,6 +1077,9 @@ describe("schedule ledger", () => {
     state.staff = [overused, underused];
     state.flights = [flight];
     state.positionRules = [rule];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "CX", position: "控制" },
+    ];
     state.settings.positionRotationEnabled = true;
     state.history = ["2026-08-01", "2026-08-02", "2026-08-03"].map(
       (date, index) => ({

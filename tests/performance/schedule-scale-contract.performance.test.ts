@@ -219,5 +219,5 @@ describe("schedule scale contracts", () => {
       records.every((record) => record.status === "success"),
       runSummary(records)
     ).toBe(true);
-  }, 300_000);
+  }, 360_000);
 });

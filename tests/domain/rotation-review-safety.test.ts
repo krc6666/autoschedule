@@ -160,6 +160,9 @@ describe("rotation review safety", () => {
         qualifiedStaffIds: [originalWorker!.id, replacementWorker!.id],
       },
     ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "F1", position: "G20" },
+    ];
     const target: Assignment = {
       id: "target",
       flightId: "flight",

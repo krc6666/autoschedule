@@ -99,6 +99,9 @@ function latePairScenario(ordinaryFatigue = 4) {
       qualifiedStaffIds: [repeatedWorker!.id, replacementWorker!.id],
     },
   ];
+  state.settings.ordinaryPriorityPositions = [
+    { airlineCode: "NIGHT1", position: "G14" },
+  ];
   state.history = [
     {
       id: "previous-late-priority",
@@ -200,6 +203,9 @@ describe("consecutive priority-position rotation review", () => {
         category: "常规",
         qualifiedStaffIds: state.staff.map((person) => person.id),
       },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "KE", position: "H02" },
     ];
     state.history = [
       {
@@ -359,6 +365,9 @@ describe("consecutive priority-position rotation review", () => {
         category: "常规",
         qualifiedStaffIds: [repeatedWorker!.id, replacementWorker!.id],
       },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "NIGHT1", position: "G14" },
     ];
     state.history = [
       {
@@ -795,6 +804,9 @@ describe("consecutive priority-position rotation review", () => {
         qualifiedStaffIds: [repeatedWorker!.id, thirdWorker!.id],
       },
     ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "NIGHT1", position: "G14" },
+    ];
     state.history = [
       {
         id: "previous-late-priority",
@@ -925,6 +937,9 @@ describe("consecutive priority-position rotation review", () => {
         category: "常规",
         qualifiedStaffIds: [repeatedWorker!.id, protectedReplacement!.id],
       },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "NIGHT1", position: "G14" },
     ];
     state.history = [
       {
@@ -1182,6 +1197,9 @@ describe("consecutive priority-position rotation review", () => {
         category: "常规",
         qualifiedStaffIds: [repeatedWorker!.id, replacementWorker!.id],
       },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "KE", position: "H04" },
     ];
     state.history = [
       {

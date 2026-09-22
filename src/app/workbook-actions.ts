@@ -366,6 +366,12 @@ export function applyWorkbookImport(
       imported.latePriorityFrequencyAdjustments;
   if (
     importConfig &&
+    imported.ordinaryPriorityFrequencyAdjustments !== undefined
+  )
+    state.ordinaryPriorityFrequencyAdjustments =
+      imported.ordinaryPriorityFrequencyAdjustments;
+  if (
+    importConfig &&
     imported.flights !== undefined &&
     imported.templates === undefined
   ) {

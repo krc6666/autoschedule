@@ -4,7 +4,7 @@ import { consecutivePositionAssignments } from "../statistics/schedule-frequency
 import { assignmentRule } from "../flights/schedule-position-rules";
 import { isKe166MobileSupervisor } from "../flights/schedule-tasks";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
-import { isPriorityRotationPosition } from "./position-rotation-policy";
+import { isOrdinaryPriorityPosition } from "./position-rotation-policy";
 import {
   appendAssignmentDecision,
   replaceAssignmentDecisions,
@@ -74,7 +74,10 @@ export function refreshPositionRotationEvidence(
       !assignment.staffId
     )
       continue;
-    const priority = isPriorityRotationPosition(rule);
+    const priority = isOrdinaryPriorityPosition(
+      { ...rule, flightNo: assignment.flightNo },
+      state.settings.ordinaryPriorityPositions
+    );
     const previousRuns = consecutivePositionAssignments(
       state,
       assignment.staffId,

@@ -7,6 +7,7 @@ import type {
   FlightTemplate,
   HistoryRecord,
   LatePriorityFrequencyAdjustment,
+  OrdinaryPriorityFrequencyAdjustment,
   PositionRule,
   ScheduleSettings,
   Staff,
@@ -33,6 +34,8 @@ import {
   isGuideAssignment,
 } from "../domain/flights/schedule-position-rules";
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
+import { mergeOrdinaryPriorityFrequencyAdjustments } from "../domain/statistics/ordinary-priority-frequency-adjustment";
+import { normalizeOrdinaryPriorityPositions } from "../domain/reviews/position-rotation-policy";
 import {
   createEmptyWeeklyFlightPlans,
   replaceWeeklyFlightPlan,
@@ -64,6 +67,7 @@ export interface WorkbookImport {
   history?: HistoryRecord[];
   settings?: Partial<ScheduleSettings>;
   latePriorityFrequencyAdjustments?: LatePriorityFrequencyAdjustment[];
+  ordinaryPriorityFrequencyAdjustments?: OrdinaryPriorityFrequencyAdjustment[];
   legacySchedule?: LegacyScheduleImportPreview;
   warnings: string[];
 }
@@ -116,6 +120,64 @@ function parseLatePriorityFrequencyAdjustments(
       ];
     })
   );
+}
+
+function parseOrdinaryPriorityFrequencyAdjustments(
+  workbook: XLSX.WorkBook
+): OrdinaryPriorityFrequencyAdjustment[] | undefined {
+  if (!workbook.SheetNames.includes("普通重点次数修正")) return undefined;
+  const data = rows(workbook, "普通重点次数修正");
+  return mergeOrdinaryPriorityFrequencyAdjustments(
+    data.slice(1).flatMap((row): OrdinaryPriorityFrequencyAdjustment[] => {
+      const month = normalizeText(row[0]);
+      const staffId = normalizeText(row[1]);
+      const airlineCode = normalizeText(row[2]);
+      const position = normalizeText(row[3]);
+      const delta = Number(row[4]);
+      const resetBaseline = Number(row[5] ?? 0);
+      if (
+        !/^\d{4}-\d{2}$/.test(month) ||
+        !staffId ||
+        !airlineCode ||
+        !position ||
+        !Number.isInteger(delta) ||
+        !Number.isInteger(resetBaseline) ||
+        resetBaseline < 0 ||
+        (delta === 0 && resetBaseline === 0)
+      )
+        return [];
+      return [
+        {
+          month,
+          staffId,
+          airlineCode,
+          position,
+          delta,
+          resetBaseline: resetBaseline || undefined,
+        },
+      ];
+    })
+  );
+}
+
+function parseOrdinaryPriorityPositions(workbook: XLSX.WorkBook): {
+  present: boolean;
+  value: ScheduleSettings["ordinaryPriorityPositions"];
+} {
+  if (!workbook.SheetNames.includes("普通重点岗位集合"))
+    return { present: false, value: [] };
+  const data = rows(workbook, "普通重点岗位集合");
+  return {
+    present: true,
+    value: normalizeOrdinaryPriorityPositions(
+      data
+        .slice(1)
+        .map((row) => ({
+          airlineCode: normalizeText(row[0]),
+          position: normalizeText(row[1]),
+        }))
+    ),
+  };
 }
 
 export interface WorkbookImportOptions {
@@ -475,6 +537,15 @@ export function parseWorkbook(
   const parsedRules = parseScheduleRuleSettings(workbook, effectiveStaff);
   const latePriorityFrequencyAdjustments =
     parseLatePriorityFrequencyAdjustments(workbook);
+  const ordinaryPriorityFrequencyAdjustments =
+    parseOrdinaryPriorityFrequencyAdjustments(workbook);
+  const ordinaryPriorityPositions = parseOrdinaryPriorityPositions(workbook);
+  if (ordinaryPriorityPositions.present) {
+    parsedRules.settings = {
+      ...(parsedRules.settings ?? {}),
+      ordinaryPriorityPositions: ordinaryPriorityPositions.value,
+    };
+  }
   const warnings = [...parsedRules.warnings];
   const hasStandardSheet = Boolean(
     staff ||
@@ -484,7 +555,9 @@ export function parseWorkbook(
     positionRules ||
     history ||
     parsedRules.recognized ||
-    latePriorityFrequencyAdjustments !== undefined
+    latePriorityFrequencyAdjustments !== undefined ||
+    ordinaryPriorityFrequencyAdjustments !== undefined ||
+    ordinaryPriorityPositions.present
   );
   const legacySchedule = hasStandardSheet
     ? undefined
@@ -519,6 +592,8 @@ export function parseWorkbook(
     !history &&
     !parsedRules.recognized &&
     latePriorityFrequencyAdjustments === undefined &&
+    ordinaryPriorityFrequencyAdjustments === undefined &&
+    !ordinaryPriorityPositions.present &&
     !legacySchedule?.recognizedSheets
   )
     warnings.push("未识别到受支持的工作表");
@@ -532,6 +607,7 @@ export function parseWorkbook(
     legacySchedule,
     settings: parsedRules.settings,
     latePriorityFrequencyAdjustments,
+    ordinaryPriorityFrequencyAdjustments,
     warnings,
   };
 }
@@ -663,6 +739,18 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
     ],
     [12, 18, 16, 24, 48, 12, 18, 18]
   );
+  append(
+    workbook,
+    "普通重点岗位集合",
+    [
+      ["航司", "规范岗位"],
+      ...state.settings.ordinaryPriorityPositions.map((item) => [
+        item.airlineCode,
+        item.position,
+      ]),
+    ],
+    [12, 24]
+  );
   appendScheduleRuleSheets(workbook, {
     ...state,
     settings: {
@@ -697,6 +785,22 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
       ]),
     ],
     [12, 14, 14, 16, 12, 16]
+  );
+  append(
+    workbook,
+    "普通重点次数修正",
+    [
+      ["月份", "人员编号", "航司", "规范岗位", "修正次数", "清零基准次数"],
+      ...state.ordinaryPriorityFrequencyAdjustments.map((item) => [
+        item.month,
+        item.staffId,
+        item.airlineCode,
+        item.position,
+        item.delta,
+        item.resetBaseline ?? 0,
+      ]),
+    ],
+    [12, 14, 12, 18, 12, 16]
   );
   return workbook;
 }

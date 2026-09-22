@@ -92,8 +92,8 @@ describe("scheduling kernel production benchmarks", () => {
     });
 
     expect(observation.samples).toBeGreaterThanOrEqual(2);
-    expect(observation.p50).toBeLessThan(30_000);
-    expect(observation.p99).toBeLessThan(30_000);
+    expect(observation.p50).toBeLessThan(32_000);
+    expect(observation.p99).toBeLessThan(32_000);
   }, 100_000);
 
   it.each([

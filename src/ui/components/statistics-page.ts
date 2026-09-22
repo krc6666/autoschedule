@@ -13,6 +13,7 @@ import type { AppState } from "../../model";
 import { LightDomElement } from "./light-dom-element";
 import "./duty-roster-details";
 import { dispatchUiCommand } from "../events/ui-command";
+import { buildOrdinaryPriorityStatistics } from "../../domain/statistics/ordinary-priority-statistics";
 
 export class StatisticsPageElement extends LightDomElement {
   static override properties = {
@@ -32,7 +33,8 @@ export class StatisticsPageElement extends LightDomElement {
         .model=${this.model}
         .date=${this.date}
       ></autoschedule-duty-roster-details>
-      ${this.relaxedShiftStatistics()} ${this.latePriorityStatistics()}
+      ${this.relaxedShiftStatistics()} ${this.ordinaryPriorityStatistics()}
+      ${this.latePriorityStatistics()}
     `;
   }
 
@@ -260,6 +262,71 @@ export class StatisticsPageElement extends LightDomElement {
           : html`<div class="empty-workspace compact-empty">
               <i class="bi bi-bar-chart"></i>
               <p>尚未选择统计航班，请先到规则页勾选</p>
+            </div>`
+      }
+    </section>`;
+  }
+
+  private ordinaryPriorityStatistics() {
+    const month = this.date.slice(0, 7);
+    const rows = buildOrdinaryPriorityStatistics(this.model, this.date);
+    return html`<section class="workspace-section ordinary-priority-statistics">
+      <div class="section-heading">
+        <div>
+          <h3>普通重点岗位</h3>
+          <span>${month} · 只统计集合内岗位；次数进入一般同岗轮换</span>
+        </div>
+      </div>
+      ${
+        rows.length
+          ? html`<div class="table-responsive">
+              <table class="table table-sm align-middle data-table">
+                <thead>
+                  <tr>
+                    <th>人员</th>
+                    <th>航司</th>
+                    <th>规范岗位</th>
+                    <th>轮换次数</th>
+                    <th>手动调整</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows.map(
+                    (row) =>
+                      html`<tr>
+                        <td>${row.staff.name}</td>
+                        <td>${row.airlineCode}</td>
+                        <td>${row.position}</td>
+                        <td>
+                          <span class="late-priority-adjustments"
+                            ><button
+                              class="btn btn-sm btn-outline-secondary"
+                              type="button"
+                              aria-label="减少普通重点次数"
+                              @click=${() => dispatchUiCommand(this, { type: "adjust-ordinary-priority-frequency", month, staffId: row.staff.id, airlineCode: row.airlineCode, position: row.position, delta: -1 })}
+                            >
+                              −</button
+                            ><output>${row.effectiveCount}</output
+                            ><button
+                              class="btn btn-sm btn-outline-secondary"
+                              type="button"
+                              aria-label="增加普通重点次数"
+                              @click=${() => dispatchUiCommand(this, { type: "adjust-ordinary-priority-frequency", month, staffId: row.staff.id, airlineCode: row.airlineCode, position: row.position, delta: 1 })}
+                            >
+                              +
+                            </button></span
+                          >
+                        </td>
+                        <td>
+                          ${row.manualCorrection >= 0 ? "+" : ""}${row.manualCorrection}
+                        </td>
+                      </tr>`
+                  )}
+                </tbody>
+              </table>
+            </div>`
+          : html`<div class="empty-workspace compact-empty">
+              <p>普通重点集合为空，请先在规则页维护</p>
             </div>`
       }
     </section>`;

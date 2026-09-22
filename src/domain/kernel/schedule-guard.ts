@@ -27,7 +27,7 @@ import {
 } from "../reviews/late-priority-policy";
 import {
   isHighFatigueOrdinaryRotationPosition,
-  isPriorityRotationPosition,
+  isOrdinaryPriorityPosition,
 } from "../reviews/position-rotation-policy";
 import { violatedPositionTransitionPoliciesForInsertion } from "../reviews/schedule-protection";
 import { assessPositionFrequencyAlert } from "../reviews/position-frequency-alert";
@@ -648,9 +648,13 @@ export function createHighFatiguePositionConsecutiveScheduleGuard(): ScheduleGua
           !rule ||
           !isHighFatigueOrdinaryRotationPosition(
             rule,
-            facts.state.settings.highLoadFatigueThreshold
+            facts.state.settings.highLoadFatigueThreshold,
+            facts.state.settings.ordinaryPriorityPositions
           ) ||
-          isPriorityRotationPosition(rule)
+          isOrdinaryPriorityPosition(
+            rule,
+            facts.state.settings.ordinaryPriorityPositions
+          )
         )
           return [];
         const runs = consecutivePositionAssignments(
