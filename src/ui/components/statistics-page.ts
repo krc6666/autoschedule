@@ -13,7 +13,10 @@ import type { AppState } from "../../model";
 import { LightDomElement } from "./light-dom-element";
 import "./duty-roster-details";
 import { dispatchUiCommand } from "../events/ui-command";
-import { buildOrdinaryPriorityStatistics } from "../../domain/statistics/ordinary-priority-statistics";
+import {
+  buildOrdinaryPriorityStatistics,
+  type OrdinaryPriorityStatisticsRow,
+} from "../../domain/statistics/ordinary-priority-statistics";
 
 export class StatisticsPageElement extends LightDomElement {
   static override properties = {
@@ -23,9 +26,11 @@ export class StatisticsPageElement extends LightDomElement {
   model!: AppState;
   date = "";
   private readonly expandedLatePriorityCells = new Set<string>();
+  private readonly expandedOrdinaryPriorityCells = new Set<string>();
   private selectedLatePriorityStatisticsMonth = "";
   private selectedLatePriorityCategory:
     "全部" | LatePriorityStatisticsCategory = "全部";
+  private selectedOrdinaryPriorityKey = "全部";
 
   protected override render() {
     return html`
@@ -270,56 +275,89 @@ export class StatisticsPageElement extends LightDomElement {
   private ordinaryPriorityStatistics() {
     const month = this.date.slice(0, 7);
     const rows = buildOrdinaryPriorityStatistics(this.model, this.date);
+    const columns = this.ordinaryPriorityColumns(rows);
+    const selectedKey = columns.some(
+      (column) => column.key === this.selectedOrdinaryPriorityKey
+    )
+      ? this.selectedOrdinaryPriorityKey
+      : "全部";
+    const displayRows = this.ordinaryPriorityDisplayRows(rows, selectedKey);
     return html`<section class="workspace-section ordinary-priority-statistics">
       <div class="section-heading">
         <div>
           <h3>普通重点岗位</h3>
           <span>${month} · 只统计集合内岗位；次数进入一般同岗轮换</span>
         </div>
+        <div
+          class="ordinary-priority-filter"
+          role="group"
+          aria-label="普通重点岗位筛选"
+        >
+          ${[
+            { key: "全部", label: "全部" },
+            ...columns.map((column) => ({
+              key: column.key,
+              label: `${column.airlineCode} / ${column.position}`,
+            })),
+          ].map(
+            (option) =>
+              html`<button
+                class=${`btn btn-sm ${
+                  selectedKey === option.key
+                    ? "btn-primary"
+                    : "btn-outline-secondary"
+                }`}
+                type="button"
+                aria-label=${`普通重点岗位筛选：${option.label}`}
+                aria-pressed=${selectedKey === option.key}
+                @click=${() => this.selectOrdinaryPriority(option.key)}
+              >
+                ${option.label}
+              </button>`
+          )}
+        </div>
       </div>
       ${
         rows.length
           ? html`<div class="table-responsive">
-              <table class="table table-sm align-middle data-table">
+              <table
+                class="table table-sm align-middle data-table ordinary-priority-summary-table"
+              >
                 <thead>
                   <tr>
                     <th>人员</th>
-                    <th>航司</th>
-                    <th>规范岗位</th>
-                    <th>轮换次数</th>
-                    <th>手动调整</th>
+                    <th>合计</th>
+                    ${columns.map(
+                      (column) =>
+                        html`<th>
+                          ${column.airlineCode} / ${column.position}
+                        </th>`
+                    )}
                   </tr>
                 </thead>
                 <tbody>
-                  ${rows.map(
+                  ${displayRows.map(
                     (row) =>
                       html`<tr>
-                        <td>${row.staff.name}</td>
-                        <td>${row.airlineCode}</td>
-                        <td>${row.position}</td>
-                        <td>
-                          <span class="late-priority-adjustments"
-                            ><button
-                              class="btn btn-sm btn-outline-secondary"
-                              type="button"
-                              aria-label="减少普通重点次数"
-                              @click=${() => dispatchUiCommand(this, { type: "adjust-ordinary-priority-frequency", month, staffId: row.staff.id, airlineCode: row.airlineCode, position: row.position, delta: -1 })}
-                            >
-                              −</button
-                            ><output>${row.effectiveCount}</output
-                            ><button
-                              class="btn btn-sm btn-outline-secondary"
-                              type="button"
-                              aria-label="增加普通重点次数"
-                              @click=${() => dispatchUiCommand(this, { type: "adjust-ordinary-priority-frequency", month, staffId: row.staff.id, airlineCode: row.airlineCode, position: row.position, delta: 1 })}
-                            >
-                              +
-                            </button></span
-                          >
+                        <td data-label="人员">
+                          <strong>${row.staff.name}</strong>
                         </td>
-                        <td>
-                          ${row.manualCorrection >= 0 ? "+" : ""}${row.manualCorrection}
+                        <td data-label="合计">
+                          <strong>${row.totalCount}</strong>
                         </td>
+                        ${columns.map((column) => {
+                          const cell = row.cells.get(column.key)!;
+                          const label = `${column.airlineCode} / ${column.position}`;
+                          return html`<td data-label=${label}>
+                            ${
+                              cell.qualified
+                                ? this.ordinaryPriorityCountCell(cell, month)
+                                : html`<span class="text-body-secondary"
+                                    >-</span
+                                  >`
+                            }
+                          </td>`;
+                        })}
                       </tr>`
                   )}
                 </tbody>
@@ -330,6 +368,132 @@ export class StatisticsPageElement extends LightDomElement {
             </div>`
       }
     </section>`;
+  }
+
+  private ordinaryPriorityColumns(
+    rows: readonly OrdinaryPriorityStatisticsRow[]
+  ) {
+    const columns = new Map<
+      string,
+      { key: string; airlineCode: string; position: string }
+    >();
+    for (const row of rows) {
+      const key = this.ordinaryPriorityCellKey(row.airlineCode, row.position);
+      if (!columns.has(key)) {
+        columns.set(key, {
+          key,
+          airlineCode: row.airlineCode,
+          position: row.position,
+        });
+      }
+    }
+    return [...columns.values()];
+  }
+
+  private ordinaryPriorityDisplayRows(
+    rows: readonly OrdinaryPriorityStatisticsRow[],
+    selectedKey: string
+  ) {
+    const displayRows = new Map<
+      string,
+      {
+        staff: OrdinaryPriorityStatisticsRow["staff"];
+        totalCount: number;
+        cells: Map<string, OrdinaryPriorityStatisticsRow>;
+      }
+    >();
+    for (const row of rows) {
+      const current = displayRows.get(row.staff.id) ?? {
+        staff: row.staff,
+        totalCount: 0,
+        cells: new Map<string, OrdinaryPriorityStatisticsRow>(),
+      };
+      if (row.qualified) current.totalCount += row.effectiveCount;
+      current.cells.set(
+        this.ordinaryPriorityCellKey(row.airlineCode, row.position),
+        row
+      );
+      displayRows.set(row.staff.id, current);
+    }
+    return [...displayRows.values()].filter((row) =>
+      selectedKey === "全部"
+        ? [...row.cells.values()].some((cell) => cell.qualified)
+        : row.cells.get(selectedKey)?.qualified === true
+    );
+  }
+
+  private ordinaryPriorityCountCell(
+    row: OrdinaryPriorityStatisticsRow,
+    month: string
+  ) {
+    const detailKey = `${row.staff.id}\u0000${this.ordinaryPriorityCellKey(
+      row.airlineCode,
+      row.position
+    )}`;
+    return html`<details
+      class="ordinary-priority-count-detail"
+      data-staff-id=${row.staff.id}
+      data-airline-code=${row.airlineCode}
+      data-position=${row.position}
+      .open=${this.expandedOrdinaryPriorityCells.has(detailKey)}
+      @toggle=${(event: Event) =>
+        this.trackOrdinaryPriorityDetailToggle(
+          detailKey,
+          (event.currentTarget as HTMLDetailsElement).open
+        )}
+    >
+      <summary title="展开普通重点岗位次数">${row.effectiveCount}</summary>
+      <div>
+        <div class="late-priority-adjustment-row">
+          <strong>${row.airlineCode} / ${row.position}</strong>
+          <span class="late-priority-adjustments">
+            <button
+              class="btn btn-sm btn-outline-secondary"
+              type="button"
+              aria-label=${`${row.airlineCode}/${row.position}减少一次`}
+              @click=${() =>
+                dispatchUiCommand(this, {
+                  type: "adjust-ordinary-priority-frequency",
+                  month,
+                  staffId: row.staff.id,
+                  airlineCode: row.airlineCode,
+                  position: row.position,
+                  delta: -1,
+                })}
+            >
+              −</button
+            ><output>${row.effectiveCount}</output
+            ><button
+              class="btn btn-sm btn-outline-secondary"
+              type="button"
+              aria-label=${`${row.airlineCode}/${row.position}增加一次`}
+              @click=${() =>
+                dispatchUiCommand(this, {
+                  type: "adjust-ordinary-priority-frequency",
+                  month,
+                  staffId: row.staff.id,
+                  airlineCode: row.airlineCode,
+                  position: row.position,
+                  delta: 1,
+                })}
+            >
+              +
+            </button>
+          </span>
+          <small
+            >实际 ${row.actualCount} · 修正
+            ${row.manualCorrection >= 0 ? "+" : ""}${row.manualCorrection}</small
+          >
+        </div>
+      </div>
+    </details>`;
+  }
+
+  private ordinaryPriorityCellKey(
+    airlineCode: string,
+    position: string
+  ): string {
+    return `${airlineCode}\u0000${position}`;
   }
 
   private latePriorityRangeSummary(
@@ -518,6 +682,19 @@ export class StatisticsPageElement extends LightDomElement {
     } else {
       this.expandedLatePriorityCells.delete(key);
     }
+  }
+
+  private trackOrdinaryPriorityDetailToggle(key: string, open: boolean): void {
+    if (open) {
+      this.expandedOrdinaryPriorityCells.add(key);
+    } else {
+      this.expandedOrdinaryPriorityCells.delete(key);
+    }
+  }
+
+  private selectOrdinaryPriority(key: string): void {
+    this.selectedOrdinaryPriorityKey = key;
+    this.requestUpdate();
   }
 }
 

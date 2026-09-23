@@ -13,6 +13,139 @@ import { mountElement } from "./lit-test-helpers";
 import type { UiCommandEvent } from "../../src/ui/events/ui-command";
 
 describe("statistics page", () => {
+  it("summarizes ordinary priority positions by staff with expandable count cells", async () => {
+    const state = createDefaultState();
+    const staff = state.staff
+      .filter(
+        (person) => person.staffType === "常规" && person.status === "正常"
+      )
+      .slice(0, 3);
+    state.staff = staff;
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "AK", position: "G08" },
+      { airlineCode: "TR", position: "H02" },
+    ];
+    const baseRule = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...baseRule,
+        id: "ordinary-ak-g08",
+        flightNo: "AK151",
+        name: "G08",
+        category: "常规",
+        remark: "",
+        qualifiedStaffIds: [staff[0]!.id],
+      },
+      {
+        ...baseRule,
+        id: "ordinary-tr-h02",
+        flightNo: "TR121",
+        name: "H02",
+        category: "常规",
+        remark: "一号",
+        qualifiedStaffIds: [staff[1]!.id],
+      },
+    ];
+    state.ordinaryPriorityFrequencyAdjustments = [
+      {
+        month: "2026-07",
+        staffId: staff[0]!.id,
+        airlineCode: "AK",
+        position: "G08",
+        delta: 1,
+      },
+    ];
+    state.history = [
+      {
+        id: "ordinary-ak-g08",
+        date: "2026-07-16",
+        flightNo: "AK151",
+        position: "G08",
+        staffId: staff[0]!.id,
+        staffName: staff[0]!.name,
+        startTime: "21:00",
+        endTime: "23:00",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "",
+      },
+      {
+        id: "ordinary-tr-h02",
+        date: "2026-07-16",
+        flightNo: "TR121",
+        position: "H02",
+        staffId: staff[1]!.id,
+        staffName: staff[1]!.name,
+        startTime: "21:55",
+        endTime: "23:55",
+        workHours: 2,
+        fatiguePoints: 10,
+        remark: "一号",
+      },
+    ];
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-07-18" });
+    const table = element.querySelector(".ordinary-priority-summary-table")!;
+    const headers = [...table.querySelectorAll("th")].map((cell) =>
+      cell.textContent?.trim()
+    );
+
+    expect(headers).toEqual(["人员", "合计", "AK / G08", "TR / H02"]);
+    expect(table.querySelectorAll("tbody > tr")).toHaveLength(2);
+    expect(
+      table.querySelectorAll(".ordinary-priority-count-detail")
+    ).toHaveLength(2);
+    expect(table.textContent).not.toContain(staff[2]!.name);
+
+    const detail = table.querySelector<HTMLDetailsElement>(
+      `.ordinary-priority-count-detail[data-staff-id="${staff[0]!.id}"][data-airline-code="AK"][data-position="G08"]`
+    )!;
+    expect(detail.open).toBe(false);
+    expect(detail.querySelector("summary")?.textContent?.trim()).toBe("1");
+    expect(detail.textContent?.replace(/\s+/g, " ")).toContain(
+      "实际 0 · 修正 +1"
+    );
+
+    const commands: UiCommandEvent["detail"][] = [];
+    element.addEventListener("autoschedule-command", (event) =>
+      commands.push((event as UiCommandEvent).detail)
+    );
+    detail
+      .querySelector<HTMLButtonElement>('button[aria-label="AK/G08增加一次"]')
+      ?.click();
+    expect(commands).toContainEqual({
+      type: "adjust-ordinary-priority-frequency",
+      month: "2026-07",
+      staffId: staff[0]!.id,
+      airlineCode: "AK",
+      position: "G08",
+      delta: 1,
+    });
+
+    const filter = element.querySelector<HTMLButtonElement>(
+      'button[aria-label="普通重点岗位筛选：AK / G08"]'
+    )!;
+    expect(filter.getAttribute("aria-pressed")).toBe("false");
+    filter.click();
+    await element.updateComplete;
+
+    const filteredTable = element.querySelector(
+      ".ordinary-priority-summary-table"
+    )!;
+    expect(filteredTable.querySelectorAll("tbody > tr")).toHaveLength(1);
+    expect(filteredTable.textContent).toContain(staff[0]!.name);
+    expect(filteredTable.textContent).not.toContain(staff[1]!.name);
+    expect(
+      element
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="普通重点岗位筛选：AK / G08"]'
+        )
+        ?.getAttribute("aria-pressed")
+    ).toBe("true");
+  });
+
   it("keeps monthly roster, relaxed shifts, position counts, and roster actions", async () => {
     const state = createDefaultState();
     const rule = state.positionRules.find(

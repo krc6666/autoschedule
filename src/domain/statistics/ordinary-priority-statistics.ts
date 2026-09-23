@@ -1,12 +1,16 @@
 import type { HistoryRecord, Staff } from "../../model";
 import { assignmentRule } from "../flights/schedule-position-rules";
-import { ordinaryPriorityPositionKey } from "../reviews/position-rotation-policy";
+import {
+  ordinaryPriorityConfigurationKey,
+  ordinaryPriorityPositionKey,
+} from "../reviews/position-rotation-policy";
 import type { SchedulingFacts } from "../shared/scheduling-facts";
 
 export interface OrdinaryPriorityStatisticsRow {
   staff: Staff;
   airlineCode: string;
   position: string;
+  qualified: boolean;
   actualCount: number;
   manualCorrection: number;
   effectiveCount: number;
@@ -19,6 +23,23 @@ export function buildOrdinaryPriorityStatistics(
   const month = date.slice(0, 7);
   const rows: OrdinaryPriorityStatisticsRow[] = [];
   for (const item of state.settings.ordinaryPriorityPositions) {
+    const configuredKey = ordinaryPriorityConfigurationKey(
+      item.airlineCode,
+      item.position
+    );
+    const qualifiedStaffIds = new Set(
+      state.positionRules
+        .filter(
+          (rule) =>
+            rule.category === "常规" &&
+            ordinaryPriorityPositionKey(
+              rule.flightNo,
+              rule.name,
+              rule.remark
+            ) === configuredKey
+        )
+        .flatMap((rule) => rule.qualifiedStaffIds)
+    );
     for (const staff of state.staff.filter(
       (person) => person.staffType === "常规" && person.status === "正常"
     )) {
@@ -84,6 +105,7 @@ export function buildOrdinaryPriorityStatistics(
         staff,
         airlineCode: item.airlineCode,
         position: item.position,
+        qualified: qualifiedStaffIds.has(staff.id),
         actualCount: actual,
         manualCorrection,
         effectiveCount: Math.max(0, actual + manualCorrection),

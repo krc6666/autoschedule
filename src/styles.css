@@ -1109,17 +1109,22 @@ select {
   color: #4e5863;
   font-size: 12px;
 }
-.late-priority-summary-table {
+.late-priority-summary-table,
+.ordinary-priority-summary-table {
   min-width: max(640px, 100%);
   margin: 0;
 }
 .late-priority-summary-table th:first-child,
-.late-priority-summary-table td:first-child {
+.late-priority-summary-table td:first-child,
+.ordinary-priority-summary-table th:first-child,
+.ordinary-priority-summary-table td:first-child {
   min-width: 96px;
   white-space: nowrap;
 }
 .late-priority-summary-table th:not(:first-child),
-.late-priority-summary-table td:not(:first-child) {
+.late-priority-summary-table td:not(:first-child),
+.ordinary-priority-summary-table th:not(:first-child),
+.ordinary-priority-summary-table td:not(:first-child) {
   width: 112px;
   text-align: center;
 }
@@ -1134,10 +1139,12 @@ select {
 .late-priority-range-summary small {
   color: var(--as-muted);
 }
-.late-priority-count-detail {
+.late-priority-count-detail,
+.ordinary-priority-count-detail {
   position: relative;
 }
-.late-priority-count-detail > summary {
+.late-priority-count-detail > summary,
+.ordinary-priority-count-detail > summary {
   display: inline-flex;
   min-width: 28px;
   min-height: 28px;
@@ -1150,10 +1157,12 @@ select {
   list-style: none;
   font-weight: 650;
 }
-.late-priority-count-detail > summary::-webkit-details-marker {
+.late-priority-count-detail > summary::-webkit-details-marker,
+.ordinary-priority-count-detail > summary::-webkit-details-marker {
   display: none;
 }
-.late-priority-count-detail > div {
+.late-priority-count-detail > div,
+.ordinary-priority-count-detail > div {
   display: grid;
   gap: 3px;
   min-width: 250px;
@@ -1165,7 +1174,8 @@ select {
   font-size: 11px;
   text-align: left;
 }
-.late-priority-count-detail > div span {
+.late-priority-count-detail > div span,
+.ordinary-priority-count-detail > div span {
   overflow-wrap: anywhere;
 }
 
@@ -1227,7 +1237,8 @@ select {
   gap: 0.4rem;
 }
 
-.late-priority-category-filter {
+.late-priority-category-filter,
+.ordinary-priority-filter {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3103,17 +3114,20 @@ autoschedule-previous-schedule-comparison {
     grid-template-columns: 1fr 68px auto;
     width: 100%;
   }
-  .late-priority-statistics > .section-heading {
+  .late-priority-statistics > .section-heading,
+  .ordinary-priority-statistics > .section-heading {
     flex-direction: column;
   }
   .late-priority-toolbar {
     width: 100%;
     justify-content: flex-start;
   }
-  .late-priority-summary-table {
+  .late-priority-summary-table,
+  .ordinary-priority-summary-table {
     min-width: 0;
   }
-  .late-priority-summary-table thead {
+  .late-priority-summary-table thead,
+  .ordinary-priority-summary-table thead {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3121,15 +3135,20 @@ autoschedule-previous-schedule-comparison {
     clip: rect(0 0 0 0);
   }
   .late-priority-summary-table tbody,
-  .late-priority-summary-table tr {
+  .late-priority-summary-table tr,
+  .ordinary-priority-summary-table tbody,
+  .ordinary-priority-summary-table tr {
     display: grid;
   }
-  .late-priority-summary-table tr {
+  .late-priority-summary-table tr,
+  .ordinary-priority-summary-table tr {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     border-bottom: 1px solid var(--as-border);
   }
   .late-priority-summary-table td,
-  .late-priority-summary-table td:not(:first-child) {
+  .late-priority-summary-table td:not(:first-child),
+  .ordinary-priority-summary-table td,
+  .ordinary-priority-summary-table td:not(:first-child) {
     display: grid;
     grid-template-columns: minmax(4rem, auto) 1fr;
     width: auto;
@@ -3138,14 +3157,16 @@ autoschedule-previous-schedule-comparison {
     gap: 0.4rem;
     text-align: right;
   }
-  .late-priority-summary-table td::before {
+  .late-priority-summary-table td::before,
+  .ordinary-priority-summary-table td::before {
     content: attr(data-label);
     color: var(--as-muted);
     font-size: 0.72rem;
     font-weight: 600;
     text-align: left;
   }
-  .late-priority-count-detail > div {
+  .late-priority-count-detail > div,
+  .ordinary-priority-count-detail > div {
     min-width: min(250px, calc(100vw - 3rem));
   }
   .late-priority-flight-scope legend {
