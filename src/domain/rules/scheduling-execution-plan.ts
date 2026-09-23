@@ -1,5 +1,6 @@
-import type { Flight, ScheduleSettings } from "../../model";
+import type { Flight, PositionRule, ScheduleSettings } from "../../model";
 import {
+  ACTIVE_SCHEDULING_RULES,
   SCHEDULING_RULES,
   schedulingRuleDefinition,
   type RuleFeedbackKey,
@@ -60,12 +61,12 @@ export interface CompiledSchedulingPlan {
 
 const PASS_ORDER: readonly ScheduleMutationExecutor["pass"][] = [
   "primary",
-  "ke166-finalize",
-  "after-ke166",
+  "mobile-supervisor-finalize",
+  "after-mobile-supervisor",
 ];
 
 function assertRegistryOrder(hooks: readonly PlannedSchedulingHook[]): void {
-  const expected = SCHEDULING_RULES.map((rule) => rule.id);
+  const expected = ACTIVE_SCHEDULING_RULES.map((rule) => rule.id);
   const actual = hooks.map((hook) => hook.id);
   if (expected.length !== actual.length) {
     throw new Error("内置规则计划与中央规则合同数量不一致");
@@ -226,10 +227,16 @@ export function candidateRuleAfterCoverage(
 
 export function postScheduleMutationApplies(
   item: PlannedScheduleMutation,
-  flights: readonly Pick<Flight, "flightNo">[]
+  flights: readonly Pick<Flight, "flightNo">[],
+  positionRules: readonly Pick<PositionRule, "flightNo" | "category">[]
 ): boolean {
-  return !(
-    item.executor.pass === "after-ke166" &&
-    !flights.some((flight) => /^KE\s*166$/i.test(flight.flightNo.trim()))
+  if (item.executor.pass !== "after-mobile-supervisor") return true;
+  const scheduledFlightNumbers = new Set(
+    flights.map((flight) => flight.flightNo.trim().toUpperCase())
+  );
+  return positionRules.some(
+    (rule) =>
+      rule.category === "机动督导" &&
+      scheduledFlightNumbers.has(rule.flightNo.trim().toUpperCase())
   );
 }

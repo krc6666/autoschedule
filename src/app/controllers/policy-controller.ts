@@ -50,6 +50,19 @@ export class PolicyController implements UiCommandController {
         )
           this.context.commit("普通重点岗位已更新");
         return true;
+      case "set-team-leader-gap-fill-positions-movable":
+        if (
+          policy.setTeamLeaderGapFillPositionsMovable(
+            command.positionRuleIds,
+            command.movable
+          )
+        )
+          this.context.commit(
+            command.movable
+              ? "已允许所选岗位参与分队长补差换人"
+              : "所选岗位已设为分队长补差保护"
+          );
+        return true;
       case "add-policy-item":
         if (command.collection === "same-flight-staff-exclusion")
           policy.addSameFlightStaffExclusion();

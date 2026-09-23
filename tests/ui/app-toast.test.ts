@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import Toast from "bootstrap/js/dist/toast";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import "../../src/ui/components/app-toast";
 import { mountElement } from "./lit-test-helpers";
@@ -14,6 +14,31 @@ interface ToastInstance {
 }
 
 describe("application toast", () => {
+  it("replaces a visible notification before its animation ends without crashing", async () => {
+    vi.useFakeTimers();
+    try {
+      const element = await mountElement<
+        HTMLElement & {
+          updateComplete: Promise<unknown>;
+          toast: { id: number; message: string; tone: "warning" };
+        }
+      >("autoschedule-app-toast", {
+        toast: { id: 1, message: "排班正在计算", tone: "warning" },
+      });
+
+      element.toast = {
+        id: 2,
+        message: "请等待当前任务完成",
+        tone: "warning",
+      };
+      await element.updateComplete;
+
+      expect(() => vi.runAllTimers()).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps danger errors visible until the close button is used", async () => {
     const element = await mountElement<
       HTMLElement & { updateComplete: Promise<unknown> }

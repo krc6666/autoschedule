@@ -21,6 +21,7 @@ function stateFor(
     name: "测试人员",
     status: "正常" as const,
     staffType: "常规" as const,
+    teamLeader: false,
     dutyQualified: false,
     nightShift: true,
   };

@@ -23,6 +23,7 @@ import {
   addOrdinaryPriorityPosition,
   deleteOrdinaryPriorityPosition,
   updateOrdinaryPriorityPosition,
+  setTeamLeaderGapFillPositionsMovable,
   type PolicyValue,
   type SchedulePolicyInput,
 } from "../policy-actions";
@@ -86,6 +87,13 @@ export function createPolicyCommands(command: StateCommand) {
     ) =>
       command((state) =>
         updateOrdinaryPriorityPosition(state, index, field, value)
+      ),
+    setTeamLeaderGapFillPositionsMovable: (
+      positionRuleIds: string[],
+      movable: boolean
+    ) =>
+      command((state) =>
+        setTeamLeaderGapFillPositionsMovable(state, positionRuleIds, movable)
       ),
   };
 }

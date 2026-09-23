@@ -53,7 +53,7 @@ export interface ScheduleFinalizerOptions {
   automaticTasks: readonly AssignmentTask[];
   preservedAssignments: readonly Assignment[];
   optimizationQuality: DailySchedulePlan["optimizationQuality"];
-  finalizeKe166Supervisor: () => Promise<void>;
+  finalizeMobileSupervisors: () => Promise<void>;
   reportProgress: (stage: ScheduleProgressStage, percent: number) => void;
   scheduleRunId: string;
 }
@@ -170,7 +170,7 @@ export async function finalizeSchedule({
   automaticTasks,
   preservedAssignments,
   optimizationQuality,
-  finalizeKe166Supervisor,
+  finalizeMobileSupervisors,
   reportProgress,
   scheduleRunId,
 }: ScheduleFinalizerOptions): Promise<ScheduleResult> {
@@ -183,7 +183,7 @@ export async function finalizeSchedule({
     runFacts,
     flights,
     displayRulesByFlight,
-    finalizeKe166Supervisor,
+    finalizeMobileSupervisors,
     onProgress: reportProgress,
   };
   const postReviewWarnings = await runCoveragePipeline(pipelineContext);
@@ -259,6 +259,7 @@ export async function finalizeSchedule({
     },
     sameDayLateObligationFacts: { state, date },
     lateShiftPositionReliefFacts: { state, date },
+    mobileSupervisorCoverageFacts: { state, date },
     ke166SnapshotFacts: { state, date },
     scarceQualificationFacts: { state, date },
     dutyPositionFacts: { state, date },

@@ -4,12 +4,13 @@ import { buildAssignmentDecisionTrace } from "./assignment-decision-trace";
 import { createAssignedPosition } from "./assignment-factory";
 import { applyEarlyReleases } from "./assignment-timing";
 import { diversionTransferCount } from "./diversion-release-usage";
-import { assignKe166SupervisorByCounterCoverage } from "./ke166-assignment";
+import { assignMobileSupervisorByCounterCoverage } from "./ke166-assignment";
 import { strictOverrideNotes } from "./schedule-decision-notes";
 import { selectAssignmentCandidate } from "../candidates/candidate-selection";
 import { makeUnfilled } from "../flights/schedule-position-rules";
 import {
   isKe166MobileSupervisor,
+  isMobileSupervisor,
   type AssignmentTask,
 } from "../flights/schedule-tasks";
 import { consecutivePositionAssignments } from "../statistics/schedule-frequency";
@@ -19,8 +20,9 @@ import type { SolverPort } from "../solver/solver-port";
 import { durationHours } from "../shared/time";
 import type { SchedulePreparation } from "../kernel/schedule-preparation";
 import { halfRestPeriodViolation } from "../rules/half-rest";
+import { schedulingDecision } from "../rules/schedule-rule-contract";
 
-export interface FinalizeKe166SupervisorsOptions {
+export interface FinalizeMobileSupervisorsOptions {
   solver: SolverPort;
   state: ScheduleGenerationFacts;
   date: string;
@@ -29,26 +31,30 @@ export interface FinalizeKe166SupervisorsOptions {
   lockedAssignmentIds: ReadonlySet<string>;
 }
 
-function ke166SupervisorTasks(
+function mobileSupervisorTasks(
   preparation: SchedulePreparation
 ): AssignmentTask[] {
-  return preparation.tasks.filter((task) =>
-    isKe166MobileSupervisor(task.flight, task.rule)
-  );
+  return preparation.tasks
+    .filter((task) => isMobileSupervisor(task.flight, task.rule))
+    .sort(
+      (left, right) =>
+        Number(!isKe166MobileSupervisor(left.flight, left.rule)) -
+        Number(!isKe166MobileSupervisor(right.flight, right.rule))
+    );
 }
 
-export async function finalizeKe166Supervisors({
+export async function finalizeMobileSupervisors({
   solver,
   state,
   date,
   assignments,
   preparation,
   lockedAssignmentIds,
-}: FinalizeKe166SupervisorsOptions): Promise<Assignment[]> {
-  const tasks = ke166SupervisorTasks(preparation);
+}: FinalizeMobileSupervisorsOptions): Promise<Assignment[]> {
+  const tasks = mobileSupervisorTasks(preparation);
   const processedTasks = new Set(
     preparation.tasks
-      .filter((task) => !isKe166MobileSupervisor(task.flight, task.rule))
+      .filter((task) => !isMobileSupervisor(task.flight, task.rule))
       .map((task) => task.key)
   );
   const dutyTargetTaskKeys = new Set([
@@ -60,6 +66,7 @@ export async function finalizeKe166Supervisors({
   const candidateRulePlan = createCandidateRulePlan(state.settings);
 
   for (const task of tasks) {
+    const ke166 = isKe166MobileSupervisor(task.flight, task.rule);
     const hours = durationHours(task.flight.startTime, task.flight.endTime);
     const selection = selectAssignmentCandidate({
       state,
@@ -79,7 +86,7 @@ export async function finalizeKe166Supervisors({
       currentDutyTargetTaskKeys: dutyTargetTaskKeys,
       preNoonRequired: false,
       canBreakStrictTransition: true,
-      finalizingKe166Supervisor: true,
+      finalizingKe166Supervisor: ke166,
       candidateRulePlan,
       evaluateEligibility: evaluateAutomaticHardConstraints,
     });
@@ -109,9 +116,10 @@ export async function finalizeKe166Supervisors({
           selection.candidates.indexOf(left) -
             selection.candidates.indexOf(right)
       );
-    let selected = orderedCandidates[0];
+    const selected = orderedCandidates[0];
     const runnerUp = orderedCandidates[1];
     const repeatedIndependentSupervisorCanBeReleased = Boolean(
+      ke166 &&
       selected &&
       consecutivePositionAssignments(
         state,
@@ -130,7 +138,7 @@ export async function finalizeKe166Supervisors({
         ))
     );
     if (repeatedIndependentSupervisorCanBeReleased) {
-      const reused = await assignKe166SupervisorByCounterCoverage(
+      const reused = await assignMobileSupervisorByCounterCoverage(
         solver,
         state,
         assignments,
@@ -148,7 +156,7 @@ export async function finalizeKe166Supervisors({
       }
     }
     if (!selected) {
-      const reused = await assignKe166SupervisorByCounterCoverage(
+      const reused = await assignMobileSupervisorByCounterCoverage(
         solver,
         state,
         assignments,
@@ -199,8 +207,17 @@ export async function finalizeKe166Supervisors({
               assignment.staffId === preparation.dutyStaffId
           )
       ),
-      finalizingKe166Supervisor: true,
+      finalizingKe166Supervisor: ke166,
     });
+    if (!ke166) {
+      decisionTrace.push(
+        schedulingDecision(
+          "mobile-supervisor",
+          "selected",
+          `${selected.name}在普通岗位排班完成后独立担任${task.flight.flightNo}/${task.rule.name}`
+        )
+      );
+    }
     assignments.push(
       createAssignedPosition(task, selected, hours, systemNotes, decisionTrace)
     );

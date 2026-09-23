@@ -457,6 +457,7 @@ describe("workbook boundary", () => {
         "跨航班重点人员优先",
         "同航班人员互斥",
         "末班重点航班范围",
+        "分队长补差保护范围",
       ])
     );
     const settingCodes = XLSX.utils
@@ -550,6 +551,10 @@ describe("workbook boundary", () => {
       },
     ];
     state.settings.latePriorityFlightNumbers = ["TR121", "TW616"];
+    state.settings.teamLeaderGapFillPositionPolicies = [
+      { flightNo: "AK151", position: "引导", movable: true },
+      { flightNo: "TR121", position: "H08", movable: false },
+    ];
     const workbook = buildConfigWorkbook(state);
     const imported = parseWorkbook(workbook, state.staff);
 
@@ -563,6 +568,7 @@ describe("workbook boundary", () => {
         "机动督导范围",
         "跨工作日资质预留",
         "末班重点航班范围",
+        "分队长补差保护范围",
       ])
     );
     expect(workbook.SheetNames).not.toContain("规则执行顺序");
@@ -571,6 +577,23 @@ describe("workbook boundary", () => {
     expect(imported.settings).toEqual(exportedSettings);
     expect(imported.settings).not.toHaveProperty("adminSupportEnabled");
     expect(workbook.SheetNames).not.toContain("值班备勤表");
+  });
+
+  it("rejects an invalid team-leader gap-fill protection sheet without partial import", () => {
+    const state = createDefaultState();
+    const workbook = buildConfigWorkbook(state);
+    workbook.Sheets["分队长补差保护范围"] = XLSX.utils.aoa_to_sheet([
+      ["航班号", "岗位名称", "允许参与补差换人"],
+      ["AK151", "引导", "是"],
+      ["TR121", "H08", "不确定"],
+    ]);
+
+    const imported = parseWorkbook(workbook, state.staff);
+
+    expect(
+      imported.settings?.teamLeaderGapFillPositionPolicies
+    ).toBeUndefined();
+    expect(imported.warnings.join("；")).toContain("分队长补差保护范围第3行");
   });
 
   it("keeps settings absent when importing an older configuration workbook", () => {

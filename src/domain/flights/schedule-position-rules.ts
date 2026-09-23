@@ -16,6 +16,16 @@ export function isFixedBottomPosition(position: string): boolean {
   return position.includes("引导") && !position.includes("督导");
 }
 
+/** A guide-shaped diversion position is movable only in the team-leader gap-fill path. */
+export function isGapFillGuidePosition(
+  rule: Pick<PositionRule, "category" | "name">
+): boolean {
+  return (
+    rule.category === "引导" ||
+    (rule.category === "分流" && isFixedBottomPosition(rule.name))
+  );
+}
+
 export function isSupervisorPosition(position: string): boolean {
   return position.includes("督导");
 }

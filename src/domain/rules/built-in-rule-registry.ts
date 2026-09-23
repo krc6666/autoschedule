@@ -1,6 +1,6 @@
 import type { ScheduleSettings } from "../../model";
 import {
-  SCHEDULING_RULES,
+  ACTIVE_SCHEDULING_RULES,
   type SchedulingRuleId,
 } from "./schedule-rule-contract";
 import {
@@ -46,7 +46,6 @@ import {
   type SchedulingHookExecutor,
 } from "./rule-registry";
 import { compactRegularAssignments } from "../coverage/schedule-coverage";
-import { fillVacancyWithTeamLeaderConcurrentSupervision } from "../coverage/team-leader-concurrent-supervision";
 
 export const CONFIGURABLE_RULE_SETTINGS: Partial<
   Record<
@@ -216,18 +215,18 @@ const RULE_EXECUTION: Readonly<
       id: "strict-next-workday-recovery",
     },
   ],
-  "ke166-supervisor": [
-    candidate(compareKe166Reservation),
+  "mobile-supervisor": [
     {
       kind: "post-schedule",
-      id: "ke166-supervisor-finalize",
-      pass: "ke166-finalize",
+      id: "mobile-supervisor-finalize",
+      pass: "mobile-supervisor-finalize",
       execute: async (context) => {
-        await context.finalizeKe166Supervisor();
+        await context.finalizeMobileSupervisors();
         return { warnings: [] };
       },
     },
   ],
+  "ke166-supervisor": [candidate(compareKe166Reservation)],
   "duty-position": [candidate(compareDutyPosition)],
   "scarce-qualification": [candidate(compareScarceQualification)],
   "position-compaction": [
@@ -249,27 +248,7 @@ const RULE_EXECUTION: Readonly<
       },
     },
   ],
-  "team-leader-concurrent-supervision": [
-    {
-      kind: "coverage",
-      id: "team-leader-concurrent-supervision",
-      pass: "primary",
-      execute: async (context) => {
-        const assignments = mutableAssignments(context);
-        return {
-          assignments,
-          warnings: await fillVacancyWithTeamLeaderConcurrentSupervision(
-            context.solver,
-            context.state,
-            assignments,
-            context.date,
-            context.lockedAssignmentIds,
-            context.runFacts
-          ),
-        };
-      },
-    },
-  ],
+  "team-leader-concurrent-supervision": [candidate(() => 0)],
   "cross-workday-qualification-reservation": [
     {
       kind: "daily-model",
@@ -363,8 +342,8 @@ const RULE_EXECUTION: Readonly<
     candidate(compareLatePriorityFrequency),
     review("late-priority-frequency", "primary", latePriorityFrequencyReview),
     review(
-      "post-ke166-late-priority-frequency-validation",
-      "after-ke166",
+      "post-mobile-supervisor-late-priority-frequency-validation",
+      "after-mobile-supervisor",
       latePriorityFrequencyReview
     ),
   ],
@@ -373,8 +352,8 @@ const RULE_EXECUTION: Readonly<
   "position-frequency-review": [
     review("position-frequency", "primary", positionFrequencyReview),
     review(
-      "post-ke166-frequency-validation",
-      "after-ke166",
+      "post-mobile-supervisor-frequency-validation",
+      "after-mobile-supervisor",
       positionFrequencyReview
     ),
   ],
@@ -387,15 +366,15 @@ const RULE_EXECUTION: Readonly<
   "position-rotation": [
     review("position-rotation", "primary", positionRotationReview),
     review(
-      "post-ke166-rotation-validation",
-      "after-ke166",
+      "post-mobile-supervisor-rotation-validation",
+      "after-mobile-supervisor",
       positionRotationReview
     ),
   ],
 };
 
 export const BUILT_IN_SCHEDULING_HOOKS: readonly SchedulingHook[] =
-  SCHEDULING_RULES.map((rule) => ({
+  ACTIVE_SCHEDULING_RULES.map((rule) => ({
     id: rule.id,
     label: rule.label,
     stage: rule.stage,

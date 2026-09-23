@@ -13,6 +13,10 @@ import type {
   SameFlightStaffExclusion,
 } from "../domain/rules/structured-policy-contract";
 import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
+import {
+  fixedTeamLeaderGapFillPositionReason,
+  teamLeaderGapFillPositionKey,
+} from "../domain/coverage/team-leader-gap-fill-protection";
 import { createId, normalizeText, splitList } from "../utils";
 import {
   appendPolicyItem,
@@ -76,6 +80,42 @@ export function applySchedulePolicy(
 ): boolean {
   state.settings = applyScheduleSettingsPatch(state.settings, input);
   return markActiveScheduleStale(state);
+}
+
+export function setTeamLeaderGapFillPositionsMovable(
+  state: AppState,
+  positionRuleIds: readonly string[],
+  movable: boolean
+): boolean {
+  const selectedIds = new Set(positionRuleIds);
+  const selectedRules = state.positionRules.filter(
+    (rule) =>
+      selectedIds.has(rule.id) && !fixedTeamLeaderGapFillPositionReason(rule)
+  );
+  if (!selectedRules.length) return false;
+
+  const policies = new Map(
+    state.settings.teamLeaderGapFillPositionPolicies.map((policy) => [
+      teamLeaderGapFillPositionKey(policy.flightNo, policy.position),
+      policy,
+    ])
+  );
+  let changed = false;
+  for (const rule of selectedRules) {
+    const key = teamLeaderGapFillPositionKey(rule.flightNo, rule.name);
+    const current = policies.get(key);
+    if (current?.movable === movable) continue;
+    policies.set(key, {
+      flightNo: rule.flightNo.trim().toUpperCase(),
+      position: rule.name.trim(),
+      movable,
+    });
+    changed = true;
+  }
+  if (!changed) return false;
+  state.settings.teamLeaderGapFillPositionPolicies = [...policies.values()];
+  markActiveScheduleStale(state);
+  return true;
 }
 
 export function addOrdinaryPriorityPosition(state: AppState): void {

@@ -15,6 +15,7 @@ import "./workbook-import-dialog";
 import "./legacy-schedule-import-dialog";
 import "./late-priority-counts-import-dialog";
 import "./swap-analysis-dialog";
+import "./team-leader-gap-fill-dialog";
 import { weekdayLabel } from "../../domain/flights/weekly-flight-plan";
 
 export class AppDialogElement extends LightDomElement {
@@ -79,6 +80,7 @@ export class AppDialogElement extends LightDomElement {
     if (dialog?.kind === "legacy-schedule-import")
       return "旧版手工排班导入预览";
     if (dialog?.kind === "swap-analysis") return "调整原因分析";
+    if (dialog?.kind === "team-leader-gap-fill") return "分队长补差";
     return "";
   }
 
@@ -137,6 +139,12 @@ export class AppDialogElement extends LightDomElement {
         .model=${this.model}
         .dialog=${dialog}
       ></autoschedule-swap-analysis-dialog>`;
+    if (dialog?.kind === "team-leader-gap-fill")
+      return html`<autoschedule-team-leader-gap-fill-dialog
+        class="modal-content-stack"
+        .model=${this.model}
+        .dialog=${dialog}
+      ></autoschedule-team-leader-gap-fill-dialog>`;
     return nothing;
   }
 

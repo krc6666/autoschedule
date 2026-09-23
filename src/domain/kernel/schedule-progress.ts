@@ -25,15 +25,15 @@ const POST_SCHEDULE_PROGRESS_METADATA: Readonly<
   "late-shift-recovery": { percent: 82, label: "保护上一班晚班人员" },
   "late-shift-cutoff": { percent: 85, label: "检查末班人员下班保护" },
   "position-rotation": { percent: 92, label: "检查连续轮岗" },
-  "post-ke166-late-priority-frequency-validation": {
+  "post-mobile-supervisor-late-priority-frequency-validation": {
     percent: 95,
     label: "复查机动督导后的末班轮换",
   },
-  "post-ke166-frequency-validation": {
+  "post-mobile-supervisor-frequency-validation": {
     percent: 96,
     label: "复查机动督导后的岗位轮换",
   },
-  "post-ke166-rotation-validation": {
+  "post-mobile-supervisor-rotation-validation": {
     percent: 98,
     label: "复查机动督导后的连续轮岗",
   },

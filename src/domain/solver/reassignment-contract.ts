@@ -43,8 +43,15 @@ export interface ReassignmentOptimizationOptions {
   leadingObjectives?: readonly ReassignmentChoiceObjective[];
   allowWorkloadBalanceRegression?: boolean;
   allowCutoffProtectionRegression?: boolean;
+  allowCrossWorkdayRecoveryRegression?: boolean;
+  allowCrossWorkdayReservationRegression?: boolean;
+  allowLoadProtectionRegression?: boolean;
+  allowDirectGuideReassignment?: boolean;
+  collectAllCandidateRejections?: boolean;
   validateChanges?(changes: readonly RotationStaffChange[]): readonly string[];
+  requiredStaffIds?: readonly string[];
   maxParticipants?: number;
+  maxChangedAssignments?: number;
   timeoutMs?: number;
   acceptTimeLimitedFeasible?: boolean;
 }
@@ -53,6 +60,11 @@ export interface ReassignmentOptimizationResult {
   changes: RotationStaffChange[] | null;
   attemptedReasons: string[];
   candidateRejections?: {
+    assignmentId?: string;
+    flightNo?: string;
+    position?: string;
+    startTime?: string;
+    endTime?: string;
     staffId: string;
     staffName: string;
     reasons: string[];

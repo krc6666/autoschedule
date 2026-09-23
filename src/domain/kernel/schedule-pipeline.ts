@@ -1,4 +1,4 @@
-import type { Flight, ScheduleSettings } from "../../model";
+import type { Flight, PositionRule, ScheduleSettings } from "../../model";
 import type { ScheduleMutationContext } from "../rules/rule-registry";
 import {
   compileSchedulingPlan,
@@ -30,13 +30,14 @@ export function postScheduleReviewPlan(
 
 export function plannedScheduleProgress(
   settings: ScheduleSettings,
-  flights: readonly Pick<Flight, "flightNo">[]
+  flights: readonly Pick<Flight, "flightNo">[],
+  positionRules: readonly Pick<PositionRule, "flightNo" | "category">[]
 ): readonly ScheduleProgressStep[] {
   const mutationStages = [
     ...coverageHookPlan(settings),
     ...postScheduleReviewPlan(settings),
   ]
-    .filter((item) => mutationApplies(item, flights))
+    .filter((item) => mutationApplies(item, flights, positionRules))
     .flatMap((item) =>
       visibleScheduleProgressStep(item.stage) ? [item.stage] : []
     );
@@ -52,9 +53,10 @@ export function plannedScheduleProgress(
 
 function mutationApplies(
   item: PlannedScheduleMutation,
-  flights: readonly Pick<Flight, "flightNo">[]
+  flights: readonly Pick<Flight, "flightNo">[],
+  positionRules: readonly Pick<PositionRule, "flightNo" | "category">[]
 ): boolean {
-  return postScheduleMutationApplies(item, flights);
+  return postScheduleMutationApplies(item, flights, positionRules);
 }
 
 export async function runScheduleMutationPlan(
@@ -63,7 +65,8 @@ export async function runScheduleMutationPlan(
 ): Promise<string[]> {
   const warnings: string[] = [];
   for (const item of plan) {
-    if (!mutationApplies(item, context.flights)) continue;
+    if (!mutationApplies(item, context.flights, context.state.positionRules))
+      continue;
     const progress = visibleScheduleProgressStep(item.stage);
     if (progress) context.onProgress?.(progress.stage, progress.percent);
     const proposal = await item.executor.execute(context);

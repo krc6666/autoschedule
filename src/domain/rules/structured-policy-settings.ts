@@ -8,6 +8,7 @@ import type {
   PositionTransitionPolicy,
   SameFlightStaffExclusion,
   StructuredSchedulePolicies,
+  TeamLeaderGapFillPositionPolicy,
 } from "./structured-policy-contract";
 
 const CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
@@ -16,6 +17,7 @@ const DEFAULT_STRUCTURED_POLICIES: StructuredSchedulePolicies = {
   sameFlightStaffExclusions: [],
   crossWorkdayQualificationReservations: [],
   crossFlightPriorityPolicies: [],
+  teamLeaderGapFillPositionPolicies: [],
   lateShiftRecoveryPositionRules: [
     {
       id: "late-recovery-supervisor",
@@ -124,6 +126,29 @@ const DEFAULT_STRUCTURED_POLICIES: StructuredSchedulePolicies = {
     },
   ],
 };
+
+function normalizeTeamLeaderGapFillPositionPolicies(
+  value: unknown,
+  fallback: TeamLeaderGapFillPositionPolicy[]
+): TeamLeaderGapFillPositionPolicy[] {
+  const normalized = new Map<string, TeamLeaderGapFillPositionPolicy>();
+  sourceArray(value, fallback)
+    .filter((item) => item && typeof item === "object")
+    .forEach((item) => {
+      const policy = item as Partial<TeamLeaderGapFillPositionPolicy>;
+      const flightNo = String(policy.flightNo ?? "")
+        .trim()
+        .toUpperCase();
+      const position = String(policy.position ?? "").trim();
+      if (!flightNo || !position || typeof policy.movable !== "boolean") return;
+      normalized.set(`${flightNo}\u0000${position.toUpperCase()}`, {
+        flightNo,
+        position,
+        movable: policy.movable,
+      });
+    });
+  return [...normalized.values()];
+}
 
 function normalizeSameFlightStaffExclusions(
   value: unknown,
@@ -384,5 +409,10 @@ export function normalizeStructuredPolicies(
       input.crossFlightPriorityPolicies,
       fallback.crossFlightPriorityPolicies
     ),
+    teamLeaderGapFillPositionPolicies:
+      normalizeTeamLeaderGapFillPositionPolicies(
+        input.teamLeaderGapFillPositionPolicies,
+        fallback.teamLeaderGapFillPositionPolicies
+      ),
   };
 }

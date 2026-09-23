@@ -126,7 +126,6 @@ export class PolicySettingsFormElement extends LightDomElement {
             ${this.ordinaryPriorityPositionCollection()}
             ${this.toggle("lateShiftRecoveryEnabled", "跨工作日恢复保护", "全局开放链优先避免连续晚间重岗位")}
             ${this.time("lateShiftEndTime", "末班结束界线（晚于）")}
-            ${this.number("teamLeaderConcurrentSupervisionMaxOverlapMinutes", "分队长并行督导最大重叠", 0, 720, 5)}
             ${this.toggle("workloadBalanceEnabled", "工时与疲劳均衡", "压力不宽松时启用")}
             ${this.number("maxWorkHoursDifference", "最大工时差", 0, 24, 0.5)}
             ${this.number("maxTodayFatigueDifference", "最大当日疲劳差", 0, 100, 0.5)}

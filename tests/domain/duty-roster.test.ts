@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultState } from "../../src/defaults";
+import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
 import { generateSchedule } from "../helpers/generate-schedule";
 import {
   clearMonthlyDutyRosterOverrides,

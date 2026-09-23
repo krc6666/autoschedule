@@ -7,9 +7,10 @@ import type {
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import type { SolverProblem, SolverResult } from "../solver/solver-port";
 import {
-  isKe166MobileSupervisor,
+  isMobileSupervisor,
   isNumberedRegularPosition,
 } from "../flights/schedule-tasks";
+import { canMobileSupervisorCoverPosition } from "../coverage/mobile-supervisor-coverage";
 import {
   isStrictNextWorkdayRecoveryTarget,
   previousWorkdayLateProtection,
@@ -276,7 +277,12 @@ function isControlledConcurrentPair(
     sourceTask &&
     supervisorTask &&
     isNumberedRegularPosition(sourceTask.rule) &&
-    isKe166MobileSupervisor(supervisorTask.flight, supervisorTask.rule)
+    isMobileSupervisor(supervisorTask.flight, supervisorTask.rule) &&
+    canMobileSupervisorCoverPosition(state, {
+      flightNo: source.flightNo,
+      position: source.position,
+      remark: source.remark,
+    })
   ) {
     return true;
   }

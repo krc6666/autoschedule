@@ -1,5 +1,5 @@
 import {
-  SCHEDULING_RULES,
+  ACTIVE_SCHEDULING_RULES,
   SCHEDULING_STAGE_ORDER,
   schedulingRuleDefinition,
   type SchedulingRuleId,
@@ -49,8 +49,10 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "常规跨航班连续工作必须留足准备时间；符合条件的下午分流按提前撤岗配置接续。",
   "strict-next-workday-recovery":
     "选择严格限制时，上一班末班重点岗位人员不得承担配置的次班恢复目标；唯一例外是为补齐半休造成的后续岗位空缺。没有半休补位例外且无完整方案时，本次排班失败。",
+  "mobile-supervisor":
+    "所有明确分类为机动督导的顶部岗位都先找独立人选；人手不足时才在规则允许的同航班柜台兼任或安全重排。",
   "ke166-supervisor":
-    "先完成柜台与重点岗位，再安排独立督导；只有缺员时才受控兼任。",
+    "仅为 KE166 保留第二真人容量、跨航班重点人员及专属轮岗保护。",
   "duty-position": "按值班优先项安排晚撤岗位，并只锁定实际安排的岗位。",
   "scarce-qualification":
     "12 点前先安排可胜任人数更少的岗位，避免稀缺人员被提前占用。",
@@ -123,6 +125,6 @@ export function userRulePresentation(id: SchedulingRuleId) {
   };
 }
 
-export const USER_SCHEDULING_RULES = SCHEDULING_RULES.map((rule) =>
+export const USER_SCHEDULING_RULES = ACTIVE_SCHEDULING_RULES.map((rule) =>
   userRulePresentation(rule.id)
 );

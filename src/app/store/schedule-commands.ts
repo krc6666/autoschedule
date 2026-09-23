@@ -11,6 +11,10 @@ import {
 import { applyStaffStatusChange } from "../../domain/kernel/schedule-state";
 import type { ScheduleResult, StaffStatus } from "../../model";
 import type { StateCommand } from "./store-command";
+import {
+  applyTeamLeaderGapFillPreview,
+  type TeamLeaderGapFillPreview,
+} from "../../domain/coverage/team-leader-gap-fill";
 
 export function createScheduleCommands(command: StateCommand) {
   return {
@@ -51,6 +55,12 @@ export function createScheduleCommands(command: StateCommand) {
       command((state) => deleteTemporaryAssignment(state, id)),
     applyStaffStatus: (id: string, status: StaffStatus) =>
       command((state) => applyStaffStatusChange(state, id, status)),
+    applyTeamLeaderGapFill: (preview: TeamLeaderGapFillPreview) =>
+      command((state) => {
+        const result = applyTeamLeaderGapFillPreview(state, preview);
+        if (result.kind === "applied") state.assignments = result.assignments;
+        return result;
+      }),
     setAdministrativeMode: (enabled: boolean) =>
       command((state) => {
         state.settings.adminSupportEnabled = enabled;

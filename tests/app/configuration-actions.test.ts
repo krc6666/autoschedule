@@ -7,6 +7,7 @@ import {
   addFlightsFromTemplates,
   addStaff,
   copyPositionRules,
+  deletePosition,
   deleteTemplate,
   deleteStaff,
   saveQualified,
@@ -18,6 +19,24 @@ import { buildFlightPlanReconciliation } from "../../src/domain/flights/flight-p
 import type { OnlineFlightQueryResult } from "../../src/infrastructure/flight-query";
 
 describe("configuration actions", () => {
+  it("keeps team-leader gap-fill position references synchronized on rename and delete", () => {
+    const state = createDefaultState();
+    const rule = state.positionRules[0]!;
+    state.settings.teamLeaderGapFillPositionPolicies = [
+      { flightNo: rule.flightNo, position: rule.name, movable: true },
+    ];
+
+    expect(
+      updateConfigurationField(state, "position", rule.id, "name", "新岗位名")
+    ).toBe("updated");
+    expect(state.settings.teamLeaderGapFillPositionPolicies).toEqual([
+      { flightNo: rule.flightNo, position: "新岗位名", movable: true },
+    ]);
+
+    expect(deletePosition(state, rule.id)).toBe(true);
+    expect(state.settings.teamLeaderGapFillPositionPolicies).toEqual([]);
+  });
+
   it("updates only the selected weekday and keeps template references synchronized", () => {
     const state = createDefaultState();
     const template = state.templates[0]!;

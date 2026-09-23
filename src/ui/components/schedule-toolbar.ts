@@ -48,6 +48,16 @@ export class ScheduleToolbarElement extends LightDomElement {
             : null
         }
         ${this.command("arrow-repeat", "重新排班", "open-reschedule-flight-picker", "btn-primary")}
+        ${
+          this.historyEditDate === this.date
+            ? null
+            : this.command(
+                "person-fill-add",
+                "分队长补差",
+                "open-team-leader-gap-fill",
+                "btn-outline-primary"
+              )
+        }
         ${this.command("calendar2-plus", "归档并排后天", "archive-next-duty-day", "btn-success")}
         ${this.command("file-earmark-excel", "导出结果", "export-schedule", "btn-outline-success")}
         ${this.iconCommand("filetype-html", "导出 HTML", "export-share-html")}
@@ -93,6 +103,7 @@ export class ScheduleToolbarElement extends LightDomElement {
     type:
       | "generate-schedule"
       | "open-reschedule-flight-picker"
+      | "open-team-leader-gap-fill"
       | "archive-next-duty-day"
       | "export-schedule"
       | "archive-schedule",

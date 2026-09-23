@@ -5,14 +5,14 @@ import {
   BUILT_IN_RULE_REGISTRY,
   builtInRulePreferences,
 } from "../../src/domain/rules/built-in-rule-registry";
-import { SCHEDULING_RULES } from "../../src/domain/rules/schedule-rule-contract";
+import { ACTIVE_SCHEDULING_RULES } from "../../src/domain/rules/schedule-rule-contract";
 
 describe("built-in rule registry", () => {
   it("owns every central rule exactly once and reserves KE166 before duty", () => {
     const plan = BUILT_IN_RULE_REGISTRY.executionPlan();
 
     expect(plan.map((hook) => hook.id).sort()).toEqual(
-      SCHEDULING_RULES.map((rule) => rule.id).sort()
+      ACTIVE_SCHEDULING_RULES.map((rule) => rule.id).sort()
     );
     expect(
       plan.findIndex((hook) => hook.id === "ke166-supervisor")

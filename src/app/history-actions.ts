@@ -94,6 +94,7 @@ export function buildHistoricalScheduleDraft(
     assignment.workHours = record.workHours;
     assignment.fatiguePoints = record.fatiguePoints;
     assignment.remark = record.remark;
+    if (record.teamLeaderGapFill) assignment.teamLeaderGapFill = true;
     assignment.manualRemark = "";
     assignment.status = assignment.staffId ? "assigned" : assignment.status;
   }
@@ -138,6 +139,7 @@ export function currentScheduleHistory(
         item.manualRemark,
         item.manualOverrideWarnings
       ),
+      ...(item.teamLeaderGapFill ? { teamLeaderGapFill: true as const } : {}),
     }));
   const roster = getDutyRosterForDate(state, date);
   const dutyPerson = roster.dutyStaffId

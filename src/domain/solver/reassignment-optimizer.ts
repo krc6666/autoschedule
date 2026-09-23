@@ -36,6 +36,24 @@ function participantLimitReasons(
     : [];
 }
 
+function changedAssignmentLimitReasons(
+  options: ReassignmentOptimizationOptions,
+  changes: readonly { assignmentId: string; staffId: string }[]
+): string[] {
+  if (!options.maxChangedAssignments) return [];
+  const changedAssignmentIds = new Set(
+    changes.flatMap((change) => {
+      const original = options.assignments.find(
+        (assignment) => assignment.id === change.assignmentId
+      );
+      return original?.staffId === change.staffId ? [] : [change.assignmentId];
+    })
+  );
+  return changedAssignmentIds.size > options.maxChangedAssignments
+    ? [`整体方案最多改变${options.maxChangedAssignments}个岗位`]
+    : [];
+}
+
 export async function optimizeReassignment(
   options: ReassignmentOptimizationOptions
 ): Promise<ReassignmentOptimizationResult> {
@@ -130,6 +148,7 @@ export async function optimizeReassignment(
       : decodedChanges;
     const reasons = [
       ...participantLimitReasons(options, changes),
+      ...changedAssignmentLimitReasons(options, changes),
       ...reassignmentSafetyReasons({
         kind: "plan",
         state: options.state,
@@ -145,6 +164,12 @@ export async function optimizeReassignment(
         allowWorkloadBalanceRegression: options.allowWorkloadBalanceRegression,
         allowCutoffProtectionRegression:
           options.allowCutoffProtectionRegression,
+        allowCrossWorkdayRecoveryRegression:
+          options.allowCrossWorkdayRecoveryRegression,
+        allowCrossWorkdayReservationRegression:
+          options.allowCrossWorkdayReservationRegression,
+        allowLoadProtectionRegression: options.allowLoadProtectionRegression,
+        allowDirectGuideReassignment: options.allowDirectGuideReassignment,
       }),
       ...(options.validateChanges?.(changes) ?? []),
     ];

@@ -15,6 +15,10 @@ import {
   replaceWeeklyFlightNumber,
   replaceWeeklyFlightPlan,
 } from "../domain/flights/weekly-flight-plan";
+import {
+  removeTeamLeaderGapFillPositionReference,
+  replaceTeamLeaderGapFillPositionReference,
+} from "../domain/coverage/team-leader-gap-fill-protection";
 
 export type ConfigurationValue = string | number | boolean;
 
@@ -357,9 +361,16 @@ export function copyPositionRules(
 }
 
 export function deletePosition(state: AppState, id: string): boolean {
+  const deleted = state.positionRules.find((item) => item.id === id);
   const before = state.positionRules.length;
   state.positionRules = state.positionRules.filter((item) => item.id !== id);
   if (state.positionRules.length === before) return false;
+  if (deleted)
+    state.settings.teamLeaderGapFillPositionPolicies =
+      removeTeamLeaderGapFillPositionReference(
+        state.settings.teamLeaderGapFillPositionPolicies,
+        deleted
+      );
   clearSchedule(state);
   return true;
 }
@@ -469,6 +480,7 @@ export function updateConfigurationField(
   if (entity === "position") {
     const rule = state.positionRules.find((item) => item.id === id);
     if (!rule) return "missing";
+    const previousReference = { flightNo: rule.flightNo, name: rule.name };
     (rule as unknown as Record<string, unknown>)[field] =
       typeof value === "string" && field === "flightNo"
         ? value.toUpperCase()
@@ -482,6 +494,13 @@ export function updateConfigurationField(
     }
     if (field === "name" || field === "flightNo")
       state.positionRules = orderPositionRules(state.positionRules);
+    if (field === "name" || field === "flightNo")
+      state.settings.teamLeaderGapFillPositionPolicies =
+        replaceTeamLeaderGapFillPositionReference(
+          state.settings.teamLeaderGapFillPositionPolicies,
+          previousReference,
+          rule
+        );
     clearSchedule(state);
     return "updated";
   }
@@ -550,6 +569,11 @@ export function updateConfigurationField(
       state.settings.sameFlightStaffExclusions.forEach(
         (rule) => (rule.flightNo = rename(rule.flightNo))
       );
+      state.settings.teamLeaderGapFillPositionPolicies =
+        state.settings.teamLeaderGapFillPositionPolicies.map((policy) => ({
+          ...policy,
+          flightNo: rename(policy.flightNo),
+        }));
       state.latePriorityFrequencyAdjustments.forEach(
         (adjustment) => (adjustment.flightNo = rename(adjustment.flightNo))
       );

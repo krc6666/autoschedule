@@ -8,6 +8,7 @@ import type {
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
   SameFlightStaffExclusion,
+  TeamLeaderGapFillPositionPolicy,
 } from "./domain/rules/structured-policy-contract";
 import type { LatePriorityFrequencyKind } from "./domain/reviews/late-priority-policy";
 
@@ -78,6 +79,8 @@ export interface HistoryRecord {
   remark: string;
   /** Whether this record represents a complete day or a scoped legacy import. */
   historyCoverage?: "complete" | "late-priority-only";
+  /** True only for a team leader assignment confirmed through gap fill. */
+  teamLeaderGapFill?: true;
 }
 
 export interface Assignment {
@@ -104,6 +107,8 @@ export interface Assignment {
   };
   manualOverrideWarnings?: Array<{ code: string; message: string }>;
   supervisorSourceAssignmentId?: string;
+  /** True only for a team leader assignment confirmed through gap fill. */
+  teamLeaderGapFill?: true;
   layoutGroup?: "primary" | "bottom";
   layoutIndex?: number;
 }
@@ -170,6 +175,7 @@ export interface ScheduleSettings {
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
   crossWorkdayQualificationReservations: CrossWorkdayQualificationReservation[];
   crossFlightPriorityPolicies: CrossFlightPriorityPolicy[];
+  teamLeaderGapFillPositionPolicies: TeamLeaderGapFillPositionPolicy[];
   earlyDepartureCutoffTime: string;
   afternoonRestStartTime: string;
   afternoonRestEndTime: string;

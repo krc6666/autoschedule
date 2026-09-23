@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultScheduleSettings } from "../../src/domain/rules/schedule-settings";
-import { SCHEDULING_RULES } from "../../src/domain/rules/schedule-rule-contract";
+import { ACTIVE_SCHEDULING_RULES } from "../../src/domain/rules/schedule-rule-contract";
 import {
   compileSchedulingPlan,
   dailyObjectiveIsBestEffort,
@@ -14,7 +14,7 @@ describe("compiled scheduling execution plan", () => {
     const plan = compileSchedulingPlan(createDefaultScheduleSettings());
 
     expect(plan.hooks.map((hook) => hook.id)).toEqual(
-      SCHEDULING_RULES.map((rule) => rule.id)
+      ACTIVE_SCHEDULING_RULES.map((rule) => rule.id)
     );
   });
 
@@ -48,10 +48,10 @@ describe("compiled scheduling execution plan", () => {
       "late-shift-recovery",
       "late-shift-cutoff",
       "position-rotation",
-      "ke166-supervisor-finalize",
-      "post-ke166-late-priority-frequency-validation",
-      "post-ke166-frequency-validation",
-      "post-ke166-rotation-validation",
+      "mobile-supervisor-finalize",
+      "post-mobile-supervisor-late-priority-frequency-validation",
+      "post-mobile-supervisor-frequency-validation",
+      "post-mobile-supervisor-rotation-validation",
     ]);
   });
 

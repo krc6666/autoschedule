@@ -61,9 +61,15 @@ export const SCHEDULING_RULES = [
     feedbackMode: "aggregated",
   },
   {
+    id: "mobile-supervisor",
+    stage: "reserved-assignment",
+    label: "机动督导独立优先与缺员兼任",
+    feedbackMode: "aggregated",
+  },
+  {
     id: "ke166-supervisor",
     stage: "reserved-assignment",
-    label: "KE166独立督导优先保留与缺员兼任",
+    label: "KE166第二真人容量与专项保护",
     feedbackMode: "aggregated",
   },
   {
@@ -283,6 +289,19 @@ export const SCHEDULING_RULES = [
 )[];
 
 export type SchedulingRuleId = (typeof SCHEDULING_RULES)[number]["id"];
+export type ActiveSchedulingRuleId = Exclude<
+  SchedulingRuleId,
+  "team-leader-concurrent-supervision"
+>;
+
+export const ACTIVE_SCHEDULING_RULES = SCHEDULING_RULES.filter(
+  (
+    rule
+  ): rule is Extract<
+    (typeof SCHEDULING_RULES)[number],
+    { id: ActiveSchedulingRuleId }
+  > => rule.id !== "team-leader-concurrent-supervision"
+);
 export type RuleFeedbackKey = Extract<
   (typeof SCHEDULING_RULES)[number],
   { feedbackMode: "dedicated" }

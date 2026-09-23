@@ -75,6 +75,27 @@ describe("state persistence", () => {
     ).toEqual([]);
   });
 
+  it("round-trips team-leader gap-fill position policies and defaults older state to none", () => {
+    const state = createDefaultState();
+    state.settings.teamLeaderGapFillPositionPolicies = [
+      { flightNo: "AK151", position: "引导", movable: true },
+      { flightNo: "TR121", position: "H08", movable: false },
+    ];
+    let value = "";
+    saveState(state, { setItem: (_key, next) => (value = next) });
+    expect(
+      loadState({ getItem: () => value }).settings
+        .teamLeaderGapFillPositionPolicies
+    ).toEqual(state.settings.teamLeaderGapFillPositionPolicies);
+
+    const legacy = JSON.parse(JSON.stringify(state));
+    delete legacy.settings.teamLeaderGapFillPositionPolicies;
+    expect(
+      loadState({ getItem: () => JSON.stringify(legacy) }).settings
+        .teamLeaderGapFillPositionPolicies
+    ).toEqual([]);
+  });
+
   it("migrates v6 cross-flight position rows without guessing people", () => {
     const legacy = JSON.parse(JSON.stringify(createDefaultState()));
     legacy.version = 6;

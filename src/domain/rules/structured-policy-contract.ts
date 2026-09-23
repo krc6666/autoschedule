@@ -66,6 +66,12 @@ export interface SameFlightStaffExclusion {
   flightNo: string;
 }
 
+export interface TeamLeaderGapFillPositionPolicy {
+  flightNo: string;
+  position: string;
+  movable: boolean;
+}
+
 export interface StructuredSchedulePolicies {
   sameFlightStaffExclusions: SameFlightStaffExclusion[];
   positionTransitionPolicies: PositionTransitionPolicy[];
@@ -75,6 +81,7 @@ export interface StructuredSchedulePolicies {
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
   crossWorkdayQualificationReservations: CrossWorkdayQualificationReservation[];
   crossFlightPriorityPolicies: CrossFlightPriorityPolicy[];
+  teamLeaderGapFillPositionPolicies: TeamLeaderGapFillPositionPolicy[];
 }
 
 export const STRUCTURED_POLICY_KEYS = [
@@ -86,4 +93,5 @@ export const STRUCTURED_POLICY_KEYS = [
   "mobileSupervisorCoverageRules",
   "crossWorkdayQualificationReservations",
   "crossFlightPriorityPolicies",
+  "teamLeaderGapFillPositionPolicies",
 ] as const satisfies readonly (keyof StructuredSchedulePolicies)[];

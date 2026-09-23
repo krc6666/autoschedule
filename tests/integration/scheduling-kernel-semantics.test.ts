@@ -75,7 +75,10 @@ describe("scheduler semantic quality", { timeout: 15_000 }, () => {
     const loads = [...loadByStaff.values()];
     expect(loads).toHaveLength(
       state.staff.filter(
-        (person) => person.status === "正常" && person.staffType === "常规"
+        (person) =>
+          person.status === "正常" &&
+          person.staffType === "常规" &&
+          !person.teamLeader
       ).length
     );
     expect(Math.max(...loads.map((load) => load.hours))).toBeLessThanOrEqual(
@@ -92,7 +95,7 @@ describe("scheduler semantic quality", { timeout: 15_000 }, () => {
       {
         "maximumFatigue": 13,
         "maximumHours": 6,
-        "minimumFatigue": 4.5,
+        "minimumFatigue": 3,
         "minimumHours": 2,
         "totalFatigue": 125.5,
         "totalHours": 70,

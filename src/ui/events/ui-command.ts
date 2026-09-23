@@ -38,6 +38,11 @@ export type UiCommand =
       value: string;
     }
   | {
+      type: "set-team-leader-gap-fill-positions-movable";
+      positionRuleIds: string[];
+      movable: boolean;
+    }
+  | {
       type: "adjust-ordinary-priority-frequency";
       month: string;
       staffId: string;
@@ -54,6 +59,14 @@ export type UiCommand =
       type: "update-reschedule-flight-picker-selection";
       selectedIds: string[];
     }
+  | { type: "open-team-leader-gap-fill" }
+  | { type: "update-team-leader-gap-fill-leader"; staffId: string }
+  | {
+      type: "update-team-leader-gap-fill-vacancies";
+      assignmentIds: string[];
+    }
+  | { type: "preview-team-leader-gap-fill" }
+  | { type: "confirm-team-leader-gap-fill" }
   | {
       type: "update-reschedule-flight-picker-passengers";
       candidateId: string;

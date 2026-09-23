@@ -18,6 +18,7 @@ export type ScalarScheduleSettingKey = Exclude<
   | "latePriorityFlightNumbers"
   | "ordinaryPriorityPositions"
   | "sameFlightStaffExclusions"
+  | "teamLeaderGapFillPositionPolicies"
 >;
 
 export interface ScheduleSettingDefinition {
@@ -264,6 +265,7 @@ function scalarDefaults(): Omit<
   | "latePriorityFlightNumbers"
   | "ordinaryPriorityPositions"
   | "sameFlightStaffExclusions"
+  | "teamLeaderGapFillPositionPolicies"
 > {
   return Object.fromEntries(
     SCHEDULE_SETTING_DEFINITIONS.map((definition) => [

@@ -3,7 +3,10 @@ import { hasDutyMorningAssignment } from "../assignments/duty-assignment";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
 import { diversionTransferCount } from "../assignments/diversion-release-usage";
 import { canAssignStaff } from "../candidates/assignment-eligibility";
-import { assignmentRule } from "../flights/schedule-position-rules";
+import {
+  assignmentRule,
+  isGapFillGuidePosition,
+} from "../flights/schedule-position-rules";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { intervalsOverlap } from "../shared/time";
@@ -134,7 +137,11 @@ function plannedAssignmentSafetyReasons(
   frequencyFacts?: ScheduleFrequencyFacts,
   latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy,
   allowWorkloadBalanceRegression = false,
-  allowCutoffProtectionRegression = false
+  allowCutoffProtectionRegression = false,
+  allowCrossWorkdayRecoveryRegression = false,
+  allowDirectGuideReassignment = false,
+  allowLoadProtectionRegression = false,
+  allowCrossWorkdayReservationRegression = false
 ): string[] {
   const originalById = new Map(
     assignments.map((assignment) => [assignment.id, assignment])
@@ -223,11 +230,19 @@ function plannedAssignmentSafetyReasons(
           ),
         }
       : plannedState;
-    const assignmentError = canAssignStaff(
-      validationState,
-      assignment.id,
-      assignment.staffId
+    const assignedPerson = state.staff.find(
+      (person) => person.id === assignment.staffId
     );
+    const assignmentRuleForChange = assignmentRule(state, assignment);
+    const directGuideException = Boolean(
+      allowDirectGuideReassignment &&
+      assignmentRuleForChange &&
+      isGapFillGuidePosition(assignmentRuleForChange) &&
+      assignedPerson?.teamLeader === true
+    );
+    const assignmentError = directGuideException
+      ? null
+      : canAssignStaff(validationState, assignment.id, assignment.staffId);
     if (assignmentError) reasons.push(rotationCycleReason(assignmentError));
     reasons.push(
       ...reassignmentCandidateSafetyReasons({
@@ -241,6 +256,7 @@ function plannedAssignmentSafetyReasons(
         frequencyFacts,
         latePriorityFatigueRelief,
         allowCutoffProtectionRegression,
+        allowCrossWorkdayRecoveryRegression,
       })
     );
     const safetyAssignments = permittedConcurrentAssignmentIds.has(
@@ -259,6 +275,7 @@ function plannedAssignmentSafetyReasons(
         assignment,
         primaryAssignment,
         review,
+        allowLoadProtectionRegression,
       })
     );
   }
@@ -396,6 +413,7 @@ function plannedAssignmentSafetyReasons(
     ])
   );
   if (
+    !allowCrossWorkdayReservationRegression &&
     crossWorkdayReservationStatuses(state, planned).some(
       (status) =>
         status.shortfall >
@@ -426,6 +444,10 @@ interface ReassignmentSafetyOptionsBase {
   latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy;
   allowWorkloadBalanceRegression?: boolean;
   allowCutoffProtectionRegression?: boolean;
+  allowCrossWorkdayRecoveryRegression?: boolean;
+  allowCrossWorkdayReservationRegression?: boolean;
+  allowLoadProtectionRegression?: boolean;
+  allowDirectGuideReassignment?: boolean;
 }
 
 interface RotationCycleSafetyOptions extends ReassignmentSafetyOptionsBase {
@@ -485,7 +507,13 @@ export function reassignmentSafetyReasons(
       facts,
       undefined,
       frequencyFacts,
-      options.latePriorityFatigueRelief
+      options.latePriorityFatigueRelief,
+      false,
+      false,
+      options.allowCrossWorkdayRecoveryRegression,
+      options.allowDirectGuideReassignment,
+      options.allowLoadProtectionRegression,
+      options.allowCrossWorkdayReservationRegression
     );
   }
 
@@ -530,7 +558,11 @@ export function reassignmentSafetyReasons(
       frequencyFacts,
       options.latePriorityFatigueRelief,
       options.allowWorkloadBalanceRegression,
-      options.allowCutoffProtectionRegression
+      options.allowCutoffProtectionRegression,
+      options.allowCrossWorkdayRecoveryRegression,
+      options.allowDirectGuideReassignment,
+      options.allowLoadProtectionRegression,
+      options.allowCrossWorkdayReservationRegression
     );
   }
 
@@ -554,6 +586,13 @@ export function reassignmentSafetyReasons(
     "recovery",
     facts,
     undefined,
-    frequencyFacts
+    frequencyFacts,
+    undefined,
+    false,
+    false,
+    options.allowCrossWorkdayRecoveryRegression,
+    options.allowDirectGuideReassignment,
+    options.allowLoadProtectionRegression,
+    options.allowCrossWorkdayReservationRegression
   );
 }

@@ -6,10 +6,7 @@ import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
 import { diversionTransferAssignmentIds } from "../assignments/diversion-release-usage";
 import { preNoonShortageNote } from "../coverage/schedule-coverage";
 import { makeUnfilled } from "../flights/schedule-position-rules";
-import {
-  isKe166MobileSupervisor,
-  isPreNoonFlight,
-} from "../flights/schedule-tasks";
+import { isMobileSupervisor, isPreNoonFlight } from "../flights/schedule-tasks";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import {
   compareCandidateRulePlan,
@@ -427,7 +424,7 @@ export function materializeValidatedDailySchedulePlan(options: {
     date: options.date,
     assignments: plan.assignments,
     tasks: options.preparation.tasks.filter(
-      (task) => !isKe166MobileSupervisor(task.flight, task.rule)
+      (task) => !isMobileSupervisor(task.flight, task.rule)
     ),
     evaluateEligibility: evaluateAutomaticHardConstraints,
     halfRestFacts: options.preparation.runFacts.halfRest,

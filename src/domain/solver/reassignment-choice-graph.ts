@@ -5,7 +5,10 @@ import {
   diagnoseBaseAssignmentEligibility,
   diagnoseSameAirlinePriorityEligibility,
 } from "../candidates/assignment-eligibility";
-import { assignmentRule } from "../flights/schedule-position-rules";
+import {
+  assignmentRule,
+  isGapFillGuidePosition,
+} from "../flights/schedule-position-rules";
 import {
   reassignmentCandidateSafetyReasons,
   reassignmentDynamicSafetyReasons,
@@ -32,6 +35,11 @@ export interface PreparedReassignmentChoices {
   fixed: Assignment[];
   candidateRejectionReasons: string[];
   candidateRejections: {
+    assignmentId: string;
+    flightNo: string;
+    position: string;
+    startTime: string;
+    endTime: string;
     staffId: string;
     staffName: string;
     reasons: string[];
@@ -47,6 +55,19 @@ function projectedAssignment(
     staffId: person.id,
     staffName: person.name,
   };
+}
+
+function canUseDirectGuideException(
+  options: ReassignmentOptimizationOptions,
+  assignment: Assignment,
+  person: Staff
+): boolean {
+  if (!options.allowDirectGuideReassignment) return false;
+  const rule = assignmentRule(options.state, assignment);
+  return (
+    Boolean(rule && isGapFillGuidePosition(rule)) &&
+    (person.id === assignment.staffId || person.teamLeader === true)
+  );
 }
 
 function dynamicChoiceSafetyReasons(
@@ -66,6 +87,7 @@ function dynamicChoiceSafetyReasons(
     assignment: projected.at(-1)!,
     primaryAssignment: options.primary,
     review: options.review,
+    allowLoadProtectionRegression: options.allowLoadProtectionRegression,
   });
 }
 
@@ -96,7 +118,7 @@ function conflictsWithFixedAssignment(
   person: Staff,
   fixed: readonly Assignment[],
   permittedConcurrentAssignmentIds: ReadonlySet<string>
-): boolean {
+): Assignment | null {
   const ownFixedAssignments = fixed.filter(
     (item) => item.staffId === person.id
   );
@@ -121,7 +143,24 @@ function conflictsWithFixedAssignment(
           permittedConcurrentAssignmentIds.has(assignment.id) &&
           permittedConcurrentAssignmentIds.has(other.id)
         )
-    );
+    )
+    ? (projected
+        .slice(0, -1)
+        .find(
+          (other) =>
+            other.staffId === person.id &&
+            intervalsOverlap(
+              projectedChoice.startTime,
+              projectedChoice.endTime,
+              other.startTime,
+              other.endTime
+            ) &&
+            !(
+              permittedConcurrentAssignmentIds.has(assignment.id) &&
+              permittedConcurrentAssignmentIds.has(other.id)
+            )
+        ) ?? null)
+    : null;
 }
 
 function createChoices(
@@ -150,11 +189,17 @@ function createChoices(
     const recordRejection = (person: Staff, reasons: string[]) => {
       candidateRejectionReasons.push(...reasons);
       if (
-        assignment.id === options.primary.id &&
+        (options.collectAllCandidateRejections ||
+          assignment.id === options.primary.id) &&
         person.id !== assignment.staffId &&
         reasons.length
       ) {
         candidateRejections.push({
+          assignmentId: assignment.id,
+          flightNo: assignment.flightNo,
+          position: assignment.position,
+          startTime: assignment.startTime,
+          endTime: assignment.endTime,
           staffId: person.id,
           staffName: person.name,
           reasons,
@@ -169,12 +214,19 @@ function createChoices(
           rule,
           person
         );
-        if (!diagnostic.eligible && rule.qualifiedStaffIds.includes(person.id))
+        if (
+          !diagnostic.eligible &&
+          !canUseDirectGuideException(options, assignment, person) &&
+          rule.qualifiedStaffIds.includes(person.id)
+        )
           recordRejection(
             person,
             diagnostic.violations.map((item) => item.message)
           );
-        return diagnostic.eligible;
+        return (
+          diagnostic.eligible ||
+          canUseDirectGuideException(options, assignment, person)
+        );
       })
       .filter(
         (person) => options.candidateAllowed?.(assignment, person) ?? true
@@ -206,7 +258,10 @@ function createChoices(
           fixed,
           permittedConcurrentAssignmentIds
         );
-        if (conflict) recordRejection(person, ["这个时段已经安排了其他岗位"]);
+        if (conflict)
+          recordRejection(person, [
+            `这个时段已经安排了其他岗位：${conflict.flightNo}/${conflict.position}（${conflict.startTime}-${conflict.endTime}）`,
+          ]);
         return !conflict;
       })
       .filter((person) => {
@@ -225,6 +280,9 @@ function createChoices(
             latePriorityFatigueRelief: options.latePriorityFatigueRelief,
             allowCutoffProtectionRegression:
               options.allowCutoffProtectionRegression,
+            allowCrossWorkdayRecoveryRegression:
+              options.allowCrossWorkdayRecoveryRegression,
+            allowDirectGuideReassignment: options.allowDirectGuideReassignment,
           }),
           ...dynamicChoiceSafetyReasons(
             options,
@@ -353,6 +411,8 @@ export function incompatibleReassignmentChoices(
                 assignment: index === 0 ? leftAssignment : rightAssignment,
                 primaryAssignment: options.primary,
                 review: options.review,
+                allowLoadProtectionRegression:
+                  options.allowLoadProtectionRegression,
               })
         );
         if (!timingConflict && !dynamicReasons.length) continue;
@@ -397,6 +457,15 @@ export function reassignmentChoiceRequirements(
 ): ReassignmentChoiceRequirement[] {
   const policy = ROTATION_REVIEW_POLICIES[options.review];
   const requirements: ReassignmentChoiceRequirement[] = [];
+  for (const staffId of options.requiredStaffIds ?? []) {
+    requirements.push({
+      id: `required-staff:${staffId}`,
+      choiceIds: choices.flatMap(({ choice }) =>
+        choice.staffId === staffId ? [choice.id] : []
+      ),
+      minimum: 1,
+    });
+  }
   if (policy.preventStaffWithoutWork) {
     const originalStaffIds = new Set(
       movable.flatMap((assignment) =>

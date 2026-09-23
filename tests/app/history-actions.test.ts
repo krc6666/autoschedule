@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultState } from "../../src/defaults";
+import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
 import { buildScheduleFeedback } from "../../src/domain/feedback/schedule-feedback";
 import { generateSchedule } from "../helpers/generate-schedule";
 import type { Assignment, HistoryRecord } from "../../src/model";
@@ -34,6 +34,29 @@ function assignment(
 }
 
 describe("history actions", () => {
+  it("archives the team-leader gap-fill source with normal workload", () => {
+    const state = createDefaultState();
+    state.settings.dutyFatiguePoints = 0;
+    const person = state.staff[0]!;
+    state.assignments = [
+      {
+        ...assignment("gap-fill-supervisor", person.id, person.name),
+        position: "督导",
+        teamLeaderGapFill: true,
+      },
+    ];
+
+    expect(currentScheduleHistory(state, "2026-09-22")).toMatchObject([
+      {
+        staffId: person.id,
+        position: "督导",
+        workHours: 2,
+        fatiguePoints: 3,
+        teamLeaderGapFill: true,
+      },
+    ]);
+  });
+
   it("rebuilds an archived day from the matching current flight template", () => {
     const state = createDefaultState();
     const person = state.staff[0]!;

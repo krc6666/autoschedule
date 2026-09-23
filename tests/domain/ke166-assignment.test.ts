@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
-import { assignKe166SupervisorByCounterCoverage } from "../../src/domain/assignments/ke166-assignment";
+import { assignMobileSupervisorByCounterCoverage } from "../../src/domain/assignments/ke166-assignment";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import type { Assignment, Flight, PositionRule } from "../../src/model";
 
@@ -69,7 +69,7 @@ describe("KE166 mobile-supervisor counter coverage", () => {
       status: "assigned",
     }));
 
-    const supervisor = await assignKe166SupervisorByCounterCoverage(
+    const supervisor = await assignMobileSupervisorByCounterCoverage(
       defaultHighsSolver,
       state,
       assignments,

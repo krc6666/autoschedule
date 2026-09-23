@@ -688,6 +688,121 @@ describe("manual swap analysis workflow", () => {
   });
 });
 
+describe("team leader gap fill workflow", () => {
+  it("previews a local chain and applies it only after confirmation", async () => {
+    vi.stubGlobal("localStorage", { setItem: vi.fn() });
+    const state = createDefaultState();
+    const [leader, worker] = state.staff;
+    leader!.teamLeader = true;
+    worker!.teamLeader = false;
+    state.staff = [leader!, worker!];
+    state.staff.forEach((person) => {
+      person.status = "正常";
+      person.staffType = "常规";
+      person.dutyQualified = false;
+    });
+    const [sourceFlight, vacancyFlight] = state.flights.slice(0, 2);
+    sourceFlight!.flightNo = "AK151";
+    sourceFlight!.startTime = "10:00";
+    sourceFlight!.endTime = "12:00";
+    vacancyFlight!.flightNo = "TR100";
+    vacancyFlight!.startTime = "10:00";
+    vacancyFlight!.endTime = "12:00";
+    state.flights = [sourceFlight!, vacancyFlight!];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "gap-source-rule",
+        flightNo: "AK151",
+        name: "G01",
+        category: "常规",
+        remark: "",
+        manual: false,
+        qualifiedStaffIds: [leader!.id, worker!.id],
+      },
+      {
+        ...base,
+        id: "gap-vacancy-rule",
+        flightNo: "TR100",
+        name: "G02",
+        category: "常规",
+        remark: "",
+        manual: false,
+        qualifiedStaffIds: [worker!.id],
+      },
+    ];
+    state.settings.positionRotationEnabled = false;
+    state.settings.highLoadProtectionEnabled = false;
+    state.settings.rollingLoadProtectionEnabled = false;
+    state.settings.minimumRegularTransitionMinutes = 0;
+    state.settings.ordinaryPriorityPositions = [];
+    state.assignments = state.positionRules.map((rule, index) => ({
+      id: index ? "gap-vacancy" : "gap-source",
+      flightId: state.flights[index]!.id,
+      flightNo: state.flights[index]!.flightNo,
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId: index ? null : worker!.id,
+      staffName: index ? "" : worker!.name,
+      startTime: "10:00",
+      endTime: "12:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: index ? ("unfilled" as const) : ("assigned" as const),
+    }));
+    state.activeScheduleDate = "2026-09-22";
+    const coordinator = new ApplicationCoordinator(
+      createAutoscheduleStore(state),
+      { preferences: { ...preferences, loadScheduleDate: () => "2026-09-22" } }
+    );
+
+    await coordinator.handle({ type: "open-team-leader-gap-fill" });
+    await coordinator.handle({
+      type: "update-team-leader-gap-fill-leader",
+      staffId: leader!.id,
+    });
+    await coordinator.handle({
+      type: "update-team-leader-gap-fill-vacancies",
+      assignmentIds: ["gap-vacancy"],
+    });
+    const before = structuredClone(coordinator.model().assignments);
+    await coordinator.handle({ type: "preview-team-leader-gap-fill" });
+
+    expect(coordinator.model().assignments).toEqual(before);
+    expect(coordinator.view().dialog).toMatchObject({
+      kind: "team-leader-gap-fill",
+      preview: {
+        changes: expect.arrayContaining([
+          expect.objectContaining({
+            assignmentId: "gap-source",
+            toStaffId: leader!.id,
+          }),
+        ]),
+      },
+    });
+
+    await coordinator.handle({ type: "confirm-team-leader-gap-fill" });
+    expect(coordinator.view().dialog).toBeNull();
+    expect(coordinator.model().assignments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "gap-source",
+          staffId: leader!.id,
+          teamLeaderGapFill: true,
+        }),
+        expect.objectContaining({
+          id: "gap-vacancy",
+          staffId: worker!.id,
+          status: "assigned",
+        }),
+      ])
+    );
+  });
+});
+
 describe("next workday flight picker workflow", () => {
   const nextWorkdayPreferences: ApplicationPreferences = {
     ...preferences,

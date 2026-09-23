@@ -124,7 +124,8 @@ export class ApplicationCoordinator implements ApplicationContext {
             percent: 0,
             steps: plannedScheduleProgress(
               this.model().settings,
-              this.model().flights
+              this.model().flights,
+              this.model().positionRules
             ),
             canAdoptCurrentResult: false,
           },

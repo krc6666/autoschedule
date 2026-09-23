@@ -1,6 +1,6 @@
 import type { ScheduleResult } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
-import { finalizeKe166Supervisors } from "../assignments/ke166-supervisor-finalizer";
+import { finalizeMobileSupervisors } from "../assignments/ke166-supervisor-finalizer";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import type { SolverPort } from "../solver/solver-port";
 import type { DailySchedulePlan } from "./daily-schedule-result";
@@ -105,6 +105,7 @@ async function finalizeDailyPlan({
       },
       sameDayLateObligationFacts: { state, date },
       lateShiftPositionReliefFacts: { state, date },
+      mobileSupervisorCoverageFacts: { state, date },
       ke166SnapshotFacts: { state, date },
       scarceQualificationFacts: { state, date },
       dutyPositionFacts: { state, date },
@@ -130,7 +131,7 @@ async function finalizeDailyPlan({
     }
   }
 
-  let ke166Finalized = false;
+  let mobileSupervisorsFinalized = false;
   return finalizeSchedule({
     solver,
     state,
@@ -148,12 +149,12 @@ async function finalizeDailyPlan({
       .filter((assignment) => plan.lockedAssignmentIds.has(assignment.id))
       .map((assignment) => structuredClone(assignment)),
     optimizationQuality: plan.optimizationQuality,
-    finalizeKe166Supervisor: async () => {
-      if (ke166Finalized) return;
+    finalizeMobileSupervisors: async () => {
+      if (mobileSupervisorsFinalized) return;
       const assignments = ledger
         .snapshot()
         .map((assignment) => structuredClone(assignment));
-      await finalizeKe166Supervisors({
+      await finalizeMobileSupervisors({
         solver,
         state,
         date,
@@ -162,7 +163,7 @@ async function finalizeDailyPlan({
         lockedAssignmentIds: plan.lockedAssignmentIds,
       });
       ledger.commit({ type: "replace", assignments });
-      ke166Finalized = true;
+      mobileSupervisorsFinalized = true;
     },
     reportProgress,
     scheduleRunId,

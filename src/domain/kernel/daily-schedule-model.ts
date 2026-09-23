@@ -15,6 +15,7 @@ import {
 import {
   isPreNoonFlight,
   isKe166MobileSupervisor,
+  isMobileSupervisor,
   isNumberedRegularPosition,
   type AssignmentTask,
 } from "../flights/schedule-tasks";
@@ -453,6 +454,7 @@ function staffChoicesForTasks(
   for (const task of scheduledTasks) {
     const candidates = state.staff.filter(
       (person) =>
+        !person.teamLeader &&
         diagnoseBaseAssignmentEligibility(state, task.flight, task.rule, person)
           .eligible &&
         (dutyTargetTaskKeys.has(task.key) &&
@@ -1374,7 +1376,7 @@ export function buildDailyScheduleModel({
   timeoutMs,
 }: BuildDailyScheduleModelOptions): DailyScheduleModel | null {
   const scheduledTasks = preparation.tasks.filter(
-    (task) => !isKe166MobileSupervisor(task.flight, task.rule)
+    (task) => !isMobileSupervisor(task.flight, task.rule)
   );
   if (!scheduledTasks.length) return null;
   const rulePlan = createCandidateRulePlan(state.settings);

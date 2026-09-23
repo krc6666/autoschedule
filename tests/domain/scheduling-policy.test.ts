@@ -175,8 +175,15 @@ describe("scheduling policy contract", () => {
     ).toBe(false);
     expect(
       isHighFatigueOrdinaryRotationPosition(
-        { category: "常规", name: "H02", remark: "一号", fatiguePoints: 10 },
-        4
+        {
+          category: "常规",
+          flightNo: "TR121",
+          name: "H02",
+          remark: "一号",
+          fatiguePoints: 10,
+        },
+        4,
+        [{ airlineCode: "TR", position: "H02" }]
       )
     ).toBe(false);
     expect(
@@ -188,6 +195,12 @@ describe("scheduling policy contract", () => {
   });
 
   it("keeps reserved assignments ahead of protection and fairness rules", () => {
+    expect(
+      SCHEDULING_RULES.find((rule) => rule.id === "mobile-supervisor")
+    ).toMatchObject({
+      stage: "reserved-assignment",
+      label: "机动督导独立优先与缺员兼任",
+    });
     expect(candidatePriorityOrder.indexOf("ke166-supervisor")).toBeLessThan(
       candidatePriorityOrder.indexOf("duty-position")
     );
@@ -195,7 +208,7 @@ describe("scheduling policy contract", () => {
       SCHEDULING_RULES.find((rule) => rule.id === "ke166-supervisor")
     ).toMatchObject({
       stage: "reserved-assignment",
-      label: "KE166独立督导优先保留与缺员兼任",
+      label: "KE166第二真人容量与专项保护",
     });
     expect(candidatePriorityOrder.slice(3, 9)).toEqual([
       "position-transition",

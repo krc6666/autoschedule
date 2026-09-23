@@ -45,6 +45,13 @@ describe("workbook actions", () => {
         flightNo: "",
       },
     ];
+    source.settings.teamLeaderGapFillPositionPolicies = [
+      {
+        flightNo: source.positionRules[0]!.flightNo,
+        position: source.positionRules[0]!.name,
+        movable: true,
+      },
+    ];
     source.staff[0]!.standbyQualified = false;
     source.positionRules[0]!.fatiguePoints = 9;
     source.weeklyFlightPlans = replaceWeeklyFlightPlan(

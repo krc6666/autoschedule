@@ -6,6 +6,7 @@ import {
   visibleScheduleProgressStep,
 } from "../../src/domain/kernel/schedule-progress";
 import {
+  coverageHookPlan,
   plannedScheduleProgress,
   postScheduleReviewPlan,
   runScheduleMutationPlan,
@@ -21,6 +22,14 @@ import type { Assignment } from "../../src/model";
 import type { HalfRestFacts } from "../../src/domain/rules/half-rest";
 
 describe("schedule pipeline contract", () => {
+  it("does not include automatic concurrent team-leader supervision", () => {
+    expect(
+      coverageHookPlan(createDefaultScheduleSettings()).map(
+        (step) => step.ruleId
+      )
+    ).not.toContain("team-leader-concurrent-supervision");
+  });
+
   it("rejects an illegal post-stage proposal at the pipeline ledger boundary", async () => {
     const state = createSchedulingScenario();
     const halfRestFacts: HalfRestFacts = {
@@ -71,7 +80,7 @@ describe("schedule pipeline contract", () => {
       runFacts: createScheduleRunFacts(state, "2026-09-12"),
       flights: [],
       displayRulesByFlight: new Map(),
-      finalizeKe166Supervisor: async () => undefined,
+      finalizeMobileSupervisors: async () => undefined,
     };
 
     await expect(
@@ -103,10 +112,10 @@ describe("schedule pipeline contract", () => {
       "late-shift-recovery",
       "late-shift-cutoff",
       "position-rotation",
-      "ke166-supervisor-finalize",
-      "post-ke166-late-priority-frequency-validation",
-      "post-ke166-frequency-validation",
-      "post-ke166-rotation-validation",
+      "mobile-supervisor-finalize",
+      "post-mobile-supervisor-late-priority-frequency-validation",
+      "post-mobile-supervisor-frequency-validation",
+      "post-mobile-supervisor-rotation-validation",
     ]);
   });
 
@@ -137,10 +146,10 @@ describe("schedule pipeline contract", () => {
     expect(plan.map((step) => step.stage)[0]).toBe("late-priority-frequency");
     expect(plan.map((step) => step.stage)).toEqual(
       expect.arrayContaining([
-        "ke166-supervisor-finalize",
-        "post-ke166-late-priority-frequency-validation",
-        "post-ke166-frequency-validation",
-        "post-ke166-rotation-validation",
+        "mobile-supervisor-finalize",
+        "post-mobile-supervisor-late-priority-frequency-validation",
+        "post-mobile-supervisor-frequency-validation",
+        "post-mobile-supervisor-rotation-validation",
       ])
     );
   });
@@ -149,24 +158,28 @@ describe("schedule pipeline contract", () => {
     const settings = createDefaultScheduleSettings();
     settings.lateShiftRecoveryEnabled = false;
 
-    const stages = plannedScheduleProgress(settings, [
-      { flightNo: "KE166" },
-    ]).map((step) => step.stage);
+    const stages = plannedScheduleProgress(
+      settings,
+      [{ flightNo: "KE166" }],
+      [{ flightNo: "KE166", category: "机动督导" }]
+    ).map((step) => step.stage);
 
     expect(stages).not.toContain("late-shift-cutoff");
     expect(stages.slice(0, 3)).toEqual(["prepare", "optimize", "assign"]);
     expect(stages.at(-1)).toBe("complete");
   });
 
-  it("omits KE166 follow-up tasks when the current flights do not contain KE166", () => {
-    const stages = plannedScheduleProgress(createDefaultScheduleSettings(), [
-      { flightNo: "TR121" },
-    ]).map((step) => step.stage);
+  it("omits supervisor follow-up tasks when the current flights have no mobile supervisor", () => {
+    const stages = plannedScheduleProgress(
+      createDefaultScheduleSettings(),
+      [{ flightNo: "TR121" }],
+      [{ flightNo: "TR121", category: "常规" }]
+    ).map((step) => step.stage);
 
-    expect(stages).not.toContain("post-ke166-frequency-validation");
+    expect(stages).not.toContain("post-mobile-supervisor-frequency-validation");
     expect(stages).not.toContain(
-      "post-ke166-late-priority-frequency-validation"
+      "post-mobile-supervisor-late-priority-frequency-validation"
     );
-    expect(stages).not.toContain("post-ke166-rotation-validation");
+    expect(stages).not.toContain("post-mobile-supervisor-rotation-validation");
   });
 });

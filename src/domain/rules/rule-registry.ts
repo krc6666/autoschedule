@@ -34,7 +34,7 @@ export interface ScheduleMutationContext {
   runFacts: ScheduleRunFacts;
   flights: readonly Flight[];
   displayRulesByFlight: ReadonlyMap<string, readonly PositionRule[]>;
-  finalizeKe166Supervisor(): Promise<void>;
+  finalizeMobileSupervisors(): Promise<void>;
 }
 
 export interface ScheduleMutationProposal {
@@ -69,7 +69,7 @@ export interface DailyModelExecutor {
 export interface ScheduleMutationExecutor {
   kind: "coverage" | "post-schedule";
   id: string;
-  pass: "primary" | "ke166-finalize" | "after-ke166";
+  pass: "primary" | "mobile-supervisor-finalize" | "after-mobile-supervisor";
   execute(
     context: ScheduleMutationContext
   ): ScheduleMutationProposal | Promise<ScheduleMutationProposal>;

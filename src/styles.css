@@ -795,6 +795,55 @@ select {
   padding: 14px;
   border-top: 1px solid var(--as-border);
 }
+.team-leader-gap-fill-protection-groups {
+  display: grid;
+  gap: 8px;
+}
+.team-leader-gap-fill-protection-group {
+  overflow: hidden;
+  border: 1px solid var(--as-border);
+  border-radius: 6px;
+}
+.team-leader-gap-fill-protection-group > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 7px 10px;
+  cursor: pointer;
+  list-style: none;
+  background: #fafbfc;
+}
+.team-leader-gap-fill-protection-group > summary::-webkit-details-marker {
+  display: none;
+}
+.team-leader-gap-fill-protection-group > summary > span:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.team-leader-gap-fill-protection-group > summary small {
+  color: var(--as-muted);
+  font-size: 11px;
+}
+.team-leader-gap-fill-protection-group table {
+  min-width: 720px;
+  border-top: 1px solid var(--as-border);
+}
+.team-leader-gap-fill-protection-group th,
+.team-leader-gap-fill-protection-group td {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.team-leader-gap-fill-protection-group th:first-child,
+.team-leader-gap-fill-protection-group td:first-child {
+  width: 110px;
+}
+.team-leader-gap-fill-protection-group th:last-child,
+.team-leader-gap-fill-protection-group td:last-child {
+  width: 220px;
+}
 .policy-card-list {
   display: grid;
   gap: 8px;

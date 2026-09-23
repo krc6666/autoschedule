@@ -40,8 +40,16 @@ export function isKe166MobileSupervisor(
     flight.flightNo
       .trim()
       .toUpperCase()
-      .replaceAll(/[^A-Z0-9]/g, "") === "KE166" && rule.category === "机动督导"
+      .replaceAll(/[^A-Z0-9]/g, "") === "KE166" &&
+    isMobileSupervisor(flight, rule)
   );
+}
+
+export function isMobileSupervisor(
+  _flight: Flight,
+  rule: PositionRule
+): boolean {
+  return rule.category === "机动督导";
 }
 
 export function isNumberedRegularPosition(rule: PositionRule): boolean {

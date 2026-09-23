@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultState } from "../../src/defaults";
+import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
 import {
   sortFlightCountersDescending,
   visiblePositionRemark,
@@ -733,7 +733,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     expect(result.assignments[0]!.staffId).not.toBe("2");
   });
 
-  it("uses a qualified team leader to cover two supervisors with a short overlap when that removes a regular vacancy", async () => {
+  it("does not automatically use concurrent team-leader supervision to remove a vacancy", async () => {
     const state = createDefaultState();
     const [leader, releasedWorker, dutyWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -816,26 +816,16 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       (item) => item.positionRuleId === "fd-g10"
     )!;
 
-    expect(result.unfilledCount).toBe(0);
-    expect(mfSupervisor.staffId).toBe(leader!.id);
-    expect(fdSupervisor.staffId).toBe(leader!.id);
-    expect(g10.staffId).toBe(releasedWorker!.id);
-    expect(mfSupervisor.workHours + fdSupervisor.workHours).toBe(3.75);
-    expect(mfSupervisor.fatiguePoints + fdSupervisor.fatiguePoints).toBe(10);
-    expect(fdSupervisor.decisionTrace).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          ruleId: "team-leader-concurrent-supervision",
-          outcome: "selected",
-        }),
-      ])
+    expect(result.unfilledCount).toBeGreaterThan(0);
+    expect([mfSupervisor, fdSupervisor, g10]).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ staffId: leader!.id })])
     );
-    expect(result.warnings).toEqual(
+    expect(result.warnings).not.toEqual(
       expect.arrayContaining([expect.stringContaining("分队长并行督导补缺")])
     );
   });
 
-  it("keeps a regular vacancy when the supervisor overlap exceeds the configured team-leader limit", async () => {
+  it("keeps the team leader out when the legacy overlap limit is configured", async () => {
     const state = createDefaultState();
     const [leader, releasedWorker, dutyWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -913,7 +903,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       result.assignments.filter(
         (item) => item.position.includes("督导") && item.staffId === leader!.id
       )
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 
   it("does not use concurrent supervision when all regular positions are already filled", async () => {
@@ -969,10 +959,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
     const result = await generateSchedule(state, "2026-07-29");
 
-    expect(result.unfilledCount).toBe(0);
+    expect(result.unfilledCount).toBe(1);
     expect(
       result.assignments.filter((item) => item.staffId === leader!.id)
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(
       result.warnings.some((warning) => warning.includes("分队长并行督导补缺"))
     ).toBe(false);
@@ -1046,7 +1036,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     ).toBe("unfilled");
   });
 
-  it("does not use KE166 as either side of a concurrent-supervision pair", async () => {
+  it("does not re-enable a team leader through a KE166 overlap", async () => {
     const state = createDefaultState();
     const [leader, releasedWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -1115,10 +1105,10 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       result.assignments.filter(
         (item) => item.staffId === leader!.id && item.position.includes("督导")
       )
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 
-  it("uses original flight intervals for a diversion supervisor and safely backfills a three-flight chain", async () => {
+  it("does not restore concurrent supervision through diversion timing", async () => {
     const state = createDefaultState();
     const [firstSupervisor, leader, secondSupervisor, dutyWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -1227,22 +1217,13 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
       (item) => item.positionRuleId === "fd-g10"
     )!;
 
-    expect(result.unfilledCount).toBe(0);
-    expect(mfSupervisor.staffId).toBe(leader!.id);
-    expect(fdSupervisor.staffId).toBe(leader!.id);
-    expect(aeSupervisor.staffId).toBe(firstSupervisor!.id);
-    expect(g10.staffId).toBe(secondSupervisor!.id);
-    expect(mfSupervisor.workHours + fdSupervisor.workHours).toBe(3.75);
-    expect(mfSupervisor.fatiguePoints + fdSupervisor.fatiguePoints).toBe(10);
+    expect(result.unfilledCount).toBeGreaterThan(0);
     expect(
-      [mfSupervisor, aeSupervisor, fdSupervisor, g10].every((assignment) =>
-        assignment.decisionTrace?.some(
-          (decision) =>
-            decision.ruleId === "team-leader-concurrent-supervision" &&
-            decision.outcome === "selected"
-        )
+      [mfSupervisor, aeSupervisor, fdSupervisor, g10].some(
+        (assignment) => assignment.staffId === leader!.id
       )
-    ).toBe(true);
+    ).toBe(false);
+    expect(result.warnings.join("\n")).not.toContain("分队长并行督导补缺");
   });
 
   it("prefers the qualified worker with fewer same-position assignments in the last six archived workdays", async () => {
@@ -1641,6 +1622,9 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         remark: "一号",
         qualifiedStaffIds: state.staff.map((person) => person.id),
       },
+    ];
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "TARGET100", position: "G20" },
     ];
     const dates = [
       "2026-10-02",
@@ -4353,7 +4337,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     });
   });
 
-  it("assigns a marked team leader to a supervisor position when that worker is the only qualified candidate", async () => {
+  it("leaves a vacancy when the only qualified candidate is a team leader", async () => {
     const state = createDefaultState();
     const teamLeader = state.staff[0]!;
     state.staff = [teamLeader];
@@ -4385,8 +4369,8 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
     const result = await generateSchedule(state, "2026-07-18");
 
     expect(result.assignments[0]).toMatchObject({
-      staffId: teamLeader.id,
-      status: "assigned",
+      staffId: null,
+      status: "unfilled",
     });
   });
 

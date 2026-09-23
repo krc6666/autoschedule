@@ -24,6 +24,7 @@ import {
   updateNextWorkdayRecoveryTarget,
   updateLateShiftRecoveryPositionRule,
   updatePolicyEntityField,
+  setTeamLeaderGapFillPositionsMovable,
   type PolicyFieldUpdateResult,
   type SchedulePolicyInput,
 } from "../../src/app/policy-actions";
@@ -76,6 +77,37 @@ function addActiveSchedule(state: ReturnType<typeof createDefaultState>): void {
 }
 
 describe("policy actions", () => {
+  it("updates the team-leader gap-fill scope in bulk while preserving fixed positions", () => {
+    const state = createDefaultState();
+    const movable = state.positionRules.find(
+      (rule) => rule.category === "常规" && rule.flightNo !== "KE166"
+    )!;
+    const fixed = state.positionRules.find((rule) => rule.id !== movable.id)!;
+    fixed.manual = true;
+    addActiveSchedule(state);
+
+    expect(
+      setTeamLeaderGapFillPositionsMovable(state, [movable.id, fixed.id], true)
+    ).toBe(true);
+    expect(state.settings.teamLeaderGapFillPositionPolicies).toEqual([
+      {
+        flightNo: movable.flightNo,
+        position: movable.name,
+        movable: true,
+      },
+    ]);
+    expect(state.schedulePolicyStale).toBe(true);
+
+    expect(
+      setTeamLeaderGapFillPositionsMovable(state, [movable.id], false)
+    ).toBe(true);
+    expect(state.settings.teamLeaderGapFillPositionPolicies[0]).toEqual({
+      flightNo: movable.flightNo,
+      position: movable.name,
+      movable: false,
+    });
+  });
+
   it("edits only the active group's people in a shared cross-flight priority row", () => {
     const state = createDefaultState();
     const otherGroupStaffId = "B-1";

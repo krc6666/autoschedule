@@ -12,6 +12,7 @@ import type { ManualSwapAnalysis } from "../domain/reviews/manual-swap-analysis"
 import type { FlightSelectionCandidate } from "../domain/flights/next-workday-flight-plan";
 import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
 import type { HalfRestMode } from "../domain/shared/schedule-run-preferences";
+import type { TeamLeaderGapFillPreview } from "../domain/coverage/team-leader-gap-fill";
 
 export type ApplicationDialog =
   | { kind: "templates" }
@@ -59,6 +60,14 @@ export type ApplicationDialog =
       sourceAssignmentId: string;
       targetAssignmentId: string | null;
       analysis: ManualSwapAnalysis | null;
+    }
+  | {
+      kind: "team-leader-gap-fill";
+      selectedTeamLeaderId: string;
+      selectedVacancyAssignmentIds: string[];
+      planning: boolean;
+      preview: TeamLeaderGapFillPreview | null;
+      reasons: string[];
     };
 
 export interface ApplicationToast {

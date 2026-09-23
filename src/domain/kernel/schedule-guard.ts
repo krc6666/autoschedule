@@ -59,6 +59,8 @@ import {
   sameFlightStaffExclusionMessage,
   sameFlightStaffExclusionViolations,
 } from "../rules/same-flight-staff-exclusion";
+import { evaluateMobileSupervisorCoverage } from "../coverage/mobile-supervisor-coverage";
+import { assignmentRule } from "../flights/schedule-position-rules";
 
 /**
  * The phase controls which invariants are meaningful for a partial result.
@@ -140,6 +142,7 @@ export interface ScheduleGuardContext {
   workloadBalanceFacts?: WorkloadBalanceFacts;
   sameDayLateObligationFacts?: SnapshotRuleFacts;
   lateShiftPositionReliefFacts?: SnapshotRuleFacts;
+  mobileSupervisorCoverageFacts?: SnapshotRuleFacts;
   ke166SnapshotFacts?: SnapshotRuleFacts;
   scarceQualificationFacts?: SnapshotRuleFacts;
   dutyPositionFacts?: SnapshotRuleFacts;
@@ -838,6 +841,105 @@ export function createLateShiftPositionReliefScheduleGuard(): ScheduleGuard {
   });
 }
 
+export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
+  return Object.freeze({
+    id: "mobile-supervisor",
+    validate: (
+      assignments: readonly Assignment[],
+      context: ScheduleGuardContext
+    ): readonly ScheduleGuardViolation[] => {
+      const facts = context.mobileSupervisorCoverageFacts;
+      if (!facts) return [];
+      const linkedViolations = assignments.flatMap((counter) => {
+        if (!counter.supervisorSourceAssignmentId) return [];
+        const supervisor = assignments.find(
+          (assignment) => assignment.id === counter.supervisorSourceAssignmentId
+        );
+        const supervisorRule = supervisor
+          ? assignmentRule(facts.state, supervisor)
+          : undefined;
+        if (
+          !supervisor ||
+          supervisorRule?.category !== "机动督导" ||
+          supervisor.flightId !== counter.flightId
+        ) {
+          return [
+            {
+              ruleId: "mobile-supervisor",
+              assignmentId: counter.id,
+              message: `${counter.flightNo}/${counter.position}的机动督导兼任关联无效，拒绝提交`,
+            },
+          ];
+        }
+        if (
+          supervisor.status !== "assigned" ||
+          counter.status !== "assigned" ||
+          !supervisor.staffId ||
+          supervisor.staffId !== counter.staffId
+        ) {
+          return [
+            {
+              ruleId: "mobile-supervisor",
+              assignmentId: counter.id,
+              message: `${counter.flightNo}机动督导与兼任柜台必须保持同一人员，拒绝提交`,
+            },
+          ];
+        }
+        const coverage = evaluateMobileSupervisorCoverage(facts.state, {
+          flightNo: counter.flightNo,
+          position: counter.position,
+          remark: counter.remark,
+        });
+        if (!coverage.allowed) {
+          return [
+            {
+              ruleId: "mobile-supervisor",
+              assignmentId: counter.id,
+              message: `${counter.flightNo}/${counter.position}不允许机动督导兼任：${coverage.reason}`,
+            },
+          ];
+        }
+        return counter.workHours === 0
+          ? []
+          : [
+              {
+                ruleId: "mobile-supervisor",
+                assignmentId: counter.id,
+                message: `${counter.flightNo}/${counter.position}机动督导兼任工时必须去重，拒绝提交`,
+              },
+            ];
+      });
+      const missingLinkViolations = assignments.flatMap((supervisor) => {
+        const rule = assignmentRule(facts.state, supervisor);
+        if (
+          rule?.category !== "机动督导" ||
+          supervisor.status !== "assigned" ||
+          !supervisor.staffId
+        )
+          return [];
+        const unlinked = assignments.find(
+          (assignment) =>
+            assignment.id !== supervisor.id &&
+            assignment.flightId === supervisor.flightId &&
+            assignment.status === "assigned" &&
+            assignment.staffId === supervisor.staffId &&
+            assignment.supervisorSourceAssignmentId !== supervisor.id
+        );
+        return unlinked
+          ? [
+              {
+                ruleId: "mobile-supervisor",
+                assignmentId: unlinked.id,
+                message: `${supervisor.flightNo}机动督导与${unlinked.position}的兼任关联被拆开，拒绝提交`,
+              },
+            ]
+          : [];
+      });
+      return [...linkedViolations, ...missingLinkViolations];
+    },
+  });
+}
+
 export function createKe166SnapshotScheduleGuard(): ScheduleGuard {
   return Object.freeze({
     id: "ke166-supervisor",
@@ -924,6 +1026,7 @@ export function createDefaultScheduleGuards(): readonly ScheduleGuard[] {
     createWorkloadBalanceScheduleGuard(),
     createSameDayLateObligationScheduleGuard(),
     createLateShiftPositionReliefScheduleGuard(),
+    createMobileSupervisorCoverageScheduleGuard(),
     createKe166SnapshotScheduleGuard(),
     createScarceQualificationScheduleGuard(),
     createDutyPositionScheduleGuard(),

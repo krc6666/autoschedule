@@ -19,6 +19,7 @@ describe("schedule settings module", () => {
       "mobileSupervisorCoverageRules",
       "crossWorkdayQualificationReservations",
       "crossFlightPriorityPolicies",
+      "teamLeaderGapFillPositionPolicies",
       "sameFlightStaffExclusions",
       "latePriorityFlightNumbers",
       "ordinaryPriorityPositions",

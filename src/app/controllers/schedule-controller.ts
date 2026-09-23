@@ -20,6 +20,7 @@ import {
   isoWeekdayForDate,
 } from "../../domain/flights/weekly-flight-plan";
 import { isHalfRestWarning } from "../../domain/rules/half-rest";
+import { planTeamLeaderGapFill } from "../../domain/coverage/team-leader-gap-fill";
 
 export class ScheduleController implements UiCommandController {
   constructor(private readonly context: ApplicationContext) {}
@@ -91,6 +92,24 @@ export class ScheduleController implements UiCommandController {
         return this.selectSwapTarget(command.assignmentId);
       case "apply-swap-analysis":
         return this.applySwapAnalysis();
+      case "open-team-leader-gap-fill":
+        this.openTeamLeaderGapFill();
+        return true;
+      case "update-team-leader-gap-fill-leader":
+        this.updateTeamLeaderGapFill({
+          selectedTeamLeaderId: command.staffId,
+        });
+        return true;
+      case "update-team-leader-gap-fill-vacancies":
+        this.updateTeamLeaderGapFill({
+          selectedVacancyAssignmentIds: command.assignmentIds,
+        });
+        return true;
+      case "preview-team-leader-gap-fill":
+        await this.previewTeamLeaderGapFill();
+        return true;
+      case "confirm-team-leader-gap-fill":
+        return this.confirmTeamLeaderGapFill();
       case "toggle-administrative-mode":
         schedule.setAdministrativeMode(command.enabled);
         this.context.commit();
@@ -304,6 +323,124 @@ export class ScheduleController implements UiCommandController {
       this.context.commit("人员岗位已按分析结果交换");
       if (result.warning) this.context.toast(result.warning, "warning");
     }
+    return true;
+  }
+
+  private openTeamLeaderGapFill(): void {
+    const teamLeader = this.context
+      .model()
+      .staff.find(
+        (person) =>
+          person.teamLeader &&
+          person.status === "正常" &&
+          person.staffType === "常规"
+      );
+    if (!teamLeader) {
+      this.context.toast("没有状态正常的分队长可用于补差", "warning");
+      return;
+    }
+    if (
+      !this.context
+        .model()
+        .assignments.some((assignment) => assignment.status === "unfilled")
+    ) {
+      this.context.toast("当前班表没有空缺", "warning");
+      return;
+    }
+    this.context.updateView({
+      dialog: {
+        kind: "team-leader-gap-fill",
+        selectedTeamLeaderId: teamLeader.id,
+        selectedVacancyAssignmentIds: [],
+        planning: false,
+        preview: null,
+        reasons: [],
+      },
+    });
+  }
+
+  private updateTeamLeaderGapFill(
+    patch: Partial<{
+      selectedTeamLeaderId: string;
+      selectedVacancyAssignmentIds: string[];
+    }>
+  ): void {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "team-leader-gap-fill" || dialog.planning) return;
+    this.context.updateView({
+      dialog: {
+        ...dialog,
+        ...patch,
+        preview: null,
+        reasons: [],
+      },
+    });
+  }
+
+  private async previewTeamLeaderGapFill(): Promise<void> {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "team-leader-gap-fill" || dialog.planning) return;
+    this.context.updateView({
+      dialog: { ...dialog, planning: true, preview: null, reasons: [] },
+    });
+    try {
+      const snapshot = structuredClone(this.context.model());
+      const { defaultHighsSolver } =
+        await import("../../infrastructure/solver/highs-solver");
+      const result = await planTeamLeaderGapFill({
+        solver: defaultHighsSolver,
+        state: snapshot,
+        date: this.context.view().date,
+        teamLeaderId: dialog.selectedTeamLeaderId,
+        vacancyAssignmentIds: dialog.selectedVacancyAssignmentIds,
+      });
+      const current = this.context.view().dialog;
+      if (current?.kind !== "team-leader-gap-fill") return;
+      this.context.updateView({
+        dialog: {
+          ...current,
+          planning: false,
+          preview: result.kind === "ready" ? result.preview : null,
+          reasons: result.kind === "unavailable" ? result.reasons : [],
+        },
+      });
+    } catch (error) {
+      const current = this.context.view().dialog;
+      if (current?.kind !== "team-leader-gap-fill") return;
+      this.context.updateView({
+        dialog: {
+          ...current,
+          planning: false,
+          preview: null,
+          reasons: [
+            `补差方案计算失败：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ],
+        },
+      });
+    }
+  }
+
+  private confirmTeamLeaderGapFill(): boolean {
+    const dialog = this.context.view().dialog;
+    if (dialog?.kind !== "team-leader-gap-fill" || !dialog.preview) return true;
+    const result = this.context.store
+      .getState()
+      .schedule.applyTeamLeaderGapFill(dialog.preview);
+    if (result.kind === "rejected") {
+      this.context.updateView({
+        dialog: {
+          ...dialog,
+          preview: null,
+          reasons: result.reasons,
+        },
+      });
+      this.context.toast(result.reasons.join("；"), "danger");
+      return true;
+    }
+    this.context.updateView({ dialog: null });
+    this.context.commit("分队长补差已应用");
     return true;
   }
 

@@ -15,6 +15,7 @@ import type {
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
   SameFlightStaffExclusion,
+  TeamLeaderGapFillPositionPolicy,
 } from "../domain/rules/structured-policy-contract";
 import { createId, normalizeText, splitList } from "../utils";
 import { normalizeLatePriorityFlightNumber } from "../domain/reviews/late-priority-policy";
@@ -38,6 +39,7 @@ const RULE_SHEET_NAMES = {
   latePriorityFlightScope: "末班重点航班范围",
   crossFlightPriority: "跨航班重点人员优先",
   sameFlightStaffExclusions: "同航班人员互斥",
+  teamLeaderGapFillPositionPolicies: "分队长补差保护范围",
 } as const;
 
 interface ParsedRuleSheet<T> {
@@ -548,6 +550,32 @@ function parseSameFlightStaffExclusions(
   );
 }
 
+function parseTeamLeaderGapFillPositionPolicies(
+  workbook: XLSX.WorkBook
+): ParsedRuleSheet<TeamLeaderGapFillPositionPolicy> {
+  return parseRuleSheet(
+    workbook,
+    RULE_SHEET_NAMES.teamLeaderGapFillPositionPolicies,
+    (row, header) => {
+      const flightNo = cell(row, header, ["航班号"], 0).toUpperCase();
+      const position = cell(row, header, ["岗位名称", "岗位"], 1);
+      const movable = parseBoolean(
+        cell(row, header, ["允许参与补差换人", "允许移动"], 2)
+      );
+      const errors = [
+        !flightNo ? "航班号不能为空" : "",
+        !position ? "岗位名称不能为空" : "",
+        movable === undefined ? "允许参与补差换人必须填写是或否" : "",
+      ].filter(Boolean);
+      if (errors.length || movable === undefined) return { errors };
+      return {
+        errors: [],
+        value: { flightNo, position, movable },
+      };
+    }
+  );
+}
+
 export function parseScheduleRuleSettings(
   workbook: XLSX.WorkBook,
   staff: readonly Staff[] = []
@@ -565,6 +593,8 @@ export function parseScheduleRuleSettings(
     workbook,
     staff
   );
+  const teamLeaderGapFillPositionPolicies =
+    parseTeamLeaderGapFillPositionPolicies(workbook);
   const recognized =
     scalar.present ||
     transitions.present ||
@@ -575,7 +605,8 @@ export function parseScheduleRuleSettings(
     crossWorkdayReservations.present ||
     latePriorityFlightScope.present ||
     crossFlightPriority.present ||
-    sameFlightStaffExclusions.present;
+    sameFlightStaffExclusions.present ||
+    teamLeaderGapFillPositionPolicies.present;
   const hasImportableSettings =
     Boolean(scalar.settings && Object.keys(scalar.settings).length) ||
     transitions.value !== undefined ||
@@ -586,7 +617,8 @@ export function parseScheduleRuleSettings(
     crossWorkdayReservations.value !== undefined ||
     latePriorityFlightScope.value !== undefined ||
     crossFlightPriority.value !== undefined ||
-    sameFlightStaffExclusions.value !== undefined;
+    sameFlightStaffExclusions.value !== undefined ||
+    teamLeaderGapFillPositionPolicies.value !== undefined;
   const settings: Partial<ScheduleSettings> | undefined = hasImportableSettings
     ? { ...(scalar.settings ?? {}) }
     : undefined;
@@ -609,6 +641,9 @@ export function parseScheduleRuleSettings(
     settings.crossFlightPriorityPolicies = crossFlightPriority.value;
   if (settings && sameFlightStaffExclusions.value !== undefined)
     settings.sameFlightStaffExclusions = sameFlightStaffExclusions.value;
+  if (settings && teamLeaderGapFillPositionPolicies.value !== undefined)
+    settings.teamLeaderGapFillPositionPolicies =
+      teamLeaderGapFillPositionPolicies.value;
   return {
     settings,
     recognized,
@@ -623,6 +658,7 @@ export function parseScheduleRuleSettings(
       ...latePriorityFlightScope.warnings,
       ...crossFlightPriority.warnings,
       ...sameFlightStaffExclusions.warnings,
+      ...teamLeaderGapFillPositionPolicies.warnings,
     ],
   };
 }
@@ -837,5 +873,18 @@ export function appendScheduleRuleSheets(
       ]),
     ],
     [32, 24, 16, 16, 16, 16]
+  );
+  append(
+    workbook,
+    RULE_SHEET_NAMES.teamLeaderGapFillPositionPolicies,
+    [
+      ["航班号", "岗位名称", "允许参与补差换人"],
+      ...state.settings.teamLeaderGapFillPositionPolicies.map((policy) => [
+        policy.flightNo,
+        policy.position,
+        policy.movable ? "是" : "否",
+      ]),
+    ],
+    [16, 24, 22]
   );
 }

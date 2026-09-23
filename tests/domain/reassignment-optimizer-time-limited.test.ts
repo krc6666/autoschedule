@@ -80,7 +80,7 @@ describe("reassignment optimizer time-limited feasible opt-in", () => {
       primary,
       movableAssignments: [],
       date: "2026-09-18",
-      review: "ke166-supervisor",
+      review: "mobile-supervisor",
       primaryCandidateAllowed: (person) => person.id === "staff-1",
     });
 
@@ -96,7 +96,7 @@ describe("reassignment optimizer time-limited feasible opt-in", () => {
       primary,
       movableAssignments: [],
       date: "2026-09-18",
-      review: "ke166-supervisor",
+      review: "mobile-supervisor",
       primaryCandidateAllowed: (person) => person.id === "staff-1",
       acceptTimeLimitedFeasible: true,
     });
@@ -116,7 +116,7 @@ describe("reassignment optimizer time-limited feasible opt-in", () => {
       primary,
       movableAssignments: [],
       date: "2026-09-18",
-      review: "ke166-supervisor",
+      review: "mobile-supervisor",
       primaryCandidateAllowed: (person) => person.id === "staff-1",
       acceptTimeLimitedFeasible: true,
       validateChanges: () => ["安全复核拒绝"],

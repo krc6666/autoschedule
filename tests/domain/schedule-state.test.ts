@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultState } from "../../src/defaults";
+import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
 import type { AppState, StaffStatus } from "../../src/model";
 import { applyStaffStatusChange } from "../../src/domain/kernel/schedule-state";
 import { generateSchedule } from "../helpers/generate-schedule";

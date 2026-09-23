@@ -39,6 +39,7 @@ export class AppToastElement extends LightDomElement {
     if (!changed.has("toast") || !this.toast || !this.toastRef.value) return;
     Toast.getInstance(this.toastRef.value)?.dispose();
     Toast.getOrCreateInstance(this.toastRef.value, {
+      animation: false,
       autohide: this.toast.tone !== "danger",
       delay: 3600,
     }).show();

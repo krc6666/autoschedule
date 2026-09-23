@@ -146,7 +146,7 @@ function countForKind(
       latePriorityFrequencyKinds({
         name: record.position,
         remark: record.remark,
-      }).includes(kind)
+      }).includes(kind) && !(kind === "supervisor" && record.teamLeaderGapFill)
         ? [
             [
               record.date,
@@ -157,6 +157,13 @@ function countForKind(
         : []
     )
   ).size;
+}
+
+function hasCountedLatePriorityKind(record: HistoryRecord): boolean {
+  return latePriorityFrequencyKinds({
+    name: record.position,
+    remark: record.remark,
+  }).some((kind) => !(kind === "supervisor" && record.teamLeaderGapFill));
 }
 
 function totalCount(
@@ -324,7 +331,11 @@ export function latePriorityFrequencyProfileForRule(
     applies: true,
     targetKinds: latePriorityFrequencyKinds(rule),
     previousWorkdayAssigned: Boolean(
-      previousDate && matching.some((record) => record.date === previousDate)
+      previousDate &&
+      matching.some(
+        (record) =>
+          record.date === previousDate && hasCountedLatePriorityKind(record)
+      )
     ),
     supervisorQualified: supervisorQualifiedForScope(state, staffId),
     supervisorRotationDeficit: supervisorRotationDeficit(
@@ -408,7 +419,9 @@ export function latePriorityFrequencyProfileWithSchedule(
     const currentKeys = new Set(
       current.flatMap((assignment) => {
         const rule = assignmentRule(state, assignment);
-        return rule && latePriorityFrequencyKinds(rule).includes(kind)
+        return rule &&
+          latePriorityFrequencyKinds(rule).includes(kind) &&
+          !(kind === "supervisor" && assignment.teamLeaderGapFill)
           ? [
               [
                 date,

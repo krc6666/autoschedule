@@ -7,6 +7,7 @@ import {
   compareLatePriorityFrequency,
   compareLatePriorityFrequencyForKind,
   latePriorityFrequencyProfileForRule,
+  latePriorityFrequencyProfileWithSchedule,
 } from "../../src/domain/statistics/late-priority-frequency";
 import type { HistoryRecord, PositionRule } from "../../src/model";
 
@@ -52,6 +53,73 @@ function rule(name: string, remark: string): PositionRule {
 }
 
 describe("late priority frequency statistics", () => {
+  it("does not count gap-fill supervision in history or the current schedule", () => {
+    const state = createDefaultState();
+    const leader = state.staff[0]!;
+    const supervisorRule = rule("督导", "");
+    supervisorRule.flightNo = "TR121";
+    supervisorRule.qualifiedStaffIds = [leader.id];
+    state.positionRules = [supervisorRule];
+    state.settings.latePriorityFlightNumbers = ["TR121"];
+    state.history = [
+      {
+        ...record(
+          "gap-fill-history",
+          leader.id,
+          "TR121",
+          "督导",
+          "",
+          "21:55",
+          "23:55"
+        ),
+        teamLeaderGapFill: true,
+      },
+    ];
+    const current = {
+      id: "gap-fill-current",
+      flightId: "tr121",
+      flightNo: "TR121",
+      positionRuleId: supervisorRule.id,
+      position: "督导",
+      staffId: leader.id,
+      staffName: leader.name,
+      startTime: "21:55",
+      endTime: "23:55",
+      workHours: 2,
+      fatiguePoints: 5,
+      remark: "",
+      manualRemark: "",
+      status: "assigned" as const,
+      teamLeaderGapFill: true as const,
+    };
+    state.assignments = [current];
+
+    const historical = latePriorityFrequencyProfileForRule(
+      state,
+      leader.id,
+      current,
+      supervisorRule,
+      DATE
+    );
+    const withCurrent = latePriorityFrequencyProfileWithSchedule(
+      state,
+      leader.id,
+      current,
+      state.assignments,
+      DATE
+    );
+
+    expect(historical.counts.supervisor).toEqual({
+      currentMonthCount: 0,
+      recentWorkdayCount: 0,
+    });
+    expect(historical.previousWorkdayAssigned).toBe(false);
+    expect(withCurrent.counts.supervisor).toEqual({
+      currentMonthCount: 0,
+      recentWorkdayCount: 0,
+    });
+  });
+
   it("uses manual corrections in the existing monthly balance profile", () => {
     const state = createDefaultState();
     const targetRule = state.positionRules.find(

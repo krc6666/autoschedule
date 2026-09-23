@@ -438,9 +438,11 @@ describe("scheduler performance safeguards", () => {
 
     expect(second.assignments).toHaveLength(first.assignments.length);
     expect(phases).toEqual(
-      plannedScheduleProgress(state.settings, state.flights).map(
-        (step) => step.stage
-      )
+      plannedScheduleProgress(
+        state.settings,
+        state.flights,
+        state.positionRules
+      ).map((step) => step.stage)
     );
     expect(elapsed).toBeLessThan(30_000);
   }, 40_000);

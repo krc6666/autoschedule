@@ -35,6 +35,62 @@ describe("application dialog", () => {
     ).toBe(true);
   });
 
+  it("shows concrete gap-fill warnings and rejected candidate reasons", async () => {
+    const model = createDefaultState();
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-app-dialog", {
+      model,
+      dialog: {
+        kind: "team-leader-gap-fill",
+        selectedTeamLeaderId: "1",
+        selectedVacancyAssignmentIds: ["vacancy"],
+        planning: false,
+        reasons: [],
+        preview: {
+          date: "2026-09-26",
+          teamLeaderId: "1",
+          vacancyAssignmentIds: ["vacancy"],
+          baselineFingerprint: "baseline",
+          changes: [
+            {
+              assignmentId: "ak-guide",
+              flightNo: "AK151",
+              position: "引导",
+              fromStaffId: "7",
+              fromStaffName: "刘翔",
+              toStaffId: "1",
+              toStaffName: "刘红",
+              workHours: 0,
+            },
+          ],
+          warnings: [
+            "黄灯：下一工作班TR121/收费/引导要求至少保留1名合格人员；合格人员：华嘉慧、肖萍、刘燕琼；华嘉慧（TR121/H08（21:55-23:55））、肖萍（TR121/H09（21:55-23:55））、刘燕琼（TR121/收费/引导（21:55-23:55））因23:00后岗位被消耗；预留人数从1变为0。",
+            "刘翔上一工作班承担TR121/H02（21:55-23:55，一号），本次补差安排到AK151/引导（21:05-23:05）；跨工作日恢复本应尽量避开，本方案为补空缺让步。",
+            "刘燕琼补差后承担TR121/收费/引导（21:55-23:55），与FD573/G09（15:25-17:25）均为高负荷岗位，间隔不超过360分钟，触发高负荷疲劳保护；本方案为补空缺黄灯让步。",
+            "刘燕琼补差后承担TR121/收费/引导（21:55-23:55），其开始前360分钟内累计疲劳将超过8点，触发滚动负荷保护；本方案为补空缺黄灯让步。",
+          ],
+          rejectedCandidates: [
+            "刘红尝试接AK151/G09（21:05-23:05）失败：这个时段已经安排了其他岗位：CX931/G14（17:50-19:50）",
+          ],
+        },
+      },
+    });
+
+    const text = element.textContent.replace(/\s+/g, " ").trim();
+    expect(text).toContain("黄灯提醒");
+    expect(text).toContain("AK151/引导：刘翔 → 刘红");
+    expect(text).toContain("预留人数从1变为0");
+    expect(text).toContain("华嘉慧、肖萍、刘燕琼");
+    expect(text).toContain("刘翔上一工作班承担TR121/H02");
+    expect(text).toContain("刘燕琼补差后承担TR121/收费/引导");
+    expect(text).toContain("触发高负荷疲劳保护");
+    expect(text).toContain("触发滚动负荷保护");
+    expect(text).toContain("未采用的候选方案");
+    expect(text).toContain("CX931/G14（17:50-19:50）");
+    expect(text).not.toContain("infeasible");
+  });
+
   it("counts every structured rule collection in configuration import preview", async () => {
     const model = createDefaultState();
     model.settings.crossFlightPriorityPolicies = [

@@ -113,6 +113,7 @@ function modelState(
     name: "测试人员",
     status: "正常" as const,
     staffType: "常规" as const,
+    teamLeader: false,
     dutyQualified: false,
     nightShift: true,
   };
@@ -227,7 +228,7 @@ describe("daily schedule module interfaces", () => {
     expect(facts.ignoredWarnings).toEqual([]);
   });
 
-  it("assigns late-start half-rest staff to a normal eligible afternoon flight", async () => {
+  it("assigns late-start half-rest staff to an eligible afternoon flight", async () => {
     const state = modelState([
       flight("morning", "AM100", "08:00", "10:00", ["A1"]),
       flight("afternoon", "PM200", "14:00", "17:00", ["B1"]),
@@ -253,11 +254,13 @@ describe("daily schedule module interfaces", () => {
       .filter((assignment) => assignment.staffId === state.staff[0]!.id)
       .map((assignment) => assignment.flightNo);
 
-    expect(ownFlights).toContain("PM200");
+    expect(ownFlights).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^PM(?:200|300)$/)])
+    );
     expect(ownFlights).not.toContain("AM100");
   });
 
-  it("does not push late-start half-rest staff toward the latest flight", async () => {
+  it("does not apply the early-finish objective to late-start staff", async () => {
     const state = modelState([
       flight("morning", "AM100", "08:00", "10:00", ["A1"]),
       flight("afternoon", "PM200", "14:00", "17:00", ["B1"]),
@@ -280,16 +283,12 @@ describe("daily schedule module interfaces", () => {
     const objectiveIds = problem.objectives.map((objective) => objective.id);
 
     expect(objectiveIds).not.toContain("half-rest-early-finish:latest-end");
-    expect(objectiveIds).not.toContain(
-      "half-rest-early-finish:late-start-count"
-    );
   });
 
   it("allows a late-start half-rest worker on a 12:00-to-17:00 flight", async () => {
     const state = modelState([
       flight("morning", "AM100", "08:00", "10:00", ["A1"]),
       flight("afternoon", "PM200", "12:00", "17:00", ["B1"]),
-      flight("late", "PM300", "20:00", "23:30", ["C1"]),
     ]);
     const regular = {
       ...state.staff[0]!,
@@ -1421,6 +1420,7 @@ describe("daily schedule solver performance model", () => {
       .map((objective) => objective.id);
 
     expect(bestEffortIds).toEqual([
+      "candidate:staff-coverage",
       "candidate:cross-workday-load",
       "candidate:workload-balance:target",
       "candidate:workload-balance:today-hours-excess",

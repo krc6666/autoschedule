@@ -36,7 +36,7 @@ import {
 
 export type RotationReview =
   | "consecutive"
-  | "ke166-supervisor"
+  | "mobile-supervisor"
   | "late-frequency"
   | "frequency"
   | "recovery"
@@ -74,7 +74,7 @@ export const ROTATION_REVIEW_POLICIES: Readonly<
     protectDutyMorning: true,
     protectWorkloadBalance: false,
   },
-  "ke166-supervisor": {
+  "mobile-supervisor": {
     transitionMode: "prefer",
     assignedCount: "preserve",
     consecutive: "none",
@@ -142,6 +142,8 @@ export interface ReassignmentCandidateSafetyOptions {
   frequencyFacts?: ScheduleFrequencyFacts;
   latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy;
   allowCutoffProtectionRegression?: boolean;
+  allowCrossWorkdayRecoveryRegression?: boolean;
+  allowDirectGuideReassignment?: boolean;
 }
 
 export function reassignmentCandidateSafetyReasons({
@@ -155,6 +157,7 @@ export function reassignmentCandidateSafetyReasons({
   frequencyFacts,
   latePriorityFatigueRelief,
   allowCutoffProtectionRegression = false,
+  allowCrossWorkdayRecoveryRegression = false,
 }: ReassignmentCandidateSafetyOptions): string[] {
   if (!assignment.staffId) return ["交换后会造成其他岗位空缺"];
   const rule = assignmentRule(state, assignment);
@@ -242,6 +245,7 @@ export function reassignmentCandidateSafetyReasons({
     reasons.push("该人员本月已承担2次TR121一号");
   }
   if (
+    !allowCrossWorkdayRecoveryRegression &&
     !recoveryProtectionMayYield &&
     !allowCutoffProtectionRegression &&
     !priorityFairnessMayYield &&
@@ -256,6 +260,7 @@ export function reassignmentCandidateSafetyReasons({
     reasons.push("交换后会让末班重点岗位人员承担截止时间后的航班");
   }
   if (
+    !allowCrossWorkdayRecoveryRegression &&
     !recoveryProtectionMayYield &&
     !priorityFairnessMayYield &&
     lateShiftRecoveryRisk(
@@ -393,6 +398,7 @@ export interface ReassignmentDynamicSafetyOptions {
   assignment: Assignment;
   primaryAssignment: Assignment;
   review: RotationReview;
+  allowLoadProtectionRegression?: boolean;
 }
 
 export function reassignmentDynamicSafetyReasons({
@@ -401,6 +407,7 @@ export function reassignmentDynamicSafetyReasons({
   assignment,
   primaryAssignment,
   review,
+  allowLoadProtectionRegression = false,
 }: ReassignmentDynamicSafetyOptions): string[] {
   if (!assignment.staffId) return ["交换后会造成其他岗位空缺"];
   const flight = state.flights.find((item) => item.id === assignment.flightId);
@@ -446,6 +453,7 @@ export function reassignmentDynamicSafetyReasons({
   )
     return reasons;
   if (
+    !allowLoadProtectionRegression &&
     state.settings.highLoadProtectionEnabled &&
     hasHighLoadTransition(
       assignments,
@@ -460,6 +468,7 @@ export function reassignmentDynamicSafetyReasons({
     reasons.push("交换后违反高负荷疲劳保护");
   }
   if (
+    !allowLoadProtectionRegression &&
     state.settings.rollingLoadProtectionEnabled &&
     rollingLoadCost(
       assignments,

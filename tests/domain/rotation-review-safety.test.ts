@@ -109,8 +109,8 @@ describe("rotation review safety", () => {
       "consecutive",
       "coverage",
       "frequency",
-      "ke166-supervisor",
       "late-frequency",
+      "mobile-supervisor",
       "recovery",
     ]);
     expect(ROTATION_REVIEW_POLICIES.coverage).toMatchObject({
@@ -406,6 +406,18 @@ describe("rotation review safety", () => {
     });
 
     expect(reasons).toContain("调整会减少跨工作日资质预留人数");
+
+    const gapFillReasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: [target],
+      changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
+      primaryAssignmentId: target.id,
+      date: "2026-07-30",
+      review: "coverage",
+      allowCrossWorkdayReservationRegression: true,
+    });
+    expect(gapFillReasons).not.toContain("调整会减少跨工作日资质预留人数");
   });
 
   function createStrictHalfRestFixture() {

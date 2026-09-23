@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
-import { SCHEDULING_RULES } from "../../src/domain/rules/schedule-rule-contract";
+import { ACTIVE_SCHEDULING_RULES } from "../../src/domain/rules/schedule-rule-contract";
 import "../../src/ui/components/policy-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
@@ -74,6 +74,9 @@ describe("rules page", () => {
     expect(text).toContain("排班规则");
     expect(text).not.toContain("排班策略");
     expect(text).toContain("核心保护与公平参数");
+    expect(text).toContain("分队长补差岗位保护");
+    expect(text).toContain("固定保护");
+    expect(text).toContain("允许参与补差换人");
     expect(text).toContain("跨工作日恢复保护");
     expect(text).toContain("跨工作日恢复目标强度");
     expect(text).toContain("优先避开");
@@ -120,7 +123,7 @@ describe("rules page", () => {
     expect(text).not.toContain("扩展规则文件");
     expect(element.querySelector('input[type="search"]')).not.toBeNull();
     expect(element.querySelector('input[type="file"]')).toBeNull();
-    for (const rule of SCHEDULING_RULES) {
+    for (const rule of ACTIVE_SCHEDULING_RULES) {
       expect(text).toContain(rule.label);
       expect(text).not.toContain(rule.id);
     }
@@ -132,6 +135,41 @@ describe("rules page", () => {
       "post-schedule",
       "protection",
     ].forEach((internalTerm) => expect(text).not.toContain(internalTerm));
+  });
+
+  it("shows concrete gap-fill positions and emits single-position and category updates", async () => {
+    const state = createDefaultState();
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-policy-page", { model: state });
+    const settings = element.querySelector<HTMLElement>(
+      "autoschedule-team-leader-gap-fill-protection-settings"
+    )!;
+    const configurable = settings.querySelector<HTMLInputElement>(
+      "input[data-gap-fill-position-movable]:not(:disabled)"
+    )!;
+    let emitted: CustomEvent | undefined;
+    settings.addEventListener("autoschedule-command", (event) => {
+      emitted = event as CustomEvent;
+    });
+
+    expect(settings.textContent).toContain("TR121");
+    configurable.checked = !configurable.checked;
+    configurable.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(emitted?.detail).toMatchObject({
+      type: "set-team-leader-gap-fill-positions-movable",
+      positionRuleIds: [configurable.dataset.positionRuleId],
+      movable: configurable.checked,
+    });
+
+    const bulk = settings.querySelector<HTMLButtonElement>(
+      "button[data-gap-fill-category-allow]"
+    )!;
+    bulk.click();
+    expect(emitted?.detail.type).toBe(
+      "set-team-leader-gap-fill-positions-movable"
+    );
+    expect(emitted?.detail.positionRuleIds.length).toBeGreaterThan(1);
   });
 
   it("emits the selected recovery mode from the recovery module", async () => {

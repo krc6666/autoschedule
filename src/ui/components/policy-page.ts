@@ -5,6 +5,7 @@ import { LightDomElement } from "./light-dom-element";
 import "./policy-rule-ledger";
 import "./policy-settings-form";
 import "./policy-structured-rules";
+import "./team-leader-gap-fill-protection-settings";
 
 export class PolicyPageElement extends LightDomElement {
   static override properties = {
@@ -39,6 +40,10 @@ export class PolicyPageElement extends LightDomElement {
         .model=${this.model}
         .query=${this.query}
       ></autoschedule-policy-settings>
+      <autoschedule-team-leader-gap-fill-protection-settings
+        .model=${this.model}
+        .query=${this.query}
+      ></autoschedule-team-leader-gap-fill-protection-settings>
       <autoschedule-policy-structured-rules
         .model=${this.model}
         .query=${this.query}
