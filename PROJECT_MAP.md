@@ -1,6 +1,6 @@
 # autoschedule 项目地图
 
-更新时间：2026-08-27
+更新时间：2026-09-24
 
 这是一套运行在浏览器本地的机场地勤自动排班工作台。项目没有后端、账号、遥测或远端数据写入；配置、航班、历史和排班结果保存在浏览器 `localStorage`，Excel 用于导入导出，HiGHS 用于求解。当前分支包含按日期选择半休人员、跨工作日恢复偏好和原生多目标排班模型。
 
@@ -34,7 +34,10 @@ src/app.ts
                   |       +--> SolverPort
                   |               +--> HiGHS WebAssembly 顺序目标
                   |               +--> 项目内 HiGHS 原生多目标适配
-                  +--> schedule-ledger：结果账本
+                  +--> schedule-safety-session：统一派生 partial/final 安全快照、守卫、警告和凭证
+                  |       +--> schedule-guard：规则守卫集合
+                  |       +--> schedule-safety-credential：凭证指纹与安装校验
+                  +--> schedule-ledger：只消费安全 session 的结果账本
                   +--> coverage：岗位补全、机动督导、行政/引导处理
                   +--> post-schedule reviews：恢复、截止、轮岗、公平、CX 分散
                   +--> ScheduleResult：岗位、空缺、工时、疲劳、反馈、决策证据
@@ -94,7 +97,7 @@ UI     -/-> Store 直接写入、求解器直接调用
 
 不读取 DOM，不写浏览器存储。这里是岗位、人员、时间、疲劳、轮岗和反馈的事实实现。
 
-- `kernel/`：当天排班主流程、模型、结果物化、账本、覆盖和后置管线。
+- `kernel/`：当天排班主流程、模型、结果物化、账本、安全 session、覆盖和后置管线。
 - `assignments/`：岗位分配工厂、时间处理、值班、`KE166`、证据和调整。
 - `candidates/`：候选资质、硬约束、候选选择和候选排序。
 - `coverage/`：岗位完整性、早班分流、机动督导和团队长兼任覆盖。
@@ -276,7 +279,7 @@ git diff --check
 半休规则             -> rules/half-rest.ts + shared/schedule-run-preferences.ts
 求解器接口/实现       -> solver/solver-port.ts + infrastructure/solver/highs-solver.ts
 运行生命周期          -> app/schedule-run-controller.ts + infrastructure/schedule-runner.ts + schedule.worker.ts
-最终安全与结果        -> kernel/daily-schedule-result.ts + kernel/daily-schedule-safety.ts + kernel/schedule-finalizer.ts
+最终安全与结果        -> kernel/daily-schedule-result.ts + kernel/daily-schedule-safety.ts + kernel/schedule-safety-session.ts + kernel/schedule-finalizer.ts
 覆盖与补缺           -> coverage/ + kernel/schedule-finalizer.ts
 安全重排/后置复核    -> reviews/ + solver/reassignment-intent.ts + solver/reassignment-optimizer.ts
 统计与公平           -> statistics/ + reviews/

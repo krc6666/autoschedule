@@ -35,6 +35,7 @@ function contextFingerprint(context: ScheduleGuardContext): string {
   const workloadBalance = context.workloadBalanceFacts;
   const sameDayLateObligation = context.sameDayLateObligationFacts;
   const lateShiftPositionRelief = context.lateShiftPositionReliefFacts;
+  const mobileSupervisorCoverage = context.mobileSupervisorCoverageFacts;
   const ke166Snapshot = context.ke166SnapshotFacts;
   const scarceQualification = context.scarceQualificationFacts;
   const dutyPosition = context.dutyPositionFacts;
@@ -484,6 +485,15 @@ function contextFingerprint(context: ScheduleGuardContext): string {
       : undefined,
     lateShiftPositionReliefFacts: lateShiftPositionRelief
       ? { date: lateShiftPositionRelief.date }
+      : undefined,
+    mobileSupervisorCoverageFacts: mobileSupervisorCoverage
+      ? {
+          date: mobileSupervisorCoverage.date,
+          mobileSupervisorCoverageRules:
+            mobileSupervisorCoverage.state.settings.mobileSupervisorCoverageRules.map(
+              (rule) => ({ ...rule })
+            ),
+        }
       : undefined,
     ke166SnapshotFacts: ke166Snapshot
       ? {

@@ -7,6 +7,7 @@ import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver
 import { assignMobileSupervisorByCounterCoverage } from "../../src/domain/assignments/ke166-assignment";
 import { createMobileSupervisorCoverageScheduleGuard } from "../../src/domain/kernel/schedule-guard";
 import { createScheduleLedger } from "../../src/domain/kernel/schedule-ledger";
+import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
 
 const DATE = "2026-09-23";
 
@@ -491,11 +492,13 @@ describe("all-flight mobile-supervisor scheduling", { timeout: 15_000 }, () => {
       },
     ];
     const ledger = createScheduleLedger(valid, {
-      guards: [createMobileSupervisorCoverageScheduleGuard()],
-      guardContext: {
-        phase: "partial",
-        mobileSupervisorCoverageFacts: { state, date: DATE },
-      },
+      safetySession: createScheduleSafetySessionFromContext({
+        guards: [createMobileSupervisorCoverageScheduleGuard()],
+        context: {
+          phase: "partial",
+          mobileSupervisorCoverageFacts: { state, date: DATE },
+        },
+      }),
     });
     const broken = valid.map((assignment) => ({ ...assignment }));
     broken[1]!.staffId = otherWorker.id;

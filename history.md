@@ -1,5 +1,13 @@
 # autoschedule 开发历史
 
+## 2026-09-24：统一安全快照 session
+
+- 问题：partial ledger、finalizer 和安全凭证分别手工装配近似相同的安全 facts，新增硬规则时容易漏接某条路径；凭证指纹还遗漏机动督导兼任规则。
+- 原因：安全 facts 的派生没有唯一 kernel seam，调用方同时知道 facts 清单、guard 执行和凭证投影细节。
+- 尝试：先冻结 7 个安全相关测试文件的 203 项基线，再提炼 `schedule-safety-session`，让 partial/final 共用 context 工厂，Ledger/Finalizer/安装校验改为消费 session；补充 final session 与兼任规则指纹回归。
+- 结论：安全 session 统一负责完整 facts 快照、guards、warningSink 和 final credential；guard 判定、最终 daily safety、凭证安装合同和业务规则保持不变。
+- 怎么防再犯：新增安全事实先进入 `schedule-safety-session.ts`，再由 session 同时供 partial/final guard 和凭证使用；凭证指纹回归必须覆盖每个影响安全结论的 context facts。
+
 ## 2026-09-24：局部重排调用方泄漏底层让步开关
 
 - 问题：局部重排虽然共用同一优化器，但分队长补差和次班截止恢复必须在调用处自行组合六个底层布尔开关；新增或调整调用方时，候选检查与最终安全复核存在漏接同一让步语义的风险。相关测试还从默认状态抽取人员原型，隐含依赖默认名单身份。

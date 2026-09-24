@@ -1,11 +1,7 @@
 import { freeze } from "immer";
 
 import type { Assignment } from "../../model";
-import {
-  assertScheduleAssignmentsSafe,
-  type ScheduleGuard,
-  type ScheduleGuardContext,
-} from "./schedule-guard";
+import type { ScheduleSafetySession } from "./schedule-safety-session";
 
 export type ScheduleProposal =
   | { type: "append"; assignments: readonly Assignment[] }
@@ -18,8 +14,7 @@ export interface ScheduleLedger {
 }
 
 export interface ScheduleLedgerOptions {
-  guards?: readonly ScheduleGuard[];
-  guardContext?: ScheduleGuardContext;
+  safetySession?: ScheduleSafetySession;
 }
 
 function cloneAssignments(assignments: readonly Assignment[]): Assignment[] {
@@ -54,16 +49,7 @@ export function createScheduleLedger(
                 (assignment) => !proposal.assignmentIds.includes(assignment.id)
               );
       validateAssignments(next);
-      if (options.guards?.length) {
-        if (!options.guardContext) {
-          throw new Error("排班 ledger 守卫缺少上下文");
-        }
-        assertScheduleAssignmentsSafe({
-          assignments: next,
-          context: options.guardContext,
-          guards: options.guards,
-        });
-      }
+      options.safetySession?.assertAssignmentsSafe(next);
       current = freeze(next, true);
     },
   });

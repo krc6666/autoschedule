@@ -1,5 +1,5 @@
 import type { AppState, ScheduleResult } from "../../model";
-import { assertScheduleSafetyCredential } from "./schedule-safety-credential";
+import { assertScheduleSafetyCredential } from "./schedule-safety-session";
 import { scheduleRuleFingerprint } from "../rules/schedule-rule-fingerprint";
 
 export function clearActiveSchedule(state: AppState): void {

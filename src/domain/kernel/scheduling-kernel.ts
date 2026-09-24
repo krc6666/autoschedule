@@ -7,7 +7,7 @@ import type { DailySchedulePlan } from "./daily-schedule-result";
 import { optimizeDailySchedule } from "./daily-schedule-optimizer";
 import { finalizeSchedule } from "./schedule-finalizer";
 import { createScheduleLedger } from "./schedule-ledger";
-import { createDefaultScheduleGuards } from "./schedule-guard";
+import { createScheduleSafetySession } from "./schedule-safety-session";
 import { placePassivePosition } from "./schedule-passive-position";
 import {
   prepareSchedule,
@@ -49,68 +49,17 @@ async function finalizeDailyPlan({
   reportProgress,
   scheduleRunId,
 }: FinalizePlanOptions): Promise<ScheduleResult> {
-  const guards = createDefaultScheduleGuards();
   const warnings = [...plan.warnings];
   const guardWarnings: string[] = [];
+  const partialSafetySession = createScheduleSafetySession({
+    phase: "partial",
+    state,
+    date,
+    runFacts: preparation.runFacts,
+    warningSink: guardWarnings,
+  });
   const ledger = createScheduleLedger(plan.assignments, {
-    guards,
-    guardContext: {
-      phase: "partial",
-      sameFlightStaffExclusionFacts: { state },
-      halfRestFacts: preparation.runFacts.halfRest,
-      airlineRotationFacts: {
-        positionRules: state.positionRules,
-      },
-      minimumFlightTransitionFacts: {
-        flights: state.flights,
-        positionRules: state.positionRules,
-        settings: state.settings,
-      },
-      lateShiftCutoffFacts: {
-        state,
-        date,
-        crossDayRecovery: preparation.runFacts.crossDayRecovery,
-      },
-      crossWorkdayQualificationReservationFacts: { state },
-      latePriorityFrequencyFacts: {
-        state,
-        date,
-        scheduleFrequency: preparation.runFacts.scheduleFrequency,
-      },
-      latePriorityAggregateRotationFacts: {
-        state,
-        date,
-        scheduleFrequency: preparation.runFacts.scheduleFrequency,
-      },
-      strictNextWorkdayRecoveryFacts: {
-        state,
-        date,
-        crossDayRecovery: preparation.runFacts.crossDayRecovery,
-        halfRestFacts: preparation.runFacts.halfRest,
-      },
-      highFatiguePositionFacts: {
-        state,
-        date,
-        scheduleFrequency: preparation.runFacts.scheduleFrequency,
-      },
-      positionTransitionFacts: { state },
-      positionFrequencyFacts: {
-        state,
-        date,
-      },
-      workloadBalanceFacts: {
-        state,
-        date,
-        dutyStaffId: preparation.runFacts.currentDutyStaffId,
-      },
-      sameDayLateObligationFacts: { state, date },
-      lateShiftPositionReliefFacts: { state, date },
-      mobileSupervisorCoverageFacts: { state, date },
-      ke166SnapshotFacts: { state, date },
-      scarceQualificationFacts: { state, date },
-      dutyPositionFacts: { state, date },
-      warningSink: guardWarnings,
-    },
+    safetySession: partialSafetySession,
   });
   const automaticTaskKeys = new Set(preparation.tasks.map((task) => task.key));
   for (const flight of preparation.flights) {
@@ -137,8 +86,13 @@ async function finalizeDailyPlan({
     state,
     date,
     ledger,
-    guards,
-    guardWarnings,
+    safetySession: createScheduleSafetySession({
+      phase: "final",
+      state,
+      date,
+      runFacts: preparation.runFacts,
+      warningSink: guardWarnings,
+    }),
     warnings,
     flights: preparation.flights,
     displayRulesByFlight: preparation.displayRulesByFlight,

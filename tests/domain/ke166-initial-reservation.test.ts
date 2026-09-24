@@ -5,6 +5,7 @@ import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-i
 import { optimizeDailySchedule } from "../../src/domain/kernel/daily-schedule-optimizer";
 import { createScheduleLedger } from "../../src/domain/kernel/schedule-ledger";
 import { createKe166SnapshotScheduleGuard } from "../../src/domain/kernel/schedule-guard";
+import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
 import { prepareSchedule } from "../../src/domain/kernel/schedule-preparation";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import { generateSchedule } from "../helpers/generate-schedule";
@@ -354,11 +355,13 @@ describe(
         return assignment;
       });
       const ledger = createScheduleLedger(result.assignments, {
-        guards: [createKe166SnapshotScheduleGuard()],
-        guardContext: {
-          phase: "final",
-          ke166SnapshotFacts: { state, date: "2026-09-24" },
-        },
+        safetySession: createScheduleSafetySessionFromContext({
+          guards: [createKe166SnapshotScheduleGuard()],
+          context: {
+            phase: "final",
+            ke166SnapshotFacts: { state, date: "2026-09-24" },
+          },
+        }),
       });
 
       expect(() =>

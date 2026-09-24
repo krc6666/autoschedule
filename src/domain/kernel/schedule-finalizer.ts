@@ -30,12 +30,7 @@ import { assertDailyScheduleSafety } from "./daily-schedule-safety";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import { scheduleOptimizationWarning } from "../reviews/schedule-warning-message";
 import { isHalfRestWarning } from "../rules/half-rest";
-import {
-  assertScheduleAssignmentsSafe,
-  type ScheduleGuard,
-  type ScheduleGuardContext,
-} from "./schedule-guard";
-import { createScheduleSafetyCredential } from "./schedule-safety-credential";
+import type { ScheduleSafetySession } from "./schedule-safety-session";
 import { scheduleRuleFingerprint } from "../rules/schedule-rule-fingerprint";
 
 export interface ScheduleFinalizerOptions {
@@ -43,8 +38,7 @@ export interface ScheduleFinalizerOptions {
   state: ScheduleGenerationFacts;
   date: string;
   ledger: ScheduleLedger;
-  guards: readonly ScheduleGuard[];
-  guardWarnings: string[];
+  safetySession: ScheduleSafetySession;
   warnings: string[];
   flights: readonly Flight[];
   displayRulesByFlight: ReadonlyMap<string, readonly PositionRule[]>;
@@ -160,8 +154,7 @@ export async function finalizeSchedule({
   state,
   date,
   ledger,
-  guards,
-  guardWarnings,
+  safetySession,
   warnings,
   flights,
   displayRulesByFlight,
@@ -208,69 +201,8 @@ export async function finalizeSchedule({
     })
   );
   ledger.commit({ type: "replace", assignments: resultAssignments });
-  const finalGuardContext: ScheduleGuardContext = {
-    phase: "final",
-    sameFlightStaffExclusionFacts: { state },
-    halfRestFacts: runFacts.halfRest,
-    airlineRotationFacts: {
-      positionRules: state.positionRules,
-    },
-    minimumFlightTransitionFacts: {
-      flights: state.flights,
-      positionRules: state.positionRules,
-      settings: state.settings,
-    },
-    lateShiftCutoffFacts: {
-      state,
-      date,
-      crossDayRecovery: runFacts.crossDayRecovery,
-    },
-    crossWorkdayQualificationReservationFacts: { state },
-    latePriorityFrequencyFacts: {
-      state,
-      date,
-      scheduleFrequency: runFacts.scheduleFrequency,
-    },
-    latePriorityAggregateRotationFacts: {
-      state,
-      date,
-      scheduleFrequency: runFacts.scheduleFrequency,
-    },
-    strictNextWorkdayRecoveryFacts: {
-      state,
-      date,
-      crossDayRecovery: runFacts.crossDayRecovery,
-      halfRestFacts: runFacts.halfRest,
-    },
-    highFatiguePositionFacts: {
-      state,
-      date,
-      scheduleFrequency: runFacts.scheduleFrequency,
-    },
-    positionTransitionFacts: { state },
-    positionFrequencyFacts: {
-      state,
-      date,
-    },
-    workloadBalanceFacts: {
-      state,
-      date,
-      dutyStaffId: runFacts.currentDutyStaffId,
-    },
-    sameDayLateObligationFacts: { state, date },
-    lateShiftPositionReliefFacts: { state, date },
-    mobileSupervisorCoverageFacts: { state, date },
-    ke166SnapshotFacts: { state, date },
-    scarceQualificationFacts: { state, date },
-    dutyPositionFacts: { state, date },
-    warningSink: guardWarnings,
-  };
-  guardWarnings.splice(0, guardWarnings.length);
-  assertScheduleAssignmentsSafe({
-    assignments: resultAssignments,
-    context: finalGuardContext,
-    guards,
-  });
+  safetySession.resetWarnings();
+  safetySession.assertAssignmentsSafe(resultAssignments);
   assertDailyScheduleSafety({
     state,
     date,
@@ -289,7 +221,7 @@ export async function finalizeSchedule({
       resultAssignments,
       postReviewWarnings,
       optimizationQuality,
-      [...warnings.filter(isHalfRestWarning), ...guardWarnings]
+      [...warnings.filter(isHalfRestWarning), ...safetySession.warnings()]
     )
   );
   return {
@@ -298,10 +230,6 @@ export async function finalizeSchedule({
       (assignment) => assignment.status === "unfilled"
     ).length,
     warnings: [...warnings],
-    safetyCredential: createScheduleSafetyCredential({
-      date,
-      assignments: resultAssignments,
-      context: finalGuardContext,
-    }),
+    safetyCredential: safetySession.createCredential(date, resultAssignments),
   };
 }

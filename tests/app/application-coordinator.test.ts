@@ -7,7 +7,8 @@ import { createDefaultState } from "../../src/defaults";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 import { buildMonthlyLatePriorityStatistics } from "../../src/domain/statistics/monthly-late-priority-statistics";
 import type { ScheduleResult } from "../../src/model";
-import { createScheduleSafetyCredential } from "../../src/domain/kernel/schedule-safety-credential";
+import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 import { generateSchedule } from "../helpers/generate-schedule";
 import {
   buildLatePriorityCountsWorkbook,
@@ -52,13 +53,15 @@ function certifiedResult(
     unfilledCount: assignments.filter((item) => item.status === "unfilled")
       .length,
   };
+  const state = createDefaultState();
   return {
     ...result,
-    safetyCredential: createScheduleSafetyCredential({
+    safetyCredential: createScheduleSafetySession({
+      phase: "final",
+      state,
       date,
-      assignments,
-      context: { phase: "final" },
-    }),
+      runFacts: createScheduleRunFacts(state, date),
+    }).createCredential(date, assignments),
   };
 }
 

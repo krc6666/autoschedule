@@ -7,15 +7,22 @@ import {
   installGeneratedSchedule,
   markActiveScheduleStale,
 } from "../../src/domain/kernel/schedule-lifecycle";
-import { createScheduleSafetyCredential } from "../../src/domain/kernel/schedule-safety-credential";
+import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
+
+function safetyCredential(date: string, assignments: readonly Assignment[]) {
+  const state = createDefaultState();
+  return createScheduleSafetySession({
+    phase: "final",
+    state,
+    date,
+    runFacts: createScheduleRunFacts(state, date),
+  }).createCredential(date, assignments);
+}
 
 describe("schedule lifecycle", () => {
   it("stores compact FNV fingerprints in safety credentials", () => {
-    const credential = createScheduleSafetyCredential({
-      date: "2026-07-30",
-      assignments: [],
-      context: { phase: "final" },
-    });
+    const credential = safetyCredential("2026-07-30", []);
 
     expect(credential.assignmentsFingerprint).toMatch(
       /^credential-v1:[0-9a-f]{16}$/
@@ -69,11 +76,7 @@ describe("schedule lifecycle", () => {
       assignments,
       unfilledCount: 0,
       warnings: [],
-      safetyCredential: createScheduleSafetyCredential({
-        date: "2026-07-30",
-        assignments,
-        context: { phase: "final" },
-      }),
+      safetyCredential: safetyCredential("2026-07-30", assignments),
     };
     result.assignments.push({ id: "tampered" } as never);
 
@@ -92,11 +95,7 @@ describe("schedule lifecycle", () => {
       assignments,
       unfilledCount: 0,
       warnings: [],
-      safetyCredential: createScheduleSafetyCredential({
-        date: "2026-07-29",
-        assignments,
-        context: { phase: "final" },
-      }),
+      safetyCredential: safetyCredential("2026-07-29", assignments),
     };
 
     expect(() => installGeneratedSchedule(state, "2026-07-30", result)).toThrow(
@@ -130,11 +129,7 @@ describe("schedule lifecycle", () => {
     };
     installGeneratedSchedule(state, "2026-07-30", {
       ...result,
-      safetyCredential: createScheduleSafetyCredential({
-        date: "2026-07-30",
-        assignments: result.assignments,
-        context: { phase: "final" },
-      }),
+      safetyCredential: safetyCredential("2026-07-30", result.assignments),
     });
     expect(state).toMatchObject({
       activeScheduleDate: "2026-07-30",

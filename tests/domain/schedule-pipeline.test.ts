@@ -18,6 +18,7 @@ import {
   createDefaultScheduleGuards,
   ScheduleGuardError,
 } from "../../src/domain/kernel/schedule-guard";
+import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
 import type { Assignment } from "../../src/model";
 import type { HalfRestFacts } from "../../src/domain/rules/half-rest";
 
@@ -64,8 +65,10 @@ describe("schedule pipeline contract", () => {
       endTime: "11:00",
     };
     const ledger = createScheduleLedger([legal], {
-      guards: createDefaultScheduleGuards(),
-      guardContext: { phase: "partial", halfRestFacts },
+      safetySession: createScheduleSafetySessionFromContext({
+        guards: createDefaultScheduleGuards(),
+        context: { phase: "partial", halfRestFacts },
+      }),
     });
     const context = {
       solver: {

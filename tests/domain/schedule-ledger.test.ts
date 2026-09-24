@@ -14,8 +14,17 @@ import {
   createScarceQualificationScheduleGuard,
   createDutyPositionScheduleGuard,
   ScheduleGuardError,
+  type ScheduleGuard,
   type ScheduleGuardContext,
 } from "../../src/domain/kernel/schedule-guard";
+import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
+
+function safetySession(
+  context: ScheduleGuardContext,
+  guards: readonly ScheduleGuard[] = createDefaultScheduleGuards()
+) {
+  return createScheduleSafetySessionFromContext({ context, guards });
+}
 
 const assignment: Assignment = {
   id: "assignment-1",
@@ -35,14 +44,12 @@ const assignment: Assignment = {
 };
 
 describe("schedule ledger", () => {
-  it("reports a readable missing guard context error", () => {
-    const ledger = createScheduleLedger([], {
-      guards: [createDefaultScheduleGuards()[0]!],
-    });
+  it("allows a ledger without a safety session", () => {
+    const ledger = createScheduleLedger([]);
 
     expect(() =>
       ledger.commit({ type: "append", assignments: [assignment] })
-    ).toThrow("排班 ledger 守卫缺少上下文");
+    ).not.toThrow();
   });
 
   it("exposes immutable snapshots and commits validated proposals atomically", () => {
@@ -90,8 +97,7 @@ describe("schedule ledger", () => {
       status: "assigned" as const,
     };
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext: { phase: "partial", halfRestFacts: facts },
+      safetySession: safetySession({ phase: "partial", halfRestFacts: facts }),
     });
     const legal = {
       ...illegal,
@@ -156,8 +162,7 @@ describe("schedule ledger", () => {
       },
     };
     const ledger = createScheduleLedger([existing], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     let error: unknown;
@@ -247,8 +252,7 @@ describe("schedule ledger", () => {
       },
     } as unknown as ScheduleGuardContext;
     const ledger = createScheduleLedger([existing], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     let error: unknown;
@@ -338,8 +342,7 @@ describe("schedule ledger", () => {
       },
     } as unknown as ScheduleGuardContext;
     const ledger = createScheduleLedger([first], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     expect(() =>
@@ -419,8 +422,7 @@ describe("schedule ledger", () => {
       },
     } as unknown as ScheduleGuardContext;
     const ledger = createScheduleLedger([first], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     expect(() =>
@@ -477,8 +479,7 @@ describe("schedule ledger", () => {
       },
     } as unknown as ScheduleGuardContext;
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     expect(() =>
@@ -566,8 +567,7 @@ describe("schedule ledger", () => {
       crossWorkdayQualificationReservationFacts: { state },
     };
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     expect(() =>
@@ -669,8 +669,7 @@ describe("schedule ledger", () => {
       },
     };
     const ledger = createScheduleLedger([legal], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     expect(() =>
@@ -767,8 +766,7 @@ describe("schedule ledger", () => {
       strictNextWorkdayRecoveryFacts: { state, date: "2026-08-23" },
     } as ScheduleGuardContext;
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     expect(() =>
@@ -854,8 +852,7 @@ describe("schedule ledger", () => {
       },
     } as unknown as ScheduleGuardContext;
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     expect(() =>
@@ -938,8 +935,7 @@ describe("schedule ledger", () => {
       },
     } as unknown as ScheduleGuardContext;
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext,
+      safetySession: safetySession(guardContext),
     });
 
     expect(() =>
@@ -1028,11 +1024,10 @@ describe("schedule ledger", () => {
       endTime: targetFlight.endTime,
     };
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext: {
+      safetySession: safetySession({
         phase: "final",
         positionTransitionFacts: { state },
-      } as unknown as ScheduleGuardContext,
+      } as unknown as ScheduleGuardContext),
     });
 
     expect(() =>
@@ -1111,12 +1106,11 @@ describe("schedule ledger", () => {
     };
     const warningSink: string[] = [];
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext: {
+      safetySession: safetySession({
         phase: "partial",
         warningSink,
         positionFrequencyFacts: { state, date: "2026-08-04" },
-      } as unknown as ScheduleGuardContext,
+      } as unknown as ScheduleGuardContext),
     });
 
     expect(() =>
@@ -1146,12 +1140,11 @@ describe("schedule ledger", () => {
     };
     const warningSink: string[] = [];
     const ledger = createScheduleLedger([], {
-      guards: createDefaultScheduleGuards(),
-      guardContext: {
+      safetySession: safetySession({
         phase: "final",
         workloadBalanceFacts: { state, date: "2026-07-25" },
         warningSink,
-      } as unknown as ScheduleGuardContext,
+      } as unknown as ScheduleGuardContext),
     });
 
     expect(() =>
@@ -1184,12 +1177,14 @@ describe("schedule ledger", () => {
     };
     const warningSink: string[] = [];
     const ledger = createScheduleLedger([], {
-      guards: [createSameDayLateObligationScheduleGuard()],
-      guardContext: {
-        phase: "final",
-        sameDayLateObligationFacts: { state, date: "2026-08-04" },
-        warningSink,
-      },
+      safetySession: safetySession(
+        {
+          phase: "final",
+          sameDayLateObligationFacts: { state, date: "2026-08-04" },
+          warningSink,
+        },
+        [createSameDayLateObligationScheduleGuard()]
+      ),
     });
     expect(() =>
       ledger.commit({ type: "replace", assignments: [early, late] })
@@ -1212,15 +1207,17 @@ describe("schedule ledger", () => {
     };
     const warningSink: string[] = [];
     const ledger = createScheduleLedger([], {
-      guards: [createLateShiftPositionReliefScheduleGuard()],
-      guardContext: {
-        phase: "final",
-        lateShiftPositionReliefFacts: {
-          state: createDefaultState(),
-          date: "2026-08-04",
+      safetySession: safetySession(
+        {
+          phase: "final",
+          lateShiftPositionReliefFacts: {
+            state: createDefaultState(),
+            date: "2026-08-04",
+          },
+          warningSink,
         },
-        warningSink,
-      },
+        [createLateShiftPositionReliefScheduleGuard()]
+      ),
     });
     expect(() =>
       ledger.commit({ type: "append", assignments: [late] })
@@ -1264,12 +1261,14 @@ describe("schedule ledger", () => {
     };
     const warningSink: string[] = [];
     const ledger = createScheduleLedger([], {
-      guards: [createKe166SnapshotScheduleGuard()],
-      guardContext: {
-        phase: "final",
-        ke166SnapshotFacts: { state, date: "2026-08-04" },
-        warningSink,
-      },
+      safetySession: safetySession(
+        {
+          phase: "final",
+          ke166SnapshotFacts: { state, date: "2026-08-04" },
+          warningSink,
+        },
+        [createKe166SnapshotScheduleGuard()]
+      ),
     });
     expect(() =>
       ledger.commit({ type: "append", assignments: [missing] })
@@ -1297,12 +1296,14 @@ describe("schedule ledger", () => {
     };
     const warningSink: string[] = [];
     const ledger = createScheduleLedger([], {
-      guards: [createScarceQualificationScheduleGuard()],
-      guardContext: {
-        phase: "final",
-        scarceQualificationFacts: { state, date: "2026-08-04" },
-        warningSink,
-      },
+      safetySession: safetySession(
+        {
+          phase: "final",
+          scarceQualificationFacts: { state, date: "2026-08-04" },
+          warningSink,
+        },
+        [createScarceQualificationScheduleGuard()]
+      ),
     });
     expect(() =>
       ledger.commit({ type: "append", assignments: [invalid] })
@@ -1322,11 +1323,16 @@ describe("schedule ledger", () => {
       ],
     };
     const ledger = createScheduleLedger([], {
-      guards: [createDutyPositionScheduleGuard()],
-      guardContext: {
-        phase: "final",
-        dutyPositionFacts: { state: createDefaultState(), date: "2026-08-04" },
-      },
+      safetySession: safetySession(
+        {
+          phase: "final",
+          dutyPositionFacts: {
+            state: createDefaultState(),
+            date: "2026-08-04",
+          },
+        },
+        [createDutyPositionScheduleGuard()]
+      ),
     });
     expect(() =>
       ledger.commit({ type: "append", assignments: [locked] })
