@@ -102,7 +102,7 @@ UI     -/-> Store 直接写入、求解器直接调用
 - `flights/`：航班计划、岗位规则、任务生成、下一工作班和周计划。
 - `reviews/`：排班完成后的安全复核、公平、恢复、截止、轮岗和反馈证据。
 - `rules/`：中央规则合同、规则注册表、执行计划、设置、跨航班规则和半休约束。
-- `solver/`：求解器端口、整体重排模型、重排安全图和用户可读错误。
+- `solver/`：求解器端口、局部重排 intent 编译、整体重排模型、重排安全图和用户可读错误；业务调用方只传具名 intent，底层让步策略由 `reassignment-intent.ts` 统一展开。
 - `statistics/`：疲劳、末班重点岗位次数、同岗频率、月度统计和工作负荷。
 - `shared/`：排班事实、时间、跨工作日负荷和统一领域共享模型。
 
@@ -278,7 +278,7 @@ git diff --check
 运行生命周期          -> app/schedule-run-controller.ts + infrastructure/schedule-runner.ts + schedule.worker.ts
 最终安全与结果        -> kernel/daily-schedule-result.ts + kernel/daily-schedule-safety.ts + kernel/schedule-finalizer.ts
 覆盖与补缺           -> coverage/ + kernel/schedule-finalizer.ts
-安全重排/后置复核    -> reviews/ + solver/reassignment-optimizer.ts
+安全重排/后置复核    -> reviews/ + solver/reassignment-intent.ts + solver/reassignment-optimizer.ts
 统计与公平           -> statistics/ + reviews/
 页面设置             -> ui/components/ + app/controllers/ + app/*-actions.ts
 导入导出             -> infrastructure/ + app/workbook-actions.ts

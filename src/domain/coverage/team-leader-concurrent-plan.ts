@@ -210,6 +210,7 @@ export async function findConcurrentSupervisionPlan(options: {
     date,
     review: "coverage",
     facts,
+    intent: { kind: "team-leader-concurrent-gap-fill" },
     permittedConcurrentAssignmentIds: pairAssignmentIds,
     coupledAssignmentGroups: [[pair[0].id, pair[1].id]],
     candidateAllowed: (assignment, person) => {

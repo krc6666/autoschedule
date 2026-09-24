@@ -1,64 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultState } from "../../src/defaults";
 import { optimizeReassignment } from "../../src/domain/solver/reassignment-optimizer";
+import type { ReassignmentIntent } from "../../src/domain/solver/reassignment-intent";
 import type { SolverPort } from "../../src/domain/solver/solver-port";
-import type { Assignment, Flight, PositionRule } from "../../src/model";
+import { createReassignmentScenario } from "../helpers/scheduling-scenario";
 
-function fixture() {
-  const state = createDefaultState();
-  const [first, second] = state.staff.slice(0, 2).map((person, index) => ({
-    ...person,
-    id: `staff-${index}`,
-    name: `人员${index}`,
-    staffType: "常规" as const,
-    status: "正常" as const,
-  }));
-  state.staff = [first!, second!];
-  state.history = [];
-  state.assignments = [];
-  state.settings.highLoadProtectionEnabled = false;
-  state.settings.rollingLoadProtectionEnabled = false;
-  state.settings.workloadBalanceEnabled = false;
-  const flight: Flight = {
-    id: "flight",
-    flightNo: "F100",
-    startTime: "08:00",
-    endTime: "10:00",
-    bookedPassengers: 100,
-    positions: [],
-    remark: "",
-  };
-  const rule: PositionRule = {
-    ...state.positionRules[0]!,
-    id: "rule",
-    flightNo: flight.flightNo,
-    name: "H01",
-    category: "常规",
-    manual: false,
-    qualifiedStaffIds: [first!.id, second!.id],
-  };
-  const primary: Assignment = {
-    id: "primary",
-    flightId: flight.id,
-    flightNo: flight.flightNo,
-    positionRuleId: rule.id,
-    position: rule.name,
-    staffId: first!.id,
-    staffName: first!.name,
-    startTime: flight.startTime,
-    endTime: flight.endTime,
-    workHours: 2,
-    fatiguePoints: rule.fatiguePoints,
-    remark: "",
-    manualRemark: "",
-    status: "assigned",
-  };
-  state.flights = [flight];
-  state.positionRules = [rule];
-  state.assignments = [primary];
-  return { state, primary };
-}
+const REASSIGNMENT_INTENTS: readonly ReassignmentIntent[] = [
+  { kind: "mobile-supervisor-counter-coverage" },
+  { kind: "team-leader-concurrent-gap-fill" },
+  { kind: "late-priority-frequency-review" },
+  { kind: "ke166-rotation-review" },
+  { kind: "consecutive-rotation-review" },
+  { kind: "late-shift-recovery-review" },
+  { kind: "position-frequency-review" },
+  { kind: "manual-swap-analysis" },
+  { kind: "next-workday-cutoff-recovery" },
+  {
+    kind: "team-leader-gap-fill",
+    crossWorkdayReservation: "preserve",
+  },
+  {
+    kind: "team-leader-gap-fill",
+    crossWorkdayReservation: "yield-to-selected-vacancy",
+  },
+];
 
 const timeLimitedFeasibleSolver: SolverPort = {
   async solve() {
@@ -72,7 +37,7 @@ const timeLimitedFeasibleSolver: SolverPort = {
 
 describe("reassignment optimizer time-limited feasible opt-in", () => {
   it("does not adopt a time-limited feasible result by default", async () => {
-    const { state, primary } = fixture();
+    const { state, primary, replacementWorker } = createReassignmentScenario();
     const result = await optimizeReassignment({
       solver: timeLimitedFeasibleSolver,
       state,
@@ -81,14 +46,15 @@ describe("reassignment optimizer time-limited feasible opt-in", () => {
       movableAssignments: [],
       date: "2026-09-18",
       review: "mobile-supervisor",
-      primaryCandidateAllowed: (person) => person.id === "staff-1",
+      intent: { kind: "mobile-supervisor-counter-coverage" },
+      primaryCandidateAllowed: (person) => person.id === replacementWorker.id,
     });
 
     expect(result.changes).toBeNull();
   });
 
   it("adopts a time-limited feasible result only when explicitly enabled", async () => {
-    const { state, primary } = fixture();
+    const { state, primary, replacementWorker } = createReassignmentScenario();
     const result = await optimizeReassignment({
       solver: timeLimitedFeasibleSolver,
       state,
@@ -97,18 +63,22 @@ describe("reassignment optimizer time-limited feasible opt-in", () => {
       movableAssignments: [],
       date: "2026-09-18",
       review: "mobile-supervisor",
-      primaryCandidateAllowed: (person) => person.id === "staff-1",
+      intent: { kind: "mobile-supervisor-counter-coverage" },
+      primaryCandidateAllowed: (person) => person.id === replacementWorker.id,
       acceptTimeLimitedFeasible: true,
     });
 
     expect(result.termination).toBe("time-limited-feasible");
     expect(result.changes).toEqual([
-      expect.objectContaining({ assignmentId: "primary", staffId: "staff-1" }),
+      expect.objectContaining({
+        assignmentId: primary.id,
+        staffId: replacementWorker.id,
+      }),
     ]);
   });
 
   it("still rejects a time-limited feasible result that fails safety review", async () => {
-    const { state, primary } = fixture();
+    const { state, primary, replacementWorker } = createReassignmentScenario();
     const result = await optimizeReassignment({
       solver: timeLimitedFeasibleSolver,
       state,
@@ -117,7 +87,8 @@ describe("reassignment optimizer time-limited feasible opt-in", () => {
       movableAssignments: [],
       date: "2026-09-18",
       review: "mobile-supervisor",
-      primaryCandidateAllowed: (person) => person.id === "staff-1",
+      intent: { kind: "mobile-supervisor-counter-coverage" },
+      primaryCandidateAllowed: (person) => person.id === replacementWorker.id,
       acceptTimeLimitedFeasible: true,
       validateChanges: () => ["安全复核拒绝"],
       timeoutMs: 1,
@@ -125,4 +96,28 @@ describe("reassignment optimizer time-limited feasible opt-in", () => {
 
     expect(result.changes).toBeNull();
   });
+
+  it.each(REASSIGNMENT_INTENTS)(
+    "does not let intent %j bypass position qualification",
+    async (intent) => {
+      const { state, primary, assignedWorker, replacementWorker, rule } =
+        createReassignmentScenario();
+      rule.qualifiedStaffIds = [assignedWorker.id];
+
+      const result = await optimizeReassignment({
+        solver: timeLimitedFeasibleSolver,
+        state,
+        assignments: [primary],
+        primary,
+        movableAssignments: [],
+        date: "2026-09-18",
+        review: "coverage",
+        intent,
+        primaryCandidateAllowed: (person) => person.id === replacementWorker.id,
+        acceptTimeLimitedFeasible: true,
+      });
+
+      expect(result.changes).toBeNull();
+    }
+  );
 });

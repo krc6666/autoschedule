@@ -161,15 +161,7 @@ export async function optimizeReassignment(
         frequencyFacts: options.frequencyFacts,
         permittedConcurrentAssignmentIds,
         latePriorityFatigueRelief: options.latePriorityFatigueRelief,
-        allowWorkloadBalanceRegression: options.allowWorkloadBalanceRegression,
-        allowCutoffProtectionRegression:
-          options.allowCutoffProtectionRegression,
-        allowCrossWorkdayRecoveryRegression:
-          options.allowCrossWorkdayRecoveryRegression,
-        allowCrossWorkdayReservationRegression:
-          options.allowCrossWorkdayReservationRegression,
-        allowLoadProtectionRegression: options.allowLoadProtectionRegression,
-        allowDirectGuideReassignment: options.allowDirectGuideReassignment,
+        intent: options.intent,
       }),
       ...(options.validateChanges?.(changes) ?? []),
     ];

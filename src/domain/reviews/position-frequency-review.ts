@@ -300,6 +300,7 @@ export async function reviewSamePositionFrequency(
       review: "frequency",
       facts,
       frequencyFacts,
+      intent: { kind: "position-frequency-review" },
       primaryCandidateAllowed: (person) => lowerFrequencyIds.has(person.id),
       compareCandidates: (_assignment, left, right) =>
         compareStaff(left, right),

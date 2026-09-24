@@ -17,6 +17,10 @@ import {
 import type { RotationStaffChange } from "../reviews/rotation-review-safety";
 import { intervalsOverlap } from "../shared/time";
 import type { ReassignmentOptimizationOptions } from "./reassignment-contract";
+import {
+  reassignmentIntentPolicy,
+  type ReassignmentIntentPolicy,
+} from "./reassignment-intent";
 import type {
   IncompatibleReassignmentChoices,
   ReassignmentChoice,
@@ -58,11 +62,12 @@ function projectedAssignment(
 }
 
 function canUseDirectGuideException(
+  intentPolicy: ReassignmentIntentPolicy,
   options: ReassignmentOptimizationOptions,
   assignment: Assignment,
   person: Staff
 ): boolean {
-  if (!options.allowDirectGuideReassignment) return false;
+  if (!intentPolicy.allowDirectGuideReassignment) return false;
   const rule = assignmentRule(options.state, assignment);
   return (
     Boolean(rule && isGapFillGuidePosition(rule)) &&
@@ -71,6 +76,7 @@ function canUseDirectGuideException(
 }
 
 function dynamicChoiceSafetyReasons(
+  intentPolicy: ReassignmentIntentPolicy,
   options: ReassignmentOptimizationOptions,
   assignment: Assignment,
   person: Staff,
@@ -87,7 +93,7 @@ function dynamicChoiceSafetyReasons(
     assignment: projected.at(-1)!,
     primaryAssignment: options.primary,
     review: options.review,
-    allowLoadProtectionRegression: options.allowLoadProtectionRegression,
+    allowLoadProtectionRegression: intentPolicy.allowLoadProtectionRegression,
   });
 }
 
@@ -180,6 +186,7 @@ function createChoices(
   const candidateRejectionReasons: string[] = [];
   const candidateRejections: PreparedReassignmentChoices["candidateRejections"] =
     [];
+  const intentPolicy = reassignmentIntentPolicy(options.intent);
   for (const assignment of movable) {
     const flight = options.state.flights.find(
       (item) => item.id === assignment.flightId
@@ -216,7 +223,12 @@ function createChoices(
         );
         if (
           !diagnostic.eligible &&
-          !canUseDirectGuideException(options, assignment, person) &&
+          !canUseDirectGuideException(
+            intentPolicy,
+            options,
+            assignment,
+            person
+          ) &&
           rule.qualifiedStaffIds.includes(person.id)
         )
           recordRejection(
@@ -225,7 +237,7 @@ function createChoices(
           );
         return (
           diagnostic.eligible ||
-          canUseDirectGuideException(options, assignment, person)
+          canUseDirectGuideException(intentPolicy, options, assignment, person)
         );
       })
       .filter(
@@ -279,12 +291,14 @@ function createChoices(
             frequencyFacts: options.frequencyFacts,
             latePriorityFatigueRelief: options.latePriorityFatigueRelief,
             allowCutoffProtectionRegression:
-              options.allowCutoffProtectionRegression,
+              intentPolicy.allowCutoffProtectionRegression,
             allowCrossWorkdayRecoveryRegression:
-              options.allowCrossWorkdayRecoveryRegression,
-            allowDirectGuideReassignment: options.allowDirectGuideReassignment,
+              intentPolicy.allowCrossWorkdayRecoveryRegression,
+            allowDirectGuideReassignment:
+              intentPolicy.allowDirectGuideReassignment,
           }),
           ...dynamicChoiceSafetyReasons(
+            intentPolicy,
             options,
             assignment,
             person,
@@ -351,6 +365,7 @@ export function incompatibleReassignmentChoices(
   fixed: readonly Assignment[],
   permittedConcurrentAssignmentIds: ReadonlySet<string>
 ): IncompatibleReassignmentChoices[] {
+  const intentPolicy = reassignmentIntentPolicy(options.intent);
   const conflicts: IncompatibleReassignmentChoices[] = [];
   const choicesByStaffId = new Map<string, ReassignmentChoiceFacts[]>();
   for (const choice of choices) {
@@ -412,7 +427,7 @@ export function incompatibleReassignmentChoices(
                 primaryAssignment: options.primary,
                 review: options.review,
                 allowLoadProtectionRegression:
-                  options.allowLoadProtectionRegression,
+                  intentPolicy.allowLoadProtectionRegression,
               })
         );
         if (!timingConflict && !dynamicReasons.length) continue;

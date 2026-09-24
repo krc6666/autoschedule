@@ -9,6 +9,7 @@ import { latePriorityFrequencyKinds } from "../reviews/late-priority-policy";
 import { createScheduleRunFacts } from "../shared/schedule-run-facts";
 import { intervalsOverlap, durationHours, timeToMinutes } from "../shared/time";
 import { optimizeReassignment } from "../solver/reassignment-optimizer";
+import type { CrossWorkdayReservationDisposition } from "../solver/reassignment-intent";
 import type { SolverPort } from "../solver/solver-port";
 import { reassignmentSafetyReasons } from "../reviews/rotation-review-safety";
 import { clearAutomaticAssignmentEvidence } from "../assignments/assignment-evidence";
@@ -575,7 +576,7 @@ export async function planTeamLeaderGapFill({
   const facts = createScheduleRunFacts(state, date);
   const optimizeGapFill = (
     enforceRelativeFatigue: boolean,
-    allowCrossWorkdayReservationRegression: boolean
+    crossWorkdayReservation: CrossWorkdayReservationDisposition
   ) =>
     optimizeReassignment({
       solver,
@@ -587,10 +588,10 @@ export async function planTeamLeaderGapFill({
       review: "coverage",
       facts,
       frequencyFacts: facts.scheduleFrequency,
-      allowCrossWorkdayRecoveryRegression: true,
-      allowCrossWorkdayReservationRegression,
-      allowLoadProtectionRegression: true,
-      allowDirectGuideReassignment: true,
+      intent: {
+        kind: "team-leader-gap-fill",
+        crossWorkdayReservation,
+      },
       collectAllCandidateRejections: true,
       candidateAllowed: (assignment, person) =>
         selectedIdSet.has(assignment.id)
@@ -635,19 +636,21 @@ export async function planTeamLeaderGapFill({
       },
     });
 
-  const findGapFillPlan = async (allowReservation: boolean) => {
-    let result = await optimizeGapFill(true, allowReservation);
+  const findGapFillPlan = async (
+    crossWorkdayReservation: CrossWorkdayReservationDisposition
+  ) => {
+    let result = await optimizeGapFill(true, crossWorkdayReservation);
     const preferredPlanUnavailable =
       !result.changes &&
       result.attemptedReasons.some((reason) =>
         reason.startsWith("相对疲劳偏好：")
       );
     if (preferredPlanUnavailable)
-      result = await optimizeGapFill(false, allowReservation);
+      result = await optimizeGapFill(false, crossWorkdayReservation);
     return { result, preferredPlanUnavailable };
   };
 
-  let planAttempt = await findGapFillPlan(false);
+  let planAttempt = await findGapFillPlan("preserve");
   const strictAttemptedReasons = [...planAttempt.result.attemptedReasons];
   const strictCandidateRejections = [
     ...(planAttempt.result.candidateRejections ?? []),
@@ -660,7 +663,7 @@ export async function planTeamLeaderGapFill({
     )
   ) {
     reservationPlanUnavailable = true;
-    planAttempt = await findGapFillPlan(true);
+    planAttempt = await findGapFillPlan("yield-to-selected-vacancy");
   }
   const { result, preferredPlanUnavailable } = planAttempt;
   const attemptedReasons = [
@@ -888,10 +891,10 @@ export function applyTeamLeaderGapFillPreview(
     review: "coverage",
     facts,
     frequencyFacts: facts.scheduleFrequency,
-    allowCrossWorkdayRecoveryRegression: true,
-    allowCrossWorkdayReservationRegression: true,
-    allowLoadProtectionRegression: true,
-    allowDirectGuideReassignment: true,
+    intent: {
+      kind: "team-leader-gap-fill",
+      crossWorkdayReservation: "yield-to-selected-vacancy",
+    },
   });
   if (safetyReasons.length) return { kind: "rejected", reasons: safetyReasons };
 

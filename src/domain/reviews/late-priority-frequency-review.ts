@@ -202,6 +202,7 @@ export async function reviewLatePriorityFrequency(
       review: "late-frequency",
       facts,
       frequencyFacts,
+      intent: { kind: "late-priority-frequency-review" },
       primaryCandidateAllowed: (person) => candidateIds.has(person.id),
       primaryCandidateRejectionReason: () =>
         "该人员上一班已承担末班重点岗位或四类合计负担更高",
@@ -378,6 +379,7 @@ export async function reviewLatePriorityFrequency(
       review: "late-frequency",
       facts,
       frequencyFacts,
+      intent: { kind: "late-priority-frequency-review" },
       primaryCandidateAllowed: (person) => candidateIds.has(person.id),
       primaryCandidateRejectionReason: () =>
         assessment.kind === "supervisor"

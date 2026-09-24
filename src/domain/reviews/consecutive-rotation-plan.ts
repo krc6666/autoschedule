@@ -196,6 +196,7 @@ export async function findConsecutiveRotationPlan({
       review: "consecutive",
       facts,
       frequencyFacts,
+      intent: { kind: "consecutive-rotation-review" },
       primaryCandidateAllowed: (staff) =>
         improvesPrimaryConsecutiveRun(
           state,

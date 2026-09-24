@@ -11,6 +11,7 @@ import {
   type ReassignmentChoiceFacts,
 } from "../../src/domain/solver/reassignment-choice-graph";
 import type { ReassignmentOptimizationOptions } from "../../src/domain/solver/reassignment-contract";
+import { createReassignmentScenario } from "../helpers/scheduling-scenario";
 
 describe("rotation review safety", () => {
   it("does not impose a global retain-work requirement on a local frequency review", () => {
@@ -132,57 +133,21 @@ describe("rotation review safety", () => {
   });
 
   function createFrequencyFixture() {
-    const state = createDefaultState();
-    const [originalWorker, replacementWorker] = state.staff
-      .filter((person) => person.status === "正常")
-      .slice(0, 2);
-    state.staff = [originalWorker!, replacementWorker!];
-    state.flights = [
-      {
-        id: "flight",
-        flightNo: "F100",
-        startTime: "08:00",
-        endTime: "10:00",
-        bookedPassengers: 100,
-        positions: ["G20"],
-        remark: "",
-      },
-    ];
-    const baseRule = state.positionRules[0]!;
-    state.positionRules = [
-      {
-        ...baseRule,
-        id: "g20",
-        flightNo: "F100",
-        name: "G20",
-        category: "常规",
-        remark: "一号",
-        qualifiedStaffIds: [originalWorker!.id, replacementWorker!.id],
-      },
-    ];
+    const {
+      state,
+      assignedWorker: originalWorker,
+      replacementWorker,
+      primary: target,
+    } = createReassignmentScenario({
+      position: { name: "G20", remark: "一号", fatiguePoints: 2 },
+    });
     state.settings.ordinaryPriorityPositions = [
       { airlineCode: "F1", position: "G20" },
     ];
-    const target: Assignment = {
-      id: "target",
-      flightId: "flight",
-      flightNo: "F100",
-      positionRuleId: "g20",
-      position: "G20",
-      staffId: originalWorker!.id,
-      staffName: originalWorker!.name,
-      startTime: "08:00",
-      endTime: "10:00",
-      workHours: 2,
-      fatiguePoints: 2,
-      remark: "一号",
-      manualRemark: "",
-      status: "assigned",
-    };
     return {
       state,
-      originalWorker: originalWorker!,
-      replacementWorker: replacementWorker!,
+      originalWorker,
+      replacementWorker,
       target,
     };
   }
@@ -214,6 +179,7 @@ describe("rotation review safety", () => {
       primaryAssignmentId: target.id,
       date: "2026-07-30",
       review: "frequency",
+      intent: { kind: "position-frequency-review" },
     });
 
     expect(reasons).toEqual([]);
@@ -259,6 +225,7 @@ describe("rotation review safety", () => {
       primaryAssignmentId: target.id,
       date: "2026-07-30",
       review: "frequency",
+      intent: { kind: "position-frequency-review" },
     });
 
     expect(reasons).toEqual([]);
@@ -318,6 +285,7 @@ describe("rotation review safety", () => {
       primaryAssignmentId: target.id,
       date: "2026-07-30",
       review: "frequency",
+      intent: { kind: "position-frequency-review" },
     });
 
     expect(reasons.some((reason) => reason.includes("衔接"))).toBe(true);
@@ -350,6 +318,7 @@ describe("rotation review safety", () => {
       primaryAssignmentId: target.id,
       date: "2026-07-30",
       review: "frequency",
+      intent: { kind: "position-frequency-review" },
     });
 
     expect(reasons.some((reason) => reason.includes("最小航班衔接间隔"))).toBe(
@@ -403,9 +372,25 @@ describe("rotation review safety", () => {
       primaryAssignmentId: target.id,
       date: "2026-07-30",
       review: "frequency",
+      intent: { kind: "position-frequency-review" },
     });
 
     expect(reasons).toContain("调整会减少跨工作日资质预留人数");
+
+    const strictGapFillReasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: [target],
+      changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
+      primaryAssignmentId: target.id,
+      date: "2026-07-30",
+      review: "coverage",
+      intent: {
+        kind: "team-leader-gap-fill",
+        crossWorkdayReservation: "preserve",
+      },
+    });
+    expect(strictGapFillReasons).toContain("调整会减少跨工作日资质预留人数");
 
     const gapFillReasons = reassignmentSafetyReasons({
       kind: "plan",
@@ -415,7 +400,10 @@ describe("rotation review safety", () => {
       primaryAssignmentId: target.id,
       date: "2026-07-30",
       review: "coverage",
-      allowCrossWorkdayReservationRegression: true,
+      intent: {
+        kind: "team-leader-gap-fill",
+        crossWorkdayReservation: "yield-to-selected-vacancy",
+      },
     });
     expect(gapFillReasons).not.toContain("调整会减少跨工作日资质预留人数");
   });
@@ -522,6 +510,7 @@ describe("rotation review safety", () => {
       primaryAssignmentId: target.id,
       date: "2026-07-30",
       review: "frequency",
+      intent: { kind: "position-frequency-review" },
       facts,
     });
 
@@ -554,6 +543,7 @@ describe("rotation review safety", () => {
       primaryAssignmentId: vacancy.id,
       date: "2026-07-30",
       review: "coverage",
+      intent: { kind: "team-leader-concurrent-gap-fill" },
       facts,
     });
 
@@ -599,6 +589,7 @@ describe("rotation review safety", () => {
       primaryAssignmentId: morningTarget.id,
       date: "2026-07-30",
       review: "frequency",
+      intent: { kind: "position-frequency-review" },
       facts: {
         ...facts,
         halfRest: {

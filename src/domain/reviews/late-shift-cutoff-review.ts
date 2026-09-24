@@ -273,8 +273,7 @@ export async function reviewLateShiftCutoff(
         coefficient: ({ assignment, person }) =>
           person.id === staffId ? operationalEnd(assignment) : 0,
       })),
-      allowWorkloadBalanceRegression: true,
-      allowCutoffProtectionRegression: true,
+      intent: { kind: "next-workday-cutoff-recovery" },
       maxParticipants: 3,
     });
     if (result.changes) {

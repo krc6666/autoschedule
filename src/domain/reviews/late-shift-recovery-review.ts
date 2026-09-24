@@ -126,6 +126,7 @@ export async function reviewLateShiftRecovery(
       date,
       review: "recovery",
       facts,
+      intent: { kind: "late-shift-recovery-review" },
       primaryCandidateAllowed: (person) =>
         lateShiftRecoveryRisk(
           state,

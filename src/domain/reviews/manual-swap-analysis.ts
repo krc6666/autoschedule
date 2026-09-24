@@ -136,6 +136,7 @@ export function analyzeManualSwap(
     date,
     primaryAssignmentId: source.id,
     review: "recovery",
+    intent: { kind: "manual-swap-analysis" },
     changes: [
       { assignmentId: source.id, staffId: target.staffId },
       { assignmentId: target.id, staffId: source.staffId },

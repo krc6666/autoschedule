@@ -285,6 +285,7 @@ export async function reviewKe166GroupRotation(
           date,
           review: "consecutive",
           facts,
+          intent: { kind: "ke166-rotation-review" },
           permittedConcurrentAssignmentIds: groupIds,
           coupledAssignmentGroups:
             group.length > 1 ? [group.map((assignment) => assignment.id)] : [],

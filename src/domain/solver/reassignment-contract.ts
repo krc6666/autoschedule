@@ -8,6 +8,7 @@ import type { RotationStaffChange } from "../reviews/rotation-review-safety";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
 import type { SolverPort } from "./solver-port";
+import type { ReassignmentIntent } from "./reassignment-intent";
 
 export interface ReassignmentChoiceObjective {
   id: string;
@@ -41,12 +42,7 @@ export interface ReassignmentOptimizationOptions {
     changes: readonly RotationStaffChange[]
   ): readonly RotationStaffChange[];
   leadingObjectives?: readonly ReassignmentChoiceObjective[];
-  allowWorkloadBalanceRegression?: boolean;
-  allowCutoffProtectionRegression?: boolean;
-  allowCrossWorkdayRecoveryRegression?: boolean;
-  allowCrossWorkdayReservationRegression?: boolean;
-  allowLoadProtectionRegression?: boolean;
-  allowDirectGuideReassignment?: boolean;
+  intent: ReassignmentIntent;
   collectAllCandidateRejections?: boolean;
   validateChanges?(changes: readonly RotationStaffChange[]): readonly string[];
   requiredStaffIds?: readonly string[];

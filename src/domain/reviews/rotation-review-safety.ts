@@ -28,6 +28,11 @@ import {
   strictRecoveryHalfRestBackfillCount,
 } from "../rules/half-rest";
 import { worsensTr121H02Cooldown } from "../rules/tr121-h02-cooldown";
+import {
+  reassignmentIntentPolicy,
+  type ReassignmentIntent,
+  type ReassignmentIntentPolicy,
+} from "../solver/reassignment-intent";
 
 function dutyReliefProfile(
   state: ScheduleGenerationFacts,
@@ -132,16 +137,11 @@ function plannedAssignmentSafetyReasons(
   primaryAssignmentId: string,
   date: string,
   review: RotationReview,
+  intentPolicy: ReassignmentIntentPolicy,
   facts?: ScheduleRunFacts,
   permittedConcurrentAssignmentIds: ReadonlySet<string> = new Set(),
   frequencyFacts?: ScheduleFrequencyFacts,
-  latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy,
-  allowWorkloadBalanceRegression = false,
-  allowCutoffProtectionRegression = false,
-  allowCrossWorkdayRecoveryRegression = false,
-  allowDirectGuideReassignment = false,
-  allowLoadProtectionRegression = false,
-  allowCrossWorkdayReservationRegression = false
+  latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy
 ): string[] {
   const originalById = new Map(
     assignments.map((assignment) => [assignment.id, assignment])
@@ -235,7 +235,7 @@ function plannedAssignmentSafetyReasons(
     );
     const assignmentRuleForChange = assignmentRule(state, assignment);
     const directGuideException = Boolean(
-      allowDirectGuideReassignment &&
+      intentPolicy.allowDirectGuideReassignment &&
       assignmentRuleForChange &&
       isGapFillGuidePosition(assignmentRuleForChange) &&
       assignedPerson?.teamLeader === true
@@ -255,8 +255,10 @@ function plannedAssignmentSafetyReasons(
         facts,
         frequencyFacts,
         latePriorityFatigueRelief,
-        allowCutoffProtectionRegression,
-        allowCrossWorkdayRecoveryRegression,
+        allowCutoffProtectionRegression:
+          intentPolicy.allowCutoffProtectionRegression,
+        allowCrossWorkdayRecoveryRegression:
+          intentPolicy.allowCrossWorkdayRecoveryRegression,
       })
     );
     const safetyAssignments = permittedConcurrentAssignmentIds.has(
@@ -275,7 +277,8 @@ function plannedAssignmentSafetyReasons(
         assignment,
         primaryAssignment,
         review,
-        allowLoadProtectionRegression,
+        allowLoadProtectionRegression:
+          intentPolicy.allowLoadProtectionRegression,
       })
     );
   }
@@ -366,7 +369,7 @@ function plannedAssignmentSafetyReasons(
   if (
     policy.protectWorkloadBalance &&
     state.settings.workloadBalanceEnabled &&
-    !allowWorkloadBalanceRegression
+    !intentPolicy.allowWorkloadBalanceRegression
   ) {
     const before = evaluateWorkloadBalance(
       state,
@@ -413,7 +416,7 @@ function plannedAssignmentSafetyReasons(
     ])
   );
   if (
-    !allowCrossWorkdayReservationRegression &&
+    !intentPolicy.allowCrossWorkdayReservationRegression &&
     crossWorkdayReservationStatuses(state, planned).some(
       (status) =>
         status.shortfall >
@@ -442,12 +445,7 @@ interface ReassignmentSafetyOptionsBase {
   facts?: ScheduleRunFacts;
   frequencyFacts?: ScheduleFrequencyFacts;
   latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy;
-  allowWorkloadBalanceRegression?: boolean;
-  allowCutoffProtectionRegression?: boolean;
-  allowCrossWorkdayRecoveryRegression?: boolean;
-  allowCrossWorkdayReservationRegression?: boolean;
-  allowLoadProtectionRegression?: boolean;
-  allowDirectGuideReassignment?: boolean;
+  intent: ReassignmentIntent;
 }
 
 interface RotationCycleSafetyOptions extends ReassignmentSafetyOptionsBase {
@@ -480,6 +478,7 @@ export function reassignmentSafetyReasons(
 ): string[] {
   const { state, assignments, date, facts } = options;
   const frequencyFacts = options.frequencyFacts ?? facts?.scheduleFrequency;
+  const intentPolicy = reassignmentIntentPolicy(options.intent);
   if (options.kind === "cycle") {
     const planned = assignments.map((assignment) => {
       const index = options.cycle.findIndex(
@@ -504,16 +503,11 @@ export function reassignmentSafetyReasons(
       options.cycle[0]!.id,
       date,
       options.review,
+      intentPolicy,
       facts,
       undefined,
       frequencyFacts,
-      options.latePriorityFatigueRelief,
-      false,
-      false,
-      options.allowCrossWorkdayRecoveryRegression,
-      options.allowDirectGuideReassignment,
-      options.allowLoadProtectionRegression,
-      options.allowCrossWorkdayReservationRegression
+      options.latePriorityFatigueRelief
     );
   }
 
@@ -553,16 +547,11 @@ export function reassignmentSafetyReasons(
       options.primaryAssignmentId,
       date,
       options.review,
+      intentPolicy,
       facts,
       options.permittedConcurrentAssignmentIds,
       frequencyFacts,
-      options.latePriorityFatigueRelief,
-      options.allowWorkloadBalanceRegression,
-      options.allowCutoffProtectionRegression,
-      options.allowCrossWorkdayRecoveryRegression,
-      options.allowDirectGuideReassignment,
-      options.allowLoadProtectionRegression,
-      options.allowCrossWorkdayReservationRegression
+      options.latePriorityFatigueRelief
     );
   }
 
@@ -584,15 +573,10 @@ export function reassignmentSafetyReasons(
     options.assignmentId,
     date,
     "recovery",
+    intentPolicy,
     facts,
     undefined,
     frequencyFacts,
-    undefined,
-    false,
-    false,
-    options.allowCrossWorkdayRecoveryRegression,
-    options.allowDirectGuideReassignment,
-    options.allowLoadProtectionRegression,
-    options.allowCrossWorkdayReservationRegression
+    undefined
   );
 }

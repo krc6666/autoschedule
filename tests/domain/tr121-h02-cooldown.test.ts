@@ -232,6 +232,7 @@ describe("TR121/H02 workday cooldown", () => {
       primaryAssignmentId: assignment.id,
       date: DATE,
       review: "frequency",
+      intent: { kind: "position-frequency-review" },
       frequencyFacts: facts,
     });
     expect(reasons).toContain("调整会扩大 TR121/H02 冷却违反");
@@ -243,6 +244,7 @@ describe("TR121/H02 workday cooldown", () => {
       primaryAssignmentId: assignment.id,
       date: DATE,
       review: "coverage",
+      intent: { kind: "team-leader-concurrent-gap-fill" },
       frequencyFacts: facts,
     });
     expect(coverageReasons).toContain("调整会扩大 TR121/H02 冷却违反");
@@ -281,6 +283,7 @@ describe("TR121/H02 workday cooldown", () => {
       primaryAssignmentId: vacancy.id,
       date: DATE,
       review: "coverage",
+      intent: { kind: "team-leader-concurrent-gap-fill" },
       frequencyFacts: createScheduleFrequencyFacts(state, DATE),
     });
     expect(reasons).not.toContain("调整会扩大 TR121/H02 冷却违反");

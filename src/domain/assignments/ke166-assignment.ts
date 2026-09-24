@@ -356,6 +356,7 @@ async function findSupervisorCounterPlan(
       date,
       review: "mobile-supervisor",
       facts,
+      intent: { kind: "mobile-supervisor-counter-coverage" },
       primaryCandidateAllowed: (person) => supervisorIdSet.has(person.id),
       primaryCandidateRejectionReason: (person) =>
         supervisorIdSet.has(person.id)
