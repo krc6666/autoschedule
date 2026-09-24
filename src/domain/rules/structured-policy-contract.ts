@@ -84,14 +84,4 @@ export interface StructuredSchedulePolicies {
   teamLeaderGapFillPositionPolicies: TeamLeaderGapFillPositionPolicy[];
 }
 
-export const STRUCTURED_POLICY_KEYS = [
-  "sameFlightStaffExclusions",
-  "positionTransitionPolicies",
-  "dutyPositionPriorities",
-  "nextWorkdayRecoveryTargets",
-  "lateShiftRecoveryPositionRules",
-  "mobileSupervisorCoverageRules",
-  "crossWorkdayQualificationReservations",
-  "crossFlightPriorityPolicies",
-  "teamLeaderGapFillPositionPolicies",
-] as const satisfies readonly (keyof StructuredSchedulePolicies)[];
+export type StructuredPolicyKey = keyof StructuredSchedulePolicies;

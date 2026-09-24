@@ -12,6 +12,7 @@ import type {
   NextWorkdayRecoveryTarget,
   SameFlightStaffExclusion,
 } from "../domain/rules/structured-policy-contract";
+import { STRUCTURED_POLICY_DEFINITIONS } from "../domain/rules/structured-policy-settings";
 import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
 import {
   fixedTeamLeaderGapFillPositionReason,
@@ -27,15 +28,12 @@ import {
 } from "./policy-collection-actions";
 
 export type PolicyValue = string | number | boolean;
-export type PolicyEntity =
-  | "same-flight-staff-exclusion"
-  | "duty-priority"
-  | "recovery-target"
-  | "late-shift-recovery-position"
-  | "cross-workday-reservation"
-  | "transition-policy"
-  | "supervisor-coverage"
-  | "cross-flight-priority";
+type RegisteredPolicyEntity =
+  (typeof STRUCTURED_POLICY_DEFINITIONS)[keyof typeof STRUCTURED_POLICY_DEFINITIONS]["uiEntity"];
+export type PolicyEntity = Exclude<
+  RegisteredPolicyEntity,
+  "team-leader-gap-fill"
+>;
 export type PolicyFieldUpdateResult = "not-policy" | "missing" | "saved";
 
 export interface SchedulePolicyInput {

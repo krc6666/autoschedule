@@ -86,7 +86,7 @@ UI     -/-> Store 直接写入、求解器直接调用
 - `application-coordinator.ts`：视图切换、命令分发、应用启动。
 - `store/autoschedule-store.ts`：唯一应用状态 Store。
 - `configuration-actions.ts`：人员、航班、岗位、模板等基础配置。
-- `policy-actions.ts`、`policy-collection-actions.ts`：规则开关和结构化规则。
+- `policy-actions.ts`、`policy-collection-actions.ts`：规则开关和结构化规则命令；结构化规则实体类型从 registry 派生。
 - `schedule-actions.ts`、`schedule-run-controller.ts`：生成、停止、安装排班结果和运行偏好。
 - `application-view-state.ts`：当前页面、日期、运行状态和视图侧状态。
 - `history-actions.ts`、`statistics-actions.ts`：归档与统计操作。
@@ -105,6 +105,7 @@ UI     -/-> Store 直接写入、求解器直接调用
 - `flights/`：航班计划、岗位规则、任务生成、下一工作班和周计划。
 - `reviews/`：排班完成后的安全复核、公平、恢复、截止、轮岗和反馈证据。
 - `rules/`：中央规则合同、规则注册表、执行计划、设置、跨航班规则和半休约束。
+- `rules/structured-policy-contract.ts` + `rules/structured-policy-settings.ts`：结构化规则类型、唯一登记、默认值和 normalize；UI/命令与 Excel 只消费其 adapter 标识。
 - `solver/`：求解器端口、局部重排 intent 编译、整体重排模型、重排安全图和用户可读错误；业务调用方只传具名 intent，底层让步策略由 `reassignment-intent.ts` 统一展开。
 - `statistics/`：疲劳、末班重点岗位次数、同岗频率、月度统计和工作负荷。
 - `shared/`：排班事实、时间、跨工作日负荷和统一领域共享模型。
@@ -125,7 +126,7 @@ UI     -/-> Store 直接写入、求解器直接调用
 
 - `storage.ts`、`state-restoration.ts`：版本化 `localStorage` 保存、恢复和迁移。
 - `excel.ts`、`excel-worksheet.ts`：通用 Excel 工作表读写。
-- `excel-rule-settings.ts`：规则设置的 Excel 合同。
+- `excel-rule-settings.ts`：规则设置的 Excel 合同；结构化规则工作表名从 registry 查询，列布局仍由各 adapter 保持。
 - `late-priority-counts-excel.ts`：末班重点岗位次数导入导出。
 - `legacy-schedule-excel.ts`：旧版手工排班历史导入与覆盖隔离。
 - `duty-roster-excel.ts`：值班表导入导出。
@@ -273,6 +274,7 @@ git diff --check
 
 ```text
 规则事实/优先级      -> spec.md + schedule-rule-contract.ts
+结构化配置合同       -> rules/structured-policy-contract.ts + rules/structured-policy-settings.ts
 规则注册/执行顺序    -> built-in-rule-registry.ts + scheduling-execution-plan.ts
 候选资质/硬约束      -> candidates/assignment-eligibility.ts
 主求解模型           -> kernel/daily-schedule-model.ts + kernel/daily-combination-model.ts
@@ -283,7 +285,7 @@ git diff --check
 覆盖与补缺           -> coverage/ + kernel/schedule-finalizer.ts
 安全重排/后置复核    -> reviews/ + solver/reassignment-intent.ts + solver/reassignment-optimizer.ts
 统计与公平           -> statistics/ + reviews/
-页面设置             -> ui/components/ + app/controllers/ + app/*-actions.ts
+页面设置             -> ui/components/ + app/controllers/ + app/*-actions.ts + structured-policy-settings.ts
 导入导出             -> infrastructure/ + app/workbook-actions.ts
 构建/发布             -> vite.config.ts + .github/workflows/deploy-pages.yml
 ```

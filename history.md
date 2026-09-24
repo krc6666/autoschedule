@@ -1,5 +1,13 @@
 # autoschedule 开发历史
 
+## 2026-09-24：深化结构化规则合同登记
+
+- 问题：结构化规则虽已有中央 key 列表，但默认值、normalize、Excel 工作表名和 UI/命令实体仍分散维护，新增一类规则容易漏接。
+- 原因：key 身份与各边界 adapter 的登记没有形成可机读的单一合同；settings 还手写返回全部字段，Excel 另有一套 sheet 名清单。
+- 尝试：先追加机制策略 + 持久化字段传播矩阵；把 9 类结构化规则登记为 key、默认工厂、normalize、Excel sheet 和 UI collection/entity，并让 settings 遍历登记、Excel 查询 sheet、UI/命令类型从登记派生；保留异构 parser、writer、控件和命令校验。
+- 结论：结构化规则的默认值和清洗事实已集中到 registry，Excel/UI 仍是各自 adapter；普通重点集合、排班规则语义、迁移和产品事实未改。
+- 怎么防再犯：新增结构化规则先登记并通过 registry 护栏；必须同时证明默认/normalize、Excel sheet 和 UI/命令标识覆盖，继续保留 settings 与 Excel 往返回归。
+
 ## 2026-09-24：统一安全快照 session
 
 - 问题：partial ledger、finalizer 和安全凭证分别手工装配近似相同的安全 facts，新增硬规则时容易漏接某条路径；凭证指纹还遗漏机动督导兼任规则。

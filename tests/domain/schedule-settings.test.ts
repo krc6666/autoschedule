@@ -7,8 +7,39 @@ import {
   normalizeScheduleSettings,
   SCHEDULE_SETTING_DEFINITIONS,
 } from "../../src/domain/rules/schedule-settings";
+import {
+  STRUCTURED_POLICY_DEFINITIONS,
+  STRUCTURED_POLICY_KEYS,
+  normalizeStructuredPolicies,
+} from "../../src/domain/rules/structured-policy-settings";
 
 describe("schedule settings module", () => {
+  it("registers every structured policy with defaults, normalization, and adapters", () => {
+    const definitions = Object.values(STRUCTURED_POLICY_DEFINITIONS);
+    const keys = definitions.map((definition) => definition.key).sort();
+
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(STRUCTURED_POLICY_KEYS.slice().sort()).toEqual(keys);
+    expect(
+      Object.keys(createDefaultScheduleSettings())
+        .filter((key) => keys.includes(key as (typeof keys)[number]))
+        .sort()
+    ).toEqual(keys);
+    expect(Object.keys(normalizeStructuredPolicies({})).sort()).toEqual(keys);
+
+    for (const definition of definitions) {
+      const fallback = definition.createDefault();
+      const normalize = definition.normalize as (
+        value: unknown,
+        fallback: unknown
+      ) => unknown;
+      expect(normalize(undefined, fallback)).toEqual(fallback);
+      expect(definition.excelSheet).toBeTruthy();
+      expect(definition.uiCollection).toBeTruthy();
+      expect(definition.uiEntity).toBeTruthy();
+    }
+  });
+
   it("owns every scalar setting default and validation rule", () => {
     const complexKeys = new Set([
       "adminSupportEnabled",

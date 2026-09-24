@@ -7,6 +7,7 @@ import type {
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
   SameFlightStaffExclusion,
+  StructuredPolicyKey,
   StructuredSchedulePolicies,
   TeamLeaderGapFillPositionPolicy,
 } from "./structured-policy-contract";
@@ -179,10 +180,6 @@ function normalizeSameFlightStaffExclusions(
       });
     });
   return [...unique.values()];
-}
-
-export function createDefaultStructuredPolicies(): StructuredSchedulePolicies {
-  return structuredClone(DEFAULT_STRUCTURED_POLICIES);
 }
 
 function sourceArray<T>(value: unknown, fallback: T[]): T[] {
@@ -372,47 +369,144 @@ function normalizeCrossFlightPriorityPolicies(
     });
 }
 
+export interface StructuredPolicyDefinition<K extends StructuredPolicyKey> {
+  key: K;
+  createDefault: () => StructuredSchedulePolicies[K];
+  normalize: (
+    value: unknown,
+    fallback: StructuredSchedulePolicies[K]
+  ) => StructuredSchedulePolicies[K];
+  excelSheet: string;
+  uiCollection: string;
+  uiEntity: string;
+}
+
+type StructuredPolicyDefinitionMap = {
+  [K in StructuredPolicyKey]: StructuredPolicyDefinition<K>;
+};
+
+export const STRUCTURED_POLICY_DEFINITIONS = {
+  sameFlightStaffExclusions: {
+    key: "sameFlightStaffExclusions",
+    createDefault: () =>
+      structuredClone(DEFAULT_STRUCTURED_POLICIES.sameFlightStaffExclusions),
+    normalize: normalizeSameFlightStaffExclusions,
+    excelSheet: "同航班人员互斥",
+    uiCollection: "same-flight-staff-exclusion",
+    uiEntity: "same-flight-staff-exclusion",
+  },
+  positionTransitionPolicies: {
+    key: "positionTransitionPolicies",
+    createDefault: () =>
+      structuredClone(DEFAULT_STRUCTURED_POLICIES.positionTransitionPolicies),
+    normalize: normalizeTransitionPolicies,
+    excelSheet: "岗位衔接规则",
+    uiCollection: "transition",
+    uiEntity: "transition-policy",
+  },
+  dutyPositionPriorities: {
+    key: "dutyPositionPriorities",
+    createDefault: () =>
+      structuredClone(DEFAULT_STRUCTURED_POLICIES.dutyPositionPriorities),
+    normalize: normalizeDutyPriorities,
+    excelSheet: "值班岗位优先",
+    uiCollection: "duty",
+    uiEntity: "duty-priority",
+  },
+  nextWorkdayRecoveryTargets: {
+    key: "nextWorkdayRecoveryTargets",
+    createDefault: () =>
+      structuredClone(DEFAULT_STRUCTURED_POLICIES.nextWorkdayRecoveryTargets),
+    normalize: normalizeRecoveryTargets,
+    excelSheet: "次班恢复目标",
+    uiCollection: "recovery-target",
+    uiEntity: "recovery-target",
+  },
+  lateShiftRecoveryPositionRules: {
+    key: "lateShiftRecoveryPositionRules",
+    createDefault: () =>
+      structuredClone(
+        DEFAULT_STRUCTURED_POLICIES.lateShiftRecoveryPositionRules
+      ),
+    normalize: normalizeLateShiftRules,
+    excelSheet: "末班重点岗位",
+    uiCollection: "late-position",
+    uiEntity: "late-shift-recovery-position",
+  },
+  mobileSupervisorCoverageRules: {
+    key: "mobileSupervisorCoverageRules",
+    createDefault: () =>
+      structuredClone(
+        DEFAULT_STRUCTURED_POLICIES.mobileSupervisorCoverageRules
+      ),
+    normalize: normalizeSupervisorRules,
+    excelSheet: "机动督导范围",
+    uiCollection: "supervisor",
+    uiEntity: "supervisor-coverage",
+  },
+  crossWorkdayQualificationReservations: {
+    key: "crossWorkdayQualificationReservations",
+    createDefault: () =>
+      structuredClone(
+        DEFAULT_STRUCTURED_POLICIES.crossWorkdayQualificationReservations
+      ),
+    normalize: normalizeCrossWorkdayReservations,
+    excelSheet: "跨工作日资质预留",
+    uiCollection: "cross-workday-reservation",
+    uiEntity: "cross-workday-reservation",
+  },
+  crossFlightPriorityPolicies: {
+    key: "crossFlightPriorityPolicies",
+    createDefault: () =>
+      structuredClone(DEFAULT_STRUCTURED_POLICIES.crossFlightPriorityPolicies),
+    normalize: normalizeCrossFlightPriorityPolicies,
+    excelSheet: "跨航班重点人员优先",
+    uiCollection: "cross-flight-priority",
+    uiEntity: "cross-flight-priority",
+  },
+  teamLeaderGapFillPositionPolicies: {
+    key: "teamLeaderGapFillPositionPolicies",
+    createDefault: () =>
+      structuredClone(
+        DEFAULT_STRUCTURED_POLICIES.teamLeaderGapFillPositionPolicies
+      ),
+    normalize: normalizeTeamLeaderGapFillPositionPolicies,
+    excelSheet: "分队长补差保护范围",
+    uiCollection: "team-leader-gap-fill",
+    uiEntity: "team-leader-gap-fill",
+  },
+} as const satisfies StructuredPolicyDefinitionMap;
+
+export const STRUCTURED_POLICY_KEYS = Object.keys(
+  STRUCTURED_POLICY_DEFINITIONS
+) as StructuredPolicyKey[];
+
+export function createDefaultStructuredPolicies(): StructuredSchedulePolicies {
+  const defaults = {} as StructuredSchedulePolicies;
+  for (const definition of Object.values(STRUCTURED_POLICY_DEFINITIONS)) {
+    defaults[definition.key] = definition.createDefault() as never;
+  }
+  return defaults;
+}
+
+function normalizeStructuredPolicy<K extends StructuredPolicyKey>(
+  key: K,
+  input: Partial<StructuredSchedulePolicies>,
+  fallback: StructuredSchedulePolicies
+): StructuredSchedulePolicies[K] {
+  const definition = STRUCTURED_POLICY_DEFINITIONS[
+    key
+  ] as unknown as StructuredPolicyDefinition<K>;
+  return definition.normalize(input[definition.key], fallback[definition.key]);
+}
+
 export function normalizeStructuredPolicies(
   input: Partial<StructuredSchedulePolicies>,
   fallback = createDefaultStructuredPolicies()
 ): StructuredSchedulePolicies {
-  return {
-    sameFlightStaffExclusions: normalizeSameFlightStaffExclusions(
-      input.sameFlightStaffExclusions,
-      fallback.sameFlightStaffExclusions
-    ),
-    positionTransitionPolicies: normalizeTransitionPolicies(
-      input.positionTransitionPolicies,
-      fallback.positionTransitionPolicies
-    ),
-    dutyPositionPriorities: normalizeDutyPriorities(
-      input.dutyPositionPriorities,
-      fallback.dutyPositionPriorities
-    ),
-    nextWorkdayRecoveryTargets: normalizeRecoveryTargets(
-      input.nextWorkdayRecoveryTargets,
-      fallback.nextWorkdayRecoveryTargets
-    ),
-    lateShiftRecoveryPositionRules: normalizeLateShiftRules(
-      input.lateShiftRecoveryPositionRules,
-      fallback.lateShiftRecoveryPositionRules
-    ),
-    mobileSupervisorCoverageRules: normalizeSupervisorRules(
-      input.mobileSupervisorCoverageRules,
-      fallback.mobileSupervisorCoverageRules
-    ),
-    crossWorkdayQualificationReservations: normalizeCrossWorkdayReservations(
-      input.crossWorkdayQualificationReservations,
-      fallback.crossWorkdayQualificationReservations
-    ),
-    crossFlightPriorityPolicies: normalizeCrossFlightPriorityPolicies(
-      input.crossFlightPriorityPolicies,
-      fallback.crossFlightPriorityPolicies
-    ),
-    teamLeaderGapFillPositionPolicies:
-      normalizeTeamLeaderGapFillPositionPolicies(
-        input.teamLeaderGapFillPositionPolicies,
-        fallback.teamLeaderGapFillPositionPolicies
-      ),
-  };
+  const normalized = {} as StructuredSchedulePolicies;
+  for (const key of STRUCTURED_POLICY_KEYS) {
+    normalized[key] = normalizeStructuredPolicy(key, input, fallback) as never;
+  }
+  return normalized;
 }

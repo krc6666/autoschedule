@@ -11,9 +11,18 @@ import {
 } from "../../src/infrastructure/excel";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 import { SCHEDULE_SETTING_DEFINITIONS } from "../../src/domain/rules/schedule-settings";
+import { STRUCTURED_POLICY_DEFINITIONS } from "../../src/domain/rules/structured-policy-settings";
 import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
 
 describe("workbook boundary", () => {
+  it("exports every registered structured policy sheet", () => {
+    const workbook = buildConfigWorkbook(createDefaultState());
+
+    for (const definition of Object.values(STRUCTURED_POLICY_DEFINITIONS)) {
+      expect(workbook.SheetNames).toContain(definition.excelSheet);
+    }
+  });
+
   it("exports the active group's staff and flights while keeping shared sheets available", () => {
     const initial = createDefaultState();
     initial.groups.B.staff = [

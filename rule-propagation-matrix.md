@@ -678,3 +678,33 @@
 | 后置恢复 / 轮岗 / 公平 | 继续按既有管线处理；KE166 轮岗仅处理 KE166 组                  | 不得拆开合法兼任组或制造硬约束违规                         |
 | 人工拖拽 / 清空        | 继续复用现有通用机动督导入口                                   | 范围非法拒绝；重新自动排班以新结果覆盖旧人工兼任           |
 | 最终安装               | `assertDailyScheduleSafety` 核对每个任务唯一结果与合法兼任关联 | 非法并发、拆组、资质、时间、衔接和工时违规拒绝提交         |
+
+## 机制策略与持久化字段：结构化规则合同登记（2026-09-24）
+
+- 类别：机制策略 + 持久化字段。
+- 唯一事实 owner：`structured-policy-contract.ts` 的结构化规则类型与 `structured-policy-settings.ts` 的登记；登记统一拥有 key、默认值工厂、normalize/validate 入口及边界 adapter 标识。`ordinaryPriorityPositions` 不属于本条合同。
+- 目标：新增结构化规则时，默认值、设置清洗、Excel 读写、UI/命令触及和测试清单由登记驱动或由登记护栏证明已覆盖；Excel 列布局和 UI 控件继续由各自 adapter 负责。
+
+| 环节                           | 是否适用 | 消费点 / 目标                                                                                                               | 失败或边界                                              | 回归保护                                    |
+| ------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------- |
+| 合同 / key / 类型              | 是       | `structured-policy-contract.ts` + structured policy registry；每个 `StructuredSchedulePolicies` key 只登记一次              | key 未登记时类型/护栏失败；不并入普通重点集合           | registry key 覆盖测试                       |
+| 默认值                         | 是       | registry 默认工厂；`createDefaultStructuredPolicies` 遍历登记                                                               | 缺失项不得静默变成 `undefined`                          | 默认 key 数量与字段存在测试                 |
+| normalize / validate           | 是       | registry normalize 入口；`normalizeStructuredPolicies` 遍历登记；`normalizeScheduleSettings` 继续消费统一结果               | 单项异常沿用现有该项清洗和 fallback 语义                | 每个登记 key 都经过 normalize 的护栏测试    |
+| 候选池 / 求解 / 补缺覆盖       | 否       | 本轮不改排班规则消费；各规则继续由原 domain owner 读取清洗后的 settings                                                     | 不新增规则语义或第二套判断                              | 既有领域测试保持                            |
+| 恢复 / 轮岗公平                | 否       | 本轮不改变各结构化规则在恢复、轮岗、公平阶段的消费                                                                          | 不改变优先级和回退                                      | 既有相关测试保持                            |
+| 人工调整边界                   | 是       | UI/命令 adapter 查询 registry 的 UI collection 标识；各异构编辑器继续调用原 typed action                                    | 特殊编辑器保留显式分支，不统一控件                      | UI 命令/页面既有回归 + registry UI 覆盖护栏 |
+| 最终复核 / 守卫 / 凭证         | 否       | 本轮不改 guards、最终复核和安全凭证                                                                                         | 不改变安全结论                                          | 既有 safety/session 测试保持                |
+| 保存 / localStorage / 设置恢复 | 是       | `schedule-settings.ts` 经 `normalizeStructuredPolicies` 消费 registry；storage 继续走统一 settings 恢复                     | 缺失字段沿用登记默认值                                  | settings/storage 往返回归                   |
+| Excel 读                       | 是       | `excel-rule-settings.ts` 通过 registry 查询 sheet 标识，再调用各规则 parser adapter                                         | Excel 缺 sheet、列布局和人员校验继续按既有 adapter 处理 | Excel 导入回归 + registry Excel 覆盖护栏    |
+| Excel 写                       | 是       | `excel-rule-settings.ts` 通过 registry 查询 sheet 标识，再调用各规则 writer adapter                                         | 不改变现有 sheet、列、姓名核对列和顺序                  | Excel 导出/往返回归                         |
+| 迁移                           | 否       | 本轮不新增字段、不改迁移算法；旧状态仍经现有 settings normalize                                                             | 不创建旧别名或兼容双轨                                  | 既有 storage/migration 测试保持             |
+| 测试                           | 是       | 新增 registry 漏接护栏：所有登记 key 必须有默认、normalize、Excel/UI adapter 标识；保留至少一类既有 Excel/settings 往返测试 | 不以 UI 文案或内部调用次数作为唯一断言                  | 定向测试、typecheck、完整 verify            |
+
+### 写入路径盘点
+
+| 写入路径                     | 合同消费                                             | 最终边界                           |
+| ---------------------------- | ---------------------------------------------------- | ---------------------------------- |
+| 默认构造 / localStorage 恢复 | registry 默认工厂与 normalize                        | 未登记字段不进入结构化规则结果     |
+| 规则页 / 命令                | registry UI collection 标识 + 原 typed action        | 异构控件和业务校验不被统一模板覆盖 |
+| Excel 导入 / 导出            | registry Excel sheet 标识 + 原 parser/writer adapter | 既有工作表和列合同保持不变         |
+| 领域排班 / 最终复核          | 原各规则 owner                                       | 本轮只改合同装配，不改排班规则语义 |

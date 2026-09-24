@@ -1,6 +1,8 @@
 import { html, nothing } from "lit";
 
 import type { AppState } from "../../model";
+import { STRUCTURED_POLICY_DEFINITIONS } from "../../domain/rules/structured-policy-settings";
+import type { StructuredPolicyKey } from "../../domain/rules/structured-policy-contract";
 import { dispatchUiCommand, inputValue } from "../events/ui-command";
 import {
   matchesPolicySearch,
@@ -9,15 +11,13 @@ import {
 import { LightDomElement } from "./light-dom-element";
 import { dynamicSelectValue } from "./dynamic-select";
 
-type Collection =
-  | "same-flight-staff-exclusion"
-  | "duty"
-  | "recovery-target"
-  | "cross-workday-reservation"
-  | "cross-flight-priority"
-  | "late-position"
-  | "supervisor"
-  | "transition";
+type RegisteredPolicyCollection =
+  (typeof STRUCTURED_POLICY_DEFINITIONS)[keyof typeof STRUCTURED_POLICY_DEFINITIONS]["uiCollection"];
+type Collection = Exclude<RegisteredPolicyCollection, "team-leader-gap-fill">;
+type PolicyStructuredRuleKey = Exclude<
+  StructuredPolicyKey,
+  "teamLeaderGapFillPositionPolicies"
+>;
 
 export class PolicyStructuredRulesElement extends LightDomElement {
   static override properties = {
@@ -71,7 +71,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       </summary>
       <div class="policy-rule-content">
         <div class="d-flex justify-content-end mb-2">
-          ${this.addButton("same-flight-staff-exclusion", "新增互斥规则")}
+          ${this.addButton("sameFlightStaffExclusions", "新增互斥规则")}
         </div>
         <div class="supervisor-coverage-list">
           ${items.map(
@@ -90,7 +90,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                   "人员 B"
                 )}
                 ${this.flightScopeSelect(item.id, item.flightNo)}
-                ${this.deleteButton("same-flight-staff-exclusion", item.id)}
+                ${this.deleteButton("sameFlightStaffExclusions", item.id)}
               </div>`
           )}
         </div>
@@ -135,7 +135,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       </summary>
       <div class="policy-rule-content">
         <div class="d-flex justify-content-end mb-2">
-          ${this.addButton("cross-flight-priority", "新增规则")}
+          ${this.addButton("crossFlightPriorityPolicies", "新增规则")}
         </div>
         <div class="supervisor-coverage-list">
           ${items.map(
@@ -145,7 +145,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                 ${this.flightSelect("cross-flight-priority", item.id, item.flightNo, "优先航班")}
                 ${this.priorityStaffCheckboxes(item.id, item.staffIds)}
                 <div class="d-flex gap-1">
-                  ${this.moveCrossFlightPriority(item.id, -1, index === 0)}${this.moveCrossFlightPriority(item.id, 1, index === items.length - 1)}${this.deleteButton("cross-flight-priority", item.id)}
+                  ${this.moveCrossFlightPriority(item.id, -1, index === 0)}${this.moveCrossFlightPriority(item.id, 1, index === items.length - 1)}${this.deleteButton("crossFlightPriorityPolicies", item.id)}
                 </div>
               </div>`
           )}
@@ -193,7 +193,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       </summary>
       <div class="policy-rule-content">
         <div class="d-flex justify-content-end mb-2">
-          ${this.addButton("cross-workday-reservation", "新增预留目标")}
+          ${this.addButton("crossWorkdayQualificationReservations", "新增预留目标")}
         </div>
         <div class="supervisor-coverage-list">
           ${items.map(
@@ -217,7 +217,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                 <div class="d-flex gap-1">
                   ${this.moveReservation(item.id, -1, index === 0)}
                   ${this.moveReservation(item.id, 1, index === items.length - 1)}
-                  ${this.deleteButton("cross-workday-reservation", item.id)}
+                  ${this.deleteButton("crossWorkdayQualificationReservations", item.id)}
                 </div>
               </div>`
           )}
@@ -257,7 +257,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       </summary>
       <div class="policy-rule-content">
         <div class="d-flex justify-content-end mb-2">
-          ${this.addButton("duty", "新增优先项")}
+          ${this.addButton("dutyPositionPriorities", "新增优先项")}
         </div>
         <div class="duty-priority-list">
           ${items.map(
@@ -268,7 +268,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                 ${this.field("duty-priority", item.id, "positionKeyword", item.positionKeyword, "岗位或备注关键词")}
                 ${this.toggle("duty-priority", item.id, "enabled", item.enabled, "启用")}
                 <div class="duty-priority-actions">
-                  ${this.moveDuty(item.id, -1, index === 0)}${this.moveDuty(item.id, 1, index === items.length - 1)}${this.deleteButton("duty", item.id)}
+                  ${this.moveDuty(item.id, -1, index === 0)}${this.moveDuty(item.id, 1, index === items.length - 1)}${this.deleteButton("dutyPositionPriorities", item.id)}
                 </div>
               </div>`
           )}
@@ -354,7 +354,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
         </div>
         <div class="d-flex justify-content-between align-items-center">
           <strong>末班重点岗位</strong
-          >${this.addButton("late-position", "新增规则")}
+          >${this.addButton("lateShiftRecoveryPositionRules", "新增规则")}
         </div>
         <div class="supervisor-coverage-list mt-2">
           ${settings.lateShiftRecoveryPositionRules.map(
@@ -375,13 +375,13 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                 )}
                 ${this.field("late-shift-recovery-position", rule.id, "keyword", rule.keyword, "关键词")}
                 ${this.field("late-shift-recovery-position", rule.id, "nextWorkdayCutoffTime", rule.nextWorkdayCutoffTime, "次班截止时间", "", "time")}
-                ${this.deleteButton("late-position", rule.id)}
+                ${this.deleteButton("lateShiftRecoveryPositionRules", rule.id)}
               </div>`
           )}
         </div>
         <div class="d-flex justify-content-between align-items-center mt-3">
           <strong>次班早班避让目标</strong
-          >${this.addButton("recovery-target", "新增目标")}
+          >${this.addButton("nextWorkdayRecoveryTargets", "新增目标")}
         </div>
         <div class="duty-priority-list mt-2">
           ${settings.nextWorkdayRecoveryTargets.map(
@@ -390,7 +390,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                 ${this.toggle("recovery-target", target.id, "enabled", target.enabled, "启用")}
                 ${this.field("recovery-target", target.id, "flightNo", target.flightNo, "目标航班")}
                 ${this.field("recovery-target", target.id, "positionKeyword", target.positionKeyword, "岗位或备注关键词")}
-                ${this.deleteButton("recovery-target", target.id)}
+                ${this.deleteButton("nextWorkdayRecoveryTargets", target.id)}
               </div>`
           )}
         </div>
@@ -432,7 +432,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       </summary>
       <div class="policy-rule-content">
         <div class="d-flex justify-content-end mb-2">
-          ${this.addButton("supervisor", "新增规则")}
+          ${this.addButton("mobileSupervisorCoverageRules", "新增规则")}
         </div>
         <div class="supervisor-coverage-list">
           ${items.map(
@@ -463,7 +463,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                     ["allow", "允许兼任"],
                   ]
                 )}
-                ${this.deleteButton("supervisor", rule.id)}
+                ${this.deleteButton("mobileSupervisorCoverageRules", rule.id)}
               </div>`
           )}
         </div>
@@ -514,7 +514,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       </summary>
       <div class="policy-rule-content">
         <div class="d-flex justify-content-end mb-2">
-          ${this.addButton("transition", "新增衔接规则")}
+          ${this.addButton("positionTransitionPolicies", "新增衔接规则")}
         </div>
         <div class="policy-card-list">
           ${items.map(
@@ -540,7 +540,9 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                     ["forbid", "严格限制"],
                   ]
                 )}
-                <div>${this.deleteButton("transition", rule.id)}</div>
+                <div>
+                  ${this.deleteButton("positionTransitionPolicies", rule.id)}
+                </div>
               </article>`
           )}
         </div>
@@ -665,19 +667,19 @@ export class PolicyStructuredRulesElement extends LightDomElement {
                 type="checkbox"
                 .checked=${selected.includes(person.id)}
                 @change=${(event: Event) => {
-                    const checked = (event.currentTarget as HTMLInputElement)
-                      .checked;
-                    const next = checked
-                      ? [...selected, person.id]
-                      : selected.filter((item) => item !== person.id);
-                    dispatchUiCommand(this, {
-                      type: "update-policy",
-                      entity: "cross-flight-priority",
-                      id,
-                      field: "staffIds",
-                      value: next.join(","),
-                    });
-                  }}
+                  const checked = (event.currentTarget as HTMLInputElement)
+                    .checked;
+                  const next = checked
+                    ? [...selected, person.id]
+                    : selected.filter((item) => item !== person.id);
+                  dispatchUiCommand(this, {
+                    type: "update-policy",
+                    entity: "cross-flight-priority",
+                    id,
+                    field: "staffIds",
+                    value: next.join(","),
+                  });
+                }}
               /><span class="form-check-label"
                 >${person.name}（${person.id}）</span
               ></label
@@ -704,7 +706,8 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     >`;
   }
 
-  private addButton(collection: Collection, label: string) {
+  private addButton(key: PolicyStructuredRuleKey, label: string) {
+    const collection = this.policyCollection(key);
     return html`<button
       class="btn btn-sm btn-outline-secondary"
       type="button"
@@ -714,7 +717,8 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     </button>`;
   }
 
-  private deleteButton(collection: Collection, id: string) {
+  private deleteButton(key: PolicyStructuredRuleKey, id: string) {
+    const collection = this.policyCollection(key);
     return html`<button
       class="btn btn-sm icon-btn text-danger"
       type="button"
@@ -724,6 +728,10 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     >
       <i class="bi bi-trash3"></i>
     </button>`;
+  }
+
+  private policyCollection(key: PolicyStructuredRuleKey): Collection {
+    return STRUCTURED_POLICY_DEFINITIONS[key].uiCollection;
   }
 
   private moveDuty(id: string, direction: -1 | 1, disabled: boolean) {

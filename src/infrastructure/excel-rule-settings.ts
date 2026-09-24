@@ -4,6 +4,8 @@ import {
   SCHEDULE_SETTING_DEFINITIONS,
   type ScalarScheduleSettingKey,
 } from "../domain/rules/schedule-settings";
+import { STRUCTURED_POLICY_DEFINITIONS } from "../domain/rules/structured-policy-settings";
+import type { StructuredPolicyKey } from "../domain/rules/structured-policy-contract";
 import { normalizeTime } from "../domain/shared/time";
 import type { AppState, ScheduleSettings, Staff } from "../model";
 import type {
@@ -28,19 +30,11 @@ import {
 } from "./excel-worksheet";
 
 const SETTING_DESCRIPTORS = SCHEDULE_SETTING_DEFINITIONS;
+const LATE_PRIORITY_FLIGHT_SCOPE_SHEET = "末班重点航班范围";
 
-const RULE_SHEET_NAMES = {
-  transitions: "岗位衔接规则",
-  dutyPriorities: "值班岗位优先",
-  recoveryTargets: "次班恢复目标",
-  lateShiftPositions: "末班重点岗位",
-  supervisorCoverage: "机动督导范围",
-  crossWorkdayReservations: "跨工作日资质预留",
-  latePriorityFlightScope: "末班重点航班范围",
-  crossFlightPriority: "跨航班重点人员优先",
-  sameFlightStaffExclusions: "同航班人员互斥",
-  teamLeaderGapFillPositionPolicies: "分队长补差保护范围",
-} as const;
+function structuredPolicySheet(key: StructuredPolicyKey): string {
+  return STRUCTURED_POLICY_DEFINITIONS[key].excelSheet;
+}
 
 interface ParsedRuleSheet<T> {
   present: boolean;
@@ -193,7 +187,7 @@ function parseTransitionPolicies(
 ): ParsedRuleSheet<PositionTransitionPolicy> {
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.transitions,
+    structuredPolicySheet("positionTransitionPolicies"),
     (row, header) => {
       const enabled = parseBoolean(cell(row, header, ["启用"], 2));
       const modeText = cell(row, header, ["模式"], 8).toLowerCase();
@@ -244,7 +238,7 @@ function parseDutyPriorities(
 ): ParsedRuleSheet<DutyPositionPriority> {
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.dutyPriorities,
+    structuredPolicySheet("dutyPositionPriorities"),
     (row, header) => {
       const enabled = parseBoolean(cell(row, header, ["启用"], 3));
       if (enabled === undefined) return { errors: ["启用值必须填写是或否"] };
@@ -266,7 +260,7 @@ function parseRecoveryTargets(
 ): ParsedRuleSheet<NextWorkdayRecoveryTarget> {
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.recoveryTargets,
+    structuredPolicySheet("nextWorkdayRecoveryTargets"),
     (row, header) => {
       const enabled = parseBoolean(cell(row, header, ["启用"], 3));
       if (enabled === undefined) return { errors: ["启用值必须填写是或否"] };
@@ -288,7 +282,7 @@ function parseLateShiftPositions(
 ): ParsedRuleSheet<LateShiftRecoveryPositionRule> {
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.lateShiftPositions,
+    structuredPolicySheet("lateShiftRecoveryPositionRules"),
     (row, header) => {
       const enabled = parseBoolean(cell(row, header, ["启用"], 1));
       const fieldText = cell(row, header, ["匹配字段"], 3).toLowerCase();
@@ -337,7 +331,7 @@ function parseSupervisorCoverage(
 ): ParsedRuleSheet<MobileSupervisorCoverageRule> {
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.supervisorCoverage,
+    structuredPolicySheet("mobileSupervisorCoverageRules"),
     (row, header) => {
       const enabled = parseBoolean(cell(row, header, ["启用"], 1));
       const fieldText = cell(row, header, ["匹配字段"], 3).toLowerCase();
@@ -390,7 +384,7 @@ function parseCrossWorkdayReservations(
 ): ParsedRuleSheet<CrossWorkdayQualificationReservation> {
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.crossWorkdayReservations,
+    structuredPolicySheet("crossWorkdayQualificationReservations"),
     (row, header) => {
       const enabled = parseBoolean(cell(row, header, ["启用"], 1));
       const fieldText = cell(row, header, ["匹配字段"], 3).toLowerCase();
@@ -448,7 +442,7 @@ function parseLatePriorityFlightScope(
 ): ParsedRuleSheet<string> {
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.latePriorityFlightScope,
+    LATE_PRIORITY_FLIGHT_SCOPE_SHEET,
     (row, header) => {
       const flightNo = normalizeLatePriorityFlightNumber(
         cell(row, header, ["航班号"], 0)
@@ -467,7 +461,7 @@ function parseCrossFlightPriorityPolicies(
   const staffIdsSet = new Set(staff.map((person) => person.id));
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.crossFlightPriority,
+    structuredPolicySheet("crossFlightPriorityPolicies"),
     (row, header) => {
       const enabled = parseBoolean(cell(row, header, ["启用"], 1));
       const flightNo = cell(
@@ -516,7 +510,7 @@ function parseSameFlightStaffExclusions(
   const staffIds = new Set(staff.map((person) => person.id));
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.sameFlightStaffExclusions,
+    structuredPolicySheet("sameFlightStaffExclusions"),
     (row, header) => {
       const firstStaffId = cell(row, header, ["人员A编号", "人员A"], 2);
       const secondStaffId = cell(row, header, ["人员B编号", "人员B"], 4);
@@ -555,7 +549,7 @@ function parseTeamLeaderGapFillPositionPolicies(
 ): ParsedRuleSheet<TeamLeaderGapFillPositionPolicy> {
   return parseRuleSheet(
     workbook,
-    RULE_SHEET_NAMES.teamLeaderGapFillPositionPolicies,
+    structuredPolicySheet("teamLeaderGapFillPositionPolicies"),
     (row, header) => {
       const flightNo = cell(row, header, ["航班号"], 0).toUpperCase();
       const position = cell(row, header, ["岗位名称", "岗位"], 1);
@@ -687,7 +681,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.transitions,
+    structuredPolicySheet("positionTransitionPolicies"),
     [
       [
         "规则ID",
@@ -716,7 +710,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.dutyPriorities,
+    structuredPolicySheet("dutyPositionPriorities"),
     [
       ["规则ID", "航班号", "岗位关键词", "启用"],
       ...state.settings.dutyPositionPriorities.map((rule) => [
@@ -730,7 +724,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.recoveryTargets,
+    structuredPolicySheet("nextWorkdayRecoveryTargets"),
     [
       ["规则ID", "航班号", "岗位关键词", "启用"],
       ...state.settings.nextWorkdayRecoveryTargets.map((rule) => [
@@ -744,7 +738,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.lateShiftPositions,
+    structuredPolicySheet("lateShiftRecoveryPositionRules"),
     [
       [
         "规则ID",
@@ -767,7 +761,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.supervisorCoverage,
+    structuredPolicySheet("mobileSupervisorCoverageRules"),
     [
       [
         "规则ID",
@@ -790,7 +784,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.crossWorkdayReservations,
+    structuredPolicySheet("crossWorkdayQualificationReservations"),
     [
       [
         "规则ID",
@@ -815,7 +809,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.latePriorityFlightScope,
+    LATE_PRIORITY_FLIGHT_SCOPE_SHEET,
     [
       ["航班号"],
       ...state.settings.latePriorityFlightNumbers.map((flightNo) => [flightNo]),
@@ -824,7 +818,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.crossFlightPriority,
+    structuredPolicySheet("crossFlightPriorityPolicies"),
     [
       [
         "规则ID",
@@ -851,7 +845,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.sameFlightStaffExclusions,
+    structuredPolicySheet("sameFlightStaffExclusions"),
     [
       [
         "规则ID",
@@ -876,7 +870,7 @@ export function appendScheduleRuleSheets(
   );
   append(
     workbook,
-    RULE_SHEET_NAMES.teamLeaderGapFillPositionPolicies,
+    structuredPolicySheet("teamLeaderGapFillPositionPolicies"),
     [
       ["航班号", "岗位名称", "允许参与补差换人"],
       ...state.settings.teamLeaderGapFillPositionPolicies.map((policy) => [
