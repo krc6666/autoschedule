@@ -64,6 +64,54 @@ describe("rules page", () => {
     expect(selects?.[2]?.textContent).toContain("全部航班");
     expect(card?.querySelector('button[aria-label="删除"]')).not.toBeNull();
   });
+
+  it("keeps the ordinary-priority position collection compact and editable", async () => {
+    const state = createDefaultState();
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "AK", position: "G08" },
+      { airlineCode: "TR", position: "H02" },
+      { airlineCode: "CX", position: "一号" },
+      { airlineCode: "KE", position: "控制" },
+      { airlineCode: "MU", position: "送资料" },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-policy-page", { model: state });
+    const collection = element.querySelector<HTMLDetailsElement>(
+      ".ordinary-priority-position-scope"
+    )!;
+    const summary = collection.querySelector("summary")!;
+
+    expect(collection.open).toBe(false);
+    expect(summary.textContent).toContain("5 项");
+    expect(summary.textContent).toContain("AK / G08");
+    expect(summary.textContent).toContain("KE / 控制");
+    expect(summary.textContent).not.toContain("MU / 送资料");
+    expect(
+      collection.querySelector(".ordinary-priority-position-content .row")
+    ).not.toBeNull();
+    expect(
+      collection.querySelectorAll(".ordinary-priority-position-row")
+    ).toHaveLength(5);
+    expect(
+      collection.querySelectorAll('input[aria-label="普通重点航司"]')
+    ).toHaveLength(5);
+    expect(
+      collection.querySelectorAll('input[aria-label="普通重点规范岗位"]')
+    ).toHaveLength(5);
+    expect(
+      collection.querySelectorAll('button[aria-label="删除普通重点岗位"]')
+    ).toHaveLength(5);
+
+    let emitted: CustomEvent | undefined;
+    element.addEventListener("autoschedule-command", (event) => {
+      emitted = event as CustomEvent;
+    });
+    collection.querySelector<HTMLButtonElement>("summary button")!.click();
+    expect(collection.open).toBe(true);
+    expect(emitted?.detail.type).toBe("add-ordinary-priority-position");
+  });
+
   it("projects settings, structured rules, and the central rule ledger", async () => {
     const state = createDefaultState();
     const element = await mountElement<

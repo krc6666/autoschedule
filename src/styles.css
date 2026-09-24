@@ -1109,6 +1109,93 @@ select {
   color: #4e5863;
   font-size: 12px;
 }
+.ordinary-priority-position-scope {
+  display: grid;
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--as-border);
+  border-radius: 6px;
+  background: #f8f9fa;
+}
+.ordinary-priority-position-scope > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+.ordinary-priority-position-scope > summary::-webkit-details-marker {
+  display: none;
+}
+.ordinary-priority-position-scope > summary::marker {
+  display: none;
+}
+.ordinary-priority-position-heading {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.ordinary-priority-position-heading strong {
+  color: var(--as-ink);
+  font-size: 13px;
+}
+.ordinary-priority-position-heading small {
+  overflow: hidden;
+  color: var(--as-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ordinary-priority-position-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+.ordinary-priority-position-actions > .btn {
+  white-space: nowrap;
+}
+.ordinary-priority-position-actions > .bi-chevron-down {
+  color: var(--as-muted);
+  transition: transform 0.15s ease;
+}
+.ordinary-priority-position-scope[open]
+  .ordinary-priority-position-actions
+  > .bi-chevron-down {
+  transform: rotate(180deg);
+}
+.ordinary-priority-position-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--as-border);
+}
+.ordinary-priority-position-content > small {
+  color: var(--as-muted);
+  font-size: 11px;
+}
+.ordinary-priority-position-content > .row {
+  margin: 0;
+}
+.ordinary-priority-position-row {
+  display: grid;
+  grid-template-columns: minmax(4rem, 0.45fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.ordinary-priority-position-row > .btn {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+}
 .late-priority-summary-table,
 .ordinary-priority-summary-table {
   min-width: max(640px, 100%);
@@ -3172,6 +3259,12 @@ autoschedule-previous-schedule-comparison {
   .late-priority-flight-scope legend {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .ordinary-priority-position-scope > summary {
+    align-items: flex-start;
+  }
+  .ordinary-priority-position-heading small {
+    white-space: normal;
   }
 }
 

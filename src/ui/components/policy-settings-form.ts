@@ -266,48 +266,89 @@ export class PolicySettingsFormElement extends LightDomElement {
 
   private ordinaryPriorityPositionCollection() {
     const items = this.model.settings.ordinaryPriorityPositions;
-    return html`<fieldset class="late-priority-flight-scope">
-      <legend>
-        <span
-          ><strong>普通重点岗位集合</strong
-          ><small
-            >只认这里配置的航司 +
-            规范岗位，集合外关键词岗位按普通岗位轮岗</small
-          ></span
+    const preview = items
+      .slice(0, 4)
+      .map((item) => `${item.airlineCode} / ${item.position}`)
+      .join(" · ");
+    return html`<details class="ordinary-priority-position-scope">
+      <summary>
+        <span class="ordinary-priority-position-heading">
+          <strong>普通重点岗位集合</strong>
+          <small>${items.length} 项 · ${preview || "暂未配置"}</small>
+        </span>
+        <span class="ordinary-priority-position-actions">
+          <button
+            class="btn btn-sm btn-outline-secondary"
+            type="button"
+            @click=${(event: Event) => {
+              event.preventDefault();
+              const collection = (
+                event.currentTarget as HTMLButtonElement
+              ).closest<HTMLDetailsElement>("details");
+              if (collection) collection.open = true;
+              dispatchUiCommand(this, {
+                type: "add-ordinary-priority-position",
+              });
+            }}
+          >
+            <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>新增
+          </button>
+          <i class="bi bi-chevron-down" aria-hidden="true"></i>
+        </span>
+      </summary>
+      <div class="ordinary-priority-position-content">
+        <small class="text-body-secondary"
+          >只认这里配置的航司 + 规范岗位，集合外关键词岗位按普通岗位轮岗</small
         >
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          type="button"
-          @click=${() => dispatchUiCommand(this, { type: "add-ordinary-priority-position" })}
-        >
-          新增
-        </button>
-      </legend>
-      ${items.map(
-        (item, index) =>
-          html`<div class="d-flex gap-2 align-items-center mb-2">
-            <input
-              class="form-control form-control-sm"
-              aria-label="普通重点航司"
-              .value=${item.airlineCode}
-              @change=${(event: Event) => dispatchUiCommand(this, { type: "update-ordinary-priority-position", index, field: "airlineCode", value: (event.currentTarget as HTMLInputElement).value })}
-            />
-            <input
-              class="form-control form-control-sm"
-              aria-label="普通重点规范岗位"
-              .value=${item.position}
-              @change=${(event: Event) => dispatchUiCommand(this, { type: "update-ordinary-priority-position", index, field: "position", value: (event.currentTarget as HTMLInputElement).value })}
-            />
-            <button
-              class="btn btn-sm btn-outline-danger"
-              type="button"
-              @click=${() => dispatchUiCommand(this, { type: "delete-ordinary-priority-position", airlineCode: item.airlineCode, position: item.position })}
-            >
-              删除
-            </button>
-          </div>`
-      )}
-    </fieldset>`;
+        <div class="row g-2">
+          ${items.map(
+            (item, index) =>
+              html`<div class="col-12 col-md-6">
+                <div class="ordinary-priority-position-row">
+                  <input
+                    class="form-control form-control-sm"
+                    aria-label="普通重点航司"
+                    .value=${item.airlineCode}
+                    @change=${(event: Event) =>
+                      dispatchUiCommand(this, {
+                        type: "update-ordinary-priority-position",
+                        index,
+                        field: "airlineCode",
+                        value: (event.currentTarget as HTMLInputElement).value,
+                      })}
+                  />
+                  <input
+                    class="form-control form-control-sm"
+                    aria-label="普通重点规范岗位"
+                    .value=${item.position}
+                    @change=${(event: Event) =>
+                      dispatchUiCommand(this, {
+                        type: "update-ordinary-priority-position",
+                        index,
+                        field: "position",
+                        value: (event.currentTarget as HTMLInputElement).value,
+                      })}
+                  />
+                  <button
+                    class="btn btn-sm btn-outline-danger"
+                    type="button"
+                    title="删除"
+                    aria-label="删除普通重点岗位"
+                    @click=${() =>
+                      dispatchUiCommand(this, {
+                        type: "delete-ordinary-priority-position",
+                        airlineCode: item.airlineCode,
+                        position: item.position,
+                      })}
+                  >
+                    <i class="bi bi-trash3" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>`
+          )}
+        </div>
+      </div>
+    </details>`;
   }
 
   private save(): void {
