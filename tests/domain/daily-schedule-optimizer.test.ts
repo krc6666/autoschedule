@@ -1069,7 +1069,7 @@ describe("daily schedule module interfaces", () => {
     ).toBe("worker-2");
   });
 
-  it("adds hard same-airline control/number-one separation across all later flights", () => {
+  it("adds a soft same-airline control/number-one penalty across later flights", () => {
     const state = modelState(
       [
         flight("morning", "FD101", "08:00", "10:00", ["P1"]),
@@ -1103,19 +1103,23 @@ describe("daily schedule module interfaces", () => {
       (choice) =>
         choice.task.flight.flightNo === "FD202" && choice.person.id === "worker"
     )!;
+    const conflictVariable = model.problem.variables.find(
+      (variable) =>
+        variable.id.startsWith("same-airline-priority:") &&
+        variable.id.includes(morningChoice.id) &&
+        variable.id.includes(afternoonChoice.id)
+    );
+    expect(conflictVariable).toBeDefined();
     expect(
-      model.problem.constraints.some(
-        (constraint) =>
-          constraint.id.startsWith("same-airline-priority:") &&
-          constraint.terms
-            .map((term) => term.variableId)
-            .includes(morningChoice.id) &&
-          constraint.terms
-            .map((term) => term.variableId)
-            .includes(afternoonChoice.id) &&
-          constraint.upperBound === 1
-      )
-    ).toBe(true);
+      model.problem.objectives.find(
+        (objective) =>
+          objective.id === "candidate:same-day-cross-flight-priority"
+      )?.terms
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ variableId: conflictVariable?.id }),
+      ])
+    );
   });
 
   it("records why another overlapping flight yielded to a protected position", () => {
@@ -1608,7 +1612,7 @@ describe("daily schedule solver performance model", () => {
     expect(morning?.staffId).not.toBe(evening?.staffId);
   });
 
-  it("leaves a later same-airline priority position unfilled when no alternate is qualified", async () => {
+  it("keeps a later same-airline priority position staffed when no alternate is qualified", async () => {
     const state = modelState([
       flight("morning-cx", "CX100", "08:00", "10:00", ["G20"]),
       flight("evening-cx", "CX200", "20:00", "22:00", ["G20"]),
@@ -1621,12 +1625,95 @@ describe("daily schedule solver performance model", () => {
     state.staff.push(alternate);
     const result = await generateSchedule(state, "2026-08-03");
 
-    expect(result.unfilledCount).toBe(1);
+    expect(result.unfilledCount).toBe(0);
     expect(
       result.assignments.filter((assignment) =>
         ["CX100", "CX200"].includes(assignment.flightNo)
       )
     ).toHaveLength(2);
+  });
+
+  it("keeps same-airline control and number-one staffed when no safe alternate exists", async () => {
+    const state = modelState(
+      [
+        flight("morning-cx", "CX100", "08:00", "10:00", ["G08"]),
+        flight("evening-cx", "CX200", "20:00", "22:00", ["G17"]),
+      ],
+      (rule) => ({
+        ...rule,
+        remark: rule.flightNo === "CX100" ? "控制" : "一号",
+      })
+    );
+
+    const result = await generateSchedule(state, "2026-08-03");
+    const priorityAssignments = result.assignments.filter((assignment) =>
+      ["CX100", "CX200"].includes(assignment.flightNo)
+    );
+
+    expect(result.unfilledCount).toBe(0);
+    expect(priorityAssignments).toHaveLength(2);
+    expect(new Set(priorityAssignments.map((item) => item.staffId))).toEqual(
+      new Set(["worker"])
+    );
+    expect(
+      result.warnings.some((warning) => warning.includes("同日同航司"))
+    ).toBe(true);
+  });
+
+  it("avoids same-airline control and number-one across flights when a safe alternate exists", async () => {
+    const state = modelState(
+      [
+        flight("morning-cx", "CX100", "08:00", "10:00", ["G08"]),
+        flight("evening-cx", "CX200", "20:00", "22:00", ["G17"]),
+      ],
+      (rule) => ({
+        ...rule,
+        remark: rule.flightNo === "CX100" ? "控制" : "一号",
+      })
+    );
+    const alternate = {
+      ...state.staff[0]!,
+      id: "alternate-worker",
+      name: "替代人员",
+    };
+    state.staff.push(alternate);
+    state.positionRules.forEach((rule) =>
+      rule.qualifiedStaffIds.push(alternate.id)
+    );
+
+    const result = await generateSchedule(state, "2026-08-03");
+    const priorityAssignments = result.assignments.filter((assignment) =>
+      ["CX100", "CX200"].includes(assignment.flightNo)
+    );
+
+    expect(result.unfilledCount).toBe(0);
+    expect(new Set(priorityAssignments.map((item) => item.staffId)).size).toBe(
+      2
+    );
+    expect(
+      result.warnings.some((warning) => warning.includes("同日同航司"))
+    ).toBe(false);
+  });
+
+  it("turns off same-airline control/number-one avoidance and its warning from the rule switch", async () => {
+    const state = modelState(
+      [
+        flight("morning-cx", "CX100", "08:00", "10:00", ["G08"]),
+        flight("evening-cx", "CX200", "20:00", "22:00", ["G17"]),
+      ],
+      (rule) => ({
+        ...rule,
+        remark: rule.flightNo === "CX100" ? "控制" : "一号",
+      })
+    );
+    state.settings.sameDayCrossFlightPriorityEnabled = false;
+
+    const result = await generateSchedule(state, "2026-08-03");
+
+    expect(result.unfilledCount).toBe(0);
+    expect(
+      result.warnings.some((warning) => warning.includes("同日同航司"))
+    ).toBe(false);
   });
 
   it("separates priority work across more than two same-airline flights", async () => {

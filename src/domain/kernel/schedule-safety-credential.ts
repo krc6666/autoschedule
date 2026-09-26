@@ -57,6 +57,7 @@ function contextFingerprint(context: ScheduleGuardContext): string {
       : undefined,
     airlineRotationFacts: airlineRotation
       ? {
+          enabled: airlineRotation.enabled,
           positionRules: airlineRotation.positionRules
             .map((rule) => ({
               id: rule.id,

@@ -55,12 +55,6 @@ export const SCHEDULING_RULES = [
     feedbackMode: "aggregated",
   },
   {
-    id: "same-day-cross-flight-priority",
-    stage: "hard-constraint",
-    label: "同日同航司控制与一号岗位互斥",
-    feedbackMode: "aggregated",
-  },
-  {
     id: "mobile-supervisor",
     stage: "reserved-assignment",
     label: "机动督导独立优先与缺员兼任",
@@ -100,6 +94,13 @@ export const SCHEDULING_RULES = [
     stage: "coverage",
     label: "分队长并行督导补缺",
     feedbackMode: "aggregated",
+  },
+  {
+    id: "same-day-cross-flight-priority",
+    stage: "protection",
+    label: "同日同航司控制与一号岗位优先避免（无替代可接受）",
+    feedbackMode: "aggregated",
+    optimization: "best-effort",
   },
   {
     id: "cross-workday-qualification-reservation",

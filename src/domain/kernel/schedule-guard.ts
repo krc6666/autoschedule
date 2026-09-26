@@ -74,6 +74,7 @@ import {
 export type ScheduleGuardPhase = "partial" | "final";
 
 export interface AirlineRotationFacts {
+  readonly enabled?: boolean;
   readonly positionRules: readonly Pick<
     PositionRule,
     "id" | "flightNo" | "category" | "name" | "remark"
@@ -292,7 +293,7 @@ export function createSameAirlinePriorityScheduleGuard(): ScheduleGuard {
       context: ScheduleGuardContext
     ): readonly ScheduleGuardViolation[] => {
       const facts = context.airlineRotationFacts;
-      if (!facts) return [];
+      if (!facts || facts.enabled === false) return [];
 
       const rulesById = new Map(
         facts.positionRules.map((rule) => [rule.id, rule])
@@ -341,7 +342,8 @@ export function createSameAirlinePriorityScheduleGuard(): ScheduleGuard {
             violations.push({
               ruleId: "same-day-cross-flight-priority",
               assignmentId: right.id,
-              message: `${left.staffName || left.staffId}在${left.flightNo}/${left.position}已承担同航司重点岗位，不能再安排${right.flightNo}/${right.position}`,
+              severity: "warning",
+              message: `${left.staffName || left.staffId} → 已在${left.flightNo}/${left.position}承担同日同航司控制/一号 → 跨航班组合优先避免但当前无安全替代或已人工落位 → 保留当前安排并允许提交 → 继续承担${right.flightNo}/${right.position}（琥珀色警告）`,
             });
           }
         }

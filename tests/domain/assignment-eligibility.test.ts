@@ -58,7 +58,7 @@ describe("assignment eligibility diagnostics", () => {
     ["一号", "控制"],
     ["一号", "一号"],
   ])(
-    "blocks same-airline %s then %s for automatic and manual assignment",
+    "allows same-airline %s then %s with a warning for manual assignment",
     (sourceRemark, targetRemark) => {
       const state = createSchedulingScenario();
       const person = {
@@ -154,7 +154,10 @@ describe("assignment eligibility diagnostics", () => {
       ).toBe("same-airline-priority");
       expect(
         evaluateManualAssignment(state, targetAssignment.id, person.id)
-      ).toMatchObject({ allowed: false, warnings: [] });
+      ).toMatchObject({
+        allowed: true,
+        warnings: [expect.objectContaining({ code: "same-airline-priority" })],
+      });
 
       targetFlight.flightNo =
         targetRule.flightNo =
@@ -172,6 +175,90 @@ describe("assignment eligibility diagnostics", () => {
       ).toBe(true);
     }
   );
+
+  it("allows a manual same-airline control/number-one placement with a warning", () => {
+    const state = createSchedulingScenario();
+    const person = {
+      ...state.staff[0]!,
+      id: "priority-worker",
+      name: "重点岗位人员",
+      status: "正常" as const,
+      staffType: "常规" as const,
+      nightShift: true,
+    };
+    const sourceFlight = {
+      ...state.flights[0]!,
+      id: "cx-morning",
+      flightNo: "CX100",
+      startTime: "08:00",
+      endTime: "10:00",
+    };
+    const targetFlight = {
+      ...sourceFlight,
+      id: "cx-evening",
+      flightNo: "CX200",
+      startTime: "15:00",
+      endTime: "17:00",
+    };
+    const sourceRule: PositionRule = {
+      ...state.positionRules[0]!,
+      id: "cx-control",
+      flightNo: sourceFlight.flightNo,
+      name: "G08",
+      remark: "控制",
+      category: "常规",
+      qualifiedStaffIds: [person.id],
+    };
+    const targetRule: PositionRule = {
+      ...sourceRule,
+      id: "cx-number-one",
+      flightNo: targetFlight.flightNo,
+      name: "G17",
+      remark: "一号",
+    };
+    const sourceAssignment: Assignment = {
+      id: "cx-source",
+      flightId: sourceFlight.id,
+      flightNo: sourceFlight.flightNo,
+      positionRuleId: sourceRule.id,
+      position: sourceRule.name,
+      staffId: person.id,
+      staffName: person.name,
+      startTime: sourceFlight.startTime,
+      endTime: sourceFlight.endTime,
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: sourceRule.remark,
+      manualRemark: "",
+      status: "assigned",
+    };
+    const targetAssignment: Assignment = {
+      ...sourceAssignment,
+      id: "cx-target",
+      flightId: targetFlight.id,
+      flightNo: targetFlight.flightNo,
+      positionRuleId: targetRule.id,
+      position: targetRule.name,
+      staffId: null,
+      staffName: "",
+      startTime: targetFlight.startTime,
+      endTime: targetFlight.endTime,
+      remark: targetRule.remark,
+      status: "unfilled",
+    };
+    state.staff = [person];
+    state.flights = [sourceFlight, targetFlight];
+    state.positionRules = [sourceRule, targetRule];
+    state.assignments = [sourceAssignment, targetAssignment];
+    state.settings.minimumRegularTransitionMinutes = 0;
+
+    expect(
+      evaluateManualAssignment(state, targetAssignment.id, person.id)
+    ).toMatchObject({
+      allowed: true,
+      warnings: [expect.objectContaining({ code: "same-airline-priority" })],
+    });
+  });
 
   it("uses the same hard facts for automatic and manual decisions", () => {
     const state = createSchedulingScenario();

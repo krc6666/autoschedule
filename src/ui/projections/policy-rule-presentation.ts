@@ -84,7 +84,7 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
   "same-day-late-obligation":
     "整体判断受保护人员是否必须承担后续晚班；晚班不可避免时，在不制造岗位空缺的前提下优先安全撤掉其截止前岗位，多人冲突时先保护截止更早的人。",
   "same-day-cross-flight-priority":
-    "同一航空公司的多个航班按同一岗位事实轮换；较早航班承担控制或一号的人员，不得再承担后续同航司控制或一号岗位。",
+    "同一人员同日承担同航司控制与一号时优先安排其他安全人选；没有安全替代或人工落位时允许保留，并显示琥珀色警告。",
   "late-shift-position-relief":
     "上一班做过已勾选末班重点岗位、这班又必须上晚班时，优先选择该人员可胜任的最低疲劳晚班岗位。",
   "preferred-position-transition":

@@ -1433,6 +1433,13 @@ export function buildDailyScheduleModel({
     staticCandidateObjectives,
     sameDayLateObligation.objectives
   );
+  if (state.settings.sameDayCrossFlightPriorityEnabled !== false) {
+    dailyModelCandidateObjectives.push({
+      id: "candidate:same-day-cross-flight-priority",
+      direction: "minimize",
+      terms: [],
+    });
+  }
   const combinations = buildDailyCombinationModel(
     state,
     staffChoices,
@@ -1577,6 +1584,7 @@ export function buildDailyScheduleModel({
         "candidate:tr121-h02-cooldown",
         "candidate:late-priority-aggregate-rotation",
         "candidate:late-priority-frequency",
+        "candidate:same-day-cross-flight-priority",
       ].some(
         (protectedId) =>
           objective.id === protectedId ||
@@ -1588,6 +1596,7 @@ export function buildDailyScheduleModel({
       "candidate:tr121-h02-cooldown",
       "candidate:late-priority-aggregate-rotation",
       "candidate:late-priority-frequency",
+      "candidate:same-day-cross-flight-priority",
     ].some(
       (protectedId) =>
         objective.id === protectedId ||

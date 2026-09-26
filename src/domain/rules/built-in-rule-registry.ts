@@ -55,6 +55,7 @@ export const CONFIGURABLE_RULE_SETTINGS: Partial<
       | "highLoadProtectionEnabled"
       | "rollingLoadProtectionEnabled"
       | "positionRotationEnabled"
+      | "sameDayCrossFlightPriorityEnabled"
       | "lateShiftRecoveryEnabled"
       | "workloadBalanceEnabled"
     >
@@ -72,6 +73,7 @@ export const CONFIGURABLE_RULE_SETTINGS: Partial<
   "position-frequency-review": "positionRotationEnabled",
   "workload-balance": "workloadBalanceEnabled",
   "position-rotation": "positionRotationEnabled",
+  "same-day-cross-flight-priority": "sameDayCrossFlightPriorityEnabled",
 };
 
 type CandidateComparator = (
@@ -392,7 +394,7 @@ export const BUILT_IN_RULE_REGISTRY = createRuleRegistry(
 
 const AUTOMATIC_HARD_CONSTRAINT_EXECUTORS =
   BUILT_IN_RULE_REGISTRY.executionPlan().flatMap((hook) =>
-    hook.enabled
+    hook.enabled && hook.id !== "same-day-cross-flight-priority"
       ? hook.execute.filter((executor) => executor.kind === "hard-constraint")
       : []
   );

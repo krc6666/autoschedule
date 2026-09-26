@@ -46,6 +46,7 @@ export function createScheduleGuardContext({
     sameFlightStaffExclusionFacts: { state },
     halfRestFacts: runFacts.halfRest,
     airlineRotationFacts: {
+      enabled: state.settings.sameDayCrossFlightPriorityEnabled,
       positionRules: state.positionRules,
     },
     minimumFlightTransitionFacts: {

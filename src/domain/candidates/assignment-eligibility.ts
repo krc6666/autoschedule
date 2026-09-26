@@ -88,6 +88,13 @@ function violation(
   return { eligible: false, violations: [{ code, message }] };
 }
 
+function warning(
+  code: AssignmentEligibilityViolationCode,
+  message: string
+): AssignmentEligibilityDiagnostic {
+  return { eligible: true, violations: [{ code, message }] };
+}
+
 function success(): AssignmentEligibilityDiagnostic {
   return { eligible: true, violations: [] };
 }
@@ -228,6 +235,8 @@ export function diagnoseSameAirlinePriorityEligibility(
   options: AutomaticAssignmentEligibilityOptions,
   excludedAssignmentIds: ReadonlySet<string> = new Set()
 ): AssignmentEligibilityDiagnostic {
+  if (options.state.settings.sameDayCrossFlightPriorityEnabled === false)
+    return success();
   if (!isSameAirlinePriorityPosition(options.rule)) return success();
   const conflict = options.assignments.find((assignment) => {
     if (
@@ -249,9 +258,9 @@ export function diagnoseSameAirlinePriorityEligibility(
     );
   });
   return conflict
-    ? violation(
+    ? warning(
         "same-airline-priority",
-        `${options.person.name}已承担同日${airlineCode(options.flight.flightNo)}航司的控制/一号岗位`
+        `${options.person.name} → 已在${conflict.flightNo}/${conflict.position}承担同日${airlineCode(options.flight.flightNo)}航司控制/一号 → 跨航班组合优先避免但当前允许人工落位 → 保留目标岗位并提示 → 可继续安排${options.flight.flightNo}/${options.rule.name}（琥珀色警告）`
       )
     : success();
 }

@@ -28,8 +28,8 @@ import type {
 } from "../solver/solver-port";
 import { intervalsOverlap } from "../shared/time";
 import {
-  airlineCode,
   isSameAirlinePriorityPosition,
+  sameAirlinePriorityConflict,
 } from "../rules/airline-rotation";
 import { sameFlightStaffExclusionApplies } from "../rules/same-flight-staff-exclusion";
 
@@ -301,34 +301,95 @@ function incompatibilityConstraints(
   return constraints;
 }
 
-function sameAirlinePriorityConstraints(
-  staffChoices: readonly DailyCombinationChoice[]
-): LinearConstraint[] {
-  const constraints: LinearConstraint[] = [];
-  const choicesByStaffAirline = new Map<string, DailyCombinationChoice[]>();
+function sameAirlinePrioritySoftPenalty(
+  staffChoices: readonly DailyCombinationChoice[],
+  variables: Array<SolverProblem["variables"][number]>,
+  constraints: LinearConstraint[],
+  enabled: boolean,
+  addObjectiveTerm: (
+    objectiveId: string,
+    variableId: string,
+    coefficient: number
+  ) => void
+): void {
+  if (!enabled) return;
+  const choicesByStaffId = new Map<string, DailyCombinationChoice[]>();
   for (const choice of staffChoices) {
-    const rule = choice.task.rule;
-    if (!isSameAirlinePriorityPosition(rule)) continue;
-    const key = `${choice.person.id}\u0000${airlineCode(choice.task.flight.flightNo)}`;
-    const own = choicesByStaffAirline.get(key) ?? [];
+    if (!isSameAirlinePriorityPosition(choice.task.rule)) continue;
+    const own = choicesByStaffId.get(choice.person.id) ?? [];
     own.push(choice);
-    choicesByStaffAirline.set(key, own);
+    choicesByStaffId.set(choice.person.id, own);
   }
 
-  for (const [groupKey, choices] of choicesByStaffAirline) {
-    const uniqueByTask = new Map<string, DailyCombinationChoice>();
-    for (const choice of choices) uniqueByTask.set(choice.task.key, choice);
-    if (uniqueByTask.size < 2) continue;
-    constraints.push({
-      id: `same-airline-priority:${groupKey}:${constraints.length}`,
-      terms: [...uniqueByTask.values()].map(({ id }) => ({
-        variableId: id,
-        coefficient: 1,
-      })),
-      upperBound: 1,
-    });
+  for (const choices of choicesByStaffId.values()) {
+    for (let leftIndex = 0; leftIndex < choices.length; leftIndex += 1) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < choices.length;
+        rightIndex += 1
+      ) {
+        const left = choices[leftIndex]!;
+        const right = choices[rightIndex]!;
+        if (
+          left.task.flight.id === right.task.flight.id ||
+          !sameAirlinePriorityConflict(
+            {
+              flightNo: left.task.flight.flightNo,
+              category: left.task.rule.category,
+              name: left.task.rule.name,
+              remark: left.task.rule.remark,
+            },
+            {
+              flightNo: right.task.flight.flightNo,
+              category: right.task.rule.category,
+              name: right.task.rule.name,
+              remark: right.task.rule.remark,
+            }
+          )
+        )
+          continue;
+        const variableId = `same-airline-priority:${left.id}:${right.id}`;
+        variables.push({
+          id: variableId,
+          type: "continuous",
+          lowerBound: 0,
+          upperBound: 1,
+        });
+        constraints.push(
+          {
+            id: `${variableId}:lower`,
+            terms: [
+              { variableId, coefficient: 1 },
+              { variableId: left.id, coefficient: -1 },
+              { variableId: right.id, coefficient: -1 },
+            ],
+            lowerBound: -1,
+          },
+          {
+            id: `${variableId}:left`,
+            terms: [
+              { variableId, coefficient: 1 },
+              { variableId: left.id, coefficient: -1 },
+            ],
+            upperBound: 0,
+          },
+          {
+            id: `${variableId}:right`,
+            terms: [
+              { variableId, coefficient: 1 },
+              { variableId: right.id, coefficient: -1 },
+            ],
+            upperBound: 0,
+          }
+        );
+        addObjectiveTerm(
+          "candidate:same-day-cross-flight-priority",
+          variableId,
+          1
+        );
+      }
+    }
   }
-  return constraints;
 }
 
 function sameFlightStaffExclusionConstraints(
@@ -850,13 +911,19 @@ export function buildDailyCombinationModel(
     );
     addObjectiveTerm(group.objectiveId, variableId, group.coefficient);
   }
+  sameAirlinePrioritySoftPenalty(
+    staffChoices,
+    variables,
+    constraints,
+    enabledObjectiveIds.has("candidate:same-day-cross-flight-priority"),
+    addObjectiveTerm
+  );
   constraints.push(...highLoadIndependentCapacityConstraints(enabledGroups));
 
   return {
     variables,
     incompatibilityConstraints: [
       ...incompatibilityConstraints(state, staffChoices),
-      ...sameAirlinePriorityConstraints(staffChoices),
       ...sameFlightStaffExclusionConstraints(state, staffChoices),
     ],
     constraints,

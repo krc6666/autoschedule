@@ -153,6 +153,13 @@ export const SCHEDULE_SETTING_DEFINITIONS: readonly ScheduleSettingDefinition[] 
       defaultValue: true,
     },
     {
+      key: "sameDayCrossFlightPriorityEnabled",
+      label: "同日同航司控制/一号优先避免",
+      type: "boolean",
+      description: "有安全替代时优先分开，无替代时允许安排并报警",
+      defaultValue: true,
+    },
+    {
       key: "tr121H02CooldownWorkdays",
       label: "TR121/H02 冷却工作班数",
       type: "number",

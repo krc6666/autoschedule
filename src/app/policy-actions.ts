@@ -47,6 +47,7 @@ export interface SchedulePolicyInput {
   rollingLoadWindowMinutes: number;
   rollingLoadMaxFatigue: number;
   positionRotationEnabled: boolean;
+  sameDayCrossFlightPriorityEnabled: boolean;
   tr121H02CooldownWorkdays?: number;
   latePriorityFlightNumbers: string[];
   lateShiftRecoveryEnabled: boolean;

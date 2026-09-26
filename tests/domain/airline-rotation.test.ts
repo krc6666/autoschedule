@@ -49,7 +49,7 @@ describe("airline rotation facts", () => {
     ["一号", "控制"],
     ["一号", "一号"],
   ] as const)(
-    "treats same-airline %s and %s as a hard conflict",
+    "reports same-airline %s and %s as the shared conflict fact",
     (left, right) => {
       expect(
         sameAirlinePriorityConflict(

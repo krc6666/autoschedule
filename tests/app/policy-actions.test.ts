@@ -40,6 +40,7 @@ const input: SchedulePolicyInput = {
   rollingLoadWindowMinutes: 360,
   rollingLoadMaxFatigue: 8,
   positionRotationEnabled: true,
+  sameDayCrossFlightPriorityEnabled: true,
   tr121H02CooldownWorkdays: 3,
   latePriorityFlightNumbers: [" tr121 ", "TW 616", "TR121"],
   lateShiftRecoveryEnabled: true,

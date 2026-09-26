@@ -115,7 +115,7 @@ describe("schedule ledger", () => {
     expect(ledger.snapshot()).toEqual([legal]);
   });
 
-  it("rejects a post-stage same-airline priority conflict at the shared commit boundary", () => {
+  it("records a post-stage same-airline priority warning at the shared commit boundary", () => {
     const controlRule: PositionRule = {
       id: "cx-control-rule",
       flightNo: "CX100",
@@ -155,8 +155,10 @@ describe("schedule ledger", () => {
       position: oneRule.name,
       remark: oneRule.remark,
     };
+    const warningSink: string[] = [];
     const guardContext: ScheduleGuardContext = {
       phase: "partial" as const,
+      warningSink,
       airlineRotationFacts: {
         positionRules: [controlRule, oneRule],
       },
@@ -165,22 +167,11 @@ describe("schedule ledger", () => {
       safetySession: safetySession(guardContext),
     });
 
-    let error: unknown;
-    try {
-      ledger.commit({ type: "replace", assignments: [existing, illegal] });
-    } catch (caught) {
-      error = caught;
-    }
-
-    expect(error).toBeInstanceOf(ScheduleGuardError);
-    expect((error as ScheduleGuardError).violations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          ruleId: "same-day-cross-flight-priority",
-        }),
-      ])
-    );
-    expect(ledger.snapshot()).toEqual([existing]);
+    expect(() =>
+      ledger.commit({ type: "replace", assignments: [existing, illegal] })
+    ).not.toThrow();
+    expect(ledger.snapshot()).toEqual([existing, illegal]);
+    expect(warningSink).toEqual([expect.stringContaining("同日同航司")]);
   });
 
   it("rejects a post-stage minimum-flight-transition violation at the shared commit boundary", () => {

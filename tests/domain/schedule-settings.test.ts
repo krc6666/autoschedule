@@ -78,6 +78,7 @@ describe("schedule settings module", () => {
     ).toMatchObject({ defaultValue: 3, min: 0, max: 30, integer: true });
     expect(createDefaultScheduleSettings()).toMatchObject({
       minimumRegularTransitionMinutes: 90,
+      sameDayCrossFlightPriorityEnabled: true,
       tr121H02CooldownWorkdays: 3,
       nextWorkdayRecoveryMode: "prefer",
       crossWorkdayQualificationReservations: [],

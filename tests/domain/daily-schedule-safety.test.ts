@@ -142,7 +142,7 @@ function finalSafetyFixture(kind: "ke166" | "team-leader") {
 }
 
 describe("daily schedule final safety review", () => {
-  it("rejects a later same-airline control or number-one assignment after post-review changes", () => {
+  it("allows a later same-airline control or number-one assignment after post-review changes", () => {
     const state = createDefaultState();
     const person = {
       ...state.staff[0]!,
@@ -218,7 +218,7 @@ describe("daily schedule final safety review", () => {
         assignments,
         evaluateEligibility: evaluateAutomaticHardConstraints,
       })
-    ).toThrow("同航司控制/一号岗位");
+    ).not.toThrow();
   });
 
   it.each(["ke166", "team-leader"] as const)(

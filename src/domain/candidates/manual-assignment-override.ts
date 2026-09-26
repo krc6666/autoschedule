@@ -13,6 +13,7 @@ const WARNING_CODES: ReadonlySet<AssignmentEligibilityViolationCode> = new Set([
   "minimum-flight-transition",
   "position-transition",
   "same-flight-staff-exclusion",
+  "same-airline-priority",
 ]);
 
 export interface ManualAssignmentEvaluation {
