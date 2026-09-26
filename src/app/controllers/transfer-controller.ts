@@ -135,6 +135,8 @@ export class TransferController implements UiCommandController {
           mode: mode === "duty-roster" ? "all" : mode,
           importedState,
           recognized: prepared.recognized,
+          changedConfig: prepared.changedConfig,
+          historySummary: prepared.historySummary,
           warnings: prepared.warnings,
         },
       });
@@ -181,7 +183,11 @@ export class TransferController implements UiCommandController {
     }
     this.context.store.getState().replaceModel(dialog.importedState);
     this.context.updateView({ dialog: null });
-    this.context.commit(`已导入 ${dialog.recognized}；请重新排班`);
+    this.context.commit(
+      `已导入 ${dialog.recognized}；${
+        dialog.changedConfig === false ? "历史已归档" : "请重新排班"
+      }`
+    );
     if (dialog.warnings.length)
       this.context.toast(dialog.warnings.join("；"), "warning");
     return true;
@@ -195,13 +201,6 @@ export class TransferController implements UiCommandController {
       dialog.preview,
       dialog.date
     );
-    if (result.errors?.length) {
-      this.context.toast(
-        `导入的班表未写入：${result.errors.join("；")}`,
-        "danger"
-      );
-      return true;
-    }
     this.context.updateView({ dialog: null });
     this.context.commit(
       `旧版排班已导入 ${result.imported} 条历史记录，${dialog.preview.reviewRecords} 条待确认记录未写入`

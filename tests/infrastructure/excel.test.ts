@@ -15,6 +15,63 @@ import { STRUCTURED_POLICY_DEFINITIONS } from "../../src/domain/rules/structured
 import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
 
 describe("workbook boundary", () => {
+  it("exports and parses the active group's complete history sheet", () => {
+    const state = createDefaultState();
+    state.history = [
+      {
+        id: "history-1",
+        date: "2026-09-20",
+        flightNo: "CX937",
+        position: "G20",
+        staffId: "retired-person",
+        staffName: "历史人员",
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 0,
+        fatiguePoints: 0,
+        remark: "岗位原始备注；人工备注",
+        historyCoverage: "late-priority-only",
+        teamLeaderGapFill: true,
+      },
+    ];
+
+    const workbook = buildConfigWorkbook(state);
+    expect(workbook.SheetNames).toContain("历史排班");
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["历史排班"]!,
+      { header: 1, raw: false, defval: "" }
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toContain("retired-person");
+    expect(rows[1]).toContain("历史人员");
+    expect(rows[1]).toContain("late-priority-only");
+
+    const imported = parseWorkbook(workbook, state.staff);
+    expect(imported.history).toHaveLength(1);
+    expect(imported.history?.[0]).toMatchObject({
+      date: "2026-09-20",
+      flightNo: "CX937",
+      position: "G20",
+      staffId: "retired-person",
+      staffName: "历史人员",
+      workHours: 0,
+      fatiguePoints: 0,
+      remark: "岗位原始备注；人工备注",
+      historyCoverage: "late-priority-only",
+      teamLeaderGapFill: true,
+    });
+  });
+
+  it("exports an empty history sheet for a state without history", () => {
+    const workbook = buildConfigWorkbook(createDefaultState());
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["历史排班"]!,
+      { header: 1, raw: false, defval: "" }
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain("日期");
+  });
+
   it("exports every registered structured policy sheet", () => {
     const workbook = buildConfigWorkbook(createDefaultState());
 
@@ -25,8 +82,33 @@ describe("workbook boundary", () => {
 
   it("exports the active group's staff and flights while keeping shared sheets available", () => {
     const initial = createDefaultState();
+    initial.history = [
+      {
+        id: "a-history",
+        date: "2026-09-18",
+        flightNo: "A-FLIGHT",
+        position: "A岗位",
+        staffId: initial.staff[0]!.id,
+        staffName: initial.staff[0]!.name,
+        startTime: "08:00",
+        endTime: "09:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "A组历史",
+      },
+    ];
     initial.groups.B.staff = [
       { ...initial.staff[0]!, id: "b-only", name: "B组人员" },
+    ];
+    initial.groups.B.history = [
+      {
+        ...initial.history[0]!,
+        id: "b-history",
+        flightNo: "B-FLIGHT",
+        staffId: "b-only",
+        staffName: "B组人员",
+        remark: "B组历史",
+      },
     ];
     initial.positionRules[0]!.qualifiedStaffIds.push("b-only");
     initial.shared.positionRules[0]!.qualifiedStaffIds.push("b-only");
@@ -60,6 +142,12 @@ describe("workbook boundary", () => {
     expect(
       flightRows.some((row) => row.includes(initial.flights[1]!.flightNo))
     ).toBe(false);
+    const historyRows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["历史排班"]!,
+      { header: 1 }
+    );
+    expect(historyRows.some((row) => row.includes("b-history"))).toBe(true);
+    expect(historyRows.some((row) => row.includes("a-history"))).toBe(false);
     expect(workbook.SheetNames).toContain("岗位配置");
     const positionRows = XLSX.utils.sheet_to_json<unknown[]>(
       workbook.Sheets["岗位配置"]!,

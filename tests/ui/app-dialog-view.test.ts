@@ -118,12 +118,45 @@ describe("application dialog", () => {
         mode: "config",
         importedState: model,
         recognized: "规则配置",
+        changedConfig: true,
         warnings: [],
       },
     });
 
     expect(element.textContent).toContain("结构化规则");
     expect(element.textContent).toContain(`${expectedCount} 条`);
+  });
+
+  it("previews history merge counts without claiming that a history-only import clears the active schedule", async () => {
+    const model = createDefaultState();
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-app-dialog", {
+      model,
+      dialog: {
+        kind: "workbook-import",
+        mode: "history",
+        importedState: model,
+        recognized: "4 条历史负荷",
+        changedConfig: false,
+        historySummary: {
+          total: 4,
+          added: 2,
+          replaced: 1,
+          unmatchedStaff: 1,
+        },
+        warnings: [],
+      },
+    });
+
+    const text = element.textContent.replace(/\s+/g, " ").trim();
+    expect(text).toContain("历史导入预览");
+    expect(text).toContain(
+      "共 4 条；新增 2 条；覆盖 1 条；无法匹配当前人员 1 条"
+    );
+    expect(text).toContain("当前尚未归档的排班结果保持不变");
+    expect(text).toContain("确认导入历史");
+    expect(text).not.toContain("确认导入并重新排班");
   });
 
   it("gives legacy schedule import content a constrained scrolling host", async () => {

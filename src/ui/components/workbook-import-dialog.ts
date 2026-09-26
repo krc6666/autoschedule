@@ -22,10 +22,15 @@ export class WorkbookImportDialogElement extends LightDomElement {
   protected override render() {
     const imported = this.dialog.importedState;
     const settings = imported.settings;
+    const changesConfig = this.dialog.changedConfig;
     return html`<div class="modal-body">
         <div class="alert alert-warning py-2">
           <i class="bi bi-exclamation-triangle me-2"></i>
-          确认导入后会替换识别到的配置，并清空当前尚未归档的排班结果。
+          ${
+            changesConfig
+              ? "确认导入后会替换识别到的配置，并清空当前尚未归档的排班结果。"
+              : "确认导入后会立即合并到历史统计；当前尚未归档的排班结果保持不变。"
+          }
         </div>
         <div class="row g-2 mb-3">
           ${this.summary("导入模式", this.dialog.mode)}
@@ -45,6 +50,19 @@ export class WorkbookImportDialogElement extends LightDomElement {
             } 条`
           )}
         </div>
+        ${
+          this.dialog.historySummary
+            ? html`<div class="border rounded p-3 mb-3">
+                <strong>历史统计记录</strong>
+                <div class="small text-secondary mt-1">
+                  共 ${this.dialog.historySummary.total} 条；新增
+                  ${this.dialog.historySummary.added} 条；覆盖
+                  ${this.dialog.historySummary.replaced} 条；无法匹配当前人员
+                  ${this.dialog.historySummary.unmatchedStaff} 条
+                </div>
+              </div>`
+            : ""
+        }
         <div class="border rounded p-3 mb-3">
           <strong>末班重点航班范围</strong>
           <div class="small text-secondary mt-1">
@@ -73,7 +91,8 @@ export class WorkbookImportDialogElement extends LightDomElement {
           @click=${() =>
             dispatchUiCommand(this, { type: "apply-workbook-import" })}
         >
-          <i class="bi bi-check2 me-1"></i>确认导入并重新排班
+          <i class="bi bi-check2 me-1"></i
+          >${changesConfig ? "确认导入并重新排班" : "确认导入历史"}
         </button>
       </div>`;
   }

@@ -3,6 +3,7 @@ import type { AppState } from "../model";
 import type { LegacyScheduleImportPreview } from "../infrastructure/legacy-schedule-excel";
 import {
   applyWorkbookImport,
+  type HistoryImportSummary,
   validateDutyRosterImport,
 } from "./workbook-actions";
 
@@ -15,7 +16,13 @@ export type PreparedWorkbookImport =
       kind: "legacy-schedule";
       preview: LegacyScheduleImportPreview;
     }
-  | { kind: "workbook"; recognized: string; warnings: string[] };
+  | {
+      kind: "workbook";
+      recognized: string;
+      warnings: string[];
+      changedConfig: boolean;
+      historySummary?: HistoryImportSummary;
+    };
 
 export async function prepareWorkbookImport(
   state: AppState,
@@ -54,6 +61,8 @@ export async function prepareWorkbookImport(
   return {
     kind: "workbook",
     recognized: applied.recognized,
+    changedConfig: applied.changedConfig,
+    historySummary: applied.historySummary,
     warnings: [
       ...imported.warnings,
       ...(applied.errors?.map((error) => `导入的班表未写入：${error}`) ?? []),

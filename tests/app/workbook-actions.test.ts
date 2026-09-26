@@ -10,6 +10,8 @@ import {
   validateDutyRosterImport,
 } from "../../src/app/workbook-actions";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
+import { historyFatigue } from "../../src/domain/statistics/fatigue";
+import { samePositionFrequencyProfile } from "../../src/domain/statistics/schedule-frequency";
 import {
   buildConfigWorkbook,
   parseWorkbook,
@@ -248,6 +250,107 @@ describe("workbook actions", () => {
     );
     expect(state.staff).toEqual(originalStaff);
     expect(state.history).toEqual([history]);
+  });
+
+  it("imports configuration history as statistical facts without current qualification checks", () => {
+    const state = createDefaultState();
+    const originalAssignments = [
+      {
+        id: "active-assignment",
+        flightId: state.flights[0]!.id,
+        flightNo: state.flights[0]!.flightNo,
+        positionRuleId: state.positionRules[0]!.id,
+        position: state.positionRules[0]!.name,
+        staffId: state.staff[0]!.id,
+        staffName: state.staff[0]!.name,
+        startTime: state.flights[0]!.startTime,
+        endTime: state.flights[0]!.endTime,
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "当前未归档班表",
+        manualRemark: "",
+        status: "assigned" as const,
+      },
+    ];
+    state.assignments = originalAssignments;
+    state.activeScheduleDate = "2026-09-26";
+    const history = {
+      id: "incoming-history",
+      date: "2026-09-20",
+      flightNo: state.flights[0]!.flightNo,
+      position: state.positionRules[0]!.name,
+      staffId: state.staff[0]!.id,
+      staffName: state.staff[0]!.name,
+      startTime: state.flights[0]!.startTime,
+      endTime: state.flights[0]!.endTime,
+      workHours: 2,
+      fatiguePoints: 4,
+      remark: "旧历史事实",
+    } satisfies HistoryRecord;
+    state.positionRules[0]!.qualifiedStaffIds =
+      state.positionRules[0]!.qualifiedStaffIds.filter(
+        (staffId) => staffId !== history.staffId
+      );
+
+    const result = applyWorkbookImport(
+      state,
+      { history: [history], warnings: [] },
+      "config"
+    );
+
+    expect(result.recognized).toContain("1 条历史负荷");
+    expect(state.history).toEqual([history]);
+    expect(state.assignments).toEqual(originalAssignments);
+    expect(state.activeScheduleDate).toBe("2026-09-26");
+    expect(
+      samePositionFrequencyProfile(
+        state,
+        history.staffId,
+        history.flightNo,
+        history.position,
+        history.remark,
+        "2026-09-26"
+      )
+    ).toEqual({ currentMonthCount: 1, recentWorkdayCount: 1 });
+    expect(
+      historyFatigue(
+        state.history,
+        history.staffId,
+        "2026-09-26",
+        state.settings
+      )
+    ).toBe(4);
+  });
+
+  it("uses imported staff when previewing unmatched history on a fresh device", () => {
+    const state = createDefaultState();
+    const importedPerson = { ...state.staff[0]!, id: "new-device-person" };
+    const history = {
+      id: "new-device-history",
+      date: "2026-09-20",
+      flightNo: "CX937",
+      position: "G20",
+      staffId: importedPerson.id,
+      staffName: importedPerson.name,
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "",
+    } satisfies HistoryRecord;
+
+    const result = applyWorkbookImport(
+      state,
+      { staff: [importedPerson], history: [history], warnings: [] },
+      "config"
+    );
+
+    expect(result.historySummary).toEqual({
+      total: 1,
+      added: 1,
+      replaced: 0,
+      unmatchedStaff: 0,
+    });
   });
 
   it("removes manual standby overrides invalidated by an imported qualification", () => {

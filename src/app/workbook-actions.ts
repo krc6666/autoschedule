@@ -7,27 +7,85 @@ import {
 } from "../domain/duty-roster/roster";
 import { applyScheduleSettingsPatch } from "../domain/rules/schedule-settings";
 import { clearActiveSchedule } from "../domain/kernel/schedule-lifecycle";
-import type { AppState, Assignment, HistoryRecord } from "../model";
+import type { AppState, HistoryRecord } from "../model";
 import { createId, orderPositionRules } from "../utils";
 import {
   createEmptyWeeklyFlightPlans,
   normalizeWeeklyFlightNo,
   replaceWeeklyFlightPlan,
 } from "../domain/flights/weekly-flight-plan";
-import { createScheduleGenerationFacts } from "../domain/shared/scheduling-facts";
-import {
-  assertScheduleAssignmentsSafe,
-  createDefaultScheduleGuards,
-  ScheduleGuardError,
-} from "../domain/kernel/schedule-guard";
 
 export type ImportMode = "all" | "config" | "history";
 
 export interface AppliedWorkbookImport {
   changedConfig: boolean;
   recognized: string;
+  historySummary?: HistoryImportSummary;
   rejected?: number;
   errors?: string[];
+}
+
+export interface HistoryImportSummary {
+  total: number;
+  added: number;
+  replaced: number;
+  unmatchedStaff: number;
+}
+
+function historyKey(
+  record: Pick<
+    HistoryRecord,
+    "date" | "flightNo" | "position" | "staffId" | "staffName"
+  >
+): string {
+  return JSON.stringify([
+    record.date,
+    record.flightNo,
+    record.position,
+    record.staffId ? "id" : "name",
+    record.staffId || record.staffName,
+  ]);
+}
+
+function summarizeHistoryImport(
+  state: AppState,
+  records: readonly HistoryRecord[],
+  importedStaff: AppState["staff"] | undefined
+): HistoryImportSummary {
+  const existingKeys = new Set(state.history.map(historyKey));
+  const incomingKeys = new Set<string>();
+  let added = 0;
+  let replaced = 0;
+  for (const record of records) {
+    const key = historyKey(record);
+    if (existingKeys.has(key) || incomingKeys.has(key)) replaced += 1;
+    else added += 1;
+    incomingKeys.add(key);
+  }
+  const staffIds = new Set(
+    (importedStaff ?? state.staff).map((person) => person.id)
+  );
+  return {
+    total: records.length,
+    added,
+    replaced,
+    unmatchedStaff: records.filter(
+      (record) => !record.staffId || !staffIds.has(record.staffId)
+    ).length,
+  };
+}
+
+function mergeHistoryImport(
+  state: AppState,
+  records: readonly HistoryRecord[]
+): void {
+  const incomingByKey = new Map<string, HistoryRecord>();
+  for (const record of records) incomingByKey.set(historyKey(record), record);
+  const incomingKeys = new Set(incomingByKey.keys());
+  state.history = [
+    ...state.history.filter((record) => !incomingKeys.has(historyKey(record))),
+    ...incomingByKey.values(),
+  ];
 }
 
 function mergePositionRuleQualifications(
@@ -103,75 +161,6 @@ function mergeActiveGroupCrossFlightPriorityRules(
   return [...merged, ...retainedOtherGroupRows];
 }
 
-function importedHistoryAssignments(
-  state: AppState,
-  records: readonly HistoryRecord[]
-): Assignment[] {
-  const flightsByNo = new Map(
-    state.flights.map((flight) => [flight.flightNo, flight])
-  );
-  const rulesByKey = new Map(
-    state.positionRules.map((rule) => [`${rule.flightNo}|${rule.name}`, rule])
-  );
-  return records.flatMap((record) => {
-    if (!record.staffId || !record.staffName) return [];
-    const flight = flightsByNo.get(record.flightNo);
-    const rule = rulesByKey.get(`${record.flightNo}|${record.position}`);
-    // Historical rows may refer to retired flights or positions; only rows
-    // evaluable against the current context enter the hard-constraint guard.
-    if (!flight || !rule) return [];
-    return [
-      {
-        id: record.id,
-        flightId: flight.id,
-        flightNo: record.flightNo,
-        positionRuleId: rule.id,
-        position: record.position,
-        staffId: record.staffId,
-        staffName: record.staffName,
-        startTime: record.startTime,
-        endTime: record.endTime,
-        workHours: record.workHours,
-        fatiguePoints: record.fatiguePoints,
-        remark: record.remark,
-        manualRemark: "",
-        status: "assigned" as const,
-      },
-    ];
-  });
-}
-
-function validateImportedHistory(
-  state: AppState,
-  records: readonly HistoryRecord[]
-): string[] {
-  const assignments = importedHistoryAssignments(state, records);
-  if (!assignments.length) return [];
-  try {
-    const facts = createScheduleGenerationFacts(state);
-    assertScheduleAssignmentsSafe({
-      assignments,
-      context: {
-        phase: "partial",
-        airlineRotationFacts: { positionRules: facts.positionRules },
-        minimumFlightTransitionFacts: {
-          flights: facts.flights,
-          positionRules: facts.positionRules,
-          settings: facts.settings,
-        },
-      },
-      guards: createDefaultScheduleGuards(),
-    });
-    return [];
-  } catch (error) {
-    if (error instanceof ScheduleGuardError)
-      return [
-        ...new Set(error.violations.map((violation) => violation.message)),
-      ];
-    throw error;
-  }
-}
-
 export function applyLegacyScheduleImport(
   state: AppState,
   preview: LegacyScheduleImportPreview,
@@ -179,26 +168,13 @@ export function applyLegacyScheduleImport(
 ): {
   imported: number;
   skipped: number;
-  rejected?: number;
-  errors?: string[];
 } {
   const existing = new Map(
-    state.history.map((record) => [
-      `${record.date}|${record.flightNo}|${record.position}|${record.staffName}`,
-      record,
-    ])
+    state.history.map((record) => [historyKey(record), record])
   );
   const incoming = preview.records.filter(
     (record) => record.status === "ready" && record.staffId && record.staffName
   );
-  const errors = validateImportedHistory(state, incoming);
-  if (errors.length)
-    return {
-      imported: 0,
-      skipped: preview.records.length - incoming.length,
-      rejected: incoming.length,
-      errors,
-    };
   let imported = 0;
   for (const record of incoming) {
     const date = targetDate || record.date;
@@ -210,7 +186,7 @@ export function applyLegacyScheduleImport(
       issue: _issue,
       ...historyRecord
     } = record;
-    const key = `${date}|${record.flightNo}|${record.position}|${record.staffName}`;
+    const key = historyKey({ ...record, date });
     const existingRecord = existing.get(key);
     if (existingRecord) {
       if (existingRecord.id.startsWith("legacy-history-")) {
@@ -301,7 +277,10 @@ export function applyWorkbookImport(
   mode: ImportMode
 ): AppliedWorkbookImport {
   const importConfig = mode !== "history";
-  const importHistory = mode !== "config";
+  const importHistory = imported.history !== undefined;
+  const historySummary = importHistory
+    ? summarizeHistoryImport(state, imported.history ?? [], imported.staff)
+    : undefined;
   const activeStaffIds = new Set(
     (imported.staff ?? state.staff).map((person) => person.id)
   );
@@ -402,33 +381,8 @@ export function applyWorkbookImport(
   }
   if (mode === "all" && imported.flights !== undefined)
     state.flights = imported.flights;
-  const importErrors = importHistory
-    ? validateImportedHistory(state, imported.history ?? [])
-    : [];
-  if (importErrors.length)
-    return {
-      changedConfig: false,
-      recognized: "",
-      rejected: imported.history?.length ?? 0,
-      errors: importErrors,
-    };
-  if (importHistory && imported.history) {
-    const incomingKeys = new Set(
-      imported.history.map(
-        (item) =>
-          `${item.date}|${item.flightNo}|${item.position}|${item.staffName}`
-      )
-    );
-    state.history = [
-      ...state.history.filter(
-        (item) =>
-          !incomingKeys.has(
-            `${item.date}|${item.flightNo}|${item.position}|${item.staffName}`
-          )
-      ),
-      ...imported.history,
-    ];
-  }
+  if (importHistory && imported.history)
+    mergeHistoryImport(state, imported.history);
   const changedConfig =
     importConfig &&
     Boolean(
@@ -467,5 +421,5 @@ export function applyWorkbookImport(
   ]
     .filter(Boolean)
     .join("、");
-  return { changedConfig, recognized };
+  return { changedConfig, recognized, historySummary };
 }

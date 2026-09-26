@@ -306,7 +306,7 @@ describe("legacy horizontal schedule workbook adapter", () => {
     });
   });
 
-  it("rejects imported same-airline priority conflicts before writing history", () => {
+  it("imports old schedule conflicts as historical facts without current safety guards", () => {
     const state = createDefaultState();
     const worker = state.staff.find((person) => person.id === "2")!;
     const preview = {
@@ -356,10 +356,8 @@ describe("legacy horizontal schedule workbook adapter", () => {
 
     const result = applyLegacyScheduleImport(state, preview, "2026-08-19");
 
-    expect(result.imported).toBe(0);
-    expect(result.rejected).toBe(2);
-    expect((result.errors ?? []).join("\n")).toContain("同航司");
-    expect(state.history).toHaveLength(0);
+    expect(result.imported).toBe(2);
+    expect(state.history).toHaveLength(2);
   });
 
   it("upgrades an existing legacy record instead of leaving old metadata behind", () => {

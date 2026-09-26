@@ -170,12 +170,10 @@ function parseOrdinaryPriorityPositions(workbook: XLSX.WorkBook): {
   return {
     present: true,
     value: normalizeOrdinaryPriorityPositions(
-      data
-        .slice(1)
-        .map((row) => ({
-          airlineCode: normalizeText(row[0]),
-          position: normalizeText(row[1]),
-        }))
+      data.slice(1).map((row) => ({
+        airlineCode: normalizeText(row[0]),
+        position: normalizeText(row[1]),
+      }))
     ),
   };
 }
@@ -483,40 +481,73 @@ function parseHistory(
   if (!sheetName) return undefined;
   const data = rows(workbook, sheetName);
   const header = data[0] ?? [];
+  const idIndex = headerIndex(header, ["记录ID", "历史记录ID"], -1);
   const dateIndex = headerIndex(header, ["日期"], 0);
   const flightIndex = headerIndex(header, ["航班号"], -1);
   const positionIndex = headerIndex(header, ["岗位"], 1);
+  const staffIdIndex = headerIndex(header, ["人员编号", "编号"], -1);
   const nameIndex = headerIndex(header, ["姓名"], 2);
   const startIndex = headerIndex(header, ["开始时间"], -1);
   const endIndex = headerIndex(header, ["结束时间"], -1);
   const hoursIndex = headerIndex(header, ["工作时长"], 3);
   const fatigueIndex = headerIndex(header, ["疲劳点"], -1);
   const remarkIndex = headerIndex(header, ["备注"], 4);
+  const coverageIndex = headerIndex(header, ["历史覆盖范围"], -1);
+  const gapFillIndex = headerIndex(header, ["分队长补差"], -1);
   return data.slice(1).flatMap((row) => {
     const date = normalizeText(row[dateIndex]).slice(0, 10);
     const staffName = normalizeText(row[nameIndex]);
     const position = normalizePosition(row[positionIndex]);
     if (!date || !staffName || !position) return [];
+    const importedStaffId =
+      staffIdIndex >= 0 ? normalizeText(row[staffIdIndex]) : "";
     const startTime =
       startIndex >= 0 ? normalizeTime(normalizeText(row[startIndex])) : "";
     const endTime =
       endIndex >= 0 ? normalizeTime(normalizeText(row[endIndex])) : "";
-    const hours = Number(row[hoursIndex]) || durationHours(startTime, endTime);
+    const rawHours = row[hoursIndex];
+    const parsedHours = Number(rawHours);
+    const hours =
+      normalizeText(rawHours) !== "" && Number.isFinite(parsedHours)
+        ? parsedHours
+        : durationHours(startTime, endTime);
+    const rawFatigue = fatigueIndex >= 0 ? row[fatigueIndex] : "";
+    const parsedFatigue = Number(rawFatigue);
+    const historyCoverage =
+      coverageIndex >= 0 &&
+      (normalizeText(row[coverageIndex]) === "complete" ||
+        normalizeText(row[coverageIndex]) === "late-priority-only")
+        ? (normalizeText(
+            row[coverageIndex]
+          ) as HistoryRecord["historyCoverage"])
+        : undefined;
+    const teamLeaderGapFill =
+      gapFillIndex >= 0 &&
+      ["是", "true", "1"].includes(
+        normalizeText(row[gapFillIndex]).toLowerCase()
+      )
+        ? true
+        : undefined;
     return [
       {
-        id: createId("history"),
+        id:
+          (idIndex >= 0 && normalizeText(row[idIndex])) || createId("history"),
         date,
         flightNo:
           flightIndex >= 0 ? normalizeText(row[flightIndex]).toUpperCase() : "",
         position,
-        staffId: staffIdByName(staff, staffName),
+        staffId: importedStaffId || staffIdByName(staff, staffName),
         staffName,
         startTime,
         endTime,
         workHours: hours,
         fatiguePoints:
-          fatigueIndex >= 0 ? Number(row[fatigueIndex]) || hours : hours,
+          normalizeText(rawFatigue) !== "" && Number.isFinite(parsedFatigue)
+            ? parsedFatigue
+            : hours,
         remark: normalizeText(row[remarkIndex]),
+        ...(historyCoverage ? { historyCoverage } : {}),
+        ...(teamLeaderGapFill ? { teamLeaderGapFill } : {}),
       },
     ];
   });
@@ -801,6 +832,43 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
       ]),
     ],
     [12, 14, 12, 18, 12, 16]
+  );
+  append(
+    workbook,
+    "历史排班",
+    [
+      [
+        "记录ID",
+        "日期",
+        "航班号",
+        "岗位",
+        "人员编号",
+        "姓名",
+        "开始时间",
+        "结束时间",
+        "工作时长(小时)",
+        "疲劳点数",
+        "备注",
+        "历史覆盖范围",
+        "分队长补差",
+      ],
+      ...state.history.map((record) => [
+        record.id,
+        record.date,
+        record.flightNo,
+        record.position,
+        record.staffId,
+        record.staffName,
+        record.startTime,
+        record.endTime,
+        record.workHours,
+        record.fatiguePoints,
+        record.remark,
+        record.historyCoverage ?? "",
+        record.teamLeaderGapFill ? "是" : "否",
+      ]),
+    ],
+    [18, 12, 12, 18, 16, 14, 12, 12, 16, 12, 32, 20, 14]
   );
   return workbook;
 }

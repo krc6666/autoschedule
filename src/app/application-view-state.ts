@@ -13,6 +13,7 @@ import type { FlightSelectionCandidate } from "../domain/flights/next-workday-fl
 import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
 import type { HalfRestMode } from "../domain/shared/schedule-run-preferences";
 import type { TeamLeaderGapFillPreview } from "../domain/coverage/team-leader-gap-fill";
+import type { HistoryImportSummary } from "./workbook-actions";
 
 export type ApplicationDialog =
   | { kind: "templates" }
@@ -54,6 +55,8 @@ export type ApplicationDialog =
       importedState: AppState;
       recognized: string;
       warnings: string[];
+      changedConfig: boolean;
+      historySummary?: HistoryImportSummary;
     }
   | {
       kind: "swap-analysis";
