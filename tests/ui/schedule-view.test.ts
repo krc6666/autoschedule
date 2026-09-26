@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { createDefaultState } from "../../src/defaults";
+import type { Assignment, PositionRule } from "../../src/model";
 import { generateSchedule } from "../helpers/generate-schedule";
 import { schedulingDecision } from "../../src/domain/rules/schedule-rule-contract";
 import { buildMonthlyRelaxedShiftStatistics } from "../../src/domain/statistics/relaxed-shift-statistics";
@@ -1260,5 +1261,225 @@ describe("schedule page", () => {
         ?.closest(".schedule-cell")
         ?.classList.contains("is-manual-override-warning")
     ).toBe(true);
+  }, 30_000);
+
+  it("highlights every assigned cell in a real cross-flight time conflict", async () => {
+    const state = createDefaultState();
+    const firstStaff = state.staff[0]!;
+    const secondStaff = state.staff[1]!;
+    const baseFlight = state.flights[0]!;
+    const baseRule = state.positionRules[0]!;
+    const guideCategory =
+      state.positionRules.find((item) => item.category !== baseRule.category)
+        ?.category ?? baseRule.category;
+    const flights = [
+      {
+        ...baseFlight,
+        id: "time-a",
+        flightNo: "TIMEA",
+        startTime: "08:00",
+        endTime: "10:00",
+        positions: ["A"],
+      },
+      {
+        ...baseFlight,
+        id: "time-b",
+        flightNo: "TIMEB",
+        startTime: "09:00",
+        endTime: "11:00",
+        positions: ["B"],
+      },
+      {
+        ...baseFlight,
+        id: "time-c",
+        flightNo: "TIMEC",
+        startTime: "11:00",
+        endTime: "12:00",
+        positions: ["C"],
+      },
+      {
+        ...baseFlight,
+        id: "time-same",
+        flightNo: "TIMESAME",
+        startTime: "13:00",
+        endTime: "14:00",
+        positions: ["regular", "guide"],
+      },
+    ];
+    const rules: PositionRule[] = [
+      ...["a", "b", "c"].map((id, index) => ({
+        ...baseRule,
+        id: `time-rule-${id}`,
+        flightNo: flights[index]!.flightNo,
+        name: id,
+        qualifiedStaffIds: [firstStaff.id],
+      })),
+      {
+        ...baseRule,
+        id: "same-regular-rule",
+        flightNo: "TIMESAME",
+        name: "regular",
+        qualifiedStaffIds: [secondStaff.id],
+      },
+      {
+        ...baseRule,
+        id: "same-guide-rule",
+        flightNo: "TIMESAME",
+        name: "guide",
+        category: guideCategory,
+        qualifiedStaffIds: [secondStaff.id],
+      },
+    ];
+    const makeAssignment = (
+      id: string,
+      flight: (typeof flights)[number],
+      rule: PositionRule,
+      staffId: string | null,
+      status: "assigned" | "unfilled" = "assigned"
+    ): Assignment => ({
+      id,
+      flightId: flight.id,
+      flightNo: flight.flightNo,
+      positionRuleId: rule.id,
+      position: rule.name,
+      staffId,
+      staffName: staffId
+        ? (state.staff.find((person) => person.id === staffId)?.name ?? "")
+        : "",
+      startTime: flight.startTime,
+      endTime: flight.endTime,
+      workHours: 1,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status,
+    });
+    const overlapA = makeAssignment(
+      "time-assignment-a",
+      flights[0]!,
+      rules[0]!,
+      firstStaff.id
+    );
+    const overlapB = makeAssignment(
+      "time-assignment-b",
+      flights[1]!,
+      rules[1]!,
+      firstStaff.id
+    );
+    overlapB.manualOverrideWarnings = [
+      { code: "position-qualification", message: "manual warning" },
+    ];
+    const nonOverlap = makeAssignment(
+      "time-assignment-c",
+      flights[2]!,
+      rules[2]!,
+      firstStaff.id
+    );
+    const sameFlightRegular = makeAssignment(
+      "same-flight-regular",
+      flights[3]!,
+      rules[3]!,
+      secondStaff.id
+    );
+    const sameFlightGuide = makeAssignment(
+      "same-flight-guide",
+      flights[3]!,
+      rules[4]!,
+      secondStaff.id
+    );
+    const missing = makeAssignment(
+      "time-assignment-missing",
+      flights[1]!,
+      rules[1]!,
+      null,
+      "unfilled"
+    );
+    state.flights = flights;
+    state.positionRules = rules;
+    state.assignments = [
+      overlapA,
+      overlapB,
+      nonOverlap,
+      sameFlightRegular,
+      sameFlightGuide,
+      missing,
+    ];
+
+    const element = await mountElement<
+      HTMLElement & { model: typeof state; updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-08-01",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+    });
+    const grid = element.querySelector<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-grid");
+    await grid?.updateComplete;
+    const personCell = (id: string) =>
+      element.querySelector<HTMLElement>(
+        `.schedule-person-cell[data-assignment-id="${id}"]`
+      )!;
+
+    expect(personCell(overlapA.id).classList.contains("is-time-conflict")).toBe(
+      true
+    );
+    expect(personCell(overlapB.id).classList.contains("is-time-conflict")).toBe(
+      true
+    );
+    expect(
+      personCell(overlapB.id).classList.contains("is-manual-override-warning")
+    ).toBe(true);
+    expect(
+      personCell(nonOverlap.id).classList.contains("is-time-conflict")
+    ).toBe(false);
+    expect(
+      personCell(sameFlightRegular.id).classList.contains("is-time-conflict")
+    ).toBe(false);
+    expect(
+      personCell(sameFlightGuide.id).classList.contains("is-time-conflict")
+    ).toBe(false);
+    expect(personCell(missing.id).classList.contains("is-unfilled")).toBe(true);
+    expect(personCell(missing.id).classList.contains("is-time-conflict")).toBe(
+      false
+    );
+
+    const resolvedState = structuredClone(state);
+    const resolvedOverlap = resolvedState.assignments.find(
+      (assignment) => assignment.id === overlapB.id
+    )!;
+    const resolvedFlight = resolvedState.flights.find(
+      (flight) => flight.id === resolvedOverlap.flightId
+    )!;
+    resolvedFlight.startTime = "12:00";
+    resolvedFlight.endTime = "13:00";
+    resolvedOverlap.startTime = resolvedFlight.startTime;
+    resolvedOverlap.endTime = resolvedFlight.endTime;
+    element.model = {
+      ...resolvedState,
+      assignments: [...resolvedState.assignments],
+    };
+    await element.updateComplete;
+    await settleLit();
+    const updatedGrid = element.querySelector<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-grid");
+    await updatedGrid?.updateComplete;
+    expect(
+      element
+        .querySelector<HTMLElement>(
+          `.schedule-person-cell[data-assignment-id="${overlapA.id}"]`
+        )
+        ?.classList.contains("is-time-conflict")
+    ).toBe(false);
+    expect(
+      element
+        .querySelector<HTMLElement>(
+          `.schedule-person-cell[data-assignment-id="${overlapB.id}"]`
+        )
+        ?.classList.contains("is-time-conflict")
+    ).toBe(false);
   }, 30_000);
 });

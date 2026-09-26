@@ -138,6 +138,7 @@ export class ScheduleGridElement extends LightDomElement {
     const ke166Unfilled =
       assignment.status === "unfilled" &&
       Boolean(flight && rule && isKe166MobileSupervisor(flight, rule));
+    const timeConflict = this.view.timeConflictAssignmentIds.has(assignment.id);
     const belowPassengerThreshold = Boolean(
       flight && rule && !meetsPassengerThreshold(flight, rule)
     );
@@ -159,6 +160,7 @@ export class ScheduleGridElement extends LightDomElement {
       diversion ? "is-diversion" : "",
       warning ? "is-soft-rule-warning" : "",
       manualWarning ? "is-manual-override-warning" : "",
+      timeConflict ? "is-time-conflict" : "",
       halfRestUnfilled ? "is-half-rest-unfilled" : "",
     ]
       .filter(Boolean)

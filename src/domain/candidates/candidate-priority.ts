@@ -1,6 +1,9 @@
 import type { Assignment, Staff } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
-import { administrativeSupportAutomaticRule } from "../flights/schedule-position-rules";
+import {
+  administrativeSupportAutomaticRule,
+  isGuideAssignment,
+} from "../flights/schedule-position-rules";
 import {
   priorityPositionScarceQualification,
   scarceQualificationPriority,
@@ -123,6 +126,7 @@ export function assessScarceQualificationSnapshot(
   const rules = new Map(state.positionRules.map((rule) => [rule.id, rule]));
   return assignments.flatMap((assignment) => {
     if (assignment.status !== "assigned" || !assignment.staffId) return [];
+    if (isGuideAssignment(state, assignment)) return [];
     const rule = assignment.positionRuleId
       ? rules.get(assignment.positionRuleId)
       : undefined;

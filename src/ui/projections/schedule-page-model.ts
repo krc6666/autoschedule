@@ -4,12 +4,14 @@ import { currentEarlyDepartureLastAssignmentIds } from "../../domain/statistics/
 import { buildScheduleFeedback } from "../../domain/feedback/schedule-feedback";
 import {
   activeFlightRules,
+  assignmentRule,
   compareGuideSourceAssignments,
   guideSourceStaff,
   isFixedBottomPosition,
 } from "../../domain/flights/schedule-position-rules";
 import { countedWorkloadAssignments } from "../../domain/shared/workload-accounting";
 import { availableStaffForManualAssignment } from "../../domain/candidates/assignment-eligibility";
+import { assignmentConflictFacts } from "../../domain/candidates/assignment-eligibility-facts";
 import type { AppState, Assignment, Staff } from "../../model";
 
 export type LoadSortField =
@@ -48,6 +50,34 @@ function isBottomAssignment(state: AppState, assignment: Assignment): boolean {
   return (
     rule?.category === "引导" || isFixedBottomPosition(assignment.position)
   );
+}
+
+function timeConflictAssignmentIds(state: AppState): Set<string> {
+  const assigned = state.assignments.filter((assignment) => assignment.staffId);
+  const conflictIds = new Set<string>();
+  for (const assignment of assigned) {
+    const staff = state.staff.find(
+      (person) => person.id === assignment.staffId
+    );
+    const flight = state.flights.find(
+      (item) => item.id === assignment.flightId
+    );
+    if (!staff || !flight) continue;
+    const conflicts = assignmentConflictFacts({
+      state,
+      assignments: assigned.filter((item) => item.id !== assignment.id),
+      flight,
+      rule: assignmentRule(state, assignment),
+      person: staff,
+      sameFlightConflict: "allow-all",
+    }).blockingConflicts;
+    for (const conflict of conflicts) {
+      if (conflict.flightId === assignment.flightId) continue;
+      conflictIds.add(assignment.id);
+      conflictIds.add(conflict.id);
+    }
+  }
+  return conflictIds;
 }
 
 export function buildSchedulePageModel(
@@ -119,6 +149,10 @@ export function buildSchedulePageModel(
       availableStaffForManualAssignment(state, assignment.id),
     ])
   );
+  const timeConflictAssignmentIds = timeConflictAssignmentIdsForDate(
+    state,
+    flights
+  );
   const loads = buildStaffLoads(
     state.staff.filter((person) => person.staffType !== "行政支援"),
     countedWorkloadAssignments(state),
@@ -142,6 +176,7 @@ export function buildSchedulePageModel(
     loads,
     feedback: buildScheduleFeedback(state, date),
     candidateStaffByAssignmentId,
+    timeConflictAssignmentIds,
     primaryRowCount:
       Math.max(0, ...groups.map((group) => group.primary.length)) + 1,
     bottomRowCount:
@@ -170,6 +205,20 @@ export function buildSchedulePageModel(
       "--schedule-divider-height": scaled(20),
     },
   };
+}
+
+function timeConflictAssignmentIdsForDate(
+  state: AppState,
+  flights: AppState["flights"]
+): Set<string> {
+  const flightIds = new Set(flights.map((flight) => flight.id));
+  const scopedState = {
+    ...state,
+    assignments: state.assignments.filter((assignment) =>
+      flightIds.has(assignment.flightId)
+    ),
+  };
+  return timeConflictAssignmentIds(scopedState);
 }
 
 export type SchedulePageModel = ReturnType<typeof buildSchedulePageModel>;

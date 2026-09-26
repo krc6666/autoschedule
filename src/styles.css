@@ -1982,6 +1982,15 @@ autoschedule-schedule-grid {
   background: #e8f5e9;
   box-shadow: inset 3px 0 0 #2e7d32;
 }
+.schedule-cell.is-time-conflict {
+  background: #f1e8ff;
+  box-shadow: inset 3px 0 0 #7c3aed;
+}
+.schedule-cell.is-unfilled.is-time-conflict {
+  border-color: #d94343;
+  background: #fff0f0;
+  box-shadow: inset 3px 0 0 #d94343;
+}
 .schedule-soft-warning-icon {
   flex: 0 0 auto;
   color: #ad6800;
