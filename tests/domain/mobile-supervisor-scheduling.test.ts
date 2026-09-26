@@ -516,4 +516,84 @@ describe("all-flight mobile-supervisor scheduling", { timeout: 15_000 }, () => {
     ).toThrow(/机动督导.*兼任关联/);
     expect(ledger.snapshot()).toEqual(valid);
   });
+
+  it("allows a guide to reuse a KE166 supervisor without a counter link", () => {
+    const state = singleFlightState();
+    const supervisorWorker = state.staff[0]!;
+    state.staff = [supervisorWorker];
+    const base = state.positionRules[0]!;
+    const supervisorRule: PositionRule = {
+      ...base,
+      id: "ke166-supervisor",
+      flightNo: "CX931",
+      name: "机动督导",
+      category: "机动督导",
+      remark: "",
+      minPassengers: 0,
+      qualifiedStaffIds: [supervisorWorker.id],
+    };
+    const counterRule: PositionRule = {
+      ...base,
+      id: "cx931-counter",
+      flightNo: "CX931",
+      name: "G09",
+      category: "常规",
+      remark: "",
+      minPassengers: 0,
+      qualifiedStaffIds: [supervisorWorker.id],
+    };
+    const guideRule: PositionRule = {
+      ...base,
+      id: "cx931-guide",
+      flightNo: "CX931",
+      name: "柜台引导",
+      category: "引导",
+      remark: "",
+      minPassengers: 0,
+      qualifiedStaffIds: [],
+    };
+    state.positionRules = [supervisorRule, counterRule, guideRule];
+    const assignment = (
+      id: string,
+      positionRuleId: string,
+      position: string,
+      workHours: number,
+      supervisorSourceAssignmentId?: string
+    ): Assignment => ({
+      id,
+      flightId: "cx931",
+      flightNo: "CX931",
+      positionRuleId,
+      position,
+      staffId: supervisorWorker.id,
+      staffName: supervisorWorker.name,
+      startTime: "21:00",
+      endTime: "23:00",
+      workHours,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+      ...(supervisorSourceAssignmentId ? { supervisorSourceAssignmentId } : {}),
+    });
+    const valid = [
+      assignment("supervisor", supervisorRule.id, supervisorRule.name, 2),
+      assignment("counter", counterRule.id, counterRule.name, 0, "supervisor"),
+      assignment("guide", guideRule.id, guideRule.name, 0),
+    ];
+    const ledger = createScheduleLedger(valid, {
+      safetySession: createScheduleSafetySessionFromContext({
+        guards: [createMobileSupervisorCoverageScheduleGuard()],
+        context: {
+          phase: "partial",
+          mobileSupervisorCoverageFacts: { state, date: DATE },
+        },
+      }),
+    });
+
+    expect(() =>
+      ledger.commit({ type: "replace", assignments: valid })
+    ).not.toThrow();
+    expect(ledger.snapshot()).toEqual(valid);
+  });
 });

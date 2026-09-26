@@ -60,7 +60,10 @@ import {
   sameFlightStaffExclusionViolations,
 } from "../rules/same-flight-staff-exclusion";
 import { evaluateMobileSupervisorCoverage } from "../coverage/mobile-supervisor-coverage";
-import { assignmentRule } from "../flights/schedule-position-rules";
+import {
+  assignmentRule,
+  isGuideAssignment,
+} from "../flights/schedule-position-rules";
 
 /**
  * The phase controls which invariants are meaningful for a partial result.
@@ -923,6 +926,7 @@ export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
             assignment.flightId === supervisor.flightId &&
             assignment.status === "assigned" &&
             assignment.staffId === supervisor.staffId &&
+            !isGuideAssignment(facts.state, assignment) &&
             assignment.supervisorSourceAssignmentId !== supervisor.id
         );
         return unlinked
