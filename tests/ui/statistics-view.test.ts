@@ -103,9 +103,9 @@ describe("statistics page", () => {
       `.ordinary-priority-count-detail[data-staff-id="${staff[0]!.id}"][data-airline-code="AK"][data-position="G08"]`
     )!;
     expect(detail.open).toBe(false);
-    expect(detail.querySelector("summary")?.textContent?.trim()).toBe("1");
+    expect(detail.querySelector("summary")?.textContent?.trim()).toBe("2");
     expect(detail.textContent?.replace(/\s+/g, " ")).toContain(
-      "实际 0 · 修正 +1"
+      "实际 1 · 修正 +1"
     );
 
     const commands: UiCommandEvent["detail"][] = [];

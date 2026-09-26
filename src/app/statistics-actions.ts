@@ -8,7 +8,7 @@ import { buildMonthlyLatePriorityStatistics } from "../domain/statistics/monthly
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
 import type { AppState } from "../model";
 import { mergeOrdinaryPriorityFrequencyAdjustments } from "../domain/statistics/ordinary-priority-frequency-adjustment";
-import { ordinaryPriorityPositionKey } from "../domain/reviews/position-rotation-policy";
+import { ordinaryPriorityConfigurationKey } from "../domain/reviews/position-rotation-policy";
 import type { LatePriorityCountsImportPreview } from "../infrastructure/late-priority-counts-excel";
 
 function normalizedFlightNo(flightNo: string): string {
@@ -226,11 +226,10 @@ export function updateOrdinaryPriorityFrequencyAdjustment(
 ): boolean {
   const normalizedDelta = Math.trunc(delta);
   if (!normalizedDelta || !/^\d{4}-\d{2}$/.test(month)) return false;
-  const key = ordinaryPriorityPositionKey(`${airlineCode}0`, position, "");
+  const key = ordinaryPriorityConfigurationKey(airlineCode, position);
   const configured = state.settings.ordinaryPriorityPositions.some(
     (item) =>
-      ordinaryPriorityPositionKey(`${item.airlineCode}0`, item.position, "") ===
-      key
+      ordinaryPriorityConfigurationKey(item.airlineCode, item.position) === key
   );
   if (!configured || !state.staff.some((person) => person.id === staffId))
     return false;
@@ -238,8 +237,7 @@ export function updateOrdinaryPriorityFrequencyAdjustment(
     (item) =>
       item.month === month &&
       item.staffId === staffId &&
-      ordinaryPriorityPositionKey(`${item.airlineCode}0`, item.position, "") ===
-        key
+      ordinaryPriorityConfigurationKey(item.airlineCode, item.position) === key
   );
   if (existing) existing.delta += normalizedDelta;
   else

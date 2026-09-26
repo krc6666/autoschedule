@@ -52,12 +52,7 @@ export function buildOrdinaryPriorityStatistics(
               record.flightNo,
               record.position,
               record.remark
-            ) ===
-              ordinaryPriorityPositionKey(
-                `${item.airlineCode}0`,
-                item.position,
-                ""
-              )
+            ) === configuredKey
         ).length +
         state.assignments.filter((assignment) => {
           const rule = assignmentRule(state, assignment);
@@ -70,12 +65,7 @@ export function buildOrdinaryPriorityStatistics(
               assignment.flightNo,
               assignment.position,
               assignment.remark
-            ) ===
-              ordinaryPriorityPositionKey(
-                `${item.airlineCode}0`,
-                item.position,
-                ""
-              )
+            ) === configuredKey
           );
         }).length;
       const manualCorrection = (
@@ -85,16 +75,10 @@ export function buildOrdinaryPriorityStatistics(
           (adjustment) =>
             adjustment.month === month &&
             adjustment.staffId === staff.id &&
-            ordinaryPriorityPositionKey(
-              `${adjustment.airlineCode}0`,
-              adjustment.position,
-              ""
-            ) ===
-              ordinaryPriorityPositionKey(
-                `${item.airlineCode}0`,
-                item.position,
-                ""
-              )
+            ordinaryPriorityConfigurationKey(
+              adjustment.airlineCode,
+              adjustment.position
+            ) === configuredKey
         )
         .reduce(
           (sum, adjustment) =>
