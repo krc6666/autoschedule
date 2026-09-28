@@ -14,6 +14,7 @@ import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
+  MobileSupervisorFillRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
   SameFlightStaffExclusion,
@@ -379,6 +380,55 @@ function parseSupervisorCoverage(
   );
 }
 
+function parseSupervisorFillRules(
+  workbook: XLSX.WorkBook
+): ParsedRuleSheet<MobileSupervisorFillRule> {
+  return parseRuleSheet(
+    workbook,
+    structuredPolicySheet("mobileSupervisorFillRules"),
+    (row, header) => {
+      const enabled = parseBoolean(cell(row, header, ["启用"], 1));
+      const allowAutomatic = parseBoolean(
+        cell(row, header, ["允许自动补位"], 6)
+      );
+      const allowManual = parseBoolean(cell(row, header, ["允许人工补位"], 7));
+      const sourceFlightNo = cell(row, header, ["来源航班"], 2).toUpperCase();
+      const sourcePositionKeyword = cell(row, header, ["来源岗位关键词"], 3);
+      const targetFlightNo = cell(row, header, ["目标航班"], 4).toUpperCase();
+      const targetPositionKeyword = cell(row, header, ["目标岗位关键词"], 5);
+      const errors = [
+        enabled === undefined ? "启用值必须填写是或否" : "",
+        !sourceFlightNo ? "来源航班不能为空" : "",
+        !sourcePositionKeyword ? "来源岗位关键词不能为空" : "",
+        !targetFlightNo ? "目标航班不能为空" : "",
+        !targetPositionKeyword ? "目标岗位关键词不能为空" : "",
+        allowAutomatic === undefined ? "允许自动补位必须填写是或否" : "",
+        allowManual === undefined ? "允许人工补位必须填写是或否" : "",
+      ].filter(Boolean);
+      if (
+        errors.length ||
+        enabled === undefined ||
+        allowAutomatic === undefined ||
+        allowManual === undefined
+      )
+        return { errors };
+      return {
+        errors: [],
+        value: {
+          id: ruleId(cell(row, header, ["规则ID", "ID"], 0), "supervisor-fill"),
+          enabled,
+          sourceFlightNo,
+          sourcePositionKeyword,
+          targetFlightNo,
+          targetPositionKeyword,
+          allowAutomatic,
+          allowManual,
+        },
+      };
+    }
+  );
+}
+
 function parseCrossWorkdayReservations(
   workbook: XLSX.WorkBook
 ): ParsedRuleSheet<CrossWorkdayQualificationReservation> {
@@ -580,6 +630,7 @@ export function parseScheduleRuleSettings(
   const recoveryTargets = parseRecoveryTargets(workbook);
   const lateShiftPositions = parseLateShiftPositions(workbook);
   const supervisorCoverage = parseSupervisorCoverage(workbook);
+  const supervisorFill = parseSupervisorFillRules(workbook);
   const crossWorkdayReservations = parseCrossWorkdayReservations(workbook);
   const latePriorityFlightScope = parseLatePriorityFlightScope(workbook);
   const crossFlightPriority = parseCrossFlightPriorityPolicies(workbook, staff);
@@ -596,6 +647,7 @@ export function parseScheduleRuleSettings(
     recoveryTargets.present ||
     lateShiftPositions.present ||
     supervisorCoverage.present ||
+    supervisorFill.present ||
     crossWorkdayReservations.present ||
     latePriorityFlightScope.present ||
     crossFlightPriority.present ||
@@ -608,6 +660,7 @@ export function parseScheduleRuleSettings(
     recoveryTargets.value !== undefined ||
     lateShiftPositions.value !== undefined ||
     supervisorCoverage.value !== undefined ||
+    supervisorFill.value !== undefined ||
     crossWorkdayReservations.value !== undefined ||
     latePriorityFlightScope.value !== undefined ||
     crossFlightPriority.value !== undefined ||
@@ -626,6 +679,8 @@ export function parseScheduleRuleSettings(
     settings.lateShiftRecoveryPositionRules = lateShiftPositions.value;
   if (settings && supervisorCoverage.value)
     settings.mobileSupervisorCoverageRules = supervisorCoverage.value;
+  if (settings && supervisorFill.value)
+    settings.mobileSupervisorFillRules = supervisorFill.value;
   if (settings && crossWorkdayReservations.value)
     settings.crossWorkdayQualificationReservations =
       crossWorkdayReservations.value;
@@ -648,6 +703,7 @@ export function parseScheduleRuleSettings(
       ...recoveryTargets.warnings,
       ...lateShiftPositions.warnings,
       ...supervisorCoverage.warnings,
+      ...supervisorFill.warnings,
       ...crossWorkdayReservations.warnings,
       ...latePriorityFlightScope.warnings,
       ...crossFlightPriority.warnings,
@@ -781,6 +837,33 @@ export function appendScheduleRuleSheets(
       ]),
     ],
     [32, 10, 24, 16, 24, 14]
+  );
+  append(
+    workbook,
+    structuredPolicySheet("mobileSupervisorFillRules"),
+    [
+      [
+        "规则ID",
+        "启用",
+        "来源航班",
+        "来源岗位关键词",
+        "目标航班",
+        "目标岗位关键词",
+        "允许自动补位",
+        "允许人工补位",
+      ],
+      ...state.settings.mobileSupervisorFillRules.map((rule) => [
+        rule.id,
+        rule.enabled ? "是" : "否",
+        rule.sourceFlightNo,
+        rule.sourcePositionKeyword,
+        rule.targetFlightNo,
+        rule.targetPositionKeyword,
+        rule.allowAutomatic ? "是" : "否",
+        rule.allowManual ? "是" : "否",
+      ]),
+    ],
+    [32, 10, 16, 24, 16, 24, 16, 16]
   );
   append(
     workbook,

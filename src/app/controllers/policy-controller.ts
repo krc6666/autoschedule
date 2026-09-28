@@ -77,6 +77,8 @@ export class PolicyController implements UiCommandController {
           policy.addLateShiftPosition();
         else if (command.collection === "supervisor")
           policy.addSupervisorCoverage();
+        else if (command.collection === "supervisor-fill")
+          policy.addSupervisorFill();
         else policy.addTransition();
         this.context.commit("已新增规则项");
         return true;
@@ -123,7 +125,9 @@ export class PolicyController implements UiCommandController {
                   ? policy.deleteLateShiftPosition(id)
                   : collection === "supervisor"
                     ? policy.deleteSupervisorCoverage(id)
-                    : policy.deleteTransition(id);
+                    : collection === "supervisor-fill"
+                      ? policy.deleteSupervisorFill(id)
+                      : policy.deleteTransition(id);
     if (deleted) this.context.commit("规则配置已删除");
     return true;
   }

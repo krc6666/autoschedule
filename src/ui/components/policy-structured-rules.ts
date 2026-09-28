@@ -31,8 +31,8 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     return html`
       ${this.sameFlightStaffExclusions()} ${this.dutyPriorities()}
       ${this.crossFlightPriorities()} ${this.crossWorkdayReservations()}
-      ${this.recoveryRules()} ${this.supervisorRules()}
-      ${this.transitionRules()}
+      ${this.recoveryRules()} ${this.supervisorFillRules()}
+      ${this.supervisorRules()} ${this.transitionRules()}
     `;
   }
 
@@ -471,6 +471,63 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     </details>`;
   }
 
+  private supervisorFillRules() {
+    const items = this.model.settings.mobileSupervisorFillRules;
+    if (
+      !matchesPolicySearch(
+        this.query,
+        "督导补位关系",
+        "人手不足",
+        "来源航班",
+        "来源岗位",
+        "目标航班",
+        "目标岗位",
+        items.map((item) => [
+          item.sourceFlightNo,
+          item.sourcePositionKeyword,
+          item.targetFlightNo,
+          item.targetPositionKeyword,
+        ])
+      )
+    )
+      return nothing;
+    return html`<details
+      class="policy-rule-card"
+      data-supervisor-fill
+      ?open=${Boolean(normalizePolicySearchQuery(this.query))}
+    >
+      <summary>
+        <span
+          ><strong>督导补位关系</strong
+          ><small
+            >${items.filter((item) => item.enabled).length} 条启用 ·
+            仅在人手不足且没有安全普通候选时生效</small
+          ></span
+        ><i class="bi bi-chevron-down"></i>
+      </summary>
+      <div class="policy-rule-content">
+        <div class="d-flex justify-content-end mb-2">
+          ${this.addButton("mobileSupervisorFillRules", "新增补位关系")}
+        </div>
+        <div class="supervisor-coverage-list">
+          ${items.map(
+            (rule) =>
+              html`<div class="supervisor-coverage-row">
+                ${this.toggle("supervisor-fill", rule.id, "enabled", rule.enabled, "启用")}
+                ${this.field("supervisor-fill", rule.id, "sourceFlightNo", rule.sourceFlightNo, "来源航班")}
+                ${this.field("supervisor-fill", rule.id, "sourcePositionKeyword", rule.sourcePositionKeyword, "来源岗位")}
+                ${this.field("supervisor-fill", rule.id, "targetFlightNo", rule.targetFlightNo, "目标航班")}
+                ${this.field("supervisor-fill", rule.id, "targetPositionKeyword", rule.targetPositionKeyword, "目标岗位")}
+                ${this.toggle("supervisor-fill", rule.id, "allowAutomatic", rule.allowAutomatic, "自动补位")}
+                ${this.toggle("supervisor-fill", rule.id, "allowManual", rule.allowManual, "人工补位")}
+                ${this.deleteButton("mobileSupervisorFillRules", rule.id)}
+              </div>`
+          )}
+        </div>
+      </div>
+    </details>`;
+  }
+
   private transitionRules() {
     const items = this.model.settings.positionTransitionPolicies;
     if (
@@ -564,6 +621,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
         class="form-control form-control-sm"
         type=${type}
         placeholder=${placeholder}
+        aria-label=${label}
         .value=${String(value)}
         @change=${(event: Event) => dispatchUiCommand(this, { type: "update-policy", entity, id, field, value: inputValue(event.currentTarget as HTMLInputElement) })}
     /></label>`;
@@ -581,6 +639,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       >${label}<select
         ${dynamicSelectValue(value)}
         class="form-select form-select-sm"
+        aria-label=${label}
         .value=${value}
         @change=${(event: Event) => dispatchUiCommand(this, { type: "update-policy", entity, id, field, value: (event.currentTarget as HTMLSelectElement).value })}
       >

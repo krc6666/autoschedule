@@ -572,6 +572,7 @@ describe("workbook boundary", () => {
     const defaultState = createDefaultState();
     const { adminSupportEnabled: _adminSupportEnabled, ...defaultSettings } =
       defaultState.settings;
+    expect(imported.warnings).toEqual([]);
     expect(imported.settings).toEqual(defaultSettings);
     expect(imported.weeklyFlightPlans).toEqual(defaultState.weeklyFlightPlans);
   });
@@ -637,6 +638,21 @@ describe("workbook boundary", () => {
         mode: "forbid",
       },
     ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "supervisor-fill-export",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "机动督导",
+        targetFlightNo: "TR121",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: false,
+      },
+    ];
+    state.positionRules.find(
+      (rule) => rule.flightNo === "TR121" && rule.name === "H05"
+    )!.coverageRole = "supervisor-fill";
     state.settings.crossWorkdayQualificationReservations = [
       {
         id: "reservation-export",
@@ -663,6 +679,7 @@ describe("workbook boundary", () => {
         "次班恢复目标",
         "末班重点岗位",
         "机动督导范围",
+        "督导补位关系",
         "跨工作日资质预留",
         "末班重点航班范围",
         "分队长补差保护范围",
@@ -672,6 +689,11 @@ describe("workbook boundary", () => {
     const { adminSupportEnabled: _adminSupportEnabled, ...exportedSettings } =
       state.settings;
     expect(imported.settings).toEqual(exportedSettings);
+    expect(
+      imported.positionRules?.find(
+        (rule) => rule.flightNo === "TR121" && rule.name === "H05"
+      )
+    ).toMatchObject({ category: "常规", coverageRole: "supervisor-fill" });
     expect(imported.settings).not.toHaveProperty("adminSupportEnabled");
     expect(workbook.SheetNames).not.toContain("值班备勤表");
   });

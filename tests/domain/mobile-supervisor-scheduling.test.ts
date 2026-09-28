@@ -8,6 +8,7 @@ import { assignMobileSupervisorByCounterCoverage } from "../../src/domain/assign
 import { createMobileSupervisorCoverageScheduleGuard } from "../../src/domain/kernel/schedule-guard";
 import { createScheduleLedger } from "../../src/domain/kernel/schedule-ledger";
 import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
+import { evaluateSupervisorFillFacts } from "../../src/domain/coverage/supervisor-fill-facts";
 
 const DATE = "2026-09-23";
 
@@ -84,6 +85,204 @@ function rules(
 }
 
 describe("all-flight mobile-supervisor scheduling", { timeout: 15_000 }, () => {
+  function configuredSupervisorFillState(includeRegularCandidate: boolean) {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const regular = state.staff[1]!;
+    state.staff = includeRegularCandidate
+      ? [supervisor, regular]
+      : [supervisor];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "21:00",
+        endTime: "23:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "机动督导",
+        category: "机动督导",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 5,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        qualifiedStaffIds: includeRegularCandidate ? [regular.id] : [],
+        fatiguePoints: 7,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "机动督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    return { state, supervisor, regular };
+  }
+
+  it("fills a configured supervisor-fill target only when no safe regular candidate exists", async () => {
+    const { state, supervisor } = configuredSupervisorFillState(false);
+
+    const result = await generateSchedule(state, DATE);
+    const source = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-supervisor"
+    )!;
+    const target = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+
+    expect(source).toMatchObject({
+      staffId: supervisor.id,
+      status: "assigned",
+      workHours: 2,
+    });
+    expect(target).toMatchObject({
+      staffId: supervisor.id,
+      status: "assigned",
+      workHours: 0,
+      fatiguePoints: 0,
+      supervisorSourceAssignmentId: source.id,
+    });
+    expect(
+      result.assignments.reduce(
+        (total, assignment) => total + assignment.fatiguePoints,
+        0
+      )
+    ).toBe(5);
+  });
+
+  it("keeps a configured supervisor-fill target with its safe regular worker", async () => {
+    const { state, regular } = configuredSupervisorFillState(true);
+
+    const result = await generateSchedule(state, DATE);
+    const target = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+
+    expect(target).toMatchObject({
+      staffId: regular.id,
+      status: "assigned",
+      workHours: 2,
+    });
+    expect(target.supervisorSourceAssignmentId).toBeUndefined();
+  });
+
+  it("does not fill an unconfigured empty counter", async () => {
+    const { state } = configuredSupervisorFillState(false);
+    state.settings.mobileSupervisorFillRules = [];
+
+    const result = await generateSchedule(state, DATE);
+    const target = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+
+    expect(target).toMatchObject({ staffId: null, status: "unfilled" });
+    expect(target.supervisorSourceAssignmentId).toBeUndefined();
+  });
+
+  it("treats a same-flight exclusion as making the regular candidate unsafe", () => {
+    const { state, supervisor, regular } = configuredSupervisorFillState(true);
+    state.settings.sameFlightStaffExclusions = [
+      {
+        id: "supervisor-regular-exclusion",
+        firstStaffId: supervisor.id,
+        secondStaffId: regular.id,
+        flightNo: "KE166",
+      },
+    ];
+
+    const sourceRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    const targetRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-h05"
+    )!;
+    const source: Assignment = {
+      id: "supervisor-assignment",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: sourceRule.id,
+      position: sourceRule.name,
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: "21:00",
+      endTime: "23:00",
+      workHours: 2,
+      fatiguePoints: sourceRule.fatiguePoints,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const target: Assignment = {
+      ...source,
+      id: "target-assignment",
+      positionRuleId: targetRule.id,
+      position: targetRule.name,
+      staffId: null,
+      staffName: "",
+      workHours: 2,
+      fatiguePoints: targetRule.fatiguePoints,
+      status: "unfilled",
+    };
+
+    expect(
+      evaluateSupervisorFillFacts(
+        state,
+        [source, target],
+        source,
+        target,
+        "automatic"
+      )
+    ).toMatchObject({ allowed: true, hasSafeRegularCandidate: false });
+  });
+
+  it("keeps an overlapping cross-flight supervisor-fill target unfilled", async () => {
+    const { state } = configuredSupervisorFillState(false);
+    state.flights.push({
+      id: "target-flight",
+      flightNo: "TR121",
+      startTime: "21:00",
+      endTime: "23:00",
+      bookedPassengers: 100,
+      positions: [],
+      remark: "",
+    });
+    const targetRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-h05"
+    )!;
+    targetRule.flightNo = "TR121";
+    state.settings.mobileSupervisorFillRules[0]!.targetFlightNo = "TR121";
+
+    const result = await generateSchedule(state, DATE);
+    const target = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+
+    expect(target).toMatchObject({ staffId: null, status: "unfilled" });
+    expect(target.supervisorSourceAssignmentId).toBeUndefined();
+    expect(result.warnings).toContain("TR121 / H05 无可用人员");
+  });
+
   it("automatically binds a non-KE166 supervisor to an allowed counter when staffing is short", async () => {
     const state = singleFlightState();
     const worker = state.staff[0]!;

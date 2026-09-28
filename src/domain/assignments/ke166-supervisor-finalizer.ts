@@ -21,6 +21,7 @@ import { durationHours } from "../shared/time";
 import type { SchedulePreparation } from "../kernel/schedule-preparation";
 import { halfRestPeriodViolation } from "../rules/half-rest";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
+import { fillConfiguredSupervisorTargets } from "./supervisor-fill";
 
 export interface FinalizeMobileSupervisorsOptions {
   solver: SolverPort;
@@ -218,8 +219,19 @@ export async function finalizeMobileSupervisors({
         )
       );
     }
-    assignments.push(
-      createAssignedPosition(task, selected, hours, systemNotes, decisionTrace)
+    const supervisorAssignment = createAssignedPosition(
+      task,
+      selected,
+      hours,
+      systemNotes,
+      decisionTrace
+    );
+    assignments.push(supervisorAssignment);
+    fillConfiguredSupervisorTargets(
+      state,
+      assignments,
+      supervisorAssignment,
+      "automatic"
     );
     processedTasks.add(task.key);
   }

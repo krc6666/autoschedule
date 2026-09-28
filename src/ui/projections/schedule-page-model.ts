@@ -7,6 +7,7 @@ import {
   assignmentRule,
   compareGuideSourceAssignments,
   guideSourceStaff,
+  isGuideAssignment,
   isFixedBottomPosition,
 } from "../../domain/flights/schedule-position-rules";
 import { countedWorkloadAssignments } from "../../domain/shared/workload-accounting";
@@ -69,15 +70,29 @@ function timeConflictAssignmentIds(state: AppState): Set<string> {
       flight,
       rule: assignmentRule(state, assignment),
       person: staff,
-      sameFlightConflict: "allow-all",
+      sameFlightConflict: "block",
     }).blockingConflicts;
     for (const conflict of conflicts) {
-      if (conflict.flightId === assignment.flightId) continue;
+      if (isLegalSameFlightReuse(state, assignment, conflict)) continue;
       conflictIds.add(assignment.id);
       conflictIds.add(conflict.id);
     }
   }
   return conflictIds;
+}
+
+function isLegalSameFlightReuse(
+  state: AppState,
+  assignment: Assignment,
+  conflict: Assignment
+): boolean {
+  if (assignment.flightId !== conflict.flightId) return false;
+  return (
+    (isGuideAssignment(state, assignment) &&
+      guideSourceStaff(state, conflict)?.id === assignment.staffId) ||
+    (isGuideAssignment(state, conflict) &&
+      guideSourceStaff(state, assignment)?.id === conflict.staffId)
+  );
 }
 
 export function buildSchedulePageModel(

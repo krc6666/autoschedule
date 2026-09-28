@@ -109,6 +109,31 @@ describe("configuration page", () => {
     ).toBe("休假");
   });
 
+  it("shows a regular position's supervisor-fill role", async () => {
+    const state = createDefaultState();
+    const positionRule = state.positionRules.find(
+      (rule) => rule.category === "常规"
+    )!;
+    positionRule.coverageRole = "supervisor-fill";
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-position-rules", { model: state });
+    const row = [...element.querySelectorAll("tr")].find(
+      (candidate) =>
+        candidate.querySelector<HTMLInputElement>('input[aria-label="航班号"]')
+          ?.value === positionRule.flightNo &&
+        candidate.querySelector<HTMLInputElement>(
+          'input[aria-label="岗位名称"]'
+        )?.value === positionRule.name
+    );
+
+    expect(
+      row?.querySelector<HTMLSelectElement>('select[aria-label="补位性质"]')
+        ?.value
+    ).toBe("supervisor-fill");
+  });
+
   it("dispatches the selected target when copying a position group", async () => {
     const state = createDefaultState();
     const element = await mountElement<

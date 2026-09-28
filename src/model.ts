@@ -5,6 +5,7 @@ import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
+  MobileSupervisorFillRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
   SameFlightStaffExclusion,
@@ -57,6 +58,8 @@ export interface PositionRule {
   flightNo: string;
   name: string;
   category: "常规" | "引导" | "机动督导" | "分流" | "行政支援";
+  /** Orthogonal coverage behavior; it does not replace the position category. */
+  coverageRole?: "none" | "supervisor-fill";
   remark: string;
   qualifiedStaffIds: string[];
   manual: boolean;
@@ -107,6 +110,8 @@ export interface Assignment {
   };
   manualOverrideWarnings?: Array<{ code: string; message: string }>;
   supervisorSourceAssignmentId?: string;
+  /** Structured relation used when a supervisor fills a configured target. */
+  supervisorFillRuleId?: string;
   /** True only for a team leader assignment confirmed through gap fill. */
   teamLeaderGapFill?: true;
   layoutGroup?: "primary" | "bottom";
@@ -174,6 +179,7 @@ export interface ScheduleSettings {
   dutyFatiguePoints: number;
   dutyPositionPriorities: DutyPositionPriority[];
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
+  mobileSupervisorFillRules: MobileSupervisorFillRule[];
   crossWorkdayQualificationReservations: CrossWorkdayQualificationReservation[];
   crossFlightPriorityPolicies: CrossFlightPriorityPolicy[];
   teamLeaderGapFillPositionPolicies: TeamLeaderGapFillPositionPolicy[];

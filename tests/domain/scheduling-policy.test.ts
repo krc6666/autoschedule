@@ -199,7 +199,7 @@ describe("scheduling policy contract", () => {
       SCHEDULING_RULES.find((rule) => rule.id === "mobile-supervisor")
     ).toMatchObject({
       stage: "reserved-assignment",
-      label: "机动督导独立优先与缺员兼任",
+      label: "机动督导独立优先、缺员兼任与配置补位",
     });
     expect(candidatePriorityOrder.indexOf("ke166-supervisor")).toBeLessThan(
       candidatePriorityOrder.indexOf("duty-position")

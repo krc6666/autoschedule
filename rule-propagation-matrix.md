@@ -4,6 +4,41 @@
 
 # 规则传播矩阵
 
+## 2026-09-28：督导补位（KE166 机动督导 -> 配置目标岗位）
+
+### 规则基本信息
+
+- 规则名：督导补位岗位性质与机动督导补位关系
+- 唯一事实源：`src/domain/coverage/supervisor-fill-facts.ts`
+- 关系配置：`ScheduleSettings.mobileSupervisorFillRules[]`
+- 岗位性质：`PositionRule.coverageRole = "supervisor-fill"`；岗位 `category` 继续保持原运行语义（H05 仍为“常规”）
+- 触发条件：目标岗位已配置为督导补位、关系启用且允许对应路径、没有安全合格普通人员可用、来源 assignment 是合法机动督导
+- 关联事实：目标 assignment 的 `supervisorSourceAssignmentId` 指向来源督导 assignment；目标工时/疲劳去重
+
+### 传播矩阵
+
+| 环节                           | 必须消费/检查                                             | 唯一入口或事实                                          | 失败/回退                                    |
+| ------------------------------ | --------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------- |
+| 岗位模型与默认配置             | 识别“督导补位”性质，不改变常规岗位分类                    | `PositionRule.coverageRole`、默认/normalize             | 缺省为 `none`，不触发补位                    |
+| 规则合同与页面                 | 编辑来源航班/岗位、目标航班/岗位、启用、自动/人工开关     | `MobileSupervisorFillRule`、规则页投影                  | 非法或空关系被 normalize 丢弃                |
+| localStorage/迁移              | 新字段往返，旧数据保持常规语义                            | `ScheduleSettings` normalize/restore                    | 缺字段使用空数组/`none`                      |
+| Excel 导入导出                 | 补位性质与关系不丢失                                      | 独立工作表/列                                           | 缺表保留现有配置，不把普通岗位改成补位       |
+| 自动候选与收尾                 | 先用普通安全候选；耗尽后才尝试合法补位                    | `evaluateSupervisorFillFacts`、KE166 finalizer          | 无合法补位则目标保持空缺并告警               |
+| 人工拖拽/交换                  | 只允许统一事实判定为合法的配置目标                        | `moveSupervisorWithinFlight`/人工补位入口               | 普通未配置柜台拒绝或按现有越权警告           |
+| Assignment 关联                | 来源/目标/人员/配置关系一致，补位只计算一次工时和真人容量 | `supervisorSourceAssignmentId` + `supervisorFillRuleId` | 任一关联缺失、拆开或人员不一致由最终守卫拒绝 |
+| 岗位完整性/值班/资质/时间/工时 | 补位不得挖空高优先岗位，不绕过任何硬约束                  | 现有 eligibility、ledger、duty、transition facts        | 任一硬约束失败则不补位                       |
+| Final guard/安全凭证           | 区分合法补位、非法兼任、关联断开；纳入规则指纹            | mobile-supervisor guard、credential/session fingerprint | 拒绝提交并指出具体来源/目标/关联原因         |
+| Worker/排班入口                | 使用同一 settings 与事实，不写死航班号/柜台号             | scheduling kernel/finalizer                             | 配置未启用时行为保持不变                     |
+| 页面展示/告警                  | 展示“来源督导 -> 目标补位”及空缺原因                      | assignment feedback/projection                          | 不暴露内部 ID，保留现有告警语义              |
+| spec/history/测试              | 同步合同、五段历史和自动/人工/守卫/持久化回归             | 文档与测试                                              | 未覆盖消费者不得宣称完成                     |
+
+### 验收边界
+
+- 人手充足时普通合格人员承担目标岗位，机动督导不抢占。
+- 人手不足时仅在配置关系、岗位性质、来源 assignment 和全部硬约束均成立时补位。
+- 合法补位不被当成普通同航班复用；引导复用也不被当成督导补位。
+- 关系被拆开、补位规则 ID 缺失、目标未配置或来源不合法时最终守卫拒绝；跨航班来源与目标时段重叠时不补位；无合法人选时目标留空并告警。
+
 ## 2026-09-23：分队长补差负荷保护分级与相对疲劳优选
 
 ### 规则基本信息

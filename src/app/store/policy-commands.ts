@@ -4,6 +4,7 @@ import {
   addDutyPriority,
   addLateShiftRecoveryPositionRule,
   addMobileSupervisorCoverageRule,
+  addMobileSupervisorFillRule,
   addSameFlightStaffExclusion,
   addNextWorkdayRecoveryTarget,
   addTransitionPolicy,
@@ -13,6 +14,7 @@ import {
   deleteCrossFlightPriorityPolicy,
   deleteLateShiftRecoveryPositionRule,
   deleteMobileSupervisorCoverageRule,
+  deleteMobileSupervisorFillRule,
   deleteSameFlightStaffExclusion,
   deleteNextWorkdayRecoveryTarget,
   deleteTransitionPolicy,
@@ -63,6 +65,9 @@ export function createPolicyCommands(command: StateCommand) {
     addSupervisorCoverage: () => command(addMobileSupervisorCoverageRule),
     deleteSupervisorCoverage: (id: string) =>
       command((state) => deleteMobileSupervisorCoverageRule(state, id)),
+    addSupervisorFill: () => command(addMobileSupervisorFillRule),
+    deleteSupervisorFill: (id: string) =>
+      command((state) => deleteMobileSupervisorFillRule(state, id)),
     addTransition: () => command(addTransitionPolicy),
     deleteTransition: (id: string) =>
       command((state) => deleteTransitionPolicy(state, id)),

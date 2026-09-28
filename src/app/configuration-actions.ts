@@ -312,6 +312,7 @@ export function addPositions(
       flightNo,
       name,
       category: "常规",
+      coverageRole: "none",
       remark: "",
       qualifiedStaffIds: [],
       manual: false,
@@ -370,6 +371,19 @@ export function deletePosition(state: AppState, id: string): boolean {
       removeTeamLeaderGapFillPositionReference(
         state.settings.teamLeaderGapFillPositionPolicies,
         deleted
+      );
+  if (deleted)
+    state.settings.mobileSupervisorFillRules =
+      state.settings.mobileSupervisorFillRules.filter(
+        (rule) =>
+          !(
+            rule.sourceFlightNo === deleted.flightNo &&
+            rule.sourcePositionKeyword === deleted.name
+          ) &&
+          !(
+            rule.targetFlightNo === deleted.flightNo &&
+            rule.targetPositionKeyword === deleted.name
+          )
       );
   clearSchedule(state);
   return true;
@@ -491,7 +505,11 @@ export function updateConfigurationField(
       if (value !== "分流") rule.earlyReleaseMinutes = 0;
       if (value === "引导" || value === "机动督导") rule.manual = false;
       if (value === "引导") rule.qualifiedStaffIds = [];
+      if (value !== "常规") rule.coverageRole = "none";
     }
+    if (field === "coverageRole")
+      rule.coverageRole =
+        value === "supervisor-fill" ? "supervisor-fill" : "none";
     if (field === "name" || field === "flightNo")
       state.positionRules = orderPositionRules(state.positionRules);
     if (field === "name" || field === "flightNo")
@@ -501,6 +519,24 @@ export function updateConfigurationField(
           previousReference,
           rule
         );
+    if (field === "name" || field === "flightNo") {
+      state.settings.mobileSupervisorFillRules.forEach((policy) => {
+        if (
+          policy.sourceFlightNo === previousReference.flightNo &&
+          policy.sourcePositionKeyword === previousReference.name
+        ) {
+          policy.sourceFlightNo = rule.flightNo;
+          policy.sourcePositionKeyword = rule.name;
+        }
+        if (
+          policy.targetFlightNo === previousReference.flightNo &&
+          policy.targetPositionKeyword === previousReference.name
+        ) {
+          policy.targetFlightNo = rule.flightNo;
+          policy.targetPositionKeyword = rule.name;
+        }
+      });
+    }
     clearSchedule(state);
     return "updated";
   }
@@ -560,6 +596,10 @@ export function updateConfigurationField(
       state.settings.mobileSupervisorCoverageRules.forEach(
         (policy) => (policy.flightNo = rename(policy.flightNo))
       );
+      state.settings.mobileSupervisorFillRules.forEach((policy) => {
+        policy.sourceFlightNo = rename(policy.sourceFlightNo);
+        policy.targetFlightNo = rename(policy.targetFlightNo);
+      });
       state.settings.crossWorkdayQualificationReservations.forEach(
         (policy) => (policy.flightNo = rename(policy.flightNo))
       );

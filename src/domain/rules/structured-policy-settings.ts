@@ -4,6 +4,7 @@ import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   MobileSupervisorCoverageRule,
+  MobileSupervisorFillRule,
   NextWorkdayRecoveryTarget,
   PositionTransitionPolicy,
   SameFlightStaffExclusion,
@@ -111,6 +112,18 @@ const DEFAULT_STRUCTURED_POLICIES: StructuredSchedulePolicies = {
       matchField: "remark",
       keyword: "排查",
       mode: "forbid",
+    },
+  ],
+  mobileSupervisorFillRules: [
+    {
+      id: "ke166-h05-supervisor-fill",
+      enabled: true,
+      sourceFlightNo: "KE166",
+      sourcePositionKeyword: "督导",
+      targetFlightNo: "KE166",
+      targetPositionKeyword: "H05",
+      allowAutomatic: true,
+      allowManual: true,
     },
   ],
   positionTransitionPolicies: [
@@ -307,6 +320,57 @@ function normalizeSupervisorRules(
     });
 }
 
+function normalizeSupervisorFillRules(
+  value: unknown,
+  fallback: MobileSupervisorFillRule[]
+): MobileSupervisorFillRule[] {
+  const unique = new Map<string, MobileSupervisorFillRule>();
+  sourceArray(value, fallback)
+    .filter((item) => item && typeof item === "object")
+    .forEach((item, index) => {
+      const rule = item as Partial<MobileSupervisorFillRule>;
+      const sourceFlightNo = String(rule.sourceFlightNo ?? "")
+        .trim()
+        .toUpperCase();
+      const sourcePositionKeyword = String(
+        rule.sourcePositionKeyword ?? ""
+      ).trim();
+      const targetFlightNo = String(rule.targetFlightNo ?? "")
+        .trim()
+        .toUpperCase();
+      const targetPositionKeyword = String(
+        rule.targetPositionKeyword ?? ""
+      ).trim();
+      if (
+        !sourceFlightNo ||
+        !sourcePositionKeyword ||
+        !targetFlightNo ||
+        !targetPositionKeyword
+      )
+        return;
+      const normalized: MobileSupervisorFillRule = {
+        id: String(rule.id ?? "").trim() || `supervisor-fill-${index + 1}`,
+        enabled: rule.enabled !== false,
+        sourceFlightNo,
+        sourcePositionKeyword,
+        targetFlightNo,
+        targetPositionKeyword,
+        allowAutomatic: rule.allowAutomatic !== false,
+        allowManual: rule.allowManual !== false,
+      };
+      unique.set(
+        [
+          sourceFlightNo,
+          sourcePositionKeyword.toLocaleLowerCase("zh-CN"),
+          targetFlightNo,
+          targetPositionKeyword.toLocaleLowerCase("zh-CN"),
+        ].join("\u0000"),
+        normalized
+      );
+    });
+  return [...unique.values()];
+}
+
 function normalizeCrossWorkdayReservations(
   value: unknown,
   fallback: CrossWorkdayQualificationReservation[]
@@ -443,6 +507,15 @@ export const STRUCTURED_POLICY_DEFINITIONS = {
     excelSheet: "机动督导范围",
     uiCollection: "supervisor",
     uiEntity: "supervisor-coverage",
+  },
+  mobileSupervisorFillRules: {
+    key: "mobileSupervisorFillRules",
+    createDefault: () =>
+      structuredClone(DEFAULT_STRUCTURED_POLICIES.mobileSupervisorFillRules),
+    normalize: normalizeSupervisorFillRules,
+    excelSheet: "督导补位关系",
+    uiCollection: "supervisor-fill",
+    uiEntity: "supervisor-fill",
   },
   crossWorkdayQualificationReservations: {
     key: "crossWorkdayQualificationReservations",

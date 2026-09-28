@@ -4,15 +4,19 @@ export interface DailyStaffFlightRow {
   staffId: string;
   staffName: string;
   flightNumbers: string[];
+  flightCount: number;
 }
 
 export interface DailyStaffFlightStatistics {
   date: string;
   source: "current" | "history" | "partial-history" | "none";
   rows: DailyStaffFlightRow[];
+  allRows: DailyStaffFlightRow[];
   assignedStaffCount: number;
   unassignedStaffCount: number;
   unassignedStaffNames: string[];
+  totalFlightCount: number;
+  staffCount: number;
 }
 
 interface StaffFlightEntry {
@@ -27,7 +31,8 @@ function normalizedFlightNumber(value: string): string {
 
 function rowsFromEntries(
   state: Pick<SchedulingFacts, "staff">,
-  entries: readonly StaffFlightEntry[]
+  entries: readonly StaffFlightEntry[],
+  includeEmpty = false
 ): DailyStaffFlightRow[] {
   const regularStaff = state.staff.filter(
     (person) => person.staffType === "常规" && person.status === "正常"
@@ -48,8 +53,8 @@ function rowsFromEntries(
 
   return regularStaff.flatMap((person): DailyStaffFlightRow[] => {
     const flights = flightsByStaffId.get(person.id);
-    if (!flights?.size) return [];
-    const flightNumbers = [...flights.entries()]
+    if (!flights?.size && !includeEmpty) return [];
+    const flightNumbers = [...(flights ?? new Map()).entries()]
       .sort(
         ([leftFlight, leftStart], [rightFlight, rightStart]) =>
           leftStart.localeCompare(rightStart) ||
@@ -61,6 +66,7 @@ function rowsFromEntries(
         staffId: person.id,
         staffName: person.name,
         flightNumbers,
+        flightCount: flightNumbers.length,
       },
     ];
   });
@@ -78,22 +84,22 @@ export function buildDailyStaffFlightStatistics(
   ).length;
   let source: DailyStaffFlightStatistics["source"] = "none";
   let rows: DailyStaffFlightRow[] = [];
+  let allRows: DailyStaffFlightRow[] = [];
 
   if (state.activeScheduleDate === date && state.assignments.length) {
     source = "current";
-    rows = rowsFromEntries(
-      state,
-      state.assignments
-        .filter(
-          (assignment) =>
-            assignment.status !== "unfilled" && Boolean(assignment.staffId)
-        )
-        .map((assignment) => ({
-          staffId: assignment.staffId!,
-          flightNo: assignment.flightNo,
-          startTime: assignment.startTime,
-        }))
-    );
+    const entries = state.assignments
+      .filter(
+        (assignment) =>
+          assignment.status !== "unfilled" && Boolean(assignment.staffId)
+      )
+      .map((assignment) => ({
+        staffId: assignment.staffId!,
+        flightNo: assignment.flightNo,
+        startTime: assignment.startTime,
+      }));
+    allRows = rowsFromEntries(state, entries, true);
+    rows = allRows.filter((row) => row.flightCount > 0);
   } else {
     const records = state.history.filter((record) => record.date === date);
     if (
@@ -102,14 +108,13 @@ export function buildDailyStaffFlightStatistics(
       source = "partial-history";
     } else if (records.length) {
       source = "history";
-      rows = rowsFromEntries(
-        state,
-        records.map((record) => ({
-          staffId: record.staffId,
-          flightNo: record.flightNo,
-          startTime: record.startTime,
-        }))
-      );
+      const entries = records.map((record) => ({
+        staffId: record.staffId,
+        flightNo: record.flightNo,
+        startTime: record.startTime,
+      }));
+      allRows = rowsFromEntries(state, entries, true);
+      rows = allRows.filter((row) => row.flightCount > 0);
     }
   }
 
@@ -117,6 +122,7 @@ export function buildDailyStaffFlightStatistics(
     date,
     source,
     rows,
+    allRows,
     assignedStaffCount: rows.length,
     unassignedStaffCount:
       source === "current" || source === "history"
@@ -132,5 +138,7 @@ export function buildDailyStaffFlightStatistics(
             .filter((person) => !rows.some((row) => row.staffId === person.id))
             .map((person) => person.name)
         : [],
+    totalFlightCount: rows.reduce((sum, row) => sum + row.flightCount, 0),
+    staffCount: regularStaffCount,
   };
 }

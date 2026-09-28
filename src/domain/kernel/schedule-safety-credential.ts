@@ -494,6 +494,20 @@ function contextFingerprint(context: ScheduleGuardContext): string {
             mobileSupervisorCoverage.state.settings.mobileSupervisorCoverageRules.map(
               (rule) => ({ ...rule })
             ),
+          mobileSupervisorFillRules:
+            mobileSupervisorCoverage.state.settings.mobileSupervisorFillRules.map(
+              (rule) => ({ ...rule })
+            ),
+          fillPositionRules: mobileSupervisorCoverage.state.positionRules
+            .filter((rule) => rule.coverageRole === "supervisor-fill")
+            .map((rule) => ({
+              id: rule.id,
+              flightNo: rule.flightNo,
+              name: rule.name,
+              category: rule.category,
+              coverageRole: rule.coverageRole,
+            }))
+            .sort((left, right) => left.id.localeCompare(right.id)),
         }
       : undefined,
     ke166SnapshotFacts: ke166Snapshot

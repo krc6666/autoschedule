@@ -61,6 +61,10 @@ import {
 } from "../rules/same-flight-staff-exclusion";
 import { evaluateMobileSupervisorCoverage } from "../coverage/mobile-supervisor-coverage";
 import {
+  evaluateSupervisorFillFacts,
+  hasRecordedSupervisorFillLink,
+} from "../coverage/supervisor-fill-facts";
+import {
   assignmentRule,
   isGuideAssignment,
 } from "../flights/schedule-position-rules";
@@ -855,6 +859,20 @@ export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
     ): readonly ScheduleGuardViolation[] => {
       const facts = context.mobileSupervisorCoverageFacts;
       if (!facts) return [];
+      const configuredFill = (supervisor: Assignment, target: Assignment) =>
+        (["automatic", "manual"] as const)
+          .map((mode) =>
+            evaluateSupervisorFillFacts(
+              facts.state,
+              assignments,
+              supervisor,
+              target,
+              mode
+            )
+          )
+          .find((evaluation) =>
+            hasRecordedSupervisorFillLink(evaluation, target)
+          );
       const linkedViolations = assignments.flatMap((counter) => {
         if (!counter.supervisorSourceAssignmentId) return [];
         const supervisor = assignments.find(
@@ -863,16 +881,24 @@ export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
         const supervisorRule = supervisor
           ? assignmentRule(facts.state, supervisor)
           : undefined;
+        const counterRule = assignmentRule(facts.state, counter);
+        const fill = supervisor
+          ? configuredFill(supervisor, counter)
+          : undefined;
         if (
           !supervisor ||
           supervisorRule?.category !== "机动督导" ||
-          supervisor.flightId !== counter.flightId
+          (counterRule?.coverageRole === "supervisor-fill" && !fill) ||
+          (supervisor.flightId !== counter.flightId && !fill)
         ) {
           return [
             {
               ruleId: "mobile-supervisor",
               assignmentId: counter.id,
-              message: `${counter.flightNo}/${counter.position}的机动督导兼任关联无效，拒绝提交`,
+              message:
+                counterRule?.coverageRole === "supervisor-fill"
+                  ? `${counter.flightNo}/${counter.position}的督导补位关联无效，拒绝提交`
+                  : `${counter.flightNo}/${counter.position}的机动督导兼任关联无效，拒绝提交`,
             },
           ];
         }
@@ -890,12 +916,14 @@ export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
             },
           ];
         }
-        const coverage = evaluateMobileSupervisorCoverage(facts.state, {
-          flightNo: counter.flightNo,
-          position: counter.position,
-          remark: counter.remark,
-        });
-        if (!coverage.allowed) {
+        const coverage = fill
+          ? { allowed: true, reason: null }
+          : evaluateMobileSupervisorCoverage(facts.state, {
+              flightNo: counter.flightNo,
+              position: counter.position,
+              remark: counter.remark,
+            });
+        if (!coverage.allowed || (counter.supervisorFillRuleId && !fill)) {
           return [
             {
               ruleId: "mobile-supervisor",
@@ -904,13 +932,13 @@ export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
             },
           ];
         }
-        return counter.workHours === 0
+        return counter.workHours === 0 && (!fill || counter.fatiguePoints === 0)
           ? []
           : [
               {
                 ruleId: "mobile-supervisor",
                 assignmentId: counter.id,
-                message: `${counter.flightNo}/${counter.position}机动督导兼任工时必须去重，拒绝提交`,
+                message: `${counter.flightNo}/${counter.position}机动督导补位工时与疲劳必须去重，拒绝提交`,
               },
             ];
       });
@@ -925,11 +953,23 @@ export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
         const unlinked = assignments.find(
           (assignment) =>
             assignment.id !== supervisor.id &&
-            assignment.flightId === supervisor.flightId &&
             assignment.status === "assigned" &&
             assignment.staffId === supervisor.staffId &&
             !isGuideAssignment(facts.state, assignment) &&
-            assignment.supervisorSourceAssignmentId !== supervisor.id
+            assignment.supervisorSourceAssignmentId !== supervisor.id &&
+            (assignment.flightId === supervisor.flightId ||
+              Boolean(
+                (["automatic", "manual"] as const).some(
+                  (mode) =>
+                    evaluateSupervisorFillFacts(
+                      facts.state,
+                      assignments,
+                      supervisor,
+                      assignment,
+                      mode
+                    ).allowed
+                )
+              ))
         );
         return unlinked
           ? [

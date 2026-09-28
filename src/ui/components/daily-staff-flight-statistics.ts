@@ -4,6 +4,8 @@ import { buildDailyStaffFlightStatistics } from "../../domain/statistics/daily-s
 import type { AppState } from "../../model";
 import { LightDomElement } from "./light-dom-element";
 
+type DailyStaffFlightSort = "desc" | "asc" | "original";
+
 export class DailyStaffFlightStatisticsElement extends LightDomElement {
   static override properties = {
     model: { attribute: false },
@@ -12,6 +14,7 @@ export class DailyStaffFlightStatisticsElement extends LightDomElement {
   model!: AppState;
   date = "";
   private queryDate = "";
+  private sortMode: DailyStaffFlightSort = "desc";
 
   protected override willUpdate(changedProperties: PropertyValues<this>): void {
     if (!changedProperties.has("date")) return;
@@ -48,8 +51,11 @@ export class DailyStaffFlightStatisticsElement extends LightDomElement {
       ${
         statistics.source === "current" || statistics.source === "history"
           ? html`<div class="daily-staff-flight-summary">
+              <span>统计日期 ${statistics.date}</span>
+              <span>人员总数 ${statistics.staffCount}</span>
               <strong>${statistics.assignedStaffCount} 人有航班</strong>
               <span>${statistics.unassignedStaffCount} 人未安排</span>
+              <span>总航班 ${statistics.totalFlightCount}</span>
             </div>`
           : null
       }
@@ -65,6 +71,23 @@ export class DailyStaffFlightStatisticsElement extends LightDomElement {
                 <i class="bi bi-check-circle-fill"></i>所有常规人员均已安排航班
               </div>`
             : null
+      }
+      ${
+        statistics.source === "current" || statistics.source === "history"
+          ? html`<label class="daily-staff-flight-sort">
+              <span>人员排序</span>
+              <select
+                class="form-select form-select-sm"
+                aria-label="人员航班排序"
+                .value=${this.sortMode}
+                @change=${this.changeSort}
+              >
+                <option value="desc">航班数从多到少</option>
+                <option value="asc">航班数从少到多</option>
+                <option value="original">人员原顺序</option>
+              </select>
+            </label>`
+          : null
       }
       ${this.result(statistics)}
     </section>`;
@@ -84,25 +107,68 @@ export class DailyStaffFlightStatisticsElement extends LightDomElement {
         <i class="bi bi-calendar2-x"></i>该工作日没有完整排班记录。
       </div>`;
     }
-    if (!statistics.rows.length) {
+    if (!statistics.allRows.length) {
       return html`<div class="daily-staff-flight-message" role="status">
         <i class="bi bi-calendar2-check"></i>该工作日没有常规人员航班。
       </div>`;
     }
-    return html`<div class="daily-staff-flight-tags">
-      ${statistics.rows.map(
-        (row) =>
-          html`<span class="daily-staff-flight-tag" data-staff-id=${row.staffId}
-            ><strong>${row.staffName}</strong>
-            ${row.flightNumbers.join("、")}</span
-          >`
-      )}
+    return html`<div class="daily-staff-flight-table-wrap">
+      <table class="daily-staff-flight-table">
+        <thead>
+          <tr>
+            <th scope="col">人员</th>
+            <th scope="col">航班数</th>
+            <th scope="col">承担航班</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${this.sortedRows(statistics).map(
+            (row) =>
+              html`<tr
+                class="daily-staff-flight-row"
+                data-staff-id=${row.staffId}
+              >
+                <th scope="row">${row.staffName}</th>
+                <td class="daily-staff-flight-count">${row.flightCount}</td>
+                <td>
+                  ${
+                    row.flightNumbers.length
+                      ? row.flightNumbers.join("、")
+                      : "未安排"
+                  }
+                </td>
+              </tr>`
+          )}
+        </tbody>
+      </table>
     </div>`;
   }
 
   private changeDate(event: Event): void {
     this.queryDate = (event.currentTarget as HTMLInputElement).value;
     this.requestUpdate();
+  }
+
+  private changeSort(event: Event): void {
+    this.sortMode = (event.currentTarget as HTMLSelectElement)
+      .value as DailyStaffFlightSort;
+    this.requestUpdate();
+  }
+
+  private sortedRows(
+    statistics: ReturnType<typeof buildDailyStaffFlightStatistics>
+  ) {
+    if (this.sortMode === "original") return statistics.allRows;
+    return statistics.allRows
+      .map((row, index) => ({ row, index }))
+      .sort((left, right) => {
+        const difference = right.row.flightCount - left.row.flightCount;
+        return (
+          (this.sortMode === "desc" ? difference : -difference) ||
+          left.index - right.index
+        );
+      })
+      .map(({ row }) => row);
   }
 }
 

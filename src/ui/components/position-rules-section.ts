@@ -128,6 +128,7 @@ export class PositionRulesSectionElement extends LightDomElement {
               <th>航班</th>
               <th>岗位</th>
               <th>分类</th>
+              <th>补位性质</th>
               <th>疲劳点</th>
               <th>启用旅客人数</th>
               <th>提前撤岗</th>
@@ -236,6 +237,26 @@ export class PositionRulesSectionElement extends LightDomElement {
       </td>
       <td>
         ${configurationSelect(this, "position", rule.id, "category", rule.category, "分类", POSITION_CATEGORIES)}
+      </td>
+      <td>
+        <select
+          ${dynamicSelectValue(rule.coverageRole ?? "none")}
+          class="form-select form-select-sm"
+          .value=${rule.coverageRole ?? "none"}
+          aria-label="补位性质"
+          ?disabled=${rule.category !== "常规"}
+          @change=${(event: Event) =>
+            dispatchUiCommand(this, {
+              type: "update-configuration",
+              entity: "position",
+              id: rule.id,
+              field: "coverageRole",
+              value: (event.currentTarget as HTMLSelectElement).value,
+            })}
+        >
+          <option value="none">无</option>
+          <option value="supervisor-fill">督导补位</option>
+        </select>
       </td>
       <td>
         ${configurationInput(this, "position", rule.id, "fatiguePoints", rule.fatiguePoints, "疲劳点数", { type: "number", className: "number-input", min: 0, step: 0.5 })}

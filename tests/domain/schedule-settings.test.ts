@@ -48,6 +48,7 @@ describe("schedule settings module", () => {
       "nextWorkdayRecoveryTargets",
       "lateShiftRecoveryPositionRules",
       "mobileSupervisorCoverageRules",
+      "mobileSupervisorFillRules",
       "crossWorkdayQualificationReservations",
       "crossFlightPriorityPolicies",
       "teamLeaderGapFillPositionPolicies",

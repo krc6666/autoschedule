@@ -10,6 +10,7 @@ import type {
   DutyPositionPriority,
   LateShiftRecoveryPositionRule,
   NextWorkdayRecoveryTarget,
+  MobileSupervisorFillRule,
   SameFlightStaffExclusion,
 } from "../domain/rules/structured-policy-contract";
 import { STRUCTURED_POLICY_DEFINITIONS } from "../domain/rules/structured-policy-settings";
@@ -614,6 +615,29 @@ export function deleteMobileSupervisorCoverageRule(
   );
 }
 
+export function addMobileSupervisorFillRule(
+  state: AppState
+): MobileSupervisorFillRule {
+  const flightNo = state.flights[0]?.flightNo ?? "";
+  return appendPolicyItem(state, state.settings.mobileSupervisorFillRules, {
+    id: createId("supervisor-fill"),
+    enabled: true,
+    sourceFlightNo: flightNo,
+    sourcePositionKeyword: "督导",
+    targetFlightNo: flightNo,
+    targetPositionKeyword: "H05",
+    allowAutomatic: true,
+    allowManual: true,
+  });
+}
+
+export function deleteMobileSupervisorFillRule(
+  state: AppState,
+  id: string
+): boolean {
+  return deletePolicyItem(state, state.settings.mobileSupervisorFillRules, id);
+}
+
 function updateTransitionPolicy(
   state: AppState,
   id: string,
@@ -697,6 +721,39 @@ function updateMobileSupervisorCoverageRule(
   );
 }
 
+function updateMobileSupervisorFillRule(
+  state: AppState,
+  id: string,
+  field: string,
+  value: PolicyValue
+): boolean {
+  return updatePolicyItem(
+    state,
+    state.settings.mobileSupervisorFillRules,
+    id,
+    (rule) => {
+      if (
+        field === "enabled" ||
+        field === "allowAutomatic" ||
+        field === "allowManual"
+      )
+        return replacePolicyValue(rule, field, Boolean(value));
+      if (field === "sourceFlightNo" || field === "targetFlightNo")
+        return replacePolicyValue(
+          rule,
+          field,
+          normalizeText(value).toUpperCase()
+        );
+      if (
+        field === "sourcePositionKeyword" ||
+        field === "targetPositionKeyword"
+      )
+        return replacePolicyValue(rule, field, normalizeText(value));
+      return "invalid";
+    }
+  );
+}
+
 type PolicyEntityUpdater = (
   state: AppState,
   id: string,
@@ -714,6 +771,7 @@ const POLICY_ENTITY_UPDATERS: Readonly<
   "cross-workday-reservation": updateCrossWorkdayQualificationReservation,
   "transition-policy": updateTransitionPolicy,
   "supervisor-coverage": updateMobileSupervisorCoverageRule,
+  "supervisor-fill": updateMobileSupervisorFillRule,
   "cross-flight-priority": updateCrossFlightPriorityPolicy,
 };
 

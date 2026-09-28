@@ -350,12 +350,18 @@ function restorePositionRules(
       (resetMobileSupervisors && persistedCategory === "机动督导")
         ? ("常规" as const)
         : persistedCategory;
+    const coverageRole =
+      persistedCategory === "督导补位" ||
+      item.coverageRole === "supervisor-fill"
+        ? ("supervisor-fill" as const)
+        : ("none" as const);
     return [
       {
         id: item.id,
         flightNo: item.flightNo,
         name: item.name,
         category,
+        coverageRole,
         remark: item.remark,
         qualifiedStaffIds: item.qualifiedStaffIds,
         manual: persistedCategory === "督导补位" ? false : Boolean(item.manual),

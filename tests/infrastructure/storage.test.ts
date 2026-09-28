@@ -560,6 +560,7 @@ describe("state persistence", () => {
     delete legacy.settings.dutyFatiguePoints;
     delete legacy.settings.dutyPositionPriorities;
     delete legacy.settings.mobileSupervisorCoverageRules;
+    delete legacy.settings.mobileSupervisorFillRules;
     delete legacy.settings.crossWorkdayQualificationReservations;
     delete legacy.settings.earlyDepartureCutoffTime;
     delete legacy.settings.afternoonRestStartTime;
@@ -627,6 +628,16 @@ describe("state persistence", () => {
         enabled: true,
       },
     ]);
+    expect(loaded.settings.mobileSupervisorFillRules).toMatchObject([
+      {
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ]);
     expect(loaded.settings.earlyDepartureCutoffTime).toBe("12:00");
     expect(loaded.settings.afternoonRestStartTime).toBe("12:00");
     expect(loaded.settings.afternoonRestEndTime).toBe("18:00");
@@ -683,6 +694,7 @@ describe("state persistence", () => {
 
     expect(loaded.positionRules[0]).toMatchObject({
       category: "常规",
+      coverageRole: "supervisor-fill",
       manual: false,
     });
   });

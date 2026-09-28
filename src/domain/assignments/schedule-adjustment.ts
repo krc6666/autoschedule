@@ -3,6 +3,10 @@ import type { AssignmentEligibilityFacts } from "../shared/scheduling-facts";
 import { clearAutomaticAssignmentEvidence } from "./assignment-evidence";
 import { durationHours } from "../shared/time";
 import { evaluateMobileSupervisorCoverage } from "../coverage/mobile-supervisor-coverage";
+import {
+  evaluateSupervisorFillFacts,
+  hasRecordedSupervisorFillLink,
+} from "../coverage/supervisor-fill-facts";
 
 function assignmentRule(
   state: AssignmentEligibilityFacts,
@@ -50,6 +54,7 @@ function resetSupervisorLinkedAssignment(
 ): void {
   if (!assignment.supervisorSourceAssignmentId) return;
   delete assignment.supervisorSourceAssignmentId;
+  delete assignment.supervisorFillRuleId;
   const flight = state.flights.find((item) => item.id === assignment.flightId);
   const rule = assignmentRule(state, assignment);
   assignment.staffId = null;
@@ -77,8 +82,18 @@ export function moveSupervisorWithinFlight(
   const supervisor = supervisorSource(state, source);
   if (!supervisor || !isSupervisorAssignment(state, supervisor))
     return "仅督导可在同一航班内机动补位";
-  if (supervisor.flightId !== target.flightId)
-    return "督导只能在同一航班内机动补位";
+  const configuredFill = evaluateSupervisorFillFacts(
+    state,
+    state.assignments,
+    supervisor,
+    target,
+    "manual"
+  );
+  const targetRule = assignmentRule(state, target);
+  if (targetRule?.coverageRole === "supervisor-fill" && !configuredFill.allowed)
+    return `机动督导不能补位 ${target.flightNo}/${target.position}：${configuredFill.reason}`;
+  if (supervisor.flightId !== target.flightId && !configuredFill.allowed)
+    return `机动督导不能补位 ${target.flightNo}/${target.position}：${configuredFill.reason}`;
   if (isSupervisorAssignment(state, target))
     return "航班顶部督导岗位固定，不能作为补位目标";
   if (
@@ -89,13 +104,15 @@ export function moveSupervisorWithinFlight(
     return "顶部督导尚未安排人员";
   if (target.staffId || target.staffName)
     return `目标岗位已有人员，请先清空 ${target.position}`;
-  const coverage = evaluateMobileSupervisorCoverage(state, {
-    flightNo: target.flightNo,
-    position: target.position,
-    remark: target.remark,
-  });
-  if (!coverage.allowed)
-    return `机动督导不能兼任 ${target.flightNo}/${target.position}：${coverage.reason}`;
+  if (supervisor.flightId === target.flightId && !configuredFill.allowed) {
+    const coverage = evaluateMobileSupervisorCoverage(state, {
+      flightNo: target.flightNo,
+      position: target.position,
+      remark: target.remark,
+    });
+    if (!coverage.allowed)
+      return `机动督导不能兼任 ${target.flightNo}/${target.position}：${coverage.reason}`;
+  }
   const person = state.staff.find((item) => item.id === supervisor.staffId);
   if (!person) return "督导人员不存在";
   if (person.status !== "正常")
@@ -103,13 +120,17 @@ export function moveSupervisorWithinFlight(
 
   if (source.id !== supervisor.id)
     resetSupervisorLinkedAssignment(state, source);
-  const targetRule = assignmentRule(state, target);
   target.staffId = supervisor.staffId;
   target.staffName = supervisor.staffName;
   target.status = "assigned";
   target.workHours = 0;
-  target.fatiguePoints = targetRule?.fatiguePoints ?? 0;
+  target.fatiguePoints = configuredFill.allowed
+    ? 0
+    : (targetRule?.fatiguePoints ?? 0);
   target.supervisorSourceAssignmentId = supervisor.id;
+  if (configuredFill.allowed)
+    target.supervisorFillRuleId = configuredFill.rule?.id;
+  else delete target.supervisorFillRuleId;
   clearAutomaticAssignmentEvidence(target);
   return null;
 }
@@ -129,18 +150,31 @@ export function normalizeSupervisorAssignments(
     const source = state.assignments.find(
       (item) => item.id === assignment.supervisorSourceAssignmentId
     );
+    const configuredFill = source
+      ? (["automatic", "manual"] as const).some((mode) => {
+          const evaluation = evaluateSupervisorFillFacts(
+            state,
+            state.assignments,
+            source,
+            assignment,
+            mode
+          );
+          return hasRecordedSupervisorFillLink(evaluation, assignment);
+        })
+      : false;
     const valid = Boolean(
       source &&
       isSupervisorAssignment(state, source) &&
-      source.flightId === assignment.flightId &&
       source.staffId &&
       source.staffName &&
       source.status === "assigned" &&
-      evaluateMobileSupervisorCoverage(state, {
-        flightNo: assignment.flightNo,
-        position: assignment.position,
-        remark: assignment.remark,
-      }).allowed
+      (configuredFill ||
+        (source.flightId === assignment.flightId &&
+          evaluateMobileSupervisorCoverage(state, {
+            flightNo: assignment.flightNo,
+            position: assignment.position,
+            remark: assignment.remark,
+          }).allowed))
     );
     if (!valid || !source) {
       resetSupervisorLinkedAssignment(state, assignment);
@@ -154,7 +188,7 @@ export function normalizeSupervisorAssignments(
     assignment.staffName = source.staffName;
     assignment.status = "assigned";
     assignment.workHours = 0;
-    assignment.fatiguePoints = rule?.fatiguePoints ?? 0;
+    assignment.fatiguePoints = configuredFill ? 0 : (rule?.fatiguePoints ?? 0);
     if (changed) clearAutomaticAssignmentEvidence(assignment);
   });
 }

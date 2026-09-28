@@ -434,7 +434,8 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
     const categoryText = normalizeText(row[categoryIndex]);
     if (categoryText.includes("支援") && !categoryText.includes("行政支援"))
       continue;
-    const category: PositionRule["category"] = categoryText.includes("督导补位")
+    const supervisorFill = categoryText.includes("督导补位");
+    const category: PositionRule["category"] = supervisorFill
       ? "常规"
       : categoryText.includes("机动督导")
         ? "机动督导"
@@ -450,6 +451,7 @@ function parsePositions(workbook: XLSX.WorkBook): PositionRule[] | undefined {
       flightNo: currentFlight,
       name,
       category,
+      coverageRole: supervisorFill ? "supervisor-fill" : "none",
       remark: normalizeText(row[remarkIndex]),
       qualifiedStaffIds: splitList(rawQualified),
       manual: rawQualified.includes("手动输入"),
@@ -755,7 +757,7 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
       ],
       ...state.positionRules.map((rule) => [
         rule.flightNo,
-        rule.category,
+        rule.coverageRole === "supervisor-fill" ? "督导补位" : rule.category,
         rule.name,
         rule.remark,
         rule.manual

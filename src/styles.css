@@ -2562,24 +2562,57 @@ autoschedule-previous-schedule-comparison {
 .daily-staff-flight-summary strong {
   color: #176b48;
 }
-.daily-staff-flight-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 12px;
+.daily-staff-flight-sort {
+  display: inline-grid;
+  gap: 3px;
+  justify-self: start;
+  color: var(--as-muted);
+  font-size: 11px;
+}
+.daily-staff-flight-sort .form-select {
+  min-width: 170px;
+}
+.daily-staff-flight-table-wrap {
+  overflow-x: auto;
   border-left: 3px solid #39756e;
   background: #f7faf9;
 }
-.daily-staff-flight-tag {
-  padding: 4px 7px;
-  border: 1px solid #d9e5e2;
-  border-radius: 4px;
-  background: #fff;
+.daily-staff-flight-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
   color: #46514f;
   font-size: 12px;
 }
-.daily-staff-flight-tag strong {
+.daily-staff-flight-table th,
+.daily-staff-flight-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #d9e5e2;
+  text-align: left;
+  vertical-align: middle;
+}
+.daily-staff-flight-table thead th {
+  color: var(--as-muted);
+  background: #eef5f2;
+  font-size: 11px;
+  font-weight: 600;
+}
+.daily-staff-flight-table tbody th {
+  min-width: 150px;
   color: var(--as-ink);
+  font-weight: 600;
+}
+.daily-staff-flight-table tbody tr:last-child th,
+.daily-staff-flight-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.daily-staff-flight-count {
+  width: 90px;
+  color: var(--as-ink);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: center !important;
 }
 .daily-staff-flight-message {
   display: flex;

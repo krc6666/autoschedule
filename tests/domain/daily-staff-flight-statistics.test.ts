@@ -87,8 +87,19 @@ describe("daily staff flight statistics", () => {
         staffId: regular.id,
         staffName: regular.name,
         flightNumbers: ["CX931", "TR121"],
+        flightCount: 2,
       },
     ]);
+    expect(result.allRows).toEqual([
+      {
+        staffId: regular.id,
+        staffName: regular.name,
+        flightNumbers: ["CX931", "TR121"],
+        flightCount: 2,
+      },
+    ]);
+    expect(result.totalFlightCount).toBe(2);
+    expect(result.staffCount).toBe(1);
     expect(result.assignedStaffCount).toBe(1);
     expect(result.unassignedStaffCount).toBe(0);
     expect(result.unassignedStaffNames).toEqual([]);
@@ -130,8 +141,25 @@ describe("daily staff flight statistics", () => {
         staffId: second!.id,
         staffName: second!.name,
         flightNumbers: ["KE166"],
+        flightCount: 1,
       },
     ]);
+    expect(result.allRows).toEqual([
+      {
+        staffId: first!.id,
+        staffName: first!.name,
+        flightNumbers: [],
+        flightCount: 0,
+      },
+      {
+        staffId: second!.id,
+        staffName: second!.name,
+        flightNumbers: ["KE166"],
+        flightCount: 1,
+      },
+    ]);
+    expect(result.totalFlightCount).toBe(1);
+    expect(result.staffCount).toBe(2);
     expect(result.assignedStaffCount).toBe(1);
     expect(result.unassignedStaffCount).toBe(1);
     expect(result.unassignedStaffNames).toEqual([first!.name]);
@@ -164,6 +192,7 @@ describe("daily staff flight statistics", () => {
     expect(result.assignedStaffCount).toBe(1);
     expect(result.unassignedStaffCount).toBe(0);
     expect(result.unassignedStaffNames).toEqual([]);
+    expect(result.allRows.map((row) => row.flightCount)).toEqual([1]);
     expect(result.rows.map((row) => row.staffName)).toEqual([regular.name]);
   });
 
@@ -186,6 +215,8 @@ describe("daily staff flight statistics", () => {
 
     expect(result.source).toBe("partial-history");
     expect(result.rows).toEqual([]);
+    expect(result.allRows).toEqual([]);
+    expect(result.totalFlightCount).toBe(0);
     expect(result.assignedStaffCount).toBe(0);
     expect(result.unassignedStaffCount).toBe(0);
     expect(result.unassignedStaffNames).toEqual([]);

@@ -8,6 +8,46 @@ import "../../src/ui/components/policy-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("rules page", () => {
+  it("shows editable supervisor-fill relationships separately from coverage rules", async () => {
+    const state = createDefaultState();
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "机动督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: false,
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-policy-page", { model: state });
+    const card = element.querySelector<HTMLElement>("[data-supervisor-fill]")!;
+
+    expect(card).not.toBeNull();
+    expect(card.textContent).toContain("督导补位关系");
+    expect(card.textContent).toContain("人手不足");
+    expect(
+      card.querySelector<HTMLInputElement>('input[aria-label="来源航班"]')
+        ?.value
+    ).toBe("KE166");
+    expect(
+      card.querySelector<HTMLInputElement>('input[aria-label="目标岗位"]')
+        ?.value
+    ).toBe("H05");
+    const switches = card.querySelectorAll<HTMLInputElement>(
+      'input[type="checkbox"]'
+    );
+    expect([...switches].map((input) => input.checked)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
   it("configures cross-flight priority by current-group people instead of positions", async () => {
     const state = createDefaultState();
     const selected = state.staff[0]!;

@@ -141,6 +141,7 @@ export type UiCommand =
         | "cross-flight-priority"
         | "late-position"
         | "supervisor"
+        | "supervisor-fill"
         | "transition";
     }
   | {
@@ -153,6 +154,7 @@ export type UiCommand =
         | "cross-flight-priority"
         | "late-position"
         | "supervisor"
+        | "supervisor-fill"
         | "transition";
       id: string;
     }

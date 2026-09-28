@@ -57,7 +57,7 @@ export const SCHEDULING_RULES = [
   {
     id: "mobile-supervisor",
     stage: "reserved-assignment",
-    label: "机动督导独立优先与缺员兼任",
+    label: "机动督导独立优先、缺员兼任与配置补位",
     feedbackMode: "aggregated",
   },
   {

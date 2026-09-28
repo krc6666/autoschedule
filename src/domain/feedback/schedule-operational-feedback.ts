@@ -87,10 +87,17 @@ function coverageFeedback(
         assignment.status === "assigned" &&
         assignment.supervisorSourceAssignmentId
     )
-    .map(
-      (assignment) =>
-        `${assignment.staffName}兼任${assignment.flightNo}/${assignment.position}`
-    );
+    .map((assignment) => {
+      const source = assignment.supervisorFillRuleId
+        ? state.assignments.find(
+            (candidate) =>
+              candidate.id === assignment.supervisorSourceAssignmentId
+          )
+        : undefined;
+      return source
+        ? `${assignment.staffName}由${source.flightNo}/${source.position}补位${assignment.flightNo}/${assignment.position}`
+        : `${assignment.staffName}兼任${assignment.flightNo}/${assignment.position}`;
+    });
   const density = flightDensityEvidence(state);
   if (unworked.length || unfilled || supervisorAssignments.length) {
     const details = [

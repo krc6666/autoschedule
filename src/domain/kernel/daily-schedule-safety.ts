@@ -12,6 +12,10 @@ import {
 } from "../flights/schedule-tasks";
 import { canMobileSupervisorCoverPosition } from "../coverage/mobile-supervisor-coverage";
 import {
+  evaluateSupervisorFillFacts,
+  hasRecordedSupervisorFillLink,
+} from "../coverage/supervisor-fill-facts";
+import {
   isStrictNextWorkdayRecoveryTarget,
   previousWorkdayLateProtection,
 } from "../reviews/cross-day-recovery";
@@ -179,15 +183,46 @@ export function assertDailyScheduleSafety({
           Boolean(other.staffId) &&
           !(
             allowFinalizedConcurrency &&
-            isControlledConcurrentPair(state, tasks, assignment, other)
+            isControlledConcurrentPair(
+              state,
+              assignments,
+              tasks,
+              assignment,
+              other
+            )
           )
       )
     );
+    const supervisorSource = assignment.supervisorSourceAssignmentId
+      ? assignments.find(
+          (candidate) =>
+            candidate.id === assignment.supervisorSourceAssignmentId
+        )
+      : undefined;
+    const configuredSupervisorFill = supervisorSource
+      ? hasRecordedSupervisorFillLink(
+          evaluateSupervisorFillFacts(
+            state,
+            assignments,
+            supervisorSource,
+            assignment,
+            "automatic"
+          ),
+          assignment
+        )
+      : false;
     const diagnostic = evaluateEligibility({
       state,
       assignments: otherAutomaticAssignments,
       flight: task.flight,
-      rule: task.rule,
+      rule: configuredSupervisorFill
+        ? {
+            ...task.rule,
+            qualifiedStaffIds: [
+              ...new Set([...task.rule.qualifiedStaffIds, person.id]),
+            ],
+          }
+        : task.rule,
       person,
       workHours: assignment.workHours,
     });
@@ -210,6 +245,7 @@ export function assertDailyScheduleSafety({
 
 function isControlledConcurrentPair(
   state: ScheduleGenerationFacts,
+  assignments: readonly Assignment[],
   tasks: readonly AssignmentTask[],
   left: Assignment,
   right: Assignment
@@ -238,16 +274,27 @@ function isControlledConcurrentPair(
   if (
     source &&
     supervisor &&
-    source.flightId === supervisor.flightId &&
     sourceTask &&
     supervisorTask &&
-    isNumberedRegularPosition(sourceTask.rule) &&
-    isMobileSupervisor(supervisorTask.flight, supervisorTask.rule) &&
-    canMobileSupervisorCoverPosition(state, {
-      flightNo: source.flightNo,
-      position: source.position,
-      remark: source.remark,
-    })
+    ((source.flightId === supervisor.flightId &&
+      isNumberedRegularPosition(sourceTask.rule) &&
+      isMobileSupervisor(supervisorTask.flight, supervisorTask.rule) &&
+      canMobileSupervisorCoverPosition(state, {
+        flightNo: source.flightNo,
+        position: source.position,
+        remark: source.remark,
+      })) ||
+      (source.flightId === supervisor.flightId &&
+        hasRecordedSupervisorFillLink(
+          evaluateSupervisorFillFacts(
+            state,
+            assignments,
+            supervisor,
+            source,
+            "automatic"
+          ),
+          source
+        )))
   ) {
     return true;
   }

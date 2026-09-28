@@ -899,13 +899,15 @@ describe("schedule page", () => {
     const statistics = element.querySelector(
       "autoschedule-daily-staff-flight-statistics"
     )!;
-    const currentTag = statistics.querySelector(".daily-staff-flight-tag")!;
+    const currentRow = statistics.querySelector(
+      '.daily-staff-flight-row[data-staff-id="' + regular.id + '"]'
+    )!;
 
-    expect(currentTag.textContent?.replace(/\s+/g, " ").trim()).toBe(
-      `${regular.name} CX931`
+    expect(currentRow.textContent?.replace(/\s+/g, " ").trim()).toContain(
+      `${regular.name} 1 CX931`
     );
-    expect(currentTag.textContent).not.toContain("G18");
-    expect(currentTag.textContent).not.toContain("2026-09-13");
+    expect(currentRow.textContent).not.toContain("G18");
+    expect(currentRow.textContent).not.toContain("2026-09-13");
     expect(statistics.textContent).not.toContain(administrative.name);
     expect(
       statistics.querySelector(".daily-staff-flight-unassigned")?.textContent
@@ -920,11 +922,107 @@ describe("schedule page", () => {
 
     expect(
       statistics
-        .querySelector(".daily-staff-flight-tag")
+        .querySelector(
+          '.daily-staff-flight-row[data-staff-id="' + regular.id + '"]'
+        )
         ?.textContent?.replace(/\s+/g, " ")
         .trim()
-    ).toBe(`${regular.name} KE166`);
+    ).toContain(`${regular.name} 1 KE166`);
     expect(statistics.textContent).not.toContain("CX931");
+  });
+
+  it("shows aligned staff rows with zero counts and supports flight-count sorting", async () => {
+    const state = createDefaultState();
+    const regularStaff = state.staff
+      .filter((person) => person.staffType === "常规")
+      .slice(0, 3);
+    const [first, second, third] = regularStaff;
+    state.staff = regularStaff;
+    state.activeScheduleDate = "2026-09-13";
+    state.assignments = [
+      {
+        id: "sort-a",
+        flightId: "sort-flight-a",
+        flightNo: "CX931",
+        positionRuleId: null,
+        position: "G01",
+        staffId: first!.id,
+        staffName: first!.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "sort-b",
+        flightId: "sort-flight-b",
+        flightNo: "TR121",
+        positionRuleId: null,
+        position: "G01",
+        staffId: first!.id,
+        staffName: first!.name,
+        startTime: "12:00",
+        endTime: "14:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "sort-c",
+        flightId: "sort-flight-c",
+        flightNo: "KE166",
+        positionRuleId: null,
+        position: "G01",
+        staffId: second!.id,
+        staffName: second!.name,
+        startTime: "09:00",
+        endTime: "11:00",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-schedule-page", {
+      model: state,
+      date: "2026-09-13",
+      zoom: 1,
+      loadSortField: "totalFatigue",
+      loadSortDirection: "desc",
+    });
+    const statistics = element.querySelector(
+      "autoschedule-daily-staff-flight-statistics"
+    )!;
+    const rows = () =>
+      [
+        ...statistics.querySelectorAll<HTMLElement>(".daily-staff-flight-row"),
+      ].map((row) => row.dataset.staffId);
+
+    expect(rows()).toEqual([first!.id, second!.id, third!.id]);
+    expect(statistics.textContent).toContain("统计日期 2026-09-13");
+    expect(statistics.textContent).toContain("人员总数 3");
+    expect(statistics.textContent).toContain("总航班 3");
+    expect(
+      statistics.querySelector(
+        `.daily-staff-flight-row[data-staff-id="${third!.id}"] .daily-staff-flight-count`
+      )?.textContent
+    ).toBe("0");
+
+    const sort = statistics.querySelector<HTMLSelectElement>(
+      'select[aria-label="人员航班排序"]'
+    )!;
+    sort.value = "asc";
+    sort.dispatchEvent(new Event("change"));
+    await settleLit();
+    expect(rows()).toEqual([third!.id, second!.id, first!.id]);
   });
 
   it("highlights only the last schedule cell for today's early-departure staff", async () => {
@@ -1329,6 +1427,13 @@ describe("schedule page", () => {
         category: guideCategory,
         qualifiedStaffIds: [secondStaff.id],
       },
+      {
+        ...baseRule,
+        id: "same-conflict-rule",
+        flightNo: "TIMESAME",
+        name: "conflict",
+        qualifiedStaffIds: [secondStaff.id],
+      },
     ];
     const makeAssignment = (
       id: string,
@@ -1387,6 +1492,12 @@ describe("schedule page", () => {
       rules[4]!,
       secondStaff.id
     );
+    const sameFlightConflict = makeAssignment(
+      "same-flight-conflict",
+      flights[3]!,
+      rules[5]!,
+      secondStaff.id
+    );
     const missing = makeAssignment(
       "time-assignment-missing",
       flights[1]!,
@@ -1402,6 +1513,7 @@ describe("schedule page", () => {
       nonOverlap,
       sameFlightRegular,
       sameFlightGuide,
+      sameFlightConflict,
       missing,
     ];
 
@@ -1437,10 +1549,13 @@ describe("schedule page", () => {
     ).toBe(false);
     expect(
       personCell(sameFlightRegular.id).classList.contains("is-time-conflict")
-    ).toBe(false);
+    ).toBe(true);
     expect(
       personCell(sameFlightGuide.id).classList.contains("is-time-conflict")
     ).toBe(false);
+    expect(
+      personCell(sameFlightConflict.id).classList.contains("is-time-conflict")
+    ).toBe(true);
     expect(personCell(missing.id).classList.contains("is-unfilled")).toBe(true);
     expect(personCell(missing.id).classList.contains("is-time-conflict")).toBe(
       false

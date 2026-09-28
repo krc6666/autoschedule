@@ -42,6 +42,17 @@ export interface MobileSupervisorCoverageRule {
   mode: "allow" | "forbid";
 }
 
+export interface MobileSupervisorFillRule {
+  id: string;
+  enabled: boolean;
+  sourceFlightNo: string;
+  sourcePositionKeyword: string;
+  targetFlightNo: string;
+  targetPositionKeyword: string;
+  allowAutomatic: boolean;
+  allowManual: boolean;
+}
+
 export interface CrossWorkdayQualificationReservation {
   id: string;
   enabled: boolean;
@@ -79,6 +90,7 @@ export interface StructuredSchedulePolicies {
   nextWorkdayRecoveryTargets: NextWorkdayRecoveryTarget[];
   lateShiftRecoveryPositionRules: LateShiftRecoveryPositionRule[];
   mobileSupervisorCoverageRules: MobileSupervisorCoverageRule[];
+  mobileSupervisorFillRules: MobileSupervisorFillRule[];
   crossWorkdayQualificationReservations: CrossWorkdayQualificationReservation[];
   crossFlightPriorityPolicies: CrossFlightPriorityPolicy[];
   teamLeaderGapFillPositionPolicies: TeamLeaderGapFillPositionPolicy[];

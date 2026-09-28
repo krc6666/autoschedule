@@ -6,6 +6,8 @@ import {
   moveSupervisorWithinFlight,
   normalizeSupervisorAssignments,
 } from "../../src/domain/assignments/schedule-adjustment";
+import { createMobileSupervisorCoverageScheduleGuard } from "../../src/domain/kernel/schedule-guard";
+import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
 
 function stateWithSupervisor(): AppState {
   const state = createDefaultState();
@@ -91,6 +93,199 @@ function stateWithSupervisor(): AppState {
 }
 
 describe("督导同航班机动补位", () => {
+  it("允许人工把机动督导补到配置的跨航班督导补位岗位", () => {
+    const state = stateWithSupervisor();
+    state.flights.push({
+      id: "f2",
+      flightNo: "F2",
+      startTime: "12:00",
+      endTime: "14:00",
+      bookedPassengers: 100,
+      positions: [],
+      remark: "",
+    });
+    const targetRule = state.positionRules.find((rule) => rule.id === "h04")!;
+    targetRule.flightNo = "F2";
+    targetRule.coverageRole = "supervisor-fill";
+    const target = state.assignments.find(
+      (assignment) => assignment.id === "h04-assignment"
+    )!;
+    target.flightId = "f2";
+    target.flightNo = "F2";
+    target.startTime = "12:00";
+    target.endTime = "14:00";
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "f1-f2-fill",
+        enabled: true,
+        sourceFlightNo: "F1",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "F2",
+        targetPositionKeyword: "H04",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+
+    expect(
+      moveSupervisorWithinFlight(
+        state,
+        "supervisor-assignment",
+        "h04-assignment"
+      )
+    ).toBeNull();
+    expect(target).toMatchObject({
+      staffId: state.staff[0]!.id,
+      status: "assigned",
+      workHours: 0,
+      fatiguePoints: 0,
+      supervisorSourceAssignmentId: "supervisor-assignment",
+    });
+  });
+
+  it("拒绝人工把机动督导补到时段重叠的跨航班岗位", () => {
+    const state = stateWithSupervisor();
+    state.flights.push({
+      id: "f2",
+      flightNo: "F2",
+      startTime: "08:00",
+      endTime: "10:00",
+      bookedPassengers: 100,
+      positions: [],
+      remark: "",
+    });
+    const targetRule = state.positionRules.find((rule) => rule.id === "h04")!;
+    targetRule.flightNo = "F2";
+    targetRule.coverageRole = "supervisor-fill";
+    const target = state.assignments.find(
+      (assignment) => assignment.id === "h04-assignment"
+    )!;
+    target.flightId = "f2";
+    target.flightNo = "F2";
+    target.startTime = "08:00";
+    target.endTime = "10:00";
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "f1-f2-fill",
+        enabled: true,
+        sourceFlightNo: "F1",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "F2",
+        targetPositionKeyword: "H04",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+
+    expect(
+      moveSupervisorWithinFlight(
+        state,
+        "supervisor-assignment",
+        "h04-assignment"
+      )
+    ).toContain("已有排班");
+    expect(target).toMatchObject({ staffId: null, status: "unfilled" });
+  });
+
+  it("最终守卫接受合法跨航班补位并拒绝拆开的关联", () => {
+    const state = stateWithSupervisor();
+    state.flights.push({
+      id: "f2",
+      flightNo: "F2",
+      startTime: "12:00",
+      endTime: "14:00",
+      bookedPassengers: 100,
+      positions: [],
+      remark: "",
+    });
+    const targetRule = state.positionRules.find((rule) => rule.id === "h04")!;
+    targetRule.flightNo = "F2";
+    targetRule.coverageRole = "supervisor-fill";
+    const target = state.assignments.find(
+      (assignment) => assignment.id === "h04-assignment"
+    )!;
+    target.flightId = "f2";
+    target.flightNo = "F2";
+    target.startTime = "12:00";
+    target.endTime = "14:00";
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "f1-f2-fill",
+        enabled: true,
+        sourceFlightNo: "F1",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "F2",
+        targetPositionKeyword: "H04",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    expect(
+      moveSupervisorWithinFlight(
+        state,
+        "supervisor-assignment",
+        "h04-assignment"
+      )
+    ).toBeNull();
+    const session = createScheduleSafetySessionFromContext({
+      guards: [createMobileSupervisorCoverageScheduleGuard()],
+      context: {
+        phase: "final",
+        mobileSupervisorCoverageFacts: { state, date: "2026-09-28" },
+      },
+    });
+
+    expect(() =>
+      session.assertAssignmentsSafe(state.assignments)
+    ).not.toThrow();
+    const broken = state.assignments.map((assignment) => ({ ...assignment }));
+    delete broken.find((assignment) => assignment.id === target.id)!
+      .supervisorSourceAssignmentId;
+
+    expect(() => session.assertAssignmentsSafe(broken)).toThrow(/关联被拆开/);
+  });
+
+  it("最终守卫拒绝同航班督导补位缺失补位规则关联", () => {
+    const state = stateWithSupervisor();
+    const targetRule = state.positionRules.find((rule) => rule.id === "h04")!;
+    targetRule.coverageRole = "supervisor-fill";
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "f1-h04-fill",
+        enabled: true,
+        sourceFlightNo: "F1",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "F1",
+        targetPositionKeyword: "H04",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    expect(
+      moveSupervisorWithinFlight(
+        state,
+        "supervisor-assignment",
+        "h04-assignment"
+      )
+    ).toBeNull();
+    const target = state.assignments.find(
+      (assignment) => assignment.id === "h04-assignment"
+    )!;
+    expect(target.supervisorFillRuleId).toBe("f1-h04-fill");
+    const session = createScheduleSafetySessionFromContext({
+      guards: [createMobileSupervisorCoverageScheduleGuard()],
+      context: {
+        phase: "final",
+        mobileSupervisorCoverageFacts: { state, date: "2026-09-28" },
+      },
+    });
+    const broken = state.assignments.map((assignment) => ({ ...assignment }));
+    delete broken.find((assignment) => assignment.id === target.id)!
+      .supervisorFillRuleId;
+
+    expect(() => session.assertAssignmentsSafe(broken)).toThrow(/补位关联/);
+  });
+
   it("保留顶部督导并允许补到无资质的空柜台", () => {
     const state = stateWithSupervisor();
 

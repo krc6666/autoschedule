@@ -7,6 +7,7 @@ import {
   addDutyPriority,
   addLateShiftRecoveryPositionRule,
   addMobileSupervisorCoverageRule,
+  addMobileSupervisorFillRule,
   addSameFlightStaffExclusion,
   addNextWorkdayRecoveryTarget,
   addTransitionPolicy,
@@ -14,6 +15,7 @@ import {
   deleteDutyPriority,
   deleteCrossWorkdayQualificationReservation,
   deleteMobileSupervisorCoverageRule,
+  deleteMobileSupervisorFillRule,
   deleteSameFlightStaffExclusion,
   deleteNextWorkdayRecoveryTarget,
   deleteLateShiftRecoveryPositionRule,
@@ -78,6 +80,44 @@ function addActiveSchedule(state: ReturnType<typeof createDefaultState>): void {
 }
 
 describe("policy actions", () => {
+  it("adds, edits, and deletes a structured supervisor-fill relationship", () => {
+    const state = createDefaultState();
+    state.settings.mobileSupervisorFillRules = [];
+    addActiveSchedule(state);
+
+    const rule = addMobileSupervisorFillRule(state);
+    expect(rule).toMatchObject({
+      enabled: true,
+      allowAutomatic: true,
+      allowManual: true,
+    });
+    expect(
+      updatePolicyEntityField(
+        state,
+        "supervisor-fill",
+        rule.id,
+        "targetFlightNo",
+        " ke166 "
+      )
+    ).toBe("saved");
+    expect(
+      updatePolicyEntityField(
+        state,
+        "supervisor-fill",
+        rule.id,
+        "targetPositionKeyword",
+        "H05"
+      )
+    ).toBe("saved");
+    expect(rule).toMatchObject({
+      targetFlightNo: "KE166",
+      targetPositionKeyword: "H05",
+    });
+    expect(state.schedulePolicyStale).toBe(true);
+    expect(deleteMobileSupervisorFillRule(state, rule.id)).toBe(true);
+    expect(state.settings.mobileSupervisorFillRules).toEqual([]);
+  });
+
   it("updates the team-leader gap-fill scope in bulk while preserving fixed positions", () => {
     const state = createDefaultState();
     const movable = state.positionRules.find(
