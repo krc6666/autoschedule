@@ -805,3 +805,32 @@
 | 人工拖拽 / 交换             | 落位后重新计算同一冲突 warning              | 该 warning 不阻断提交                                  |
 | Ledger / final guard / 凭证 | 消费同一冲突事实并将其分类为 warning        | 该组合不得导致整表拒绝                                 |
 | 规则页 / 反馈               | 投影中央合同、开关与统一 warning 文案       | 颜色为琥珀色，事实与决定可追溯；关闭后不提示           |
+
+## 机制策略：行为保持的测试与应用 adapter seam 收口（2026-09-28）
+
+- 类别：机制策略。
+- 唯一编译点：`tests/helpers/scheduling-scenario.ts` 统一测试场景事实；应用运行依赖由 composition root 注入 `ApplicationCoordinator`，浏览器排班 runner 与状态持久化 adapter 只在 `src/app.ts` 选择；安全会话只允许从完整排班事实创建；`reassignment-intent.ts` 从具名 intent 统一编译 review 类别和让步策略。
+- 行为合同：本轮只移动构造和装配职责，不改变排班输入、assignments、告警、失败回退、持久化数据格式或页面交互。
+
+| 环节                           | 是否适用 | 消费点 / 目标                                                                   | 失败或边界                                                            | 回归保护                                      |
+| ------------------------------ | -------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------- |
+| 输入事实 / 测试场景            | 是       | 领域命名的 scenario helper 显式构造人员、航班、岗位与规则；仍调用真实 kernel    | 不 mock 排班规则，不把默认生产名单当成场景身份合同                    | kernel、eligibility、optimizer 既有行为测试   |
+| 候选池 / 求解 / 补缺覆盖       | 否       | 本轮不改候选、模型、求解或补缺实现                                              | assignments、空缺和求解结果必须与基线一致                             | 相关领域测试前后使用同一断言                  |
+| 恢复 / 轮岗公平                | 否       | 本轮不改恢复、轮岗或公平规则                                                    | 不改变顺序、让步或回退                                                | 既有重排与 kernel 测试保持                    |
+| 局部重排 intent                | 是       | optimizer、choice graph 与 safety 只消费 intent 编译出的 review 和让步策略      | 调用方不得再同时传一份可能矛盾的 review；候选和目标函数仍归业务 owner | intent 映射、重排安全与各 review 回归         |
+| 人工调整                       | 否       | 本轮不改人工调整入口                                                            | 不改变允许、拒绝或警告语义                                            | 既有 app/domain 测试保持                      |
+| 最终复核 / 守卫 / 凭证         | 是       | `createScheduleSafetySession` 从完整 facts 统一派生 guard context 和 credential | 不保留生产可调用的手工 context 绕行入口；守卫顺序和错误不变           | safety session、ledger、credential 测试       |
+| 应用 runner adapter            | 是       | composition root 选择浏览器 runner；coordinator 只消费注入接口                  | 测试不得改写 readonly 字段或启动真实 Worker                           | coordinator 注入 fake runner 的工作流测试     |
+| 保存 / localStorage / 状态恢复 | 是       | composition root 选择浏览器 persistence；Store 只消费注入 adapter               | JSON、版本、迁移和保存失败语义不变；测试不触碰真实存储                | store、storage、coordinator 持久化回归        |
+| Excel 读写 / 迁移              | 否       | 本轮不改 Excel 或状态 schema                                                    | 不新增字段、旧别名或兼容双轨                                          | 既有 Excel/迁移测试保持                       |
+| 页面展示 / 用户工作流          | 否       | 本轮不改 UI 投影或命令                                                          | 可见文案、交互顺序和失败回退不变                                      | application coordinator 既有断言              |
+| 测试                           | 是       | 新增 adapter 注入与场景 helper 合同测试，并迁移绕行式测试装配                   | 不能以 mock 规则换取易测性                                            | 定向测试、typecheck、全量 test、build、verify |
+
+### 写入路径盘点
+
+| 写入路径                         | 统一消费点                                       | 最终边界                                      |
+| -------------------------------- | ------------------------------------------------ | --------------------------------------------- |
+| 测试场景 -> 真实 kernel          | `scheduling-scenario.ts`                         | helper 只构造事实，不实现排班规则             |
+| 页面命令 -> 后台排班             | 注入的 schedule runner adapter                   | coordinator 不创建浏览器 adapter              |
+| Store commit/reset -> 浏览器存储 | 注入的 state persistence adapter                 | Store 不直接选择 localStorage 实现            |
+| 最终 assignments -> 安全凭证     | `createScheduleSafetySession` 的完整事实编译入口 | 外部调用方不能手工拼装 `ScheduleGuardContext` |

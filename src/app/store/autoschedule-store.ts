@@ -2,12 +2,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { immer } from "zustand/middleware/immer";
 
 import { createDefaultState } from "../../defaults";
-import {
-  clearState,
-  loadState,
-  saveState,
-  type StateSaveResult,
-} from "../../infrastructure/storage";
+import type { StateSaveResult } from "../../infrastructure/storage";
 import type { AppState, ScheduleGroupId } from "../../model";
 import {
   createConfigurationCommands,
@@ -38,6 +33,17 @@ export interface AutoscheduleStoreState {
 }
 
 export type AutoscheduleStore = StoreApi<AutoscheduleStoreState>;
+
+export interface AutoscheduleStatePersistence {
+  load(): AppState;
+  save(state: AppState): StateSaveResult;
+  clear(): void;
+}
+
+export interface CreateAutoscheduleStoreOptions {
+  persistence: AutoscheduleStatePersistence;
+  initialState?: AppState;
+}
 
 function syncSharedProjection(model: AppState): void {
   model.shared.templates = model.templates;
@@ -115,8 +121,9 @@ function activateGroupProjection(
 }
 
 export function createAutoscheduleStore(
-  initial: AppState = loadState()
+  options: CreateAutoscheduleStoreOptions
 ): AutoscheduleStore {
+  const initial = options.initialState ?? options.persistence.load();
   const initialModel = structuredClone(initial);
   reconcileInitialProjection(initialModel);
   activateSharedProjection(initialModel);
@@ -159,13 +166,13 @@ export function createAutoscheduleStore(
         isDirty: () => dirty,
         persist: () => {
           set((store) => syncActiveGroupProjection(store.model));
-          const result = saveState(get().model);
+          const result = options.persistence.save(get().model);
           set({ model: result.state });
           dirty = false;
           return result;
         },
         reset: () => {
-          clearState();
+          options.persistence.clear();
           set({ model: createDefaultState() });
           dirty = false;
         },

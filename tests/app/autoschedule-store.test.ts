@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
+import { createTestAutoscheduleStore } from "../helpers/application";
 import { createDefaultState } from "../../src/defaults";
 import { buildFlightPlanReconciliation } from "../../src/domain/flights/flight-plan-reconciliation";
 
 describe("autoschedule store", () => {
   it("exposes one state owner and commits named commands through Immer", () => {
-    const store = createAutoscheduleStore(createDefaultState());
+    const store = createTestAutoscheduleStore(createDefaultState());
     const before = store.getState().model;
     const listener = vi.fn();
     store.subscribe(listener);
@@ -20,7 +20,7 @@ describe("autoschedule store", () => {
   });
 
   it("returns domain command results without exposing a generic mutable draft", () => {
-    const store = createAutoscheduleStore(createDefaultState());
+    const store = createTestAutoscheduleStore(createDefaultState());
     const id = store.getState().model.flights[0]!.id;
 
     expect(store.getState().configuration.deleteFlight(id)).toBe(true);
@@ -31,7 +31,7 @@ describe("autoschedule store", () => {
   });
 
   it("adds a flight template while the command is running through Immer", () => {
-    const store = createAutoscheduleStore(createDefaultState());
+    const store = createTestAutoscheduleStore(createDefaultState());
     const template = store.getState().model.templates[0]!;
     const beforeCount = store.getState().model.flights.length;
 
@@ -55,7 +55,7 @@ describe("autoschedule store", () => {
       (flight) => flight.flightNo !== template.flightNo
     );
     initial.groups.A.flights = structuredClone(initial.flights);
-    const store = createAutoscheduleStore(initial);
+    const store = createTestAutoscheduleStore(initial);
     const reconciliation = buildFlightPlanReconciliation(
       store.getState().model,
       "2026-08-05",
@@ -83,7 +83,7 @@ describe("autoschedule store", () => {
       { ...initial.staff[0]!, id: "b-only", name: "B组人员" },
     ];
     initial.groups.B.flights = [];
-    const store = createAutoscheduleStore(initial);
+    const store = createTestAutoscheduleStore(initial);
 
     store.getState().configuration.addStaff();
     expect(store.getState().isDirty()).toBe(true);
@@ -109,7 +109,7 @@ describe("autoschedule store", () => {
 
   it("replaces imported current-group data into the active workspace projection", () => {
     const initial = createDefaultState();
-    const store = createAutoscheduleStore(initial);
+    const store = createTestAutoscheduleStore(initial);
     const imported = structuredClone(store.getState().model);
     const importedStaff = [
       { ...initial.staff[0]!, id: "imported-a", name: "导入A组人员" },

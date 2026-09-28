@@ -18,6 +18,7 @@ import type { RotationStaffChange } from "../reviews/rotation-review-safety";
 import { intervalsOverlap } from "../shared/time";
 import type { ReassignmentOptimizationOptions } from "./reassignment-contract";
 import {
+  reassignmentIntentReview,
   reassignmentIntentPolicy,
   type ReassignmentIntentPolicy,
 } from "./reassignment-intent";
@@ -92,7 +93,7 @@ function dynamicChoiceSafetyReasons(
     assignments: projected,
     assignment: projected.at(-1)!,
     primaryAssignment: options.primary,
-    review: options.review,
+    review: reassignmentIntentReview(options.intent),
     allowLoadProtectionRegression: intentPolicy.allowLoadProtectionRegression,
   });
 }
@@ -286,7 +287,7 @@ function createChoices(
             originalAssignment: assignment,
             primaryAssignment: options.primary,
             date: options.date,
-            review: options.review,
+            review: reassignmentIntentReview(options.intent),
             facts: options.facts,
             frequencyFacts: options.frequencyFacts,
             latePriorityFatigueRelief: options.latePriorityFatigueRelief,
@@ -425,7 +426,7 @@ export function incompatibleReassignmentChoices(
                   : projected,
                 assignment: index === 0 ? leftAssignment : rightAssignment,
                 primaryAssignment: options.primary,
-                review: options.review,
+                review: reassignmentIntentReview(options.intent),
                 allowLoadProtectionRegression:
                   intentPolicy.allowLoadProtectionRegression,
               })
@@ -470,7 +471,8 @@ export function reassignmentChoiceRequirements(
   movable: readonly Assignment[],
   fixed: readonly Assignment[]
 ): ReassignmentChoiceRequirement[] {
-  const policy = ROTATION_REVIEW_POLICIES[options.review];
+  const policy =
+    ROTATION_REVIEW_POLICIES[reassignmentIntentReview(options.intent)];
   const requirements: ReassignmentChoiceRequirement[] = [];
   for (const staffId of options.requiredStaffIds ?? []) {
     requirements.push({

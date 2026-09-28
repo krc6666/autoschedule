@@ -1,12 +1,12 @@
 import type { AppState } from "../model";
 import type { AutoscheduleStore } from "./store/autoschedule-store";
-import type { ScheduleRunController } from "./schedule-run-controller";
+import type { ScheduleRunner } from "./schedule-run-controller";
 import type { ApplicationViewState } from "./application-view-state";
 import type { ApplicationPreferences } from "./application-preferences";
 
 export interface ApplicationContext {
   readonly store: AutoscheduleStore;
-  readonly scheduleRunner: ScheduleRunController;
+  readonly scheduleRunner: ScheduleRunner;
   readonly preferences: ApplicationPreferences;
   view(): ApplicationViewState;
   model(): AppState;

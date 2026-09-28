@@ -18,7 +18,7 @@ import {
   createDefaultScheduleGuards,
   ScheduleGuardError,
 } from "../../src/domain/kernel/schedule-guard";
-import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
 import type { Assignment } from "../../src/model";
 import type { HalfRestFacts } from "../../src/domain/rules/half-rest";
 
@@ -64,10 +64,17 @@ describe("schedule pipeline contract", () => {
       startTime: "09:00",
       endTime: "11:00",
     };
+    const runFacts = {
+      ...createScheduleRunFacts(state, "2026-09-12"),
+      halfRest: halfRestFacts,
+    };
     const ledger = createScheduleLedger([legal], {
-      safetySession: createScheduleSafetySessionFromContext({
+      safetySession: createScheduleSafetySession({
+        phase: "partial",
+        state,
+        date: "2026-09-12",
+        runFacts,
         guards: createDefaultScheduleGuards(),
-        context: { phase: "partial", halfRestFacts },
       }),
     });
     const context = {
@@ -80,7 +87,7 @@ describe("schedule pipeline contract", () => {
       ledger,
       date: "2026-09-12",
       lockedAssignmentIds: new Set<string>(),
-      runFacts: createScheduleRunFacts(state, "2026-09-12"),
+      runFacts,
       flights: [],
       displayRulesByFlight: new Map(),
       finalizeMobileSupervisors: async () => undefined,

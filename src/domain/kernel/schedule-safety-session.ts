@@ -138,14 +138,4 @@ export function createScheduleSafetySession(
   );
 }
 
-export function createScheduleSafetySessionFromContext(options: {
-  context: ScheduleGuardContext;
-  guards?: readonly ScheduleGuard[];
-}): ScheduleSafetySession {
-  return createSession(
-    options.context,
-    options.guards ?? createDefaultScheduleGuards()
-  );
-}
-
 export { assertScheduleSafetyCredential };

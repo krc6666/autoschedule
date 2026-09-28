@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import type { AppState, StaffStatus } from "../../src/model";
 import { applyStaffStatusChange } from "../../src/domain/kernel/schedule-state";
 import { generateSchedule } from "../helpers/generate-schedule";
@@ -8,7 +8,7 @@ import { generateSchedule } from "../helpers/generate-schedule";
 async function scheduledSingleWorkerState(
   initialStatus: StaffStatus = "正常"
 ): Promise<AppState> {
-  const state = createDefaultState();
+  const state = createOrdinarySchedulingState();
   const person = state.staff[0]!;
   person.status = initialStatus;
   person.dutyQualified = false;

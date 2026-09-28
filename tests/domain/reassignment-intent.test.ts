@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  reassignmentIntentReview,
   reassignmentIntentPolicy,
   type ReassignmentIntent,
   type ReassignmentIntentPolicy,
@@ -27,6 +28,24 @@ const STRICT_INTENTS: readonly ReassignmentIntent[] = [
 ];
 
 describe("reassignment intent policy", () => {
+  it.each([
+    [{ kind: "mobile-supervisor-counter-coverage" }, "mobile-supervisor"],
+    [{ kind: "team-leader-concurrent-gap-fill" }, "coverage"],
+    [{ kind: "late-priority-frequency-review" }, "late-frequency"],
+    [{ kind: "ke166-rotation-review" }, "consecutive"],
+    [{ kind: "consecutive-rotation-review" }, "consecutive"],
+    [{ kind: "late-shift-recovery-review" }, "recovery"],
+    [{ kind: "position-frequency-review" }, "frequency"],
+    [{ kind: "manual-swap-analysis" }, "recovery"],
+    [{ kind: "next-workday-cutoff-recovery" }, "recovery"],
+    [
+      { kind: "team-leader-gap-fill", crossWorkdayReservation: "preserve" },
+      "coverage",
+    ],
+  ] as const)("compiles %j to %s review", (intent, review) => {
+    expect(reassignmentIntentReview(intent)).toBe(review);
+  });
+
   it.each(STRICT_INTENTS)("keeps %j strict", (intent) => {
     expect(reassignmentIntentPolicy(intent)).toEqual(STRICT_POLICY);
   });

@@ -354,7 +354,6 @@ async function findSupervisorCounterPlan(
         lockedAssignmentIds
       ).filter((assignment) => isAutomaticRegularAssignment(state, assignment)),
       date,
-      review: "mobile-supervisor",
       facts,
       intent: { kind: "mobile-supervisor-counter-coverage" },
       primaryCandidateAllowed: (person) => supervisorIdSet.has(person.id),

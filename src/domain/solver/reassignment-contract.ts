@@ -1,9 +1,6 @@
 import type { Assignment, Staff } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
-import type {
-  LatePriorityFatigueReliefPolicy,
-  RotationReview,
-} from "../reviews/reassignment-safety-policy";
+import type { LatePriorityFatigueReliefPolicy } from "../reviews/reassignment-safety-policy";
 import type { RotationStaffChange } from "../reviews/rotation-review-safety";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import type { ScheduleFrequencyFacts } from "../statistics/schedule-frequency";
@@ -27,7 +24,6 @@ export interface ReassignmentOptimizationOptions {
   primary: Assignment;
   movableAssignments: readonly Assignment[];
   date: string;
-  review: RotationReview;
   facts?: ScheduleRunFacts;
   frequencyFacts?: ScheduleFrequencyFacts;
   permittedConcurrentAssignmentIds?: ReadonlySet<string>;

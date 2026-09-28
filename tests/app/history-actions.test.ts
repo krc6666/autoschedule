@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import { buildScheduleFeedback } from "../../src/domain/feedback/schedule-feedback";
 import { generateSchedule } from "../helpers/generate-schedule";
 import type { Assignment, HistoryRecord } from "../../src/model";
@@ -35,7 +35,7 @@ function assignment(
 
 describe("history actions", () => {
   it("archives the team-leader gap-fill source with normal workload", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.dutyFatiguePoints = 0;
     const person = state.staff[0]!;
     state.assignments = [
@@ -58,7 +58,7 @@ describe("history actions", () => {
   });
 
   it("rebuilds an archived day from the matching current flight template", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     state.flights = [
       {
@@ -147,7 +147,7 @@ describe("history actions", () => {
   });
 
   it("refuses a partial archive or records missing from current configuration", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.history = [
       {
         id: "partial",
@@ -186,7 +186,7 @@ describe("history actions", () => {
   });
 
   it("reports a duty-only date as having no editable flight positions", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.history = [
       {
         id: "duty-only",
@@ -211,7 +211,7 @@ describe("history actions", () => {
   });
 
   it("archives only available workers and adds duty fatigue once", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const available = state.staff[0]!;
     const unavailable = state.staff[1]!;
     unavailable.status = "病假";
@@ -238,7 +238,7 @@ describe("history actions", () => {
   });
 
   it("can preserve an already archived worker during historical editing", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.dutyFatiguePoints = 0;
     const person = state.staff[0]!;
     person.status = "病假";
@@ -253,7 +253,7 @@ describe("history actions", () => {
   });
 
   it("archives manual override reasons without losing configured or manual remarks", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     const item = assignment("manual-override", person.id, person.name);
     item.manualOverrideWarnings = [
@@ -271,7 +271,7 @@ describe("history actions", () => {
   });
 
   it("archives regular staff on administrative positions but excludes administrative staff", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.dutyFatiguePoints = 0;
     const regular = state.staff[0]!;
     const administrative = state.staff[1]!;
@@ -312,7 +312,7 @@ describe("history actions", () => {
   });
 
   it("does not archive guide reuse as additional workload", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.dutyFatiguePoints = 0;
     const person = state.staff[0]!;
     const guideRule = {
@@ -336,7 +336,7 @@ describe("history actions", () => {
   });
 
   it("replaces only the selected date", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const prior = { id: "prior", date: "2026-07-23" } as HistoryRecord;
     const replaced = { id: "old", date: "2026-07-25" } as HistoryRecord;
     const incoming = { id: "new", date: "2026-07-25" } as HistoryRecord;
@@ -347,7 +347,7 @@ describe("history actions", () => {
   });
 
   it("preserves the priority remark through archive and protects the worker on the next workday", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const selectedStaff = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -432,7 +432,7 @@ describe("history actions", () => {
   });
 
   it("allows an unavoidable priority-position repeat and reports the exact fallback reason", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const onlyQualified = state.staff.find(
       (person) => person.status === "正常"
     )!;
@@ -491,7 +491,7 @@ describe("history actions", () => {
   });
 
   it("reassigns an occupied qualified worker before breaking late-shift recovery protection", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [protectedWorker, replacement] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);

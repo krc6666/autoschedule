@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import type { Assignment, PositionRule } from "../../src/model";
-import { createOrdinaryStaffDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import { generateSchedule } from "../helpers/generate-schedule";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import { assignMobileSupervisorByCounterCoverage } from "../../src/domain/assignments/ke166-assignment";
 import { createMobileSupervisorCoverageScheduleGuard } from "../../src/domain/kernel/schedule-guard";
 import { createScheduleLedger } from "../../src/domain/kernel/schedule-ledger";
-import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 import { evaluateSupervisorFillFacts } from "../../src/domain/coverage/supervisor-fill-facts";
 
 const DATE = "2026-09-23";
 
 function singleFlightState() {
-  const state = createOrdinaryStaffDefaultState();
+  const state = createOrdinarySchedulingState();
   state.staff = state.staff
     .filter((person) => person.status === "正常")
     .slice(0, 3);
@@ -691,12 +692,12 @@ describe("all-flight mobile-supervisor scheduling", { timeout: 15_000 }, () => {
       },
     ];
     const ledger = createScheduleLedger(valid, {
-      safetySession: createScheduleSafetySessionFromContext({
+      safetySession: createScheduleSafetySession({
+        phase: "partial",
+        state,
+        date: DATE,
+        runFacts: createScheduleRunFacts(state, DATE),
         guards: [createMobileSupervisorCoverageScheduleGuard()],
-        context: {
-          phase: "partial",
-          mobileSupervisorCoverageFacts: { state, date: DATE },
-        },
       }),
     });
     const broken = valid.map((assignment) => ({ ...assignment }));
@@ -781,12 +782,12 @@ describe("all-flight mobile-supervisor scheduling", { timeout: 15_000 }, () => {
       assignment("guide", guideRule.id, guideRule.name, 0),
     ];
     const ledger = createScheduleLedger(valid, {
-      safetySession: createScheduleSafetySessionFromContext({
+      safetySession: createScheduleSafetySession({
+        phase: "partial",
+        state,
+        date: DATE,
+        runFacts: createScheduleRunFacts(state, DATE),
         guards: [createMobileSupervisorCoverageScheduleGuard()],
-        context: {
-          phase: "partial",
-          mobileSupervisorCoverageFacts: { state, date: DATE },
-        },
       }),
     });
 

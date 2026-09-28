@@ -17,13 +17,13 @@ import {
   type ScheduleGuard,
   type ScheduleGuardContext,
 } from "../../src/domain/kernel/schedule-guard";
-import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleSafetyVerifier } from "../helpers/schedule-safety";
 
 function safetySession(
   context: ScheduleGuardContext,
   guards: readonly ScheduleGuard[] = createDefaultScheduleGuards()
 ) {
-  return createScheduleSafetySessionFromContext({ context, guards });
+  return createScheduleSafetyVerifier(context, guards);
 }
 
 const assignment: Assignment = {

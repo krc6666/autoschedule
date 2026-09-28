@@ -107,3 +107,19 @@ export function clearState(
 ): void {
   storage.removeItem(STORAGE_KEY);
 }
+
+export function createStatePersistence(
+  storage: Pick<Storage, "getItem" | "setItem" | "removeItem">
+) {
+  return Object.freeze({
+    load: () => loadState(storage),
+    save: (state: AppState) => saveState(state, storage),
+    clear: () => clearState(storage),
+  });
+}
+
+export const browserStatePersistence = Object.freeze({
+  load: () => loadState(),
+  save: (state: AppState) => saveState(state),
+  clear: () => clearState(),
+});

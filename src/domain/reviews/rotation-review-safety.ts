@@ -29,6 +29,7 @@ import {
 } from "../rules/half-rest";
 import { worsensTr121H02Cooldown } from "../rules/tr121-h02-cooldown";
 import {
+  reassignmentIntentReview,
   reassignmentIntentPolicy,
   type ReassignmentIntent,
   type ReassignmentIntentPolicy,
@@ -451,14 +452,12 @@ interface ReassignmentSafetyOptionsBase {
 interface RotationCycleSafetyOptions extends ReassignmentSafetyOptionsBase {
   kind: "cycle";
   cycle: Assignment[];
-  review: RotationReview;
 }
 
 interface ReassignmentPlanSafetyOptions extends ReassignmentSafetyOptionsBase {
   kind: "plan";
   changes: readonly RotationStaffChange[];
   primaryAssignmentId: string;
-  review: RotationReview;
   permittedConcurrentAssignmentIds?: ReadonlySet<string>;
 }
 
@@ -479,6 +478,7 @@ export function reassignmentSafetyReasons(
   const { state, assignments, date, facts } = options;
   const frequencyFacts = options.frequencyFacts ?? facts?.scheduleFrequency;
   const intentPolicy = reassignmentIntentPolicy(options.intent);
+  const review = reassignmentIntentReview(options.intent);
   if (options.kind === "cycle") {
     const planned = assignments.map((assignment) => {
       const index = options.cycle.findIndex(
@@ -502,7 +502,7 @@ export function reassignmentSafetyReasons(
       new Set(options.cycle.map((assignment) => assignment.id)),
       options.cycle[0]!.id,
       date,
-      options.review,
+      review,
       intentPolicy,
       facts,
       undefined,
@@ -546,7 +546,7 @@ export function reassignmentSafetyReasons(
       new Set(options.changes.map((change) => change.assignmentId)),
       options.primaryAssignmentId,
       date,
-      options.review,
+      review,
       intentPolicy,
       facts,
       options.permittedConcurrentAssignmentIds,
@@ -572,7 +572,7 @@ export function reassignmentSafetyReasons(
     new Set([options.assignmentId]),
     options.assignmentId,
     date,
-    "recovery",
+    review,
     intentPolicy,
     facts,
     undefined,

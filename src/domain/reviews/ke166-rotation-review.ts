@@ -283,7 +283,6 @@ export async function reviewKe166GroupRotation(
             .flatMap((role) => role.assignments)
             .filter((assignment) => assignment.id !== repeatedAssignment.id),
           date,
-          review: "consecutive",
           facts,
           intent: { kind: "ke166-rotation-review" },
           permittedConcurrentAssignmentIds: groupIds,

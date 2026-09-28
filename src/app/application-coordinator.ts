@@ -9,7 +9,10 @@ import type {
   UiCommandController,
 } from "./application-context";
 import type { ApplicationViewState } from "./application-view-state";
-import { createBrowserScheduleRunController } from "./schedule-run-controller";
+import type {
+  ScheduleRunnerCallbacks,
+  ScheduleRunner,
+} from "./schedule-run-controller";
 import type { AutoscheduleStore } from "./store/autoschedule-store";
 import { plannedScheduleProgress } from "../domain/kernel/schedule-pipeline";
 import { todayIso } from "../utils";
@@ -21,6 +24,10 @@ export interface ApplicationCoordinatorOptions {
   confirm?: (message: string) => boolean;
   onViewChange?: (view: ApplicationViewState) => void;
   restoredScheduleNotice?: boolean;
+}
+
+export interface ApplicationCoordinatorDependencies {
+  createScheduleRunner(callbacks: ScheduleRunnerCallbacks): ScheduleRunner;
 }
 
 const COMMANDS_ALLOWED_DURING_SCHEDULE_RUN = new Set<UiCommand["type"]>([
@@ -95,7 +102,7 @@ function initialView(
 }
 
 export class ApplicationCoordinator implements ApplicationContext {
-  readonly scheduleRunner;
+  readonly scheduleRunner: ScheduleRunner;
   readonly preferences: ApplicationPreferences;
   private currentView: ApplicationViewState;
   private readonly controllers: UiCommandController[];
@@ -105,14 +112,15 @@ export class ApplicationCoordinator implements ApplicationContext {
 
   constructor(
     readonly store: AutoscheduleStore,
-    private readonly options: ApplicationCoordinatorOptions
+    private readonly options: ApplicationCoordinatorOptions,
+    dependencies: ApplicationCoordinatorDependencies
   ) {
     this.preferences = options.preferences;
     this.currentView = initialView(
       this.preferences,
       options.restoredScheduleNotice
     );
-    this.scheduleRunner = createBrowserScheduleRunController({
+    this.scheduleRunner = dependencies.createScheduleRunner({
       start: () => {
         if (this.progressHideTimer) clearTimeout(this.progressHideTimer);
         this.updateView({

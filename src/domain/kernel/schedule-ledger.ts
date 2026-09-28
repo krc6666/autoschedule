@@ -1,7 +1,10 @@
 import { freeze } from "immer";
 
 import type { Assignment } from "../../model";
-import type { ScheduleSafetySession } from "./schedule-safety-session";
+
+export interface ScheduleSafetyVerifier {
+  assertAssignmentsSafe(assignments: readonly Assignment[]): void;
+}
 
 export type ScheduleProposal =
   | { type: "append"; assignments: readonly Assignment[] }
@@ -14,7 +17,7 @@ export interface ScheduleLedger {
 }
 
 export interface ScheduleLedgerOptions {
-  safetySession?: ScheduleSafetySession;
+  safetySession?: ScheduleSafetyVerifier;
 }
 
 function cloneAssignments(assignments: readonly Assignment[]): Assignment[] {

@@ -13,9 +13,9 @@ import { createScheduleLedger } from "../../src/domain/kernel/schedule-ledger";
 import {
   createDefaultScheduleGuards,
   ScheduleGuardError,
-  type ScheduleGuardContext,
 } from "../../src/domain/kernel/schedule-guard";
-import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 import { sameFlightStaffExclusionViolations } from "../../src/domain/rules/same-flight-staff-exclusion";
 
 interface ExclusionInput {
@@ -218,12 +218,12 @@ describe("same-flight staff exclusion", () => {
       staffName: "WORKER-B",
     };
     const ledger = createScheduleLedger([legal], {
-      safetySession: createScheduleSafetySessionFromContext({
+      safetySession: createScheduleSafetySession({
+        phase: "partial",
+        state,
+        date: "2026-09-28",
+        runFacts: createScheduleRunFacts(state, "2026-09-28"),
         guards: createDefaultScheduleGuards(),
-        context: {
-          phase: "partial",
-          sameFlightStaffExclusionFacts: { state },
-        } as ScheduleGuardContext,
       }),
     });
 

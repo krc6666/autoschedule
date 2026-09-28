@@ -208,7 +208,6 @@ export async function findConcurrentSupervisionPlan(options: {
     primary: vacancy,
     movableAssignments,
     date,
-    review: "coverage",
     facts,
     intent: { kind: "team-leader-concurrent-gap-fill" },
     permittedConcurrentAssignmentIds: pairAssignmentIds,

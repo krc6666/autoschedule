@@ -12,7 +12,7 @@ import {
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 import { SCHEDULE_SETTING_DEFINITIONS } from "../../src/domain/rules/schedule-settings";
 import { STRUCTURED_POLICY_DEFINITIONS } from "../../src/domain/rules/structured-policy-settings";
-import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
+import { createTestAutoscheduleStore } from "../helpers/application";
 
 describe("workbook boundary", () => {
   it("exports and parses the active group's complete history sheet", () => {
@@ -119,7 +119,7 @@ describe("workbook boundary", () => {
         flightNo: "B-FLIGHT",
       },
     ];
-    const store = createAutoscheduleStore(initial);
+    const store = createTestAutoscheduleStore(initial);
     store.getState().switchGroup("B");
 
     const workbook = buildConfigWorkbook(store.getState().model);

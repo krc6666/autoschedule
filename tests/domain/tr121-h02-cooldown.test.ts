@@ -231,7 +231,6 @@ describe("TR121/H02 workday cooldown", () => {
       changes: [{ assignmentId: assignment.id, staffId: recent.id }],
       primaryAssignmentId: assignment.id,
       date: DATE,
-      review: "frequency",
       intent: { kind: "position-frequency-review" },
       frequencyFacts: facts,
     });
@@ -243,7 +242,6 @@ describe("TR121/H02 workday cooldown", () => {
       changes: [{ assignmentId: assignment.id, staffId: recent.id }],
       primaryAssignmentId: assignment.id,
       date: DATE,
-      review: "coverage",
       intent: { kind: "team-leader-concurrent-gap-fill" },
       frequencyFacts: facts,
     });
@@ -282,7 +280,6 @@ describe("TR121/H02 workday cooldown", () => {
       ],
       primaryAssignmentId: vacancy.id,
       date: DATE,
-      review: "coverage",
       intent: { kind: "team-leader-concurrent-gap-fill" },
       frequencyFacts: createScheduleFrequencyFacts(state, DATE),
     });

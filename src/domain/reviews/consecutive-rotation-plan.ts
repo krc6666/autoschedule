@@ -193,7 +193,6 @@ export async function findConsecutiveRotationPlan({
       primary,
       movableAssignments: availableAssignments,
       date,
-      review: "consecutive",
       facts,
       frequencyFacts,
       intent: { kind: "consecutive-rotation-review" },

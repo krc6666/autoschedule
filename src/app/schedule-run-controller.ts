@@ -26,7 +26,19 @@ export interface ScheduleRunControllerDependencies {
   finish: (outcome: ScheduleRunFinishOutcome) => void;
 }
 
-export class ScheduleRunController {
+export interface ScheduleRunner {
+  isRunning(): boolean;
+  canAdoptCurrentResult(): boolean;
+  stopWithoutResult(): boolean;
+  stopWithCurrentResult(): boolean;
+  calculate(
+    state: AppState,
+    date: string,
+    preferences?: ScheduleRunPreferences
+  ): Promise<ScheduleRunOutcome>;
+}
+
+export class ScheduleRunController implements ScheduleRunner {
   private running = false;
   private activeRun: ActiveScheduleRun | null = null;
 
@@ -80,7 +92,7 @@ export class ScheduleRunController {
   }
 }
 
-export interface BrowserScheduleRunCallbacks {
+export interface ScheduleRunnerCallbacks {
   start(): void;
   progress(stage: ScheduleProgressStage, percent: number): void;
   safeResultAvailable(): void;
@@ -88,7 +100,7 @@ export interface BrowserScheduleRunCallbacks {
 }
 
 export function createBrowserScheduleRunController(
-  callbacks: BrowserScheduleRunCallbacks
+  callbacks: ScheduleRunnerCallbacks
 ): ScheduleRunController {
   return new ScheduleRunController({
     run: runScheduleInBackground,

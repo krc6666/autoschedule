@@ -1,3 +1,5 @@
+import type { RotationReview } from "../reviews/reassignment-safety-policy";
+
 export type CrossWorkdayReservationDisposition =
   "preserve" | "yield-to-selected-vacancy";
 
@@ -23,6 +25,29 @@ export interface ReassignmentIntentPolicy {
   allowCrossWorkdayReservationRegression: boolean;
   allowLoadProtectionRegression: boolean;
   allowDirectGuideReassignment: boolean;
+}
+
+export function reassignmentIntentReview(
+  intent: ReassignmentIntent
+): RotationReview {
+  switch (intent.kind) {
+    case "mobile-supervisor-counter-coverage":
+      return "mobile-supervisor";
+    case "team-leader-concurrent-gap-fill":
+    case "team-leader-gap-fill":
+      return "coverage";
+    case "late-priority-frequency-review":
+      return "late-frequency";
+    case "ke166-rotation-review":
+    case "consecutive-rotation-review":
+      return "consecutive";
+    case "position-frequency-review":
+      return "frequency";
+    case "late-shift-recovery-review":
+    case "manual-swap-analysis":
+    case "next-workday-cutoff-recovery":
+      return "recovery";
+  }
 }
 
 const STRICT_REASSIGNMENT_POLICY: ReassignmentIntentPolicy = {

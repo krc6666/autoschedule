@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import type {
   AppState,
   Assignment,
@@ -19,7 +19,7 @@ function prepareState(staffCount: number): {
   staff: Staff[];
   baseRule: PositionRule;
 } {
-  const state = createDefaultState();
+  const state = createOrdinarySchedulingState();
   const staff = state.staff
     .filter((person) => person.status === "正常")
     .slice(0, staffCount);

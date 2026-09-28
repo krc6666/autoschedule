@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { ApplicationCoordinator } from "../../src/app/application-coordinator";
+import {
+  createTestApplicationCoordinator,
+  createTestAutoscheduleStore,
+  createMemoryStatePersistence,
+  setTestScheduleRunner,
+} from "../helpers/application";
 import type { ApplicationPreferences } from "../../src/app/application-preferences";
-import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
 import { createDefaultState } from "../../src/defaults";
 import { replaceWeeklyFlightPlan } from "../../src/domain/flights/weekly-flight-plan";
 import { buildMonthlyLatePriorityStatistics } from "../../src/domain/statistics/monthly-late-priority-statistics";
@@ -41,8 +45,6 @@ const preferences: ApplicationPreferences = {
   saveScheduleZoom: () => undefined,
 };
 
-afterEach(() => vi.unstubAllGlobals());
-
 function certifiedResult(
   date: string,
   assignments: ScheduleResult["assignments"] = []
@@ -67,14 +69,13 @@ function certifiedResult(
 
 describe("application persistence feedback", () => {
   it("切换组前提示保存未保存改动，确认后只显示目标组数据", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     state.groups.B.staff = [
       { ...state.staff[0]!, id: "group-b", name: "B组人员" },
     ];
     state.groups.B.flights = [];
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences, confirm: vi.fn(() => true) }
     );
 
@@ -90,8 +91,8 @@ describe("application persistence feedback", () => {
 
   it("取消切组确认时保留当前组", async () => {
     const state = createDefaultState();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences, confirm: vi.fn(() => false) }
     );
     coordinator.store.getState().configuration.addStaff();
@@ -100,7 +101,6 @@ describe("application persistence feedback", () => {
   });
 
   it("applies a validated late-priority count preview through the records controller", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     state.settings.latePriorityFlightNumbers = ["TR121"];
     const rule = state.positionRules.find(
@@ -124,8 +124,8 @@ describe("application persistence feedback", () => {
       targetState,
       "2026-08-20"
     );
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(targetState),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(targetState),
       { preferences }
     );
     coordinator.updateView({
@@ -146,7 +146,6 @@ describe("application persistence feedback", () => {
   });
 
   it("confirms monthly late-priority reset before committing the zero baseline", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     const rule = state.positionRules.find(
       (item) => item.flightNo === "TR121" && item.remark === "一号"
@@ -178,8 +177,8 @@ describe("application persistence feedback", () => {
       },
     ];
     let confirmed = false;
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences, confirm: () => confirmed }
     );
 
@@ -212,10 +211,14 @@ describe("application persistence feedback", () => {
 
   it("shows an important warning when saved data approaches browser capacity", () => {
     const state = createDefaultState();
-    state.staff[0]!.remark = "a".repeat(4 * 1024 * 1024);
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const persistence = createMemoryStatePersistence();
+    persistence.save = vi.fn((model) => ({
+      state: model,
+      sizeBytes: 4 * 1024 * 1024,
+      nearCapacity: true,
+    }));
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state, persistence),
       { preferences }
     );
 
@@ -246,13 +249,14 @@ describe("application persistence feedback", () => {
     ];
     const quotaError = new Error("quota exceeded");
     quotaError.name = "QuotaExceededError";
-    vi.stubGlobal("localStorage", {
-      setItem: () => {
-        throw quotaError;
-      },
+    const persistence = createMemoryStatePersistence();
+    persistence.save = vi.fn(() => {
+      throw quotaError;
     });
-    const store = createAutoscheduleStore(state);
-    const coordinator = new ApplicationCoordinator(store, { preferences });
+    const store = createTestAutoscheduleStore(state, persistence);
+    const coordinator = createTestApplicationCoordinator(store, {
+      preferences,
+    });
 
     expect(() => coordinator.commit("历史排班已保存")).not.toThrow();
     expect(store.getState().model.history).toHaveLength(1);
@@ -332,12 +336,11 @@ describe("historical schedule editing", () => {
   };
 
   it("opens the archived date as an isolated draft and cancels back to the current schedule", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = editableHistoricalState();
     const originalFlights = structuredClone(state.flights);
     const originalAssignments = structuredClone(state.assignments);
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: historicalPreferences, confirm: () => true }
     );
 
@@ -371,13 +374,13 @@ describe("historical schedule editing", () => {
   });
 
   it("saves only the target history date and restores the current schedule", async () => {
-    const setItem = vi.fn();
-    vi.stubGlobal("localStorage", { setItem });
+    const persistence = createMemoryStatePersistence();
+    const save = vi.spyOn(persistence, "save");
     const state = editableHistoricalState();
     const originalFlights = structuredClone(state.flights);
     const originalAssignments = structuredClone(state.assignments);
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state, persistence),
       { preferences: historicalPreferences, confirm: () => true }
     );
 
@@ -394,7 +397,7 @@ describe("historical schedule editing", () => {
       field: "staffName",
       value: "",
     });
-    expect(setItem).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
 
     await coordinator.handle({ type: "save-history-edit" });
 
@@ -408,14 +411,13 @@ describe("historical schedule editing", () => {
     expect(
       coordinator.model().history.filter((item) => item.date === "2026-08-18")
     ).toEqual([state.history[0]]);
-    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the draft and history unchanged when overwrite confirmation is declined", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = editableHistoricalState();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: historicalPreferences, confirm: () => false }
     );
 
@@ -434,8 +436,8 @@ describe("historical schedule editing", () => {
     historicalExportMocks.writeWorkbook.mockClear();
     historicalExportMocks.exportShareHtml.mockClear();
     historicalExportMocks.exportSharePng.mockClear();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(editableHistoricalState()),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(editableHistoricalState()),
       { preferences: historicalPreferences, confirm: () => true }
     );
 
@@ -479,7 +481,6 @@ describe("historical schedule editing", () => {
 
 describe("application scheduling exclusivity", () => {
   it("keeps the pre-run schedule when calculation is stopped without a result", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     state.assignments = [
       {
@@ -499,17 +500,13 @@ describe("application scheduling exclusivity", () => {
         status: "assigned",
       },
     ];
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences }
     );
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: {
-        calculate: vi
-          .fn()
-          .mockResolvedValue({ kind: "stopped-without-result" }),
-        isRunning: () => false,
-      },
+    setTestScheduleRunner(coordinator, {
+      calculate: vi.fn().mockResolvedValue({ kind: "stopped-without-result" }),
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "generate-schedule" });
@@ -520,24 +517,21 @@ describe("application scheduling exclusivity", () => {
   });
 
   it("installs only the complete safe result selected by stop-and-adopt", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences }
     );
     const safeResult: ScheduleResult = {
       ...certifiedResult(coordinator.view().date),
       warnings: ["已安全复核"],
     };
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: {
-        calculate: vi.fn().mockResolvedValue({
-          kind: "stopped-with-result",
-          result: safeResult,
-        }),
-        isRunning: () => false,
-      },
+    setTestScheduleRunner(coordinator, {
+      calculate: vi.fn().mockResolvedValue({
+        kind: "stopped-with-result",
+        result: safeResult,
+      }),
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "generate-schedule" });
@@ -549,11 +543,10 @@ describe("application scheduling exclusivity", () => {
   });
 
   it("reserves a schedule run before asynchronous command routing", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     state.settings.adminSupportEnabled = false;
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences }
     );
     const result: ScheduleResult = {
@@ -567,15 +560,18 @@ describe("application scheduling exclusivity", () => {
       if (running)
         return Promise.reject(new Error("排班正在运行，请等待当前任务完成"));
       running = true;
-      return new Promise<ScheduleResult>((resolve) => {
-        finishFirst = () => {
-          running = false;
-          resolve(result);
-        };
-      });
+      return new Promise<{ kind: "completed"; result: ScheduleResult }>(
+        (resolve) => {
+          finishFirst = () => {
+            running = false;
+            resolve({ kind: "completed", result });
+          };
+        }
+      );
     });
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: { calculate, isRunning: () => running },
+    setTestScheduleRunner(coordinator, {
+      calculate,
+      isRunning: () => running,
     });
 
     const generate = coordinator.handle({ type: "generate-schedule" });
@@ -597,18 +593,18 @@ describe("application scheduling exclusivity", () => {
   });
 
   it("blocks data-changing commands while a schedule calculation is running", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     state.settings.adminSupportEnabled = false;
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences }
     );
     const calculate = vi
       .fn()
       .mockRejectedValue(new Error("排班正在运行，请等待当前任务完成"));
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: { calculate, isRunning: () => true },
+    setTestScheduleRunner(coordinator, {
+      calculate,
+      isRunning: () => true,
     });
 
     await coordinator.handle({
@@ -627,7 +623,6 @@ describe("application scheduling exclusivity", () => {
 
 describe("manual swap analysis workflow", () => {
   it("rechecks a proposed swap before applying it", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     const flight = state.flights.find((item) => item.flightNo === "TR121")!;
     const h02 = state.positionRules.find(
@@ -657,8 +652,8 @@ describe("manual swap analysis workflow", () => {
       manualRemark: "",
       status: "assigned" as const,
     }));
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences }
     );
 
@@ -693,7 +688,6 @@ describe("manual swap analysis workflow", () => {
 
 describe("team leader gap fill workflow", () => {
   it("previews a local chain and applies it only after confirmation", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     const [leader, worker] = state.staff;
     leader!.teamLeader = true;
@@ -757,8 +751,8 @@ describe("team leader gap fill workflow", () => {
       status: index ? ("unfilled" as const) : ("assigned" as const),
     }));
     state.activeScheduleDate = "2026-09-22";
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: { ...preferences, loadScheduleDate: () => "2026-09-22" } }
     );
 
@@ -848,7 +842,6 @@ describe("next workday flight picker workflow", () => {
   }
 
   it("keeps manual late-priority balance through repeated archive-and-next-workday runs", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = createDefaultState();
     const qualified = state.staff
       .filter((person) => person.status === "正常")
@@ -925,8 +918,8 @@ describe("next workday flight picker workflow", () => {
     state.assignments = initialResult.assignments;
     state.activeScheduleDate = initialDate;
     let savedDate = initialDate;
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       {
         preferences: {
           ...preferences,
@@ -936,17 +929,15 @@ describe("next workday flight picker workflow", () => {
         confirm: () => true,
       }
     );
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: {
-        calculate: async (
-          model: ReturnType<typeof coordinator.model>,
-          date: string
-        ) => ({
-          kind: "completed" as const,
-          result: await generateSchedule(model, date),
-        }),
-        isRunning: () => false,
-      },
+    setTestScheduleRunner(coordinator, {
+      calculate: async (
+        model: ReturnType<typeof coordinator.model>,
+        date: string
+      ) => ({
+        kind: "completed" as const,
+        result: await generateSchedule(model, date),
+      }),
+      isRunning: () => false,
     });
     const assignedStaffIds = [state.assignments[0]!.staffId];
 
@@ -988,15 +979,15 @@ describe("next workday flight picker workflow", () => {
   });
 
   it("opens local flight selection before changing history or starting calculation", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: nextWorkdayPreferences, confirm: () => true }
     );
     const calculate = vi.fn();
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: { calculate, isRunning: () => false },
+    setTestScheduleRunner(coordinator, {
+      calculate,
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "archive-next-duty-day" });
@@ -1038,18 +1029,15 @@ describe("next workday flight picker workflow", () => {
   });
 
   it("keeps the original model when the selected next schedule fails", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: nextWorkdayPreferences, confirm: () => true }
     );
     const original = structuredClone(coordinator.model());
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: {
-        calculate: vi.fn().mockRejectedValue(new Error("测试失败")),
-        isRunning: () => false,
-      },
+    setTestScheduleRunner(coordinator, {
+      calculate: vi.fn().mockRejectedValue(new Error("测试失败")),
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "archive-next-duty-day" });
@@ -1066,21 +1054,18 @@ describe("next workday flight picker workflow", () => {
   });
 
   it("keeps the original model when the run is stopped, even with a latest result", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: nextWorkdayPreferences, confirm: () => true }
     );
     const original = structuredClone(coordinator.model());
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: {
-        calculate: vi.fn().mockResolvedValue({
-          kind: "stopped-with-result",
-          result: { assignments: [], warnings: [], unfilledCount: 0 },
-        }),
-        isRunning: () => false,
-      },
+    setTestScheduleRunner(coordinator, {
+      calculate: vi.fn().mockResolvedValue({
+        kind: "stopped-with-result",
+        result: { assignments: [], warnings: [], unfilledCount: 0 },
+      }),
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "archive-next-duty-day" });
@@ -1097,7 +1082,6 @@ describe("next workday flight picker workflow", () => {
   });
 
   it("commits archive, selected flights, date, and result only after success", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
     state.templates.push({
       id: "template-ke166",
@@ -1108,8 +1092,8 @@ describe("next workday flight picker workflow", () => {
       remark: "本地模板",
     });
     let savedDate: string | null = null;
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       {
         preferences: {
           ...nextWorkdayPreferences,
@@ -1122,8 +1106,9 @@ describe("next workday flight picker workflow", () => {
       kind: "completed",
       result: certifiedResult("2026-08-17"),
     });
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: { calculate, isRunning: () => false },
+    setTestScheduleRunner(coordinator, {
+      calculate,
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "archive-next-duty-day" });
@@ -1218,16 +1203,16 @@ describe("current schedule flight picker workflow", () => {
   }
 
   it("opens every local flight and defaults to the current day's selection without mutating state", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: currentPreferences, confirm: () => true }
     );
     const original = structuredClone(coordinator.model());
     const calculate = vi.fn();
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: { calculate, isRunning: () => false },
+    setTestScheduleRunner(coordinator, {
+      calculate,
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "open-reschedule-flight-picker" });
@@ -1264,11 +1249,10 @@ describe("current schedule flight picker workflow", () => {
   });
 
   it("commits selected flights, passenger counts, and the new schedule only after success", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
     const originalHistory = structuredClone(state.history);
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: currentPreferences, confirm: () => true }
     );
     const result = certifiedResult(currentDate);
@@ -1276,8 +1260,9 @@ describe("current schedule flight picker workflow", () => {
       kind: "completed",
       result,
     });
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: { calculate, isRunning: () => false },
+    setTestScheduleRunner(coordinator, {
+      calculate,
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "open-reschedule-flight-picker" });
@@ -1323,18 +1308,15 @@ describe("current schedule flight picker workflow", () => {
   });
 
   it("keeps the original flights and schedule when recalculation fails", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: currentPreferences, confirm: () => true }
     );
     const original = structuredClone(coordinator.model());
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: {
-        calculate: vi.fn().mockRejectedValue(new Error("测试失败")),
-        isRunning: () => false,
-      },
+    setTestScheduleRunner(coordinator, {
+      calculate: vi.fn().mockRejectedValue(new Error("测试失败")),
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "open-reschedule-flight-picker" });
@@ -1354,21 +1336,18 @@ describe("current schedule flight picker workflow", () => {
   });
 
   it("atomically adopts selected flights and a safe result when stop-and-adopt is requested", async () => {
-    vi.stubGlobal("localStorage", { setItem: vi.fn() });
     const state = stateWithCurrentSchedule();
     const original = structuredClone(state);
-    const coordinator = new ApplicationCoordinator(
-      createAutoscheduleStore(state),
+    const coordinator = createTestApplicationCoordinator(
+      createTestAutoscheduleStore(state),
       { preferences: currentPreferences, confirm: () => true }
     );
-    Object.defineProperty(coordinator, "scheduleRunner", {
-      value: {
-        calculate: vi.fn().mockResolvedValue({
-          kind: "stopped-with-result",
-          result: certifiedResult("2026-08-29"),
-        }),
-        isRunning: () => false,
-      },
+    setTestScheduleRunner(coordinator, {
+      calculate: vi.fn().mockResolvedValue({
+        kind: "stopped-with-result",
+        result: certifiedResult("2026-08-29"),
+      }),
+      isRunning: () => false,
     });
 
     await coordinator.handle({ type: "open-reschedule-flight-picker" });

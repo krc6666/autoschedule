@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import { generateSchedule } from "../helpers/generate-schedule";
 
 describe("duty morning global selection", () => {
   it("keeps a strict recovery target feasible when the preferred morning task overlaps it", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [dutyWorker, protectedWorker] = state.staff.slice(0, 2);
     expect(dutyWorker).toBeDefined();
     expect(protectedWorker).toBeDefined();

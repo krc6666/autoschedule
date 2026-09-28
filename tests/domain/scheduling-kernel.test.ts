@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import {
   sortFlightCountersDescending,
   visiblePositionRemark,
@@ -16,7 +16,7 @@ import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-i
 
 describe("scheduler domain", { timeout: 15_000 }, () => {
   it("uses delivery rather than declaration corrections for a combined role", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const qualified = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -89,7 +89,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses a manual late-priority correction to select the lower-count qualified worker", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const qualified = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -162,7 +162,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("shares compatible late-priority work instead of concentrating it on one person", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const qualified = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -260,7 +260,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps compatible late-priority positions filled when only one person qualifies", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const only = state.staff.find((person) => person.status === "正常")!;
     only.dutyQualified = false;
     only.nightShift = true;
@@ -332,7 +332,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps same-flight supervisor counts within one even when the lower-frequency supervisor has recovery protection", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [underused, frequent] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -407,7 +407,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("leaves TR121 number-one unfilled after every qualified worker reaches two automatic monthly turns", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const qualified = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -488,7 +488,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("prioritizes a zero-frequency worker within the same flight and late-position category", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [underused, frequent] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -600,7 +600,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("allows the next workday duty worker to take a priority position", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const protectedWorker = state.staff.find(
       (person) => person.status === "正常"
     )!;
@@ -654,7 +654,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("assigns only available and qualified staff without time conflicts", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const result = await generateSchedule(state, "2026-07-18");
     const assigned = result.assignments.filter((item) => item.staffId);
 
@@ -693,7 +693,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   }, 30_000);
 
   it("marks a position unfilled when every qualified person is unavailable", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const rule = state.positionRules.find(
       (item) => item.flightNo === "TR121" && item.name === "收费/引导"
     )!;
@@ -711,7 +711,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   }, 30_000);
 
   it("prefers the candidate with lower historical fatigue", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.flights = [state.flights[0]!];
     state.flights[0]!.positions = ["G12"];
     state.history = [
@@ -734,7 +734,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not automatically use concurrent team-leader supervision to remove a vacancy", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [leader, releasedWorker, dutyWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -826,7 +826,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the team leader out when the legacy overlap limit is configured", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [leader, releasedWorker, dutyWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -907,7 +907,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not use concurrent supervision when all regular positions are already filled", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [leader, otherSupervisor] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -969,7 +969,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not grant concurrent-supervision permission to an ordinary worker", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [ordinary, releasedWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1037,7 +1037,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not re-enable a team leader through a KE166 overlap", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [leader, releasedWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1109,7 +1109,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not restore concurrent supervision through diversion timing", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [firstSupervisor, leader, secondSupervisor, dutyWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 4);
@@ -1227,7 +1227,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("prefers the qualified worker with fewer same-position assignments in the last six archived workdays", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [frequent, lessFrequent] = state.staff;
     state.staff = [frequent!, lessFrequent!];
     state.staff.forEach((person) => {
@@ -1345,7 +1345,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not reserve a low-frequency priority-position worker for an ordinary position that another worker can cover", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [frequent, lessFrequent, ordinaryWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -1417,7 +1417,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not use monthly frequency to choose an ordinary position worker", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [first, second] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1511,7 +1511,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps priority-position frequency ahead of ordinary consecutive protection", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [priorityWorker, repeatedWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1591,7 +1591,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses the current-month total before the recent-six-workday count for long-term same-position fairness", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [frequent, medium, leastFrequent] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -1734,7 +1734,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps a generation-stage frequency result when later rotation has no safe alternative", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.minimumRegularTransitionMinutes = 0;
     const [frequent, lessFrequent, releaseWorker] = state.staff
       .filter((person) => person.status === "正常")
@@ -1899,7 +1899,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("records why a high-frequency position cannot be balanced when no other worker is qualified", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [onlyQualified, unqualified] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1972,7 +1972,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("prefers a rested worker for a high-load position during the recovery window", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.minimumRegularTransitionMinutes = 0;
     const [first, second] = state.staff;
     state.staff = [first!, second!];
@@ -2073,7 +2073,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("fills a high-load position when every candidate is still in the protection window", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.minimumRegularTransitionMinutes = 0;
     const [first, second] = state.staff;
     state.staff = [first!, second!];
@@ -2153,7 +2153,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("applies an editable position-to-position preparation interval", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
     state.staff.forEach((person) => {
@@ -2272,7 +2272,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("protects a worker when projected fatigue exceeds the rolling-window limit", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.minimumRegularTransitionMinutes = 0;
     const [first, second] = state.staff;
     state.staff = [first!, second!];
@@ -2375,7 +2375,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses the same-position frequency rule only while same-position fairness is enabled", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
     state.staff.forEach((person) => {
@@ -2445,7 +2445,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("fills the position when every qualified candidate recently worked the same position", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const workers = state.staff.slice(0, 2);
     state.staff = workers;
     state.staff.forEach((person) => {
@@ -2495,7 +2495,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("fills a rolling-load protected position when no unprotected candidate exists", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.minimumRegularTransitionMinutes = 0;
     const person = state.staff[0]!;
     state.staff = [person];
@@ -2553,7 +2553,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("reduces the next late-shift load after a high-load final flight on the previous day", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [protectedWorker, restedWorker] = state.staff;
     state.staff = [protectedWorker!, restedWorker!];
     state.staff.forEach((person) => {
@@ -2628,7 +2628,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps a protected late-shift worker for the lighter lower position when staffing is limited", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [protectedWorker, restedWorker] = state.staff;
     state.staff = [protectedWorker!, restedWorker!];
     state.flights = [
@@ -2693,7 +2693,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps priority-position frequency ahead of next-workday recovery", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [protectedWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -2794,7 +2794,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("moves a previous final-late supervisor away from the next final-late supervisor position when a safe replacement exists", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [protectedWorker, replacement] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -2873,7 +2873,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps a previous final-late priority worker off flights starting at or after the configured next-workday cutoff", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [protectedWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -2973,7 +2973,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the duty morning lock ahead of next-workday priority-position recovery", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [dutyWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -3040,7 +3040,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the only qualified worker on a protected next-workday position and explains the coverage override", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [onlyQualified, unqualified] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -3099,7 +3099,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the KE166 mobile supervisor independent and lets another worker satisfy next-workday recovery", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [mobileSupervisor, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -3177,7 +3177,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("fills a next-day late position when the protected worker is the only candidate", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     state.staff = [person];
     state.flights = [
@@ -3230,7 +3230,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("never leaves an early position empty because the worker handled the previous late shift", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     state.staff = [person];
     person.dutyQualified = false;
@@ -3280,7 +3280,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("rejects manual changes that violate time constraints", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.assignments = (
       await generateSchedule(state, "2026-07-18")
     ).assignments;
@@ -3306,7 +3306,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("allows assigning a regular position when the only same-flight overlap is a guide assignment", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     const base = state.positionRules[0]!;
     state.staff = [person];
@@ -3364,7 +3364,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps pre-noon regular positions visible but unassigned below passenger thresholds", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.flights = [state.flights[0]!];
     state.flights[0]!.positions = ["G12", "G13"];
     state.positionRules = state.positionRules.filter(
@@ -3389,7 +3389,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("puts supervisors first and otherwise follows position configuration order", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const flight = state.flights[0]!;
     state.flights = [flight];
     const rules = state.positionRules.filter(
@@ -3410,7 +3410,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("sorts all G and H counters from high to low in one operation", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const flight = state.flights[0]!;
     const rules = state.positionRules.filter(
       (rule) => rule.flightNo === flight.flightNo
@@ -3436,7 +3436,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps administrative support in its position role instead of moving the category to the bottom", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.adminSupportEnabled = true;
     state.staff = state.staff.slice(0, 3);
     state.flights = [
@@ -3485,7 +3485,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("leaves administrative support empty when a basic position is short-staffed", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.adminSupportEnabled = true;
     state.staff = [state.staff[0]!];
     state.flights = [
@@ -3536,7 +3536,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("fills an administrative support position with an available regular worker", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.adminSupportEnabled = true;
     state.staff = state.staff.slice(0, 2);
     state.flights = [
@@ -3581,7 +3581,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps regular positions ahead of administrative support positions", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.adminSupportEnabled = true;
     state.staff = [state.staff[0]!];
     state.staff[0]!.dutyQualified = false;
@@ -3628,7 +3628,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("continues using a regular worker on a non-conflicting administrative support position", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.adminSupportEnabled = true;
     state.staff = [state.staff[0]!];
     state.staff[0]!.dutyQualified = false;
@@ -3685,7 +3685,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses the regular counterpart qualifications for same-name administrative support", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.adminSupportEnabled = true;
     const regular = state.staff[0]!;
     const administrative = state.staff[1]!;
@@ -3734,7 +3734,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("omits administrative support positions while the mode is disabled", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.flights = [
       {
         id: "f1",
@@ -3773,7 +3773,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("requires administrative personnel to have position qualifications in support mode", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.adminSupportEnabled = true;
     const person = state.staff[0]!;
     person.staffType = "行政支援";
@@ -3809,7 +3809,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("allows administrative support only after no qualified regular worker remains available", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.adminSupportEnabled = true;
     const regular = state.staff[0]!;
     const administrative = state.staff[1]!;
@@ -3847,7 +3847,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("generates one assignment for every configured rule id without inventing positions", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.flights = [
       {
         id: "f1",
@@ -3886,7 +3886,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("replaces a same-name regular position in administrative support mode", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.flights = [
       {
         id: "f1",
@@ -3944,7 +3944,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("reserves versatile staff for a later overlapping position with fewer qualified workers", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.filter((person) =>
       ["2", "3"].includes(person.id)
     );
@@ -3996,7 +3996,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("considers every overlapping afternoon position before choosing any staff", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [workerA, workerB, workerC, workerD, workerE] = state.staff;
     state.staff = [workerA!, workerB!, workerC!, workerD!, workerE!];
     state.staff.forEach((person) => {
@@ -4061,7 +4061,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("globally schedules each pre-noon position by scarcity before softer transition preferences", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.minimumRegularTransitionMinutes = 0;
     const [rareWorker, flexibleWorker] = state.staff;
     state.staff = [rareWorker!, flexibleWorker!];
@@ -4146,7 +4146,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("fills guide rules from the bottom-most distinct positions when no support source exists", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [topWorker, bottomWorker, diversionWorker] = state.staff;
     state.staff = [topWorker!, bottomWorker!, diversionWorker!];
     state.flights = [
@@ -4220,7 +4220,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("prioritizes a regular worker on an administrative support position for guide reuse", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [supportWorker, bottomWorker, administrativeWorker] = state.staff;
     administrativeWorker!.staffType = "行政支援";
     state.staff = [supportWorker!, bottomWorker!, administrativeWorker!];
@@ -4278,7 +4278,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the configured supervisor at the top without generating a fill position", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [supervisor, counterWorker] = state.staff;
     state.staff = [supervisor!, counterWorker!];
     state.staff.forEach((person) => {
@@ -4338,7 +4338,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("leaves a vacancy when the only qualified candidate is a team leader", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const teamLeader = state.staff[0]!;
     state.staff = [teamLeader];
     teamLeader.teamLeader = true;
@@ -4375,7 +4375,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses an equally qualified regular worker before pulling a free team leader into an ordinary counter", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [teamLeader, regular] = state.staff;
     state.staff = [teamLeader!, regular!];
     teamLeader!.teamLeader = true;
@@ -4415,7 +4415,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("automatically shows a KE166 regular worker in the supervisor cell without duplicating work hours", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const supervisor = state.staff[0]!;
     state.staff = [supervisor];
     state.staff.forEach((person) => {
@@ -4484,7 +4484,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the schedule when no KE166 mobile supervisor is available", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const counterWorker = state.staff[0]!;
     state.staff = [counterWorker];
     counterWorker.dutyQualified = false;
@@ -4539,7 +4539,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps an early-start half-rest worker eligible for a late KE166 supervisor shift", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const worker = state.staff[0]!;
     state.staff = [worker];
     worker.dutyQualified = false;
@@ -4600,7 +4600,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("prefers another KE166 mobile supervisor when the first qualified worker is on duty next workday", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [protectedWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -4673,7 +4673,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("rotates the independent KE166 mobile supervisor after the previous workday", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedSupervisor, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -4766,7 +4766,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the only KE166 mobile supervisor pair complete and reports the consecutive exception", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const supervisor = state.staff.find((person) => person.status === "正常")!;
     state.staff = [supervisor];
     supervisor.dutyQualified = false;
@@ -4850,7 +4850,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("moves a cooling duty worker to the next configured late target", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [dutyWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -4969,7 +4969,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("does not change KE166 mobile supervisor reuse when a worker is marked as team leader", async () => {
     const scheduleSupervisor = async (teamLeaderId?: string) => {
-      const state = createDefaultState();
+      const state = createOrdinarySchedulingState();
       state.staff = state.staff.slice(0, 2);
       state.staff.forEach((person) => {
         person.teamLeader = person.id === teamLeaderId;
@@ -5029,7 +5029,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the KE166 mobile supervisor away from forbidden remarked positions", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [supervisor, worker] = state.staff;
     state.staff = [supervisor!, worker!];
     state.flights = [
@@ -5094,7 +5094,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the KE166 supervisor in the top position when every regular target is forbidden", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [supervisor, worker] = state.staff;
     state.staff = [supervisor!, worker!];
     state.flights = [
@@ -5142,7 +5142,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("moves unavoidable regular-position gaps toward the bottom of every flight", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [first, second, third] = state.staff;
     state.staff = [first!, second!, third!];
     state.staff.forEach((person) => {
@@ -5241,7 +5241,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not move an unqualified worker upward merely to hide a gap", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [first, second] = state.staff;
     state.staff = [first!, second!];
     state.staff.forEach((person) => {
@@ -5313,7 +5313,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the KE166 supervisor link when a qualified worker is moved upward", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [supervisor, worker] = state.staff;
     state.staff = [supervisor!, worker!];
     state.staff.forEach((person) => {
@@ -5409,7 +5409,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not let the duty-morning priority take KE166's only mobile supervisor away", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [mobileSupervisor, dutyWorker, cxWorker] = state.staff;
     state.staff = [mobileSupervisor!, dutyWorker!, cxWorker!];
     const date = "2026-07-18";
@@ -5501,7 +5501,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the only KE166 supervisor ahead of an overlapping duty target", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [dutySupervisor, alternate] = state.staff;
     state.staff = [dutySupervisor!, alternate!].map((person) => ({
       ...person,
@@ -5572,7 +5572,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps KE166 supervisor synced when administrative support mode only replaces other counters", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const supervisor = state.staff[0]!;
     const backup = state.staff[1]!;
     state.staff = [supervisor, backup];
@@ -5683,7 +5683,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("reserves a KE166 regular position for a supervisor-qualified worker in administrative support mode", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const supervisor = state.staff[0]!;
     const regular = state.staff[1]!;
     state.staff = [supervisor, regular];
@@ -5807,7 +5807,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not copy one flight's configured guide positions into every other flight", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const result = await generateSchedule(state, "2026-07-18");
     expect(
       result.assignments.find(
@@ -5827,7 +5827,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("generates only configured positions and never adds generic support to afternoon flights", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const flight = state.flights.find((item) => item.flightNo === "FD573")!;
     flight.positions.push("未配置岗位");
     state.flights = [flight];
@@ -5853,7 +5853,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not invent a generic support position for a short-staffed morning flight", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const flight = state.flights.find((item) => item.flightNo === "FD573")!;
     flight.startTime = "08:00";
     flight.endTime = "10:00";
@@ -5868,7 +5868,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("allows a guide to reuse its selected same-flight regular worker", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.flights = [state.flights[0]!];
     const result = await generateSchedule(state, "2026-07-18");
     const guide = result.assignments.find(
@@ -5900,7 +5900,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("prioritizes regular workers who do not yet have working hours", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const workers = state.staff.slice(0, 3);
     state.staff = workers;
     state.flights = [
@@ -5951,7 +5951,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the schedule feasible when enough positions exist but one worker has no eligible choice", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [qualifiedWorker, unqualifiedWorker] = state.staff.slice(0, 2);
     state.staff = [qualifiedWorker!, unqualifiedWorker!];
     state.staff.forEach((person) => {
@@ -5997,7 +5997,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("gives every available regular worker actual hours in the configured default schedule", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const assignments = (await generateSchedule(state, "2026-07-18"))
       .assignments;
     const workedIds = new Set(
@@ -6016,7 +6016,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   }, 30_000);
 
   it("reserves the duty-qualified person for the first counter on the latest flight", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.slice(0, 6);
     state.staff.forEach((person) => {
       person.dutyQualified = true;
@@ -6082,7 +6082,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the duty person off earlier high-load work so they cover the latest noted position", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.slice(0, 6);
     state.staff.forEach((person) => {
       person.dutyQualified = true;
@@ -6159,7 +6159,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("falls back to a noted position on the second-latest flight when the latest has no eligible target", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.slice(0, 6);
     state.staff.forEach((person) => {
       person.dutyQualified = true;
@@ -6240,7 +6240,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("assigns the duty person to both a morning flight and the protected late position", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.slice(0, 6);
     state.staff.forEach((person) => {
       person.dutyQualified = true;
@@ -6323,7 +6323,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("rests the duty person between the required morning and late targets when another worker can cover", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [duty, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -6426,7 +6426,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the duty person off a CX priority position before comparing middle-flight fatigue", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [duty, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -6555,7 +6555,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("allows the duty morning assignment to use a flight starting after 08:30 and before noon", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [dutyWorker, otherWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -6650,7 +6650,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("moves the duty worker between morning flights to prevent a repeated priority position", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [dutyWorker, otherWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -6766,7 +6766,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("allows the duty person to fill a qualified middle position after both duty targets are locked", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const dutyWorker = state.staff.find((person) => person.status === "正常")!;
     state.staff = [dutyWorker];
     dutyWorker.dutyQualified = true;
@@ -6859,7 +6859,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps every feasible position filled even when fatigue balance cannot meet both targets", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.minimumRegularTransitionMinutes = 0;
     state.staff = state.staff.slice(0, 2);
     state.staff.forEach((person) => {
@@ -6923,7 +6923,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses an archived day to rotate the lower-load worker into the next duty day", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.settings.dutyFatiguePoints = 0;
     state.staff = state.staff.filter((person) =>
       ["2", "3"].includes(person.id)
@@ -6960,7 +6960,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("allows an afternoon diversion when early release leaves the required transition gap", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = [state.staff.find((person) => person.id === "2")!];
     state.flights = [
       {
@@ -7012,7 +7012,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("allows a valid afternoon diversion transfer without the regular 90-minute gap", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff.find((item) => item.id === "2")!;
     person.nightShift = true;
     state.staff = [person];
@@ -7073,7 +7073,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not use diversion when another qualified worker can cover the next flight", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const workers = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -7136,7 +7136,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not create a diversion transfer while finalizing a staffed KE166 supervisor", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const workers = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -7202,7 +7202,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not apply diversion release to morning flights", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = [state.staff.find((person) => person.id === "2")!];
     state.flights = [
       {
@@ -7258,7 +7258,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("applies passenger thresholds before noon while preserving the morning manual override", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     person.dutyQualified = false;
     state.staff = [person];
@@ -7305,7 +7305,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the passenger threshold and manual behavior for flights starting at noon", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     person.dutyQualified = false;
     state.staff = [person];
@@ -7344,7 +7344,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("breaks a strict transition rule before noon and records the override", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     person.dutyQualified = false;
     state.staff = [person];
@@ -7409,7 +7409,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("reallocates an overlapping worker between pre-noon flights and marks the source vacancy", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     person.dutyQualified = false;
     state.staff = [person];
@@ -7466,7 +7466,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("records a concrete staffing-shortage reason for an unfilled regular position before noon", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const person = state.staff[0]!;
     person.dutyQualified = false;
     state.staff = [person];
@@ -7511,7 +7511,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("assigns the duty worker by the editable flight and position priority order", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [duty, other] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -7579,7 +7579,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps the configured duty lock ahead of a strict transition preference", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [duty, other, third] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -7694,7 +7694,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses the next configured duty target while the first H02 target is cooling down", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [duty, other] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -7789,7 +7789,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps KE166 ordinary positions available while selecting the lower-frequency priority-position worker", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [alternate, frequent] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -7926,7 +7926,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("continues to every overlapping flight when KE166 cannot form a safe high-frequency exchange", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [keWorker, alternate, frequent] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -8052,7 +8052,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses generation-stage frequency before consecutive priority-position protection", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [alternate, repeated] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -8146,7 +8146,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("globally resolves a repeated high-fatigue position before post-schedule rotation", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [first, second, third] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -8271,7 +8271,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("globally resolves a repeated priority position across overlapping flights", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [targetCandidate, repeatedWorker, relayWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -8399,7 +8399,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("rotates KE166 counters before binding the mobile supervisor", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [targetCandidate, repeatedWorker, relayWorker, supervisorCandidate] =
       state.staff.filter((person) => person.status === "正常").slice(0, 4);
     state.staff = [
@@ -8543,7 +8543,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses an idle qualified KE166 supervisor independently before any counter coverage", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [
       repeatedH02,
       h02Replacement,
@@ -8672,7 +8672,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("chooses a non-repeated KE166 mobile supervisor after keeping final counter staff in place", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [previousSupervisor, alternateSupervisor] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -8783,7 +8783,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("lets a repeated free team leader rest when a KE166 counter can safely cover supervision", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedSupervisor, counterSupervisor] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -8865,7 +8865,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("releases a non-repeated KE166 supervisor from an overlapping flight before retaining a repeated independent supervisor", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedSupervisor, overlappingSupervisor, counterWorker] =
       state.staff.filter((person) => person.status === "正常").slice(0, 3);
     state.staff = [repeatedSupervisor!, overlappingSupervisor!, counterWorker!];
@@ -8980,7 +8980,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses a multi-flight personnel chain to place a non-repeated KE166 counter supervisor", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [
       repeatedSupervisor,
       overlappingSupervisor,
@@ -9163,7 +9163,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses a four-person open reassignment chain when swaps and closed cycles cannot rotate a repeated priority position", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [
       repeatedWorker,
       firstMover,
@@ -9328,7 +9328,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("reports an unresolved second consecutive priority-position assignment", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [blockedWorker, occupiedCandidate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -9409,7 +9409,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("prevents a second consecutive priority position before ordinary assignments consume a safe non-overlapping replacement", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -9515,7 +9515,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses monthly priority-position frequency before previous-workday load", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [heavierPreviousWorker, lighterPreviousWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -9607,7 +9607,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps an unavoidable late-flight worker off an earlier priority position when a safe alternate exists", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [lateWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -9678,7 +9678,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("uses an overlapping-flight direct swap after same-flight candidates are unavailable", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [alternate, repeated] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -9757,7 +9757,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps an unavoidable third consecutive assignment and records the rotation review reason", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [alternate, repeated] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -9843,7 +9843,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
 
   it("blocks a strict transition after noon while prefer mode remains a fallback preference", async () => {
     const buildState = (mode: "prefer" | "forbid") => {
-      const state = createDefaultState();
+      const state = createOrdinarySchedulingState();
       state.settings.minimumRegularTransitionMinutes = 0;
       const person = state.staff.find((item) => item.status === "正常")!;
       person.dutyQualified = false;
@@ -9932,7 +9932,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("keeps a pre-noon manual position in the initial global solution", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [alternate, repeated] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -10010,7 +10010,7 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
   });
 
   it("does not move duty and KE166 mobile-supervisor locks during rotation review", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [supervisor, repeated] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);

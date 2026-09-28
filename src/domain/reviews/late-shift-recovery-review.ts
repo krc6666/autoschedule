@@ -124,7 +124,6 @@ export async function reviewLateShiftRecovery(
         lockedAssignmentIds
       ).filter((assignment) => !reviewed.has(assignment.id)),
       date,
-      review: "recovery",
       facts,
       intent: { kind: "late-shift-recovery-review" },
       primaryCandidateAllowed: (person) =>

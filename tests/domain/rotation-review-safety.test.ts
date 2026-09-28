@@ -58,7 +58,7 @@ describe("rotation review safety", () => {
     const requirements = reassignmentChoiceRequirements(
       {
         state,
-        review: "frequency",
+        intent: { kind: "position-frequency-review" },
       } as unknown as ReassignmentOptimizationOptions,
       choices,
       [assignment],
@@ -178,7 +178,6 @@ describe("rotation review safety", () => {
       changes: [{ assignmentId: target.id, staffId: replacementWorker!.id }],
       primaryAssignmentId: target.id,
       date: "2026-07-30",
-      review: "frequency",
       intent: { kind: "position-frequency-review" },
     });
 
@@ -224,7 +223,6 @@ describe("rotation review safety", () => {
       changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
       primaryAssignmentId: target.id,
       date: "2026-07-30",
-      review: "frequency",
       intent: { kind: "position-frequency-review" },
     });
 
@@ -284,7 +282,6 @@ describe("rotation review safety", () => {
       changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
       primaryAssignmentId: target.id,
       date: "2026-07-30",
-      review: "frequency",
       intent: { kind: "position-frequency-review" },
     });
 
@@ -317,7 +314,6 @@ describe("rotation review safety", () => {
       changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
       primaryAssignmentId: target.id,
       date: "2026-07-30",
-      review: "frequency",
       intent: { kind: "position-frequency-review" },
     });
 
@@ -371,7 +367,6 @@ describe("rotation review safety", () => {
       changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
       primaryAssignmentId: target.id,
       date: "2026-07-30",
-      review: "frequency",
       intent: { kind: "position-frequency-review" },
     });
 
@@ -384,7 +379,6 @@ describe("rotation review safety", () => {
       changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
       primaryAssignmentId: target.id,
       date: "2026-07-30",
-      review: "coverage",
       intent: {
         kind: "team-leader-gap-fill",
         crossWorkdayReservation: "preserve",
@@ -399,7 +393,6 @@ describe("rotation review safety", () => {
       changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
       primaryAssignmentId: target.id,
       date: "2026-07-30",
-      review: "coverage",
       intent: {
         kind: "team-leader-gap-fill",
         crossWorkdayReservation: "yield-to-selected-vacancy",
@@ -509,7 +502,6 @@ describe("rotation review safety", () => {
       changes: [{ assignmentId: target.id, staffId: recoveringWorker.id }],
       primaryAssignmentId: target.id,
       date: "2026-07-30",
-      review: "frequency",
       intent: { kind: "position-frequency-review" },
       facts,
     });
@@ -542,7 +534,6 @@ describe("rotation review safety", () => {
       ],
       primaryAssignmentId: vacancy.id,
       date: "2026-07-30",
-      review: "coverage",
       intent: { kind: "team-leader-concurrent-gap-fill" },
       facts,
     });
@@ -588,7 +579,6 @@ describe("rotation review safety", () => {
       ],
       primaryAssignmentId: morningTarget.id,
       date: "2026-07-30",
-      review: "frequency",
       intent: { kind: "position-frequency-review" },
       facts: {
         ...facts,

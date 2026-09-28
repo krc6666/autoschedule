@@ -156,7 +156,6 @@ export async function optimizeReassignment(
         changes,
         primaryAssignmentId: options.primary.id,
         date: options.date,
-        review: options.review,
         facts: options.facts,
         frequencyFacts: options.frequencyFacts,
         permittedConcurrentAssignmentIds,

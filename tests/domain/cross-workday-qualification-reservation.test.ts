@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import type { AppState, Flight, PositionRule, Staff } from "../../src/model";
 import {
   crossWorkdayReservationStatuses,
@@ -12,7 +12,7 @@ function reservationState(
   staffCount: number,
   latePositionCount: number
 ): AppState {
-  const state = createDefaultState();
+  const state = createOrdinarySchedulingState();
   const baseStaff = state.staff[0]!;
   state.staff = Array.from({ length: staffCount }, (_, index): Staff => ({
     ...baseStaff,

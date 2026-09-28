@@ -297,7 +297,6 @@ export async function reviewSamePositionFrequency(
         lockedAssignmentIds
       ).filter((assignment) => !reviewed.has(assignment.id)),
       date,
-      review: "frequency",
       facts,
       frequencyFacts,
       intent: { kind: "position-frequency-review" },

@@ -7,7 +7,8 @@ import {
   normalizeSupervisorAssignments,
 } from "../../src/domain/assignments/schedule-adjustment";
 import { createMobileSupervisorCoverageScheduleGuard } from "../../src/domain/kernel/schedule-guard";
-import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 
 function stateWithSupervisor(): AppState {
   const state = createDefaultState();
@@ -227,12 +228,12 @@ describe("督导同航班机动补位", () => {
         "h04-assignment"
       )
     ).toBeNull();
-    const session = createScheduleSafetySessionFromContext({
+    const session = createScheduleSafetySession({
+      phase: "final",
+      state,
+      date: "2026-09-28",
+      runFacts: createScheduleRunFacts(state, "2026-09-28"),
       guards: [createMobileSupervisorCoverageScheduleGuard()],
-      context: {
-        phase: "final",
-        mobileSupervisorCoverageFacts: { state, date: "2026-09-28" },
-      },
     });
 
     expect(() =>
@@ -272,12 +273,12 @@ describe("督导同航班机动补位", () => {
       (assignment) => assignment.id === "h04-assignment"
     )!;
     expect(target.supervisorFillRuleId).toBe("f1-h04-fill");
-    const session = createScheduleSafetySessionFromContext({
+    const session = createScheduleSafetySession({
+      phase: "final",
+      state,
+      date: "2026-09-28",
+      runFacts: createScheduleRunFacts(state, "2026-09-28"),
       guards: [createMobileSupervisorCoverageScheduleGuard()],
-      context: {
-        phase: "final",
-        mobileSupervisorCoverageFacts: { state, date: "2026-09-28" },
-      },
     });
     const broken = state.assignments.map((assignment) => ({ ...assignment }));
     delete broken.find((assignment) => assignment.id === target.id)!

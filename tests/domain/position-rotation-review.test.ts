@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import type { AppState, Assignment } from "../../src/model";
 import { reviewConsecutivePositionRotation } from "../../src/domain/reviews/position-rotation-review";
 import { generateSchedule } from "../helpers/generate-schedule";
@@ -41,7 +41,7 @@ function assignment(
 }
 
 function latePairScenario(ordinaryFatigue = 4) {
-  const state = createDefaultState();
+  const state = createOrdinarySchedulingState();
   const [repeatedWorker, replacementWorker] = state.staff
     .filter((person) => person.status === "正常")
     .slice(0, 2);
@@ -152,7 +152,7 @@ function latePairScenario(ordinaryFatigue = 4) {
 
 describe("consecutive priority-position rotation review", () => {
   it("names separately the previous late work behind rejected KE166/H02 replacements", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [current, first, second] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -307,7 +307,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("accepts a lower-fatigue ordinary late role when the repeated worker cannot leave the late shift", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, replacementWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -432,7 +432,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("uses a configured diversion release before moving the repeated worker to a lower-fatigue late role", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, replacementWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -596,7 +596,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("prefers a complete late-shift exit over a shorter lower-fatigue swap", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, replacementWorker, endpointWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -732,7 +732,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("uses the fewest participants once priority-position fairness improves", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, secondWorker, thirdWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -872,7 +872,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("lets priority-position fairness use a previously protected replacement", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, protectedReplacement] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1016,7 +1016,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("resolves a second consecutive control assignment before comparing monthly frequency", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, alternate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1122,7 +1122,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("swaps an overlapping-flight priority assignment even when the replacement has a general high-load transition", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, replacementWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1262,7 +1262,7 @@ describe("consecutive priority-position rotation review", () => {
     expect(warnings).toEqual([]);
   });
   it("uses an otherwise scheduled but target-time-free qualified worker before reporting a repeated control", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, freeAtTargetWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1392,7 +1392,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("swaps a KE166 mobile-supervisor group with a repeated priority position as one unit", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedSupervisor, repeatedCounterWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1519,7 +1519,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("keeps the KE166 group intact when the replacement lacks a bound-counter qualification", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedSupervisor, candidate] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -1626,7 +1626,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("rotates a repeated KE166 priority position through the mobile-supervisor group and a third role", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedWorker, currentSupervisor, thirdWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -1776,7 +1776,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("repairs repeated KE166 roles after scarce-qualification reservation selected the initial group", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedSupervisor, repeatedCounterWorker, extraWorker] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -1885,7 +1885,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("uses the shortest four-role cycle when no two-person or three-person priority rotation is safe", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const workers = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 4);
@@ -2020,7 +2020,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("uses a five-role cycle at the configured search boundary", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const workers = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 5);
@@ -2100,7 +2100,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("keeps a qualified regular worker ahead of the team-leader fallback for KE166 rotation", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedSupervisor, regularWorker, teamLeader] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 3);
@@ -2230,7 +2230,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("uses a fully qualified team leader for KE166 only after regular rotation has no safe solution", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const [repeatedSupervisor, teamLeader] = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 2);
@@ -2340,7 +2340,7 @@ describe("consecutive priority-position rotation review", () => {
   });
 
   it("keeps a priority position from repeating across six generated and archived workdays when safe alternatives exist", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const workers = state.staff
       .filter((person) => person.status === "正常")
       .slice(0, 4);

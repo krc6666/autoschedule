@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrdinaryStaffDefaultState as createDefaultState } from "../helpers/ordinary-scheduling-state";
+import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import { generateSchedule } from "../helpers/generate-schedule";
 import {
   clearMonthlyDutyRosterOverrides,
@@ -12,7 +12,7 @@ import {
 
 describe("monthly duty roster", () => {
   it("keeps duty exclusive while allowing CX preflight to overlap standby", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff.slice(0, 3).forEach((person) => {
       person.cxPreflightQualified = true;
     });
@@ -55,7 +55,7 @@ describe("monthly duty roster", () => {
   });
 
   it("allows the same person to hold CX preflight and standby on one day", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.slice(0, 3);
     state.staff.forEach((person, index) => {
       person.dutyQualified = true;
@@ -86,7 +86,7 @@ describe("monthly duty roster", () => {
   });
 
   it("limits duty to qualified staff and keeps monthly duty counts balanced", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff.slice(0, 3).forEach((person) => {
       person.cxPreflightQualified = true;
     });
@@ -115,7 +115,7 @@ describe("monthly duty roster", () => {
   });
 
   it("limits automatic and manual standby assignments to qualified staff", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.slice(0, 3);
     state.staff.forEach((person, index) => {
       person.dutyQualified = index === 0;
@@ -142,7 +142,7 @@ describe("monthly duty roster", () => {
   });
 
   it("drops an override after a standby worker loses qualification", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const automatic = getDutyRosterForDate(state, "2026-08-01");
     const standbyId = automatic.standbyStaffIds[0]!;
     state.dutyRosterOverrides = [
@@ -162,7 +162,7 @@ describe("monthly duty roster", () => {
   });
 
   it("rejects a duty-to-standby swap when the displaced duty worker lacks standby qualification", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const current = getDutyRosterForDate(state, "2026-08-01");
     const dutyWorker = state.staff.find(
       (person) => person.id === current.dutyStaffId
@@ -180,7 +180,7 @@ describe("monthly duty roster", () => {
   });
 
   it("finishes the first duty round before assigning a second duty", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.filter((person) => person.status === "正常");
     state.staff.forEach((person, index) => {
       person.dutyQualified = true;
@@ -212,7 +212,7 @@ describe("monthly duty roster", () => {
   });
 
   it("rotates a monthly duty shortage instead of always skipping the same person", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.filter((person) => person.status === "正常");
     state.staff.forEach((person) => {
       person.dutyQualified = true;
@@ -230,7 +230,7 @@ describe("monthly duty roster", () => {
   });
 
   it("gives duty priority even when the same person is the only CX-qualified worker", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff = state.staff.filter((person) => person.status === "正常");
     state.staff.forEach((person) => {
       person.dutyQualified = true;
@@ -249,7 +249,7 @@ describe("monthly duty roster", () => {
   });
 
   it("clears only the selected month when restoring automatic balance", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.dutyRosterOverrides = [
       {
         date: "2026-07-02",
@@ -271,7 +271,7 @@ describe("monthly duty roster", () => {
   });
 
   it("swaps duty and standby people directly in the monthly table", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     state.staff.slice(0, 3).forEach((person) => {
       person.cxPreflightQualified = true;
     });
@@ -288,7 +288,7 @@ describe("monthly duty roster", () => {
   });
 
   it("uses the high duty fatigue when choosing flight-position staff", async () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const workers = state.staff.slice(0, 4);
     state.staff = workers;
     workers[3]!.cxPreflightQualified = true;
@@ -399,7 +399,7 @@ describe("monthly duty roster", () => {
   });
 
   it("swaps an automatic protected duty worker with a future workday while preserving monthly counts", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const before = getMonthlyDutyRoster(state, "2026-08-01");
     const current = before[0]!;
     const protectedWorker = state.staff.find(
@@ -449,7 +449,7 @@ describe("monthly duty roster", () => {
   });
 
   it("does not silently swap a manually overridden protected duty worker", () => {
-    const state = createDefaultState();
+    const state = createOrdinarySchedulingState();
     const current = getMonthlyDutyRoster(state, "2026-08-01")[0]!;
     const protectedWorker = state.staff.find(
       (person) => person.id === current.dutyStaffId

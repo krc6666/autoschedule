@@ -243,7 +243,6 @@ export async function reviewLateShiftCutoff(
         ).values(),
       ],
       date,
-      review: "recovery",
       facts,
       primaryCandidateAllowed: (person) =>
         !isNextWorkdayCutoffConflict(

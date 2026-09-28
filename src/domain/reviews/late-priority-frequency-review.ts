@@ -199,7 +199,6 @@ export async function reviewLatePriorityFrequency(
         lockedAssignmentIds
       ),
       date,
-      review: "late-frequency",
       facts,
       frequencyFacts,
       intent: { kind: "late-priority-frequency-review" },
@@ -376,7 +375,6 @@ export async function reviewLatePriorityFrequency(
         lockedAssignmentIds
       ).filter((assignment) => !reviewed.has(assignment.id)),
       date,
-      review: "late-frequency",
       facts,
       frequencyFacts,
       intent: { kind: "late-priority-frequency-review" },

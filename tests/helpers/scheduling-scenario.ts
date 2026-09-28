@@ -3,7 +3,21 @@ import {
   createScheduleGenerationFacts,
   type ScheduleGenerationFacts,
 } from "../../src/domain/shared/scheduling-facts";
-import type { Assignment, Flight, PositionRule, Staff } from "../../src/model";
+import type {
+  AppState,
+  Assignment,
+  Flight,
+  PositionRule,
+  Staff,
+} from "../../src/model";
+
+export function createOrdinarySchedulingState(): AppState {
+  const state = createDefaultState();
+  state.staff.forEach((person) => {
+    person.teamLeader = false;
+  });
+  return state;
+}
 
 export function createSchedulingScenario(
   overrides: Partial<ScheduleGenerationFacts> = {}

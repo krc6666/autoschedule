@@ -5,7 +5,8 @@ import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-i
 import { optimizeDailySchedule } from "../../src/domain/kernel/daily-schedule-optimizer";
 import { createScheduleLedger } from "../../src/domain/kernel/schedule-ledger";
 import { createKe166SnapshotScheduleGuard } from "../../src/domain/kernel/schedule-guard";
-import { createScheduleSafetySessionFromContext } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
+import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 import { prepareSchedule } from "../../src/domain/kernel/schedule-preparation";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import { generateSchedule } from "../helpers/generate-schedule";
@@ -355,12 +356,12 @@ describe(
         return assignment;
       });
       const ledger = createScheduleLedger(result.assignments, {
-        safetySession: createScheduleSafetySessionFromContext({
+        safetySession: createScheduleSafetySession({
+          phase: "final",
+          state,
+          date: "2026-09-24",
+          runFacts: createScheduleRunFacts(state, "2026-09-24"),
           guards: [createKe166SnapshotScheduleGuard()],
-          context: {
-            phase: "final",
-            ke166SnapshotFacts: { state, date: "2026-09-24" },
-          },
         }),
       });
 

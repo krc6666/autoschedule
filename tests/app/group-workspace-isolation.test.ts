@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
+import { createTestAutoscheduleStore } from "../helpers/application";
 import { createDefaultState } from "../../src/defaults";
 import { currentScheduleHistory } from "../../src/app/history-actions";
 import { buildDailyStaffFlightStatistics } from "../../src/domain/statistics/daily-staff-flight-statistics";
@@ -47,7 +47,7 @@ describe("group workspace isolation", () => {
         remark: "",
       },
     ];
-    const store = createAutoscheduleStore(initial);
+    const store = createTestAutoscheduleStore(initial);
 
     store.getState().switchGroup("B");
     expect(
@@ -93,7 +93,7 @@ describe("group workspace isolation", () => {
         standbyStaffIds: [b.id, null],
       },
     ];
-    const store = createAutoscheduleStore(initial);
+    const store = createTestAutoscheduleStore(initial);
 
     store.getState().switchGroup("B");
     expect(

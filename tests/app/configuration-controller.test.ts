@@ -1,10 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ApplicationContext } from "../../src/app/application-context";
-import { ConfigurationController } from "../../src/app/controllers/configuration-controller";
-import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
+import {
+  createTestApplicationCoordinator,
+  createTestAutoscheduleStore,
+  setTestScheduleRunner,
+} from "../helpers/application";
 import { createDefaultState } from "../../src/defaults";
-import { STORAGE_KEY } from "../../src/infrastructure/storage";
+import {
+  createStatePersistence,
+  STORAGE_KEY,
+} from "../../src/infrastructure/storage";
+
+const preferences = {
+  loadScheduleDate: () => null,
+  saveScheduleDate: vi.fn(),
+  loadScheduleZoom: () => null,
+  saveScheduleZoom: vi.fn(),
+};
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>();
@@ -40,18 +52,14 @@ describe("configuration controller", () => {
       { ...initial.templates[0]!, id: "early", flightNo: sourceFlightNo },
       { ...initial.templates[1]!, id: "late", flightNo: targetFlightNo },
     ];
-    const store = createAutoscheduleStore(initial);
+    const store = createTestAutoscheduleStore(initial);
     const confirm = vi.fn(() => true);
-    const commit = vi.fn();
-    const context = {
-      store,
-      model: () => store.getState().model,
+    const coordinator = createTestApplicationCoordinator(store, {
+      preferences,
       confirm,
-      commit,
-      toast: vi.fn(),
-    } as unknown as ApplicationContext;
+    });
 
-    await new ConfigurationController(context).handle({
+    await coordinator.handle({
       type: "copy-position-rules",
       sourceFlightNo,
       targetFlightNo,
@@ -73,39 +81,31 @@ describe("configuration controller", () => {
     expect(
       copied.some((rule) => targetRules.some((old) => old.id === rule.id))
     ).toBe(false);
-    expect(commit).toHaveBeenCalledWith(
+    expect(coordinator.view().toast?.message).toBe(
       `已将 ${sourceFlightNo} 的岗位配置复制到 ${targetFlightNo}`
     );
   });
 
   it("persists a staff status change when background rescheduling fails", async () => {
     const storage = memoryStorage();
-    vi.stubGlobal("localStorage", storage);
     const initial = createDefaultState();
     const person = initial.staff.find((item) => item.status === "正常")!;
     initial.activeScheduleDate = "2026-08-01";
-    const store = createAutoscheduleStore(initial);
-    const toast = vi.fn();
-    const context = {
-      store,
-      scheduleRunner: {
-        calculate: vi.fn().mockRejectedValue(new Error("worker failed")),
-      },
+    const store = createTestAutoscheduleStore(
+      initial,
+      createStatePersistence(storage)
+    );
+    const coordinator = createTestApplicationCoordinator(store, {
       preferences: {
-        loadScheduleDate: () => null,
-        saveScheduleDate: vi.fn(),
-        loadScheduleZoom: () => null,
-        saveScheduleZoom: vi.fn(),
+        ...preferences,
+        loadScheduleDate: () => "2026-08-01",
       },
-      view: () => ({ date: "2026-08-01" }),
-      model: () => store.getState().model,
-      updateView: vi.fn(),
-      commit: () => store.getState().persist(),
-      toast,
-      confirm: () => true,
-    } as unknown as ApplicationContext;
+    });
+    setTestScheduleRunner(coordinator, {
+      calculate: vi.fn().mockRejectedValue(new Error("worker failed")),
+    });
 
-    await new ConfigurationController(context).handle({
+    await coordinator.handle({
       type: "update-configuration",
       entity: "staff",
       id: person.id,
@@ -118,9 +118,9 @@ describe("configuration controller", () => {
         expect.objectContaining({ id: person.id, status: "病假" }),
       ]),
     });
-    expect(toast).toHaveBeenCalledWith(
-      "人员状态已更新，但排班重新计算失败：worker failed",
-      "danger"
-    );
+    expect(coordinator.view().toast).toMatchObject({
+      message: "人员状态已更新，但排班重新计算失败：worker failed",
+      tone: "danger",
+    });
   });
 });

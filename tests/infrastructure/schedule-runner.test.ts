@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createDefaultState } from "../../src/defaults";
-import { createAutoscheduleStore } from "../../src/app/store/autoschedule-store";
+import { createTestAutoscheduleStore } from "../helpers/application";
 import { runScheduleInBackground } from "../../src/infrastructure/schedule-runner";
 import type { ScheduleWorkerResponse } from "../../src/infrastructure/schedule-worker-protocol";
 
@@ -57,7 +57,7 @@ describe("background schedule runner", () => {
         remark: "",
       },
     ];
-    const store = createAutoscheduleStore(initial);
+    const store = createTestAutoscheduleStore(initial);
     store.getState().switchGroup("B");
     vi.stubGlobal("Worker", ControlledWorker);
 

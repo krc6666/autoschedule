@@ -585,7 +585,6 @@ export async function planTeamLeaderGapFill({
       primary: vacancies[0]!,
       movableAssignments: movable.slice(1),
       date,
-      review: "coverage",
       facts,
       frequencyFacts: facts.scheduleFrequency,
       intent: {
@@ -888,7 +887,6 @@ export function applyTeamLeaderGapFillPreview(
     changes,
     primaryAssignmentId: preview.vacancyAssignmentIds[0]!,
     date: preview.date,
-    review: "coverage",
     facts,
     frequencyFacts: facts.scheduleFrequency,
     intent: {
