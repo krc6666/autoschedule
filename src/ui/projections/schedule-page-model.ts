@@ -4,15 +4,13 @@ import { currentEarlyDepartureLastAssignmentIds } from "../../domain/statistics/
 import { buildScheduleFeedback } from "../../domain/feedback/schedule-feedback";
 import {
   activeFlightRules,
-  assignmentRule,
   compareGuideSourceAssignments,
   guideSourceStaff,
-  isGuideAssignment,
   isFixedBottomPosition,
 } from "../../domain/flights/schedule-position-rules";
 import { countedWorkloadAssignments } from "../../domain/shared/workload-accounting";
 import { availableStaffForManualAssignment } from "../../domain/candidates/assignment-eligibility";
-import { assignmentConflictFacts } from "../../domain/candidates/assignment-eligibility-facts";
+import { timeConflictAssignmentIds } from "../../domain/assignments/assignment-time-conflicts";
 import type { AppState, Assignment, Staff } from "../../model";
 
 export type LoadSortField =
@@ -50,48 +48,6 @@ function isBottomAssignment(state: AppState, assignment: Assignment): boolean {
     : undefined;
   return (
     rule?.category === "引导" || isFixedBottomPosition(assignment.position)
-  );
-}
-
-function timeConflictAssignmentIds(state: AppState): Set<string> {
-  const assigned = state.assignments.filter((assignment) => assignment.staffId);
-  const conflictIds = new Set<string>();
-  for (const assignment of assigned) {
-    const staff = state.staff.find(
-      (person) => person.id === assignment.staffId
-    );
-    const flight = state.flights.find(
-      (item) => item.id === assignment.flightId
-    );
-    if (!staff || !flight) continue;
-    const conflicts = assignmentConflictFacts({
-      state,
-      assignments: assigned.filter((item) => item.id !== assignment.id),
-      flight,
-      rule: assignmentRule(state, assignment),
-      person: staff,
-      sameFlightConflict: "block",
-    }).blockingConflicts;
-    for (const conflict of conflicts) {
-      if (isLegalSameFlightReuse(state, assignment, conflict)) continue;
-      conflictIds.add(assignment.id);
-      conflictIds.add(conflict.id);
-    }
-  }
-  return conflictIds;
-}
-
-function isLegalSameFlightReuse(
-  state: AppState,
-  assignment: Assignment,
-  conflict: Assignment
-): boolean {
-  if (assignment.flightId !== conflict.flightId) return false;
-  return (
-    (isGuideAssignment(state, assignment) &&
-      guideSourceStaff(state, conflict)?.id === assignment.staffId) ||
-    (isGuideAssignment(state, conflict) &&
-      guideSourceStaff(state, assignment)?.id === conflict.staffId)
   );
 }
 
@@ -233,7 +189,7 @@ function timeConflictAssignmentIdsForDate(
       flightIds.has(assignment.flightId)
     ),
   };
-  return timeConflictAssignmentIds(scopedState);
+  return timeConflictAssignmentIds(scopedState, scopedState.assignments);
 }
 
 export type SchedulePageModel = ReturnType<typeof buildSchedulePageModel>;

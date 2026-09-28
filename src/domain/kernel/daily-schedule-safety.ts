@@ -6,11 +6,7 @@ import type {
 } from "../candidates/assignment-eligibility";
 import type { AssignmentTask } from "../flights/schedule-tasks";
 import type { SolverProblem, SolverResult } from "../solver/solver-port";
-import {
-  isMobileSupervisor,
-  isNumberedRegularPosition,
-} from "../flights/schedule-tasks";
-import { canMobileSupervisorCoverPosition } from "../coverage/mobile-supervisor-coverage";
+import { isControlledConcurrentAssignmentPair } from "../assignments/assignment-time-conflicts";
 import {
   evaluateSupervisorFillFacts,
   hasRecordedSupervisorFillLink,
@@ -19,10 +15,6 @@ import {
   isStrictNextWorkdayRecoveryTarget,
   previousWorkdayLateProtection,
 } from "../reviews/cross-day-recovery";
-import {
-  concurrentOverlapMinutes,
-  isConcurrentSupervisor,
-} from "../coverage/team-leader-concurrent-plan";
 import {
   halfRestMinimumWorkViolation,
   halfRestPeriodViolation,
@@ -183,10 +175,9 @@ export function assertDailyScheduleSafety({
           Boolean(other.staffId) &&
           !(
             allowFinalizedConcurrency &&
-            isControlledConcurrentPair(
+            isControlledConcurrentAssignmentPair(
               state,
               assignments,
-              tasks,
               assignment,
               other
             )
@@ -241,85 +232,4 @@ export function assertDailyScheduleSafety({
       throw new Error(`最终安全复核未通过：${violations.join("；")}`);
     }
   }
-}
-
-function isControlledConcurrentPair(
-  state: ScheduleGenerationFacts,
-  assignments: readonly Assignment[],
-  tasks: readonly AssignmentTask[],
-  left: Assignment,
-  right: Assignment
-): boolean {
-  if (!left.staffId || left.staffId !== right.staffId) return false;
-  const leftTask = tasks.find((task) => assignmentMatchesTask(left, task));
-  const rightTask = tasks.find((task) => assignmentMatchesTask(right, task));
-  if (!leftTask || !rightTask) return false;
-
-  const source =
-    left.supervisorSourceAssignmentId === right.id
-      ? left
-      : right.supervisorSourceAssignmentId === left.id
-        ? right
-        : undefined;
-  const supervisor =
-    source === left ? right : source === right ? left : undefined;
-  const sourceTask =
-    source === left ? leftTask : source === right ? rightTask : undefined;
-  const supervisorTask =
-    supervisor === left
-      ? leftTask
-      : supervisor === right
-        ? rightTask
-        : undefined;
-  if (
-    source &&
-    supervisor &&
-    sourceTask &&
-    supervisorTask &&
-    ((source.flightId === supervisor.flightId &&
-      isNumberedRegularPosition(sourceTask.rule) &&
-      isMobileSupervisor(supervisorTask.flight, supervisorTask.rule) &&
-      canMobileSupervisorCoverPosition(state, {
-        flightNo: source.flightNo,
-        position: source.position,
-        remark: source.remark,
-      })) ||
-      (source.flightId === supervisor.flightId &&
-        hasRecordedSupervisorFillLink(
-          evaluateSupervisorFillFacts(
-            state,
-            assignments,
-            supervisor,
-            source,
-            "automatic"
-          ),
-          source
-        )))
-  ) {
-    return true;
-  }
-
-  const person = state.staff.find((item) => item.id === left.staffId);
-  const hasConcurrentDecision = [left, right].every((assignment) =>
-    assignment.decisionTrace?.some(
-      (decision) =>
-        decision.ruleId === "team-leader-concurrent-supervision" &&
-        decision.outcome === "selected"
-    )
-  );
-  if (
-    !person?.teamLeader ||
-    !hasConcurrentDecision ||
-    leftTask.flight.id === rightTask.flight.id ||
-    !isConcurrentSupervisor(leftTask.rule, leftTask.flight) ||
-    !isConcurrentSupervisor(rightTask.rule, rightTask.flight)
-  ) {
-    return false;
-  }
-  const overlapMinutes = concurrentOverlapMinutes(state, left, right);
-  return (
-    overlapMinutes > 0 &&
-    overlapMinutes <=
-      state.settings.teamLeaderConcurrentSupervisionMaxOverlapMinutes
-  );
 }
