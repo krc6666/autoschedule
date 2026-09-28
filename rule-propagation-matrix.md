@@ -834,3 +834,30 @@
 | 页面命令 -> 后台排班             | 注入的 schedule runner adapter                   | coordinator 不创建浏览器 adapter              |
 | Store commit/reset -> 浏览器存储 | 注入的 state persistence adapter                 | Store 不直接选择 localStorage 实现            |
 | 最终 assignments -> 安全凭证     | `createScheduleSafetySession` 的完整事实编译入口 | 外部调用方不能手工拼装 `ScheduleGuardContext` |
+
+## 2026-09-28：跨航班重点人员优先按人员去重
+
+- 类别：既有软优先目标的计数缺陷修复。
+- 唯一事实 owner：`ScheduleSettings.crossFlightPriorityPolicies[]` 与 `src/domain/rules/cross-flight-priority.ts`；规则仍按“优先航班 + 人员编号”匹配。
+- 业务合同：同一条规则内，每名选中人员只计算一次“已留在优先航班”；合法的督导、引导或柜台兼任可以保留，但不得因同一人占多个 assignment 重复得分而挤掉另一名同样被选中的人员。
+
+| 环节                   | 是否适用 | 消费点 / 目标                                                            | 失败或边界                                                   | 回归保护                                     |
+| ---------------------- | -------- | ------------------------------------------------------------------------ | ------------------------------------------------------------ | -------------------------------------------- |
+| 输入事实 / 配置        | 是       | 沿用 `crossFlightPriorityPolicies[].staffIds`                            | 不新增字段，不改变人员勾选、规则顺序和当前组语义             | settings、UI、Excel 既有往返                 |
+| 候选池 / 资格          | 否       | 继续由现有资质、状态、夜班、时间、工时和值班/KE166 规则生成合法 choice   | 不为优先人员制造越权候选                                     | eligibility 与 KE166 反向测试                |
+| HiGHS 求解             | 是       | `daily-schedule-model.ts` 为每条规则、每名人员建立至多计 1 次的保留事实  | 无合法优先 choice 时跳过；兼任 assignment 不得重复增加目标值 | 兼任重复计数红灯、普通跨航班优先测试         |
+| 覆盖 / KE166 特殊收尾  | 是       | 保留现有合法兼任和真人容量语义                                           | 不拆兼任关联，不改变机动督导、引导复用或岗位完整性           | KE166 兼任、督导补位与岗位完整性既有测试     |
+| 后置恢复 / 轮岗 / 公平 | 是       | 继续用 `crossFlightPriorityReassignmentReasons` 防止已保留人员被调离     | 同优先航班内换岗允许；硬约束或更高锁定仍可导致无法保留       | 后置反向改坏与同航班换岗测试                 |
+| 最终复核 / 守卫 / 凭证 | 否       | 本规则仍是软优先，不新增最终硬拒绝                                       | 资质、冲突、工时、值班、岗位完整性等现有硬规则不变           | guard、ledger、credential 既有测试           |
+| 反馈 / 页面            | 是       | 继续投影现有决策证据；页面仍按人员勾选                                   | 不新增第二套 UI 计算，不把未保留误报成配置未保存             | result trace 与规则页既有测试                |
+| localStorage / Excel   | 否       | 配置格式与导入导出不变                                                   | 不升状态版本，不修改工作表                                   | storage、Excel 往返既有测试                  |
+| 测试                   | 是       | 先复现“一人兼任重复得分、另一优先人员落到重叠航班”，再验证按不同人员计数 | 红灯只能通过修正目标计数转绿，不放宽硬约束或改测试业务事实   | 定向 optimizer/model 测试、typecheck、verify |
+
+### 写入路径盘点
+
+| 写入路径                 | 统一消费点                                     | 最终边界                                        |
+| ------------------------ | ---------------------------------------------- | ----------------------------------------------- |
+| 合法 choices -> 求解目标 | `daily-schedule-model.ts` 的跨航班人员保留模型 | 每条规则、每人最多贡献 1；多个合法岗位只表示 OR |
+| 求解结果 -> assignments  | 现有 `materializeDailySchedulePlan`            | 不改 assignment 结构或兼任关联                  |
+| 后置重排 -> 最终结果     | `crossFlightPriorityReassignmentReasons`       | 已留在优先航班后不得被一般轮换撤销              |
+| 配置 -> Worker           | 现有 settings 快照和当天整体模型入口           | 不新增消息字段或浏览器专用分支                  |

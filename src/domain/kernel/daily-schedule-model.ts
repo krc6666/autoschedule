@@ -120,44 +120,74 @@ interface CrossWorkdayReservationModel {
   objectives: LexicographicObjective[];
 }
 
-function crossFlightPriorityObjectives(
+interface CrossFlightPriorityModel {
+  variables: Array<SolverProblem["variables"][number]>;
+  constraints: LinearConstraint[];
+  objectives: LexicographicObjective[];
+}
+
+function crossFlightPriorityModel(
   state: ScheduleGenerationFacts,
   choices: readonly DailyScheduleStaffChoice[]
-): LexicographicObjective[] {
-  return enabledCrossFlightPriorityPolicies(state).flatMap((policy) => {
-    const protectedChoices = choices.filter((choice) =>
-      crossFlightPriorityPolicyMatches(policy, {
-        flightNo: choice.task.flight.flightNo,
-        staffId: choice.person.id,
-      })
-    );
-    if (!protectedChoices.length) return [];
-    const terms = protectedChoices.flatMap((protectedChoice) => {
-      const hasOverlappingAlternative = choices.some(
+): CrossFlightPriorityModel {
+  const variables: CrossFlightPriorityModel["variables"] = [];
+  const constraints: LinearConstraint[] = [];
+  const objectives: LexicographicObjective[] = [];
+
+  enabledCrossFlightPriorityPolicies(state).forEach((policy, policyIndex) => {
+    const terms: Array<{ variableId: string; coefficient: number }> = [];
+    policy.staffIds.forEach((staffId, staffIndex) => {
+      const protectedChoices = choices.filter(
         (choice) =>
-          choice.person.id === protectedChoice.person.id &&
-          choice.task.flight.id !== protectedChoice.task.flight.id &&
-          intervalsOverlap(
-            choice.task.flight.startTime,
-            choice.task.flight.endTime,
-            protectedChoice.task.flight.startTime,
-            protectedChoice.task.flight.endTime
+          choice.person.id === staffId &&
+          crossFlightPriorityPolicyMatches(policy, {
+            flightNo: choice.task.flight.flightNo,
+            staffId: choice.person.id,
+          }) &&
+          choices.some(
+            (alternative) =>
+              alternative.person.id === choice.person.id &&
+              alternative.task.flight.id !== choice.task.flight.id &&
+              intervalsOverlap(
+                alternative.task.flight.startTime,
+                alternative.task.flight.endTime,
+                choice.task.flight.startTime,
+                choice.task.flight.endTime
+              )
           )
       );
-      return hasOverlappingAlternative
-        ? [{ variableId: protectedChoice.id, coefficient: 1 }]
-        : [];
+      if (!protectedChoices.length) return;
+
+      const variableId = `cross-flight-priority-retained:${policyIndex}:${staffIndex}`;
+      variables.push({
+        id: variableId,
+        type: "continuous",
+        lowerBound: 0,
+        upperBound: 1,
+      });
+      constraints.push({
+        id: `${variableId}:selected`,
+        terms: [
+          { variableId, coefficient: 1 },
+          ...protectedChoices.map((choice) => ({
+            variableId: choice.id,
+            coefficient: -1,
+          })),
+        ],
+        upperBound: 0,
+      });
+      terms.push({ variableId, coefficient: 1 });
     });
-    return terms.length
-      ? [
-          {
-            id: `cross-flight-priority:${policy.id}`,
-            direction: "maximize" as const,
-            terms,
-          },
-        ]
-      : [];
+    if (terms.length) {
+      objectives.push({
+        id: `cross-flight-priority:${policy.id}`,
+        direction: "maximize",
+        terms,
+      });
+    }
   });
+
+  return { variables, constraints, objectives };
 }
 
 function ke166SupervisorAvailabilityModel(
@@ -1561,10 +1591,7 @@ export function buildDailyScheduleModel({
     withDailyCombinationObjectives(dailyModelCandidateObjectives, combinations),
     workload.objectives
   );
-  const crossFlightPriority = crossFlightPriorityObjectives(
-    state,
-    staffChoices
-  );
+  const crossFlightPriority = crossFlightPriorityModel(state, staffChoices);
   const ke166ReservationObjectives = candidateObjectives.filter(
     (objective) => objective.id === "candidate:ke166-supervisor"
   );
@@ -1619,7 +1646,7 @@ export function buildDailyScheduleModel({
         coverage: coverageObjectives,
         crossWorkdayReservation: crossWorkdayReservation.objectives,
         strictTransition: strictTransitionObjectives,
-        crossFlightPriority,
+        crossFlightPriority: crossFlightPriority.objectives,
         protectedFairness: protectedFairnessObjectives,
         dutyRelief: duty.reliefObjectives,
         recovery: recoveryObjectives,
@@ -1643,6 +1670,7 @@ export function buildDailyScheduleModel({
         ...combinations.variables,
         ...workload.variables,
         ...crossWorkdayReservation.variables,
+        ...crossFlightPriority.variables,
         ...ke166Availability.variables,
         ...halfRest.variables,
       ],
@@ -1660,6 +1688,7 @@ export function buildDailyScheduleModel({
         ...combinations.constraints,
         ...workload.constraints,
         ...crossWorkdayReservation.constraints,
+        ...crossFlightPriority.constraints,
         ...ke166Availability.constraints,
         ...duty.constraints,
         ...halfRest.constraints,

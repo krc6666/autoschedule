@@ -1011,9 +1011,15 @@ describe("daily schedule module interfaces", () => {
     const objective = model?.problem.objectives.find(
       (item) => item.id === "cross-flight-priority:priority-1"
     );
+    const retainedVariableId = objective?.terms[0]?.variableId;
+    const retainedConstraint = model?.problem.constraints.find(
+      (constraint) => constraint.id === `${retainedVariableId}:selected`
+    );
+    expect(retainedVariableId).toMatch(/^cross-flight-priority-retained:/);
     expect(
-      objective?.terms.some(
+      retainedConstraint?.terms.some(
         (term) =>
+          term.coefficient === -1 &&
           model?.staffChoices.find((choice) => choice.id === term.variableId)
             ?.task.flight.flightNo === "KE166"
       )
@@ -1031,6 +1037,53 @@ describe("daily schedule module interfaces", () => {
         item.id.startsWith("cross-flight-priority:")
       )
     ).toBe(false);
+  });
+
+  it("counts each selected cross-flight priority person only once across reusable assignments", () => {
+    const state = modelState([
+      flight("ke", "KE166", "08:00", "10:00", ["H03", "H04"]),
+      flight("cx", "CX937", "08:00", "10:00", ["G18"]),
+    ]);
+    state.staff.push({
+      ...state.staff[0]!,
+      id: "worker-2",
+      name: "另一名优先人员",
+    });
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds = ["worker", "worker-2"];
+    });
+    state.settings.crossFlightPriorityPolicies = [
+      {
+        id: "priority-1",
+        enabled: true,
+        flightNo: "KE166",
+        staffIds: ["worker", "worker-2"],
+      },
+    ];
+
+    const preparation = prepareSchedule(
+      state,
+      "2026-10-14",
+      evaluateAutomaticHardConstraints
+    );
+    const model = buildDailyScheduleModel({
+      state,
+      date: "2026-10-14",
+      preparation,
+      timeoutMs: 30_000,
+    })!;
+    const objective = model.problem.objectives.find(
+      (item) => item.id === "cross-flight-priority:priority-1"
+    );
+
+    expect(objective?.terms).toHaveLength(2);
+    objective?.terms.forEach((term) => {
+      expect(
+        model.problem.variables.find(
+          (variable) => variable.id === term.variableId
+        )
+      ).toMatchObject({ lowerBound: 0, upperBound: 1 });
+    });
   });
 
   it("assigns selected staff to the priority flight instead of an overlapping alternative", async () => {
