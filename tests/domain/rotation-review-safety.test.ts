@@ -1,46 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { createDefaultState } from "../../src/defaults";
 import type { Assignment } from "../../src/model";
 import { ROTATION_REVIEW_POLICIES } from "../../src/domain/reviews/reassignment-safety-policy";
 import { reassignmentSafetyReasons } from "../../src/domain/reviews/rotation-review-safety";
-import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 import { halfRestRegressionReasons } from "../../src/domain/rules/half-rest";
 import {
   reassignmentChoiceRequirements,
   type ReassignmentChoiceFacts,
 } from "../../src/domain/solver/reassignment-choice-graph";
 import type { ReassignmentOptimizationOptions } from "../../src/domain/solver/reassignment-contract";
-import { createReassignmentScenario } from "../helpers/scheduling-scenario";
+import {
+  createRotationReviewHalfRestScenario,
+  createRotationReviewFrequencyScenario,
+  createRotationReviewMinimumWorkScenario,
+  createRotationReviewRetainWorkScenario,
+} from "../helpers/scheduling-scenario";
 
 describe("rotation review safety", () => {
   it("does not impose a global retain-work requirement on a local frequency review", () => {
-    const state = createDefaultState();
-    const worker = {
-      ...state.staff[0]!,
-      id: "required-worker",
-      name: "必上班人员",
-      status: "正常" as const,
-      staffType: "常规" as const,
-      teamLeader: false,
-    };
-    state.staff = [worker];
-    const assignment: Assignment = {
-      id: "target",
-      flightId: "flight",
-      flightNo: "F100",
-      positionRuleId: "rule",
-      position: "G20",
-      staffId: worker.id,
-      staffName: worker.name,
-      startTime: "08:00",
-      endTime: "10:00",
-      workHours: 2,
-      fatiguePoints: 1,
-      remark: "",
-      manualRemark: "",
-      status: "assigned",
-    };
+    const { state, worker, assignment } =
+      createRotationReviewRetainWorkScenario();
     const choices: ReassignmentChoiceFacts[] = [
       {
         assignment,
@@ -70,24 +49,7 @@ describe("rotation review safety", () => {
   });
 
   it("rejects post-review plans that leave a non-team-leader half-rest worker empty", () => {
-    const state = createDefaultState();
-    const person = state.staff.find((item) => !item.teamLeader)!;
-    const assignment: Assignment = {
-      id: "target",
-      flightId: "flight",
-      flightNo: "F100",
-      positionRuleId: "rule",
-      position: "G20",
-      staffId: person.id,
-      staffName: person.name,
-      startTime: "08:00",
-      endTime: "10:00",
-      workHours: 2,
-      fatiguePoints: 1,
-      remark: "",
-      manualRemark: "",
-      status: "assigned",
-    };
+    const { assignment, person } = createRotationReviewMinimumWorkScenario();
     const reasons = halfRestRegressionReasons(
       [assignment],
       [{ ...assignment, staffId: null, staffName: "", status: "unfilled" }],
@@ -132,29 +94,9 @@ describe("rotation review safety", () => {
     });
   });
 
-  function createFrequencyFixture() {
-    const {
-      state,
-      assignedWorker: originalWorker,
-      replacementWorker,
-      primary: target,
-    } = createReassignmentScenario({
-      position: { name: "G20", remark: "一号", fatiguePoints: 2 },
-    });
-    state.settings.ordinaryPriorityPositions = [
-      { airlineCode: "F1", position: "G20" },
-    ];
-    return {
-      state,
-      originalWorker,
-      replacementWorker,
-      target,
-    };
-  }
-
   it("allows priority-position fairness even when the original worker has no other work", () => {
     const { state, originalWorker, replacementWorker, target } =
-      createFrequencyFixture();
+      createRotationReviewFrequencyScenario();
     state.history = [
       {
         id: "history",
@@ -186,7 +128,7 @@ describe("rotation review safety", () => {
 
   it("accepts a lower-frequency replacement when the original worker keeps another assignment", () => {
     const { state, originalWorker, replacementWorker, target } =
-      createFrequencyFixture();
+      createRotationReviewFrequencyScenario();
     state.history = [
       {
         id: "history",
@@ -231,7 +173,7 @@ describe("rotation review safety", () => {
 
   it("keeps strict position transitions above priority-position fairness", () => {
     const { state, originalWorker, replacementWorker, target } =
-      createFrequencyFixture();
+      createRotationReviewFrequencyScenario();
     state.history = [
       {
         id: "history",
@@ -289,7 +231,8 @@ describe("rotation review safety", () => {
   });
 
   it("does not let a post-schedule reassignment bypass the global transition gap", () => {
-    const { state, replacementWorker, target } = createFrequencyFixture();
+    const { state, replacementWorker, target } =
+      createRotationReviewFrequencyScenario();
     state.settings.positionTransitionPolicies = [];
     state.settings.minimumRegularTransitionMinutes = 90;
     const previous: Assignment = {
@@ -324,7 +267,7 @@ describe("rotation review safety", () => {
 
   it("does not let a lower-priority review consume an established reservation", () => {
     const { state, originalWorker, replacementWorker, target } =
-      createFrequencyFixture();
+      createRotationReviewFrequencyScenario();
     state.flights[0]!.startTime = "21:00";
     state.flights[0]!.endTime = "23:30";
     target.startTime = "21:00";
@@ -402,93 +345,7 @@ describe("rotation review safety", () => {
   });
 
   function createStrictHalfRestFixture() {
-    const state = createDefaultState();
-    const [halfRestWorker, recoveringWorker, availableWorker] = state.staff
-      .filter((person) => person.status === "正常")
-      .slice(0, 3);
-    state.staff = [halfRestWorker!, recoveringWorker!, availableWorker!];
-    state.flights = [
-      {
-        id: "late-flight",
-        flightNo: "PM200",
-        startTime: "15:00",
-        endTime: "17:00",
-        bookedPassengers: 100,
-        positions: ["B1"],
-        remark: "",
-      },
-    ];
-    state.positionRules = [
-      {
-        ...state.positionRules[0]!,
-        id: "late-control",
-        flightNo: "PM200",
-        name: "B1",
-        category: "常规",
-        remark: "控制",
-        qualifiedStaffIds: state.staff.map((person) => person.id),
-      },
-    ];
-    state.settings.lateShiftRecoveryEnabled = true;
-    state.settings.nextWorkdayRecoveryMode = "forbid";
-    state.settings.nextWorkdayRecoveryTargets = [
-      {
-        id: "strict-control",
-        enabled: true,
-        flightNo: "PM200",
-        positionKeyword: "控制",
-      },
-    ];
-    state.settings.lateShiftRecoveryPositionRules = [
-      {
-        id: "previous-number-one",
-        enabled: true,
-        flightNo: "OLD900",
-        matchField: "remark",
-        keyword: "一号",
-        nextWorkdayCutoffTime: "",
-      },
-    ];
-    state.history = [
-      {
-        id: "previous-late",
-        date: "2026-07-28",
-        flightNo: "OLD900",
-        position: "H02",
-        staffId: recoveringWorker!.id,
-        staffName: recoveringWorker!.name,
-        startTime: "21:00",
-        endTime: "23:30",
-        workHours: 2.5,
-        fatiguePoints: 5,
-        remark: "一号",
-      },
-    ];
-    const target: Assignment = {
-      id: "target",
-      flightId: "late-flight",
-      flightNo: "PM200",
-      positionRuleId: "late-control",
-      position: "B1",
-      staffId: availableWorker!.id,
-      staffName: availableWorker!.name,
-      startTime: "15:00",
-      endTime: "17:00",
-      workHours: 2,
-      fatiguePoints: 2,
-      remark: "控制",
-      manualRemark: "",
-      status: "assigned",
-    };
-    const facts = createScheduleRunFacts(state, "2026-07-30", {
-      halfRestStaffIds: [halfRestWorker!.id],
-    });
-    return {
-      state,
-      target,
-      facts,
-      recoveringWorker: recoveringWorker!,
-    };
+    return createRotationReviewHalfRestScenario();
   }
 
   it("does not add a strict recovery exception for an ordinary half-rest reassignment", () => {

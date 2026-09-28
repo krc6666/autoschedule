@@ -1,104 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
-import type { AppState, Flight, PositionRule, Staff } from "../../src/model";
+import { createCrossWorkdayReservationScenario } from "../helpers/scheduling-scenario";
 import {
   crossWorkdayReservationStatuses,
   crossWorkdayReservationWarning,
 } from "../../src/domain/reviews/cross-workday-qualification-reservation";
 import { generateSchedule } from "../helpers/generate-schedule";
 
-function reservationState(
-  staffCount: number,
-  latePositionCount: number
-): AppState {
-  const state = createOrdinarySchedulingState();
-  const baseStaff = state.staff[0]!;
-  state.staff = Array.from({ length: staffCount }, (_, index): Staff => ({
-    ...baseStaff,
-    id: `worker-${index + 1}`,
-    name: `人员${index + 1}`,
-    staffType: "常规",
-    status: "正常",
-    nightShift: true,
-    dutyQualified: false,
-    cxPreflightQualified: false,
-  }));
-  const lateFlight: Flight = {
-    id: "late-flight",
-    flightNo: "LATE100",
-    startTime: "21:00",
-    endTime: "23:30",
-    bookedPassengers: 100,
-    positions: Array.from(
-      { length: latePositionCount },
-      (_, index) => `G0${index + 1}`
-    ),
-    remark: "",
-  };
-  const nextFlight: Flight = {
-    id: "next-flight",
-    flightNo: "NEXT200",
-    startTime: "08:00",
-    endTime: "10:00",
-    bookedPassengers: 100,
-    positions: ["控制"],
-    remark: "",
-  };
-  const baseRule = state.positionRules[0]!;
-  const lateRules = lateFlight.positions.map((name, index): PositionRule => ({
-    ...baseRule,
-    id: `late-rule-${index + 1}`,
-    flightNo: lateFlight.flightNo,
-    name,
-    category: "常规",
-    remark: "",
-    qualifiedStaffIds: state.staff.map((person) => person.id),
-    manual: false,
-    fatiguePoints: 1,
-    minPassengers: 0,
-    earlyReleaseMinutes: 0,
-  }));
-  const nextRule: PositionRule = {
-    ...lateRules[0]!,
-    id: "next-control",
-    flightNo: nextFlight.flightNo,
-    name: "控制",
-    qualifiedStaffIds: [state.staff[0]!.id],
-  };
-  state.flights = [lateFlight];
-  state.templates = [
-    {
-      id: "next-template",
-      flightNo: nextFlight.flightNo,
-      startTime: nextFlight.startTime,
-      endTime: nextFlight.endTime,
-      positions: nextFlight.positions,
-      remark: "",
-    },
-  ];
-  state.positionRules = [...lateRules, nextRule];
-  state.history = [];
-  state.dutyRosterOverrides = [];
-  state.settings.positionTransitionPolicies = [];
-  state.settings.positionRotationEnabled = false;
-  state.settings.workloadBalanceEnabled = false;
-  state.settings.crossWorkdayQualificationReservations = [
-    {
-      id: "reserve-control",
-      enabled: true,
-      flightNo: nextFlight.flightNo,
-      matchField: "position",
-      keyword: "控制",
-      minimumStaffCount: 1,
-    },
-  ];
-  return state;
-}
-
 describe("cross-workday qualification reservation", () => {
   it("keeps the only next-workday qualified worker away from today's late positions", async () => {
-    const state = reservationState(3, 2);
+    const state = createCrossWorkdayReservationScenario({
+      staffCount: 3,
+      latePositionCount: 2,
+    });
 
     const result = await generateSchedule(state, "2026-08-03");
     const statuses = crossWorkdayReservationStatuses(state, result.assignments);
@@ -115,7 +29,10 @@ describe("cross-workday qualification reservation", () => {
   });
 
   it("keeps today's positions complete and reports a soft reservation shortfall", async () => {
-    const state = reservationState(2, 2);
+    const state = createCrossWorkdayReservationScenario({
+      staffCount: 2,
+      latePositionCount: 2,
+    });
 
     const result = await generateSchedule(state, "2026-08-03");
     const status = crossWorkdayReservationStatuses(
@@ -129,7 +46,10 @@ describe("cross-workday qualification reservation", () => {
   });
 
   it("uses different people for two overlapping next-workday targets", async () => {
-    const state = reservationState(3, 1);
+    const state = createCrossWorkdayReservationScenario({
+      staffCount: 3,
+      latePositionCount: 1,
+    });
     const nextRule = state.positionRules.find(
       (rule) => rule.id === "next-control"
     )!;
@@ -160,7 +80,10 @@ describe("cross-workday qualification reservation", () => {
   });
 
   it("does not let a flexible target consume the only person for a later target", () => {
-    const state = reservationState(3, 0);
+    const state = createCrossWorkdayReservationScenario({
+      staffCount: 3,
+      latePositionCount: 0,
+    });
     const nextRule = state.positionRules.find(
       (rule) => rule.id === "next-control"
     )!;

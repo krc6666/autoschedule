@@ -9,6 +9,14 @@ import {
 import { reassignmentDynamicSafetyReasons } from "../../src/domain/reviews/reassignment-safety-policy";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import type { Assignment, Flight, PositionRule, Staff } from "../../src/model";
+import {
+  createTeamLeaderGapFillAssignmentLimitScenario,
+  createTeamLeaderGapFillBatchScenario,
+  createTeamLeaderGapFillChainScenario,
+  createTeamLeaderGapFillFatiguePreferenceScenario,
+  createTeamLeaderGapFillGuideChainScenario,
+  createTeamLeaderGapFillReservationScenario,
+} from "../helpers/scheduling-scenario";
 
 function person(id: string, teamLeader = false): Staff {
   return {
@@ -80,102 +88,6 @@ function assignment(
   };
 }
 
-function chainScenario(prioritySource = false) {
-  const state = createDefaultState();
-  const leader = person("leader", true);
-  const worker = person("worker");
-  const sourceFlight = flight("ak151", "AK151");
-  const vacancyFlight = flight("tr", "TR100");
-  const sourceRule = rule("source", "AK151", "G01", [leader.id, worker.id]);
-  const vacancyRule = rule("vacancy", "TR100", "G02", [worker.id]);
-  state.staff = [leader, worker];
-  state.flights = [sourceFlight, vacancyFlight];
-  state.positionRules = [sourceRule, vacancyRule];
-  state.settings.positionRotationEnabled = false;
-  state.settings.highLoadProtectionEnabled = false;
-  state.settings.rollingLoadProtectionEnabled = false;
-  state.settings.minimumRegularTransitionMinutes = 0;
-  state.settings.ordinaryPriorityPositions = prioritySource
-    ? [{ airlineCode: "AK", position: "G01" }]
-    : [];
-  state.assignments = [
-    assignment(sourceRule, sourceFlight, worker),
-    assignment(vacancyRule, vacancyFlight, null),
-  ];
-  state.activeScheduleDate = "2026-09-22";
-  return { state, leader, worker };
-}
-
-function reservationGapFillScenario() {
-  const state = createDefaultState();
-  const leader = person("leader", true);
-  leader.name = "刘红";
-  const reserveWorker = person("reserve-worker");
-  reserveWorker.name = "刘燕琼";
-  const guideWorker = person("guide-worker");
-  guideWorker.name = "叶琳";
-  const sourceFlight = flight("ak151", "AK151");
-  sourceFlight.startTime = "21:05";
-  sourceFlight.endTime = "23:05";
-  const vacancyFlight = flight("tr121", "TR121");
-  vacancyFlight.startTime = "21:55";
-  vacancyFlight.endTime = "23:55";
-  const sourceRule = rule("source", "AK151", "G09", [
-    reserveWorker.id,
-    guideWorker.id,
-  ]);
-  sourceRule.category = "分流";
-  sourceRule.earlyReleaseMinutes = 60;
-  const guideRule = rule("guide", "AK151", "引导", []);
-  guideRule.category = "分流";
-  const vacancyRule = rule("vacancy", "TR121", "收费/引导", [reserveWorker.id]);
-  const sourceAssignment = assignment(sourceRule, sourceFlight, reserveWorker);
-  sourceAssignment.endTime = "22:05";
-  sourceAssignment.workHours = 1;
-  const guideAssignment = assignment(guideRule, sourceFlight, guideWorker);
-  guideAssignment.workHours = 0;
-  guideAssignment.fatiguePoints = 0;
-  const vacancyAssignment = assignment(vacancyRule, vacancyFlight, null);
-  state.staff = [leader, reserveWorker, guideWorker];
-  state.flights = [sourceFlight, vacancyFlight];
-  state.positionRules = [sourceRule, guideRule, vacancyRule];
-  state.assignments = [sourceAssignment, guideAssignment, vacancyAssignment];
-  state.activeScheduleDate = "2026-09-27";
-  state.settings.positionRotationEnabled = false;
-  state.settings.highLoadProtectionEnabled = false;
-  state.settings.rollingLoadProtectionEnabled = false;
-  state.settings.minimumRegularTransitionMinutes = 0;
-  state.settings.ordinaryPriorityPositions = [];
-  state.settings.teamLeaderGapFillPositionPolicies = [
-    { flightNo: "AK151", position: "G09", movable: true },
-  ];
-  state.settings.crossWorkdayQualificationReservations = [
-    {
-      id: "reserve-tr121-guide",
-      enabled: true,
-      flightNo: "TR121",
-      matchField: "position",
-      keyword: "收费/引导",
-      minimumStaffCount: 1,
-    },
-  ];
-  state.settings.lateShiftEndTime = "23:00";
-  return { state, leader, reserveWorker, guideWorker };
-}
-
-function guideChainScenario() {
-  const { state, leader, worker } = chainScenario();
-  const sourceRule = state.positionRules.find((item) => item.id === "source")!;
-  sourceRule.category = "引导";
-  sourceRule.qualifiedStaffIds = [];
-  const source = state.assignments.find(
-    (item) => item.id === "assignment-source"
-  )!;
-  source.workHours = 0;
-  source.fatiguePoints = 0;
-  return { state, leader, worker };
-}
-
 function addPreviousLatePriorityHistory(
   state: ReturnType<typeof createDefaultState>,
   staff: Staff,
@@ -235,157 +147,6 @@ function addEarlierHighLoadAssignment(
   state.settings.rollingLoadMaxFatigue = 7;
 }
 
-function batchScenario() {
-  const state = createDefaultState();
-  const leader = person("leader", true);
-  const workerOne = person("worker-one");
-  const workerTwo = person("worker-two");
-  const workerThree = person("worker-three");
-  const sourceFlightOne = flight("ak151", "AK151");
-  const vacancyFlightOne = flight("tr100", "TR100");
-  const sourceFlightTwo = flight("ak152", "AK152");
-  const vacancyFlightTwo = flight("tr200", "TR200");
-  const sourceFlightThree = flight("ak153", "AK153");
-  const vacancyFlightThree = flight("tr300", "TR300");
-  sourceFlightTwo.startTime = "13:00";
-  sourceFlightTwo.endTime = "15:00";
-  vacancyFlightTwo.startTime = "13:00";
-  vacancyFlightTwo.endTime = "15:00";
-  sourceFlightThree.startTime = "16:00";
-  sourceFlightThree.endTime = "18:00";
-  vacancyFlightThree.startTime = "16:00";
-  vacancyFlightThree.endTime = "18:00";
-  const sourceRuleOne = rule("source-one", "AK151", "G01", [
-    leader.id,
-    workerOne.id,
-  ]);
-  const vacancyRuleOne = rule("vacancy-one", "TR100", "G02", [workerOne.id]);
-  const sourceRuleTwo = rule("source-two", "AK152", "G01", [
-    leader.id,
-    workerTwo.id,
-  ]);
-  const vacancyRuleTwo = rule("vacancy-two", "TR200", "G02", [workerTwo.id]);
-  const sourceRuleThree = rule("source-three", "AK153", "G01", [
-    leader.id,
-    workerThree.id,
-  ]);
-  const vacancyRuleThree = rule("vacancy-three", "TR300", "G02", [
-    workerThree.id,
-  ]);
-  state.staff = [leader, workerOne, workerTwo, workerThree];
-  state.flights = [
-    sourceFlightOne,
-    vacancyFlightOne,
-    sourceFlightTwo,
-    vacancyFlightTwo,
-    sourceFlightThree,
-    vacancyFlightThree,
-  ];
-  state.positionRules = [
-    sourceRuleOne,
-    vacancyRuleOne,
-    sourceRuleTwo,
-    vacancyRuleTwo,
-    sourceRuleThree,
-    vacancyRuleThree,
-  ];
-  state.settings.positionRotationEnabled = false;
-  state.settings.highLoadProtectionEnabled = false;
-  state.settings.rollingLoadProtectionEnabled = false;
-  state.settings.minimumRegularTransitionMinutes = 0;
-  state.assignments = [
-    assignment(sourceRuleOne, sourceFlightOne, workerOne),
-    assignment(vacancyRuleOne, vacancyFlightOne, null),
-    assignment(sourceRuleTwo, sourceFlightTwo, workerTwo),
-    assignment(vacancyRuleTwo, vacancyFlightTwo, null),
-    assignment(sourceRuleThree, sourceFlightThree, workerThree),
-    assignment(vacancyRuleThree, vacancyFlightThree, null),
-  ];
-  state.activeScheduleDate = "2026-09-22";
-  return { state, leader, workerOne, workerTwo, workerThree };
-}
-
-function changedAssignmentLimitScenario(
-  chainedVacancyCount: number,
-  includeDirectVacancy: boolean,
-  includeExtraMovable = false
-) {
-  const state = createDefaultState();
-  const leader = person("leader", true);
-  const workers = Array.from({ length: chainedVacancyCount }, (_, index) =>
-    person(`worker-${index + 1}`)
-  );
-  const flights: Flight[] = [];
-  const rules: PositionRule[] = [];
-  const assignments: Assignment[] = [];
-  const vacancyAssignmentIds: string[] = [];
-
-  workers.forEach((worker, index) => {
-    const startHour = 6 + index * 2;
-    const sourceFlight = flight(`source-flight-${index}`, `AK${index + 1}`);
-    const vacancyFlight = flight(`vacancy-flight-${index}`, `TR${index + 1}`);
-    sourceFlight.startTime =
-      vacancyFlight.startTime = `${String(startHour).padStart(2, "0")}:00`;
-    sourceFlight.endTime =
-      vacancyFlight.endTime = `${String(startHour + 2).padStart(2, "0")}:00`;
-    const sourceRule = rule(`source-${index}`, sourceFlight.flightNo, "G01", [
-      leader.id,
-      worker.id,
-    ]);
-    const vacancyRule = rule(
-      `vacancy-${index}`,
-      vacancyFlight.flightNo,
-      "G02",
-      [worker.id]
-    );
-    flights.push(sourceFlight, vacancyFlight);
-    rules.push(sourceRule, vacancyRule);
-    assignments.push(
-      assignment(sourceRule, sourceFlight, worker),
-      assignment(vacancyRule, vacancyFlight, null)
-    );
-    vacancyAssignmentIds.push(`assignment-${vacancyRule.id}`);
-  });
-
-  let extraMovable: Assignment | null = null;
-  if (includeDirectVacancy) {
-    const directFlight = flight("direct-flight", "DIRECT");
-    directFlight.startTime = "22:00";
-    directFlight.endTime = "23:00";
-    const directRule = rule("direct-vacancy", "DIRECT", "G03", [leader.id]);
-    flights.push(directFlight);
-    rules.push(directRule);
-    assignments.push(assignment(directRule, directFlight, null));
-    vacancyAssignmentIds.push("assignment-direct-vacancy");
-
-    if (includeExtraMovable) {
-      const extraWorker = person("extra-worker");
-      state.staff = [leader, ...workers, extraWorker];
-      const extraRule = rule("extra-movable", "DIRECT", "G04", [
-        extraWorker.id,
-        workers[0]!.id,
-      ]);
-      rules.push(extraRule);
-      extraMovable = assignment(extraRule, directFlight, extraWorker);
-      assignments.push(extraMovable);
-    }
-  }
-
-  if (!state.staff.some((staff) => staff.id === leader.id))
-    state.staff = [leader, ...workers];
-  state.flights = flights;
-  state.positionRules = rules;
-  state.assignments = assignments;
-  state.activeScheduleDate = "2026-09-22";
-  state.settings.maxDailyHours = 24;
-  state.settings.positionRotationEnabled = false;
-  state.settings.highLoadProtectionEnabled = false;
-  state.settings.rollingLoadProtectionEnabled = false;
-  state.settings.minimumRegularTransitionMinutes = 0;
-  state.settings.ordinaryPriorityPositions = [];
-  return { state, leader, workers, vacancyAssignmentIds, extraMovable };
-}
-
 function ready(
   result: TeamLeaderGapFillPlanResult
 ): Extract<TeamLeaderGapFillPlanResult, { kind: "ready" }> {
@@ -395,7 +156,7 @@ function ready(
 
 describe("team leader gap fill", () => {
   it("previews a two-step local reassignment without changing the schedule", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     const before = structuredClone(state.assignments);
 
     const result = ready(
@@ -426,7 +187,7 @@ describe("team leader gap fill", () => {
   });
 
   it("keeps a non-overlapping source job available for a qualification chain", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     const vacancyFlight = state.flights.find((item) => item.id === "tr")!;
     vacancyFlight.startTime = "14:00";
     vacancyFlight.endTime = "16:00";
@@ -468,7 +229,8 @@ describe("team leader gap fill", () => {
   });
 
   it("solves multiple selected vacancies as one atomic overall plan", async () => {
-    const { state, leader, workerOne, workerTwo } = batchScenario();
+    const { state, leader, workerOne, workerTwo } =
+      createTeamLeaderGapFillBatchScenario();
 
     const result = ready(
       await planTeamLeaderGapFill({
@@ -518,7 +280,10 @@ describe("team leader gap fill", () => {
 
   it("allows an atomic plan that changes exactly fifteen jobs", async () => {
     const { state, leader, vacancyAssignmentIds } =
-      changedAssignmentLimitScenario(7, true);
+      createTeamLeaderGapFillAssignmentLimitScenario({
+        chainedVacancyCount: 7,
+        includeDirectVacancy: true,
+      });
 
     const result = ready(
       await planTeamLeaderGapFill({
@@ -537,7 +302,10 @@ describe("team leader gap fill", () => {
 
   it("allows a batch over the fifteen-job recommendation with a yellow warning", async () => {
     const { state, leader, vacancyAssignmentIds } =
-      changedAssignmentLimitScenario(8, false);
+      createTeamLeaderGapFillAssignmentLimitScenario({
+        chainedVacancyCount: 8,
+        includeDirectVacancy: false,
+      });
 
     const result = ready(
       await planTeamLeaderGapFill({
@@ -559,7 +327,11 @@ describe("team leader gap fill", () => {
 
   it("confirms a preview expanded beyond the fifteen-job recommendation", async () => {
     const { state, leader, workers, vacancyAssignmentIds, extraMovable } =
-      changedAssignmentLimitScenario(7, true, true);
+      createTeamLeaderGapFillAssignmentLimitScenario({
+        chainedVacancyCount: 7,
+        includeDirectVacancy: true,
+        includeExtraMovable: true,
+      });
     const result = ready(
       await planTeamLeaderGapFill({
         solver: defaultHighsSolver,
@@ -596,7 +368,9 @@ describe("team leader gap fill", () => {
   });
 
   it("does not move an already assigned priority position", async () => {
-    const { state, leader } = chainScenario(true);
+    const { state, leader } = createTeamLeaderGapFillChainScenario({
+      prioritySource: true,
+    });
 
     const result = await planTeamLeaderGapFill({
       solver: defaultHighsSolver,
@@ -615,7 +389,9 @@ describe("team leader gap fill", () => {
   });
 
   it("allows an explicitly released ordinary priority position to join the chain", async () => {
-    const { state, leader, worker } = chainScenario(true);
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario({
+      prioritySource: true,
+    });
     Object.assign(state.settings, {
       teamLeaderGapFillPositionPolicies: [
         { flightNo: "AK151", position: "G01", movable: true },
@@ -644,7 +420,7 @@ describe("team leader gap fill", () => {
   });
 
   it("keeps fixed KE166 protection even when its position is configured movable", async () => {
-    const { state, leader } = chainScenario();
+    const { state, leader } = createTeamLeaderGapFillChainScenario();
     const sourceFlight = state.flights.find((item) => item.id === "ak151")!;
     const sourceRule = state.positionRules.find(
       (item) => item.id === "source"
@@ -675,7 +451,9 @@ describe("team leader gap fill", () => {
   });
 
   it("rejects confirmation if a previewed source position becomes protected", async () => {
-    const { state, leader } = chainScenario(true);
+    const { state, leader } = createTeamLeaderGapFillChainScenario({
+      prioritySource: true,
+    });
     Object.assign(state.settings, {
       teamLeaderGapFillPositionPolicies: [
         { flightNo: "AK151", position: "G01", movable: true },
@@ -703,7 +481,8 @@ describe("team leader gap fill", () => {
   });
 
   it("allows a guide assignment to be replaced by the team leader in gap fill", async () => {
-    const { state, leader, worker } = guideChainScenario();
+    const { state, leader, worker } =
+      createTeamLeaderGapFillGuideChainScenario();
 
     const result = ready(
       await planTeamLeaderGapFill({
@@ -732,7 +511,8 @@ describe("team leader gap fill", () => {
   });
 
   it("allows a diversion-category guide assignment to be replaced by the team leader", async () => {
-    const { state, leader, worker } = guideChainScenario();
+    const { state, leader, worker } =
+      createTeamLeaderGapFillGuideChainScenario();
     const sourceRule = state.positionRules.find(
       (item) => item.id === "source"
     )!;
@@ -766,7 +546,7 @@ describe("team leader gap fill", () => {
   });
 
   it("allows a current late-priority assignment to move in gap fill", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     const sourceRule = state.positionRules.find(
       (item) => item.id === "source"
     )!;
@@ -800,7 +580,7 @@ describe("team leader gap fill", () => {
   });
 
   it("allows a recovery-protected worker in gap fill with a concrete warning", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     addPreviousLatePriorityHistory(state, worker);
 
     const result = await planTeamLeaderGapFill({
@@ -826,7 +606,7 @@ describe("team leader gap fill", () => {
   });
 
   it("allows high-load fatigue protection to yield only in gap fill with a concrete warning", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     addEarlierHighLoadAssignment(state, worker);
     state.settings.highLoadProtectionEnabled = true;
     state.settings.rollingLoadProtectionEnabled = false;
@@ -853,7 +633,7 @@ describe("team leader gap fill", () => {
   });
 
   it("allows rolling-load protection to yield only in gap fill with a concrete warning", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     addEarlierHighLoadAssignment(state, worker);
     state.settings.highLoadProtectionEnabled = false;
     state.settings.rollingLoadProtectionEnabled = true;
@@ -881,7 +661,7 @@ describe("team leader gap fill", () => {
 
   it("allows the 9/27 three-step chain to yield cross-workday qualification reservation with a concrete warning", async () => {
     const { state, leader, reserveWorker, guideWorker } =
-      reservationGapFillScenario();
+      createTeamLeaderGapFillReservationScenario();
 
     const result = ready(
       await planTeamLeaderGapFill({
@@ -921,7 +701,7 @@ describe("team leader gap fill", () => {
   });
 
   it("prefers a strict plan that preserves qualification reservation when one exists", async () => {
-    const { state, leader } = reservationGapFillScenario();
+    const { state, leader } = createTeamLeaderGapFillReservationScenario();
     const alternate = person("already-consumed");
     alternate.name = "华嘉慧";
     state.staff.push(alternate);
@@ -966,7 +746,7 @@ describe("team leader gap fill", () => {
   });
 
   it("keeps load protection hard when a caller does not open the gap-fill relief", () => {
-    const { state, worker } = chainScenario();
+    const { state, worker } = createTeamLeaderGapFillChainScenario();
     addEarlierHighLoadAssignment(state, worker);
     state.settings.highLoadProtectionEnabled = true;
     state.settings.rollingLoadProtectionEnabled = true;
@@ -997,7 +777,7 @@ describe("team leader gap fill", () => {
   });
 
   it("keeps a real time conflict as a hard rejection with concrete person and time", async () => {
-    const { state, leader } = chainScenario();
+    const { state, leader } = createTeamLeaderGapFillChainScenario();
     const conflictFlight = flight("conflict", "CX999");
     const conflictRule = rule("conflict", "CX999", "G09", [leader.id]);
     state.flights.push(conflictFlight);
@@ -1024,7 +804,7 @@ describe("team leader gap fill", () => {
   });
 
   it("does not bypass a protected position when reservation relief is available", async () => {
-    const { state, leader } = reservationGapFillScenario();
+    const { state, leader } = createTeamLeaderGapFillReservationScenario();
     state.settings.teamLeaderGapFillPositionPolicies.push({
       flightNo: "AK151",
       position: "引导",
@@ -1047,63 +827,8 @@ describe("team leader gap fill", () => {
   });
 
   it("prefers the lighter current late assignment for the worker with the heavier previous workday", async () => {
-    const state = createDefaultState();
-    const leader = person("leader", true);
-    const tired = person("tired");
-    const rested = person("rested");
-    const sourceFlight = flight("source", "AK151");
-    sourceFlight.startTime = "21:05";
-    sourceFlight.endTime = "23:55";
-    const lighterFlight = flight("lighter", "TR100");
-    lighterFlight.startTime = "21:55";
-    lighterFlight.endTime = "23:15";
-    const sourceRule = rule("source", "AK151", "G08", [leader.id, tired.id]);
-    sourceRule.fatiguePoints = 8;
-    const otherRule = rule("other", "AK151", "G09", [leader.id, rested.id]);
-    otherRule.fatiguePoints = 3;
-    const vacancyRule = rule("vacancy", "TR100", "H08", [tired.id, rested.id]);
-    vacancyRule.fatiguePoints = 1;
-    state.staff = [leader, tired, rested];
-    state.flights = [sourceFlight, lighterFlight];
-    state.positionRules = [sourceRule, otherRule, vacancyRule];
-    state.settings.positionRotationEnabled = false;
-    state.settings.highLoadProtectionEnabled = false;
-    state.settings.rollingLoadProtectionEnabled = false;
-    state.settings.minimumRegularTransitionMinutes = 0;
-    state.assignments = [
-      assignment(sourceRule, sourceFlight, tired),
-      assignment(otherRule, sourceFlight, rested),
-      assignment(vacancyRule, lighterFlight, null),
-    ];
-    state.history = [
-      {
-        id: "history-tired",
-        date: "2026-09-21",
-        flightNo: "TR121",
-        position: "H02",
-        staffId: tired.id,
-        staffName: tired.name,
-        startTime: "21:55",
-        endTime: "23:55",
-        workHours: 2,
-        fatiguePoints: 10,
-        remark: "一号",
-      },
-      {
-        id: "history-rested",
-        date: "2026-09-21",
-        flightNo: "CX937",
-        position: "G12",
-        staffId: rested.id,
-        staffName: rested.name,
-        startTime: "09:00",
-        endTime: "10:00",
-        workHours: 1,
-        fatiguePoints: 1,
-        remark: "",
-      },
-    ];
-    state.activeScheduleDate = "2026-09-22";
+    const { state, leader, tired } =
+      createTeamLeaderGapFillFatiguePreferenceScenario();
 
     const result = await planTeamLeaderGapFill({
       solver: defaultHighsSolver,
@@ -1134,7 +859,7 @@ describe("team leader gap fill", () => {
   });
 
   it("keeps the only complete plan when relative fatigue cannot improve and explains the yellow light", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     const sourceFlight = state.flights.find((item) => item.id === "ak151")!;
     const vacancyFlight = state.flights.find((item) => item.id === "tr")!;
     const sourceRule = state.positionRules.find(
@@ -1180,7 +905,7 @@ describe("team leader gap fill", () => {
   });
 
   it("does not compare an early source assignment as part of the current late segment", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     const vacancyFlight = state.flights.find((item) => item.id === "tr")!;
     const vacancyAssignment = state.assignments.find(
       (item) => item.id === "assignment-vacancy"
@@ -1206,7 +931,7 @@ describe("team leader gap fill", () => {
   });
 
   it("applies the whole preview and rejects it after the schedule changes", async () => {
-    const { state, leader, worker } = chainScenario();
+    const { state, leader, worker } = createTeamLeaderGapFillChainScenario();
     const result = ready(
       await planTeamLeaderGapFill({
         solver: defaultHighsSolver,
