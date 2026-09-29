@@ -158,6 +158,50 @@ function crossFlightPriorityModel(
       );
       if (!protectedChoices.length) return;
 
+      // A priority policy must also reserve the person from overlapping lower
+      // priority work when the priority task has another legal candidate.
+      for (const protectedChoice of protectedChoices) {
+        const overlappingLowerPriorityChoices = choices.filter(
+          (choice) =>
+            choice.person.id === staffId &&
+            choice.task.flight.id !== protectedChoice.task.flight.id &&
+            intervalsOverlap(
+              choice.task.flight.startTime,
+              choice.task.flight.endTime,
+              protectedChoice.task.flight.startTime,
+              protectedChoice.task.flight.endTime
+            ) &&
+            (() => {
+              const rank = crossFlightPriorityPolicyRank(state, {
+                flightNo: choice.task.flight.flightNo,
+                staffId,
+              });
+              return rank === null || rank > policyIndex;
+            })()
+        );
+        if (!overlappingLowerPriorityChoices.length) continue;
+
+        const priorityAlternatives = choices.filter(
+          (choice) =>
+            choice.task.key === protectedChoice.task.key &&
+            choice.person.id !== staffId
+        );
+        if (!priorityAlternatives.length) continue;
+
+        for (const lowerChoice of overlappingLowerPriorityChoices) {
+          for (const alternative of priorityAlternatives) {
+            constraints.push({
+              id: `cross-flight-priority-reserve:${policyIndex}:${staffIndex}:${lowerChoice.id}:${alternative.id}`,
+              terms: [
+                { variableId: lowerChoice.id, coefficient: 1 },
+                { variableId: alternative.id, coefficient: 1 },
+              ],
+              upperBound: 1,
+            });
+          }
+        }
+      }
+
       const variableId = `cross-flight-priority-retained:${policyIndex}:${staffIndex}`;
       variables.push({
         id: variableId,

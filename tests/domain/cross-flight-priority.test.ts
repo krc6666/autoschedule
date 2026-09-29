@@ -9,6 +9,7 @@ import {
 import { reviewLateShiftRecovery } from "../../src/domain/reviews/late-shift-recovery-review";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import type { Assignment } from "../../src/model";
+import { generateSchedule } from "../helpers/generate-schedule";
 
 function assignment(
   id: string,
@@ -37,6 +38,80 @@ function assignment(
 }
 
 describe("cross-flight staff priority", () => {
+  it("keeps a priority person on an overlapping ordinary flight", async () => {
+    const state = createDefaultState();
+    const [priorityWorker, alternateWorker] = state.staff.slice(0, 2);
+    state.staff = [priorityWorker!, alternateWorker!].map((person) => ({
+      ...person,
+      status: "正常" as const,
+      teamLeader: false,
+      nightShift: true,
+      dutyQualified: false,
+    }));
+    state.settings.minimumRegularTransitionMinutes = 0;
+    state.settings.lateShiftRecoveryEnabled = false;
+    state.settings.positionRotationEnabled = false;
+    state.settings.workloadBalanceEnabled = false;
+    state.settings.crossFlightPriorityPolicies = [
+      {
+        id: "ordinary-first",
+        enabled: true,
+        flightNo: "AA100",
+        staffIds: [priorityWorker!.id],
+      },
+    ];
+    state.flights = [
+      {
+        id: "priority-flight",
+        flightNo: "AA100",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "overlapping-flight",
+        flightNo: "BB200",
+        startTime: "08:00",
+        endTime: "10:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "priority-position",
+        flightNo: "AA100",
+        name: "P1",
+        qualifiedStaffIds: [priorityWorker!.id, alternateWorker!.id],
+      },
+      {
+        ...base,
+        id: "overlapping-position",
+        flightNo: "BB200",
+        name: "P1",
+        qualifiedStaffIds: [priorityWorker!.id, alternateWorker!.id],
+      },
+    ];
+
+    const result = await generateSchedule(state, "2026-09-24");
+
+    expect(
+      result.assignments.find(
+        (assignment) => assignment.positionRuleId === "priority-position"
+      )
+    ).toMatchObject({ staffId: priorityWorker!.id, status: "assigned" });
+    expect(
+      result.assignments.find(
+        (assignment) => assignment.positionRuleId === "overlapping-position"
+      )
+    ).toMatchObject({ staffId: alternateWorker!.id, status: "assigned" });
+  });
+
   it("uses flight number plus selected staff and top-to-bottom order", () => {
     const state = createDefaultState();
     state.settings.crossFlightPriorityPolicies = [

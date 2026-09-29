@@ -297,6 +297,44 @@ describe(
       ).toMatchObject({ staffId: null, status: "unfilled" });
     });
 
+    it("keeps a KE166 priority person on KE166 when only the KE166 policy is configured", async () => {
+      const { state, supervisor, helper } = morningPriorityScenario();
+      const alternate = {
+        ...helper,
+        id: "alternate",
+        name: "备用人员",
+      };
+      state.staff.push(alternate);
+      state.positionRules.find(
+        (rule) => rule.id === "cx-counter"
+      )!.qualifiedStaffIds = [helper.id, alternate.id];
+      state.settings.crossFlightPriorityPolicies = [
+        {
+          id: "ke166-first",
+          enabled: true,
+          flightNo: "KE166",
+          staffIds: [helper.id],
+        },
+      ];
+
+      const result = await generateSchedule(state, "2026-09-24");
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-counter"
+        )
+      ).toMatchObject({ staffId: helper.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "cx-counter"
+        )
+      ).toMatchObject({ staffId: alternate.id, status: "assigned" });
+      expect(
+        result.assignments.find(
+          (assignment) => assignment.positionRuleId === "ke-supervisor"
+        )
+      ).toMatchObject({ staffId: supervisor.id, status: "assigned" });
+    });
+
     it("does not count administrative support as the second KE166 worker", async () => {
       const {
         state,
