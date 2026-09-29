@@ -18,6 +18,70 @@ import {
 } from "../../src/infrastructure/excel";
 
 describe("workbook actions", () => {
+  it("restores exported duty roster overrides without reordering them", () => {
+    const source = createDefaultState();
+    source.staff[0]!.cxPreflightQualified = true;
+    source.staff[1]!.cxPreflightQualified = true;
+    source.dutyRosterOverrides = [
+      {
+        date: "2026-10-01",
+        cxPreflightStaffId: source.staff[0]!.id,
+        dutyStaffId: source.staff[1]!.id,
+        standbyStaffIds: [source.staff[2]!.id, source.staff[3]!.id],
+      },
+      {
+        date: "2026-10-03",
+        cxPreflightStaffId: source.staff[1]!.id,
+        dutyStaffId: source.staff[0]!.id,
+        standbyStaffIds: [source.staff[3]!.id, source.staff[2]!.id],
+      },
+    ];
+    const target = createDefaultState();
+    const imported = parseWorkbook(
+      XLSX.read(
+        XLSX.write(buildConfigWorkbook(source), {
+          bookType: "xlsx",
+          type: "buffer",
+        }),
+        { type: "buffer" }
+      ),
+      target.staff
+    );
+
+    const result = applyWorkbookImport(target, imported, "config");
+
+    expect(result.errors).toBeUndefined();
+    expect(target.dutyRosterOverrides).toEqual(source.dutyRosterOverrides);
+  });
+
+  it("does not partially apply configuration when duty roster validation fails", () => {
+    const target = createDefaultState();
+    const originalStaff = structuredClone(target.staff);
+    const originalTemplates = structuredClone(target.templates);
+    const imported = {
+      ...parseWorkbook(
+        XLSX.read(
+          XLSX.write(buildConfigWorkbook(target), {
+            bookType: "xlsx",
+            type: "buffer",
+          }),
+          { type: "buffer" }
+        ),
+        target.staff
+      ),
+      staff: [{ ...target.staff[0]!, name: "不应写入" }],
+      dutyRosterInvalid: true,
+    };
+
+    const result = applyWorkbookImport(target, imported, "config");
+
+    expect(result.errors).toEqual([
+      "值班轮值工作表存在错误，未写入任何值班轮值数据",
+    ]);
+    expect(target.staff).toEqual(originalStaff);
+    expect(target.templates).toEqual(originalTemplates);
+  });
+
   it("restores every exported long-term configuration on a fresh device", () => {
     const source = createDefaultState();
     source.settings.adminSupportEnabled = true;
@@ -81,7 +145,6 @@ describe("workbook actions", () => {
         standbyStaffIds: [null, null],
       },
     ];
-    const preservedRoster = structuredClone(target.dutyRosterOverrides);
     const exportedBytes = XLSX.write(buildConfigWorkbook(source), {
       bookType: "xlsx",
       type: "buffer",
@@ -106,7 +169,7 @@ describe("workbook actions", () => {
     expect(target.templates).toEqual(imported.templates);
     expect(target.positionRules).toEqual(imported.positionRules);
     expect(target.weeklyFlightPlans).toEqual(source.weeklyFlightPlans);
-    expect(target.dutyRosterOverrides).toEqual(preservedRoster);
+    expect(target.dutyRosterOverrides).toEqual(source.dutyRosterOverrides);
     expect(target.settings.positionTransitionPolicies[0]!.mode).toBe("forbid");
     expect(target.settings.sameFlightStaffExclusions).toEqual(
       source.settings.sameFlightStaffExclusions

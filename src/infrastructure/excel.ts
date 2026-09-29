@@ -3,6 +3,7 @@ import * as XLSX from "xlsx-js-style";
 import type {
   AppState,
   Assignment,
+  DutyRosterOverride,
   Flight,
   FlightTemplate,
   HistoryRecord,
@@ -68,8 +69,111 @@ export interface WorkbookImport {
   settings?: Partial<ScheduleSettings>;
   latePriorityFrequencyAdjustments?: LatePriorityFrequencyAdjustment[];
   ordinaryPriorityFrequencyAdjustments?: OrdinaryPriorityFrequencyAdjustment[];
+  dutyRosterOverrides?: DutyRosterOverride[];
+  dutyRosterInvalid?: boolean;
   legacySchedule?: LegacyScheduleImportPreview;
   warnings: string[];
+}
+
+function parseDutyRosterOverrides(
+  workbook: XLSX.WorkBook,
+  staff: Staff[]
+): { value?: DutyRosterOverride[]; warnings: string[] } {
+  const sheetName = findSheet(workbook, ["值班轮值"]);
+  if (!sheetName) return { warnings: [] };
+  const data = rows(workbook, sheetName);
+  const header = data[0] ?? [];
+  const dateIndex = headerIndex(header, ["日期", "工作班日期"], 0);
+  const cxIndex = headerIndex(header, ["CX航前人员编号", "CX航前编号"], 1);
+  const dutyIndex = headerIndex(header, ["值班人员编号", "值班编号"], 2);
+  const standby0Index = headerIndex(header, ["备勤1编号", "备勤一编号"], 3);
+  const standby1Index = headerIndex(header, ["备勤2编号", "备勤二编号"], 4);
+  const staffIds = new Set(staff.map((person) => person.id));
+  const staffById = new Map(staff.map((person) => [person.id, person]));
+  const warnings: string[] = [];
+  const result: DutyRosterOverride[] = [];
+  const dates = new Set<string>();
+  const isDate = (value: string): boolean => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return (
+      Number.isFinite(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
+  };
+  data.slice(1).forEach((row, rowIndex) => {
+    const excelRow = rowIndex + 2;
+    const date = normalizeText(row[dateIndex]).slice(0, 10);
+    const ids = [
+      normalizeText(row[cxIndex]),
+      normalizeText(row[dutyIndex]),
+      normalizeText(row[standby0Index]),
+      normalizeText(row[standby1Index]),
+    ];
+    if (!date && ids.every((id) => !id)) return;
+    if (!isDate(date)) {
+      warnings.push(`值班轮值第${excelRow}行：日期“${date}”无效`);
+      return;
+    }
+    if (dates.has(date)) {
+      warnings.push(`值班轮值第${excelRow}行：日期“${date}”重复`);
+      return;
+    }
+    dates.add(date);
+    const labels = ["CX航前人员编号", "值班人员编号", "备勤1编号", "备勤2编号"];
+    let invalid = false;
+    ids.forEach((id, index) => {
+      if (id && !staffIds.has(id)) {
+        warnings.push(`值班轮值第${excelRow}行：${labels[index]}“${id}”不存在`);
+        invalid = true;
+      }
+    });
+    if (
+      ids[0] &&
+      staffById.get(ids[0]) &&
+      !staffById.get(ids[0])!.cxPreflightQualified
+    ) {
+      warnings.push(`值班轮值第${excelRow}行：CX航前人员不具备CX航前资质`);
+      invalid = true;
+    }
+    if (
+      ids[1] &&
+      staffById.get(ids[1]) &&
+      !staffById.get(ids[1])!.dutyQualified
+    ) {
+      warnings.push(`值班轮值第${excelRow}行：值班人员不具备值班资质`);
+      invalid = true;
+    }
+    if (
+      ids
+        .slice(2)
+        .some(
+          (id) =>
+            id && staffById.get(id) && !staffById.get(id)!.standbyQualified
+        )
+    ) {
+      warnings.push(`值班轮值第${excelRow}行：备勤人员不具备备勤资质`);
+      invalid = true;
+    }
+    const dutyAndOther = [ids[1], ids[2], ids[3]].filter(Boolean);
+    if (
+      new Set(dutyAndOther).size !== dutyAndOther.length ||
+      (ids[1] && ids[0] === ids[1])
+    ) {
+      warnings.push(`值班轮值第${excelRow}行：值班和备勤人员不能重复`);
+      invalid = true;
+    }
+    if (invalid) return;
+    result.push({
+      date,
+      cxPreflightStaffId: ids[0] || null,
+      dutyStaffId: ids[1] || null,
+      standbyStaffIds: [ids[2] || null, ids[3] || null],
+    });
+  });
+  return warnings.length
+    ? { warnings, value: undefined }
+    : { value: result, warnings };
 }
 
 function parseLatePriorityFrequencyAdjustments(
@@ -573,13 +677,14 @@ export function parseWorkbook(
   const ordinaryPriorityFrequencyAdjustments =
     parseOrdinaryPriorityFrequencyAdjustments(workbook);
   const ordinaryPriorityPositions = parseOrdinaryPriorityPositions(workbook);
+  const dutyRoster = parseDutyRosterOverrides(workbook, effectiveStaff);
   if (ordinaryPriorityPositions.present) {
     parsedRules.settings = {
       ...(parsedRules.settings ?? {}),
       ordinaryPriorityPositions: ordinaryPriorityPositions.value,
     };
   }
-  const warnings = [...parsedRules.warnings];
+  const warnings = [...parsedRules.warnings, ...dutyRoster.warnings];
   const hasStandardSheet = Boolean(
     staff ||
     flights ||
@@ -590,7 +695,8 @@ export function parseWorkbook(
     parsedRules.recognized ||
     latePriorityFrequencyAdjustments !== undefined ||
     ordinaryPriorityFrequencyAdjustments !== undefined ||
-    ordinaryPriorityPositions.present
+    ordinaryPriorityPositions.present ||
+    workbook.SheetNames.some((name) => name.includes("值班轮值"))
   );
   const legacySchedule = hasStandardSheet
     ? undefined
@@ -627,6 +733,7 @@ export function parseWorkbook(
     latePriorityFrequencyAdjustments === undefined &&
     ordinaryPriorityFrequencyAdjustments === undefined &&
     !ordinaryPriorityPositions.present &&
+    !workbook.SheetNames.some((name) => name.includes("值班轮值")) &&
     !legacySchedule?.recognizedSheets
   )
     warnings.push("未识别到受支持的工作表");
@@ -641,6 +748,8 @@ export function parseWorkbook(
     settings: parsedRules.settings,
     latePriorityFrequencyAdjustments,
     ordinaryPriorityFrequencyAdjustments,
+    dutyRosterOverrides: dutyRoster.value,
+    dutyRosterInvalid: dutyRoster.warnings.length > 0,
     warnings,
   };
 }
@@ -834,6 +943,21 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
       ]),
     ],
     [12, 14, 12, 18, 12, 16]
+  );
+  append(
+    workbook,
+    "值班轮值",
+    [
+      ["日期", "CX航前人员编号", "值班人员编号", "备勤1编号", "备勤2编号"],
+      ...state.dutyRosterOverrides.map((item) => [
+        item.date,
+        item.cxPreflightStaffId ?? "",
+        item.dutyStaffId ?? "",
+        item.standbyStaffIds[0] ?? "",
+        item.standbyStaffIds[1] ?? "",
+      ]),
+    ],
+    [14, 20, 20, 16, 16]
   );
   append(
     workbook,

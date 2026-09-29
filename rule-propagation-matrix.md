@@ -893,3 +893,32 @@
 | 求解结果 -> assignments  | 现有 `materializeDailySchedulePlan`            | 不改 assignment 结构或兼任关联                  |
 | 后置重排 -> 最终结果     | `crossFlightPriorityReassignmentReasons`       | 已留在优先航班后不得被一般轮换撤销              |
 | 配置 -> Worker           | 现有 settings 快照和当天整体模型入口           | 不新增消息字段或浏览器专用分支                  |
+
+## 2026-09-29：配置导出导入值班、备勤及月度轮值明细
+
+- 类别：持久化字段 / Excel 配置合同。
+- 唯一事实 owner：当前组 `AppState.dutyRosterOverrides`；月度默认轮值及展示明细继续由 `src/domain/duty-roster/roster.ts` 的 `getMonthlyDutyRoster` 根据人员资格和覆盖事实计算，不新增第二套轮值顺序事实。
+- 业务合同：配置导出新增 `值班轮值` 工作表，保存当前组人工覆盖/当前轮值事实中的日期、CX 航前、值班、两名备勤人员唯一编号及顺序；配置导入存在该表时原子校验并恢复，缺表时保持旧配置语义。导入后不得按新设备人员顺序重排已有日期。
+
+| 环节                     | 是否适用 | 消费点 / 目标                                                         | 失败或边界                                         | 回归保护                |
+| ------------------------ | -------- | --------------------------------------------------------------------- | -------------------------------------------------- | ----------------------- |
+| 输入事实                 | 是       | `state.dutyRosterOverrides` 及当前组 `staff[].id`                     | 只保存稳定人员编号，不以姓名作为事实               | schema/往返测试         |
+| 候选池 / 求解 / 补缺覆盖 | 否       | 配置迁移不生成当天 assignments，不改变求解候选                        | 不把轮值导入当成排班结果                           | assignments 不变测试    |
+| 恢复 / 轮岗公平          | 是       | `getMonthlyDutyRoster` 消费恢复后的覆盖，保留月度日期和轮换进度       | 缺失日期继续按既有默认轮值计算                     | 月度明细往返测试        |
+| 人工调整                 | 是       | 导入覆盖进入现有 `dutyRosterOverrides`，页面继续通过既有 actions 修改 | 非法人员、重复槽位、日期或重复行整表拒绝           | 非法导入无部分写入      |
+| 最终复核 / 守卫 / 凭证   | 否       | 导入不调用排班安全守卫                                                | 不改变当前 assignments 或硬约束                    | 导入后 assignments 保持 |
+| 保存 / localStorage      | 是       | 使用现有 AppState/当前组保存入口                                      | 不升版本；旧状态缺字段仍为空                       | 状态恢复既有测试        |
+| Excel 读                 | 是       | `parseWorkbook` 读取 `值班轮值` 工作表并返回覆盖                      | 工作表存在且任一行非法则整表错误；缺表为 undefined | 解析/错误测试           |
+| Excel 写                 | 是       | `buildConfigWorkbook` 导出当前组 `dutyRosterOverrides`，空表保留表头  | 不导出另一组；保留人员 ID 和槽位顺序               | 工作簿往返测试          |
+| 迁移                     | 是       | 旧配置无该表时 `dutyRosterOverrides` 不被覆盖                         | 不新增别名或双轨字段                               | 旧格式导入回归          |
+| 页面展示                 | 是       | 导入后现有月度轮值视图读取同一 domain projection                      | 不新增 UI 事实源                                   | UI projection 回归      |
+| 测试                     | 是       | 覆盖值班/备勤顺序、当前进度、月度明细、旧格式、非法原子失败           | 至少一项真实用户可观察断言                         | 定向 + verify           |
+
+### 写入路径盘点
+
+| 写入路径           | 统一消费点                                           | 最终边界                                          |
+| ------------------ | ---------------------------------------------------- | ------------------------------------------------- |
+| 配置导出           | `buildConfigWorkbook` -> `值班轮值`                  | 仅当前组覆盖事实，空集合只写表头                  |
+| 配置导入预览       | `parseWorkbook` -> `applyWorkbookImport`             | 先完整校验人员 ID、日期、槽位和重复，再提交 clone |
+| Store/localStorage | 现有 `replaceModel` 与组投影                         | 导入后通过既有持久化保存，不复制字段              |
+| 月度页面/统计      | `getMonthlyDutyRoster` / `getMonthlyDutyRosterStats` | 统一消费恢复后的 `dutyRosterOverrides`            |

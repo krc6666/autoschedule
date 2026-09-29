@@ -277,6 +277,13 @@ export function applyWorkbookImport(
   mode: ImportMode
 ): AppliedWorkbookImport {
   const importConfig = mode !== "history";
+  if (importConfig && imported.dutyRosterInvalid) {
+    return {
+      changedConfig: false,
+      recognized: "",
+      errors: ["值班轮值工作表存在错误，未写入任何值班轮值数据"],
+    };
+  }
   const importHistory = imported.history !== undefined;
   const historySummary = importHistory
     ? summarizeHistoryImport(state, imported.history ?? [], imported.staff)
@@ -349,6 +356,8 @@ export function applyWorkbookImport(
   )
     state.ordinaryPriorityFrequencyAdjustments =
       imported.ordinaryPriorityFrequencyAdjustments;
+  if (importConfig && imported.dutyRosterOverrides !== undefined)
+    state.dutyRosterOverrides = structuredClone(imported.dutyRosterOverrides);
   if (
     importConfig &&
     imported.flights !== undefined &&
@@ -392,7 +401,8 @@ export function applyWorkbookImport(
       imported.weeklyFlightPlans ||
       imported.positionRules !== undefined ||
       imported.settings ||
-      imported.latePriorityFrequencyAdjustments !== undefined
+      imported.latePriorityFrequencyAdjustments !== undefined ||
+      imported.dutyRosterOverrides !== undefined
     );
   if (changedConfig) {
     clearActiveSchedule(state);
@@ -415,6 +425,9 @@ export function applyWorkbookImport(
     importConfig &&
       imported.latePriorityFrequencyAdjustments &&
       "末班重点次数修正",
+    importConfig &&
+      imported.dutyRosterOverrides !== undefined &&
+      `${imported.dutyRosterOverrides.length} 条值班轮值`,
     importHistory &&
       imported.history?.length &&
       `${imported.history.length} 条历史负荷`,

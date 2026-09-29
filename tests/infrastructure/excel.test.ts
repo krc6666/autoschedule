@@ -15,6 +15,74 @@ import { STRUCTURED_POLICY_DEFINITIONS } from "../../src/domain/rules/structured
 import { createTestAutoscheduleStore } from "../helpers/application";
 
 describe("workbook boundary", () => {
+  it("round-trips current duty and standby roster overrides", () => {
+    const state = createDefaultState();
+    state.staff[0]!.cxPreflightQualified = true;
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-10-01",
+        cxPreflightStaffId: state.staff[0]!.id,
+        dutyStaffId: state.staff[1]!.id,
+        standbyStaffIds: [state.staff[2]!.id, state.staff[3]!.id],
+      },
+    ];
+
+    const workbook = buildConfigWorkbook(state);
+    expect(workbook.SheetNames).toContain("值班轮值");
+    const imported = parseWorkbook(workbook, state.staff);
+
+    expect(imported.dutyRosterOverrides).toEqual(state.dutyRosterOverrides);
+  });
+
+  it("rejects invalid duty roster rows without returning partial data", () => {
+    const state = createDefaultState();
+    const workbook = buildConfigWorkbook(state);
+    workbook.Sheets["值班轮值"] = XLSX.utils.aoa_to_sheet([
+      ["日期", "CX航前人员编号", "值班人员编号", "备勤1编号", "备勤2编号"],
+      [
+        "2026-10-01",
+        state.staff[0]!.id,
+        "missing",
+        state.staff[2]!.id,
+        state.staff[3]!.id,
+      ],
+      [
+        "2026-10-02",
+        state.staff[0]!.id,
+        state.staff[1]!.id,
+        state.staff[2]!.id,
+        state.staff[2]!.id,
+      ],
+    ]);
+
+    const imported = parseWorkbook(workbook, state.staff);
+
+    expect(imported.dutyRosterOverrides).toBeUndefined();
+    expect(imported.warnings).toContain(
+      "值班轮值第2行：值班人员编号“missing”不存在"
+    );
+    expect(imported.warnings).toContain(
+      "值班轮值第3行：值班和备勤人员不能重复"
+    );
+  });
+
+  it("keeps older configuration workbooks without a duty roster sheet compatible", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["编号", "姓名", "状态"],
+        ["1", "甲", "正常"],
+      ]),
+      "人员信息"
+    );
+
+    const imported = parseWorkbook(workbook, []);
+
+    expect(imported.dutyRosterOverrides).toBeUndefined();
+    expect(imported.warnings).not.toContain("未识别到受支持的工作表");
+  });
+
   it("exports and parses the active group's complete history sheet", () => {
     const state = createDefaultState();
     state.history = [
