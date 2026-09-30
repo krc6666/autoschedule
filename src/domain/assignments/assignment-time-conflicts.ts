@@ -12,8 +12,7 @@ import {
 } from "../coverage/team-leader-concurrent-plan";
 import {
   assignmentRule,
-  guideSourceStaff,
-  isGuideAssignment,
+  isLegalGuideReuse,
 } from "../flights/schedule-position-rules";
 import {
   isMobileSupervisor,
@@ -39,7 +38,8 @@ function hasValidSupervisorFillLink(
         assignments,
         supervisor,
         target,
-        candidateMode
+        candidateMode,
+        { ignoreSafeRegularCandidate: true }
       ),
       target
     )
@@ -144,14 +144,7 @@ export function isAllowedAssignmentTimeOverlap(
   right: Assignment
 ): boolean {
   if (!left.staffId || left.staffId !== right.staffId) return false;
-  if (left.flightId === right.flightId) {
-    const legalGuideReuse =
-      (isGuideAssignment(state, left) &&
-        guideSourceStaff(state, right)?.id === left.staffId) ||
-      (isGuideAssignment(state, right) &&
-        guideSourceStaff(state, left)?.id === right.staffId);
-    if (legalGuideReuse) return true;
-  }
+  if (isLegalGuideReuse(state, left, right)) return true;
   return isControlledConcurrentAssignmentPair(
     state,
     assignments,

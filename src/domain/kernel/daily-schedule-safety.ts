@@ -197,7 +197,8 @@ export function assertDailyScheduleSafety({
             assignments,
             supervisorSource,
             assignment,
-            "automatic"
+            "automatic",
+            { ignoreSafeRegularCandidate: true }
           ),
           assignment
         )

@@ -6,6 +6,7 @@ import {
   moveSupervisorWithinFlight,
   normalizeSupervisorAssignments,
 } from "../../src/domain/assignments/schedule-adjustment";
+import { timeConflictAssignmentIds } from "../../src/domain/assignments/assignment-time-conflicts";
 import { createMobileSupervisorCoverageScheduleGuard } from "../../src/domain/kernel/schedule-guard";
 import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
 import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
@@ -380,6 +381,43 @@ describe("督导同航班机动补位", () => {
       staffId: state.staff[1]!.id,
       staffName: state.staff[1]!.name,
     });
+  });
+
+  it("手工连环调整后为配置的督导补位恢复关联，不标记同航班紫色冲突", () => {
+    const state = stateWithSupervisor();
+    const target = state.assignments.find(
+      (item) => item.id === "h04-assignment"
+    )!;
+    const targetRule = state.positionRules.find((rule) => rule.id === "h04")!;
+    targetRule.coverageRole = "supervisor-fill";
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "f1-h04-fill",
+        enabled: true,
+        sourceFlightNo: "F1",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "F1",
+        targetPositionKeyword: "H04",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    target.staffId = state.staff[0]!.id;
+    target.staffName = state.staff[0]!.name;
+    target.status = "assigned";
+
+    normalizeSupervisorAssignments(state);
+
+    expect(target).toMatchObject({
+      staffId: state.staff[0]!.id,
+      supervisorSourceAssignmentId: "supervisor-assignment",
+      supervisorFillRuleId: "f1-h04-fill",
+      workHours: 0,
+      fatiguePoints: 0,
+    });
+    expect(timeConflictAssignmentIds(state, state.assignments)).not.toContain(
+      target.id
+    );
   });
 
   it("拒绝兼任规则禁止的备注岗位并清理旧违规关联", () => {

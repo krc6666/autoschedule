@@ -6,6 +6,7 @@ import { canAssignStaff } from "../candidates/assignment-eligibility";
 import {
   assignmentRule,
   isGapFillGuidePosition,
+  isLegalGuideReuse,
 } from "../flights/schedule-position-rules";
 import type { ScheduleRunFacts } from "../shared/schedule-run-facts";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
@@ -161,15 +162,17 @@ function plannedAssignmentSafetyReasons(
   const policy = ROTATION_REVIEW_POLICIES[review];
   const primaryAssignment = originalById.get(primaryAssignmentId)!;
   const reasons: string[] = [];
-  reasons.push(
-    ...crossFlightPriorityReassignmentReasons(
-      state,
-      assignments,
-      planned,
-      date,
-      frequencyFacts
-    )
-  );
+  if (!intentPolicy.allowCrossFlightPriorityRegression) {
+    reasons.push(
+      ...crossFlightPriorityReassignmentReasons(
+        state,
+        assignments,
+        planned,
+        date,
+        frequencyFacts
+      )
+    );
+  }
   if (facts) {
     const beforeStrictBackfills = strictRecoveryHalfRestBackfillCount({
       state,
@@ -218,7 +221,8 @@ function plannedAssignmentSafetyReasons(
         !(
           permittedConcurrentAssignmentIds.has(assignment.id) &&
           permittedConcurrentAssignmentIds.has(other.id)
-        )
+        ) &&
+        !isLegalGuideReuse(state, assignment, other)
     );
     if (conflicts.length) reasons.push("交换后会产生时间冲突");
     const validationState = permittedConcurrentAssignmentIds.has(assignment.id)
@@ -260,6 +264,7 @@ function plannedAssignmentSafetyReasons(
           intentPolicy.allowCutoffProtectionRegression,
         allowCrossWorkdayRecoveryRegression:
           intentPolicy.allowCrossWorkdayRecoveryRegression,
+        allowTr121CooldownRegression: intentPolicy.allowTr121CooldownRegression,
       })
     );
     const safetyAssignments = permittedConcurrentAssignmentIds.has(
@@ -280,6 +285,8 @@ function plannedAssignmentSafetyReasons(
         review,
         allowLoadProtectionRegression:
           intentPolicy.allowLoadProtectionRegression,
+        allowPositionTransitionRegression:
+          intentPolicy.allowPositionTransitionRegression,
       })
     );
   }

@@ -8,6 +8,7 @@ import {
 import {
   assignmentRule,
   isGapFillGuidePosition,
+  isLegalGuideReuse,
 } from "../flights/schedule-position-rules";
 import {
   reassignmentCandidateSafetyReasons,
@@ -95,6 +96,8 @@ function dynamicChoiceSafetyReasons(
     primaryAssignment: options.primary,
     review: reassignmentIntentReview(options.intent),
     allowLoadProtectionRegression: intentPolicy.allowLoadProtectionRegression,
+    allowPositionTransitionRegression:
+      intentPolicy.allowPositionTransitionRegression,
   });
 }
 
@@ -149,7 +152,8 @@ function conflictsWithFixedAssignment(
         !(
           permittedConcurrentAssignmentIds.has(assignment.id) &&
           permittedConcurrentAssignmentIds.has(other.id)
-        )
+        ) &&
+        !isLegalGuideReuse(options.state, projectedChoice, other)
     )
     ? (projected
         .slice(0, -1)
@@ -165,7 +169,8 @@ function conflictsWithFixedAssignment(
             !(
               permittedConcurrentAssignmentIds.has(assignment.id) &&
               permittedConcurrentAssignmentIds.has(other.id)
-            )
+            ) &&
+            !isLegalGuideReuse(options.state, projectedChoice, other)
         ) ?? null)
     : null;
 }
@@ -295,6 +300,8 @@ function createChoices(
               intentPolicy.allowCutoffProtectionRegression,
             allowCrossWorkdayRecoveryRegression:
               intentPolicy.allowCrossWorkdayRecoveryRegression,
+            allowTr121CooldownRegression:
+              intentPolicy.allowTr121CooldownRegression,
             allowDirectGuideReassignment:
               intentPolicy.allowDirectGuideReassignment,
           }),
@@ -404,6 +411,7 @@ export function incompatibleReassignmentChoices(
           permittedConcurrentAssignmentIds.has(right.assignment.id);
         const timingConflict =
           !concurrencyPermitted &&
+          !isLegalGuideReuse(options.state, leftAssignment, rightAssignment) &&
           intervalsOverlap(
             leftAssignment.startTime,
             leftAssignment.endTime,
@@ -429,6 +437,8 @@ export function incompatibleReassignmentChoices(
                 review: reassignmentIntentReview(options.intent),
                 allowLoadProtectionRegression:
                   intentPolicy.allowLoadProtectionRegression,
+                allowPositionTransitionRegression:
+                  intentPolicy.allowPositionTransitionRegression,
               })
         );
         if (!timingConflict && !dynamicReasons.length) continue;

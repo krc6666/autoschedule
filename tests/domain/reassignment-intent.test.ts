@@ -12,7 +12,10 @@ const STRICT_POLICY: ReassignmentIntentPolicy = {
   allowCutoffProtectionRegression: false,
   allowCrossWorkdayRecoveryRegression: false,
   allowCrossWorkdayReservationRegression: false,
+  allowCrossFlightPriorityRegression: false,
   allowLoadProtectionRegression: false,
+  allowPositionTransitionRegression: false,
+  allowTr121CooldownRegression: false,
   allowDirectGuideReassignment: false,
 };
 
@@ -30,6 +33,10 @@ const STRICT_INTENTS: readonly ReassignmentIntent[] = [
 describe("reassignment intent policy", () => {
   it.each([
     [{ kind: "mobile-supervisor-counter-coverage" }, "mobile-supervisor"],
+    [
+      { kind: "configured-supervisor-fill-under-shortage" },
+      "mobile-supervisor",
+    ],
     [{ kind: "team-leader-concurrent-gap-fill" }, "coverage"],
     [{ kind: "late-priority-frequency-review" }, "late-frequency"],
     [{ kind: "ke166-rotation-review" }, "consecutive"],
@@ -57,6 +64,24 @@ describe("reassignment intent policy", () => {
       ...STRICT_POLICY,
       allowWorkloadBalanceRegression: true,
       allowCutoffProtectionRegression: true,
+    });
+  });
+
+  it("lets configured supervisor fill yield soft protections under shortage", () => {
+    expect(
+      reassignmentIntentPolicy({
+        kind: "configured-supervisor-fill-under-shortage",
+      })
+    ).toEqual({
+      ...STRICT_POLICY,
+      allowWorkloadBalanceRegression: true,
+      allowCutoffProtectionRegression: true,
+      allowCrossWorkdayRecoveryRegression: true,
+      allowCrossWorkdayReservationRegression: true,
+      allowCrossFlightPriorityRegression: true,
+      allowLoadProtectionRegression: true,
+      allowPositionTransitionRegression: true,
+      allowTr121CooldownRegression: true,
     });
   });
 

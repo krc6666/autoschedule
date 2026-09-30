@@ -76,12 +76,23 @@ function safeRegularCandidate(
   );
 }
 
+export interface SupervisorFillEvaluationOptions {
+  /**
+   * When true, skip the "safe regular still available" gate.
+   * Use for validating recorded links and for shortage-prefer configured fill
+   * after prepare has already committed to binding the supervisor onto the
+   * configured fill counter.
+   */
+  ignoreSafeRegularCandidate?: boolean;
+}
+
 export function evaluateSupervisorFillFacts(
   state: AssignmentEligibilityFacts,
   assignments: readonly Assignment[],
   source: Assignment,
   target: Assignment,
-  mode: SupervisorFillMode
+  mode: SupervisorFillMode,
+  options: SupervisorFillEvaluationOptions = {}
 ): SupervisorFillEvaluation {
   const sourceRule = assignmentRule(state, source);
   const targetRule = assignmentRule(state, target);
@@ -148,7 +159,7 @@ export function evaluateSupervisorFillFacts(
     targetRule,
     person.id
   );
-  if (regularCandidate)
+  if (regularCandidate && !options.ignoreSafeRegularCandidate)
     return {
       allowed: false,
       reason: `${regularCandidate.name}仍可安全承担${target.flightNo}/${target.position}`,

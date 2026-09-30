@@ -429,6 +429,7 @@ export async function assignMobileSupervisorByCounterCoverage(
         eligibleIds.has(assignment.staffId) &&
         Boolean(
           sourceRule &&
+          sourceRule.coverageRole !== "supervisor-fill" &&
           isNumberedRegularPosition(sourceRule) &&
           canMobileSupervisorCoverPosition(state, {
             flightNo: flight.flightNo,

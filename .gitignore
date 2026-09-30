@@ -26,3 +26,12 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Local Codegraph index (machine-local; do not commit)
+.codegraph/
+
+# stop-hook fingerprint: last reviewed product dirty tree (machine-local)
+.cursor/hooks/.last-product-check-fp
+
+# stop-hook fingerprint (local; do not commit)
+.cursor/hooks/.last-product-check-fp

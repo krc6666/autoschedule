@@ -867,13 +867,26 @@ export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
               assignments,
               supervisor,
               target,
-              mode
+              mode,
+              { ignoreSafeRegularCandidate: true }
             )
           )
           .find((evaluation) =>
             hasRecordedSupervisorFillLink(evaluation, target)
           );
       const linkedViolations = assignments.flatMap((counter) => {
+        if (
+          counter.supervisorFillRuleId &&
+          !counter.supervisorSourceAssignmentId
+        ) {
+          return [
+            {
+              ruleId: "mobile-supervisor",
+              assignmentId: counter.id,
+              message: `${counter.flightNo}/${counter.position}的督导补位关联缺少来源，拒绝提交`,
+            },
+          ];
+        }
         if (!counter.supervisorSourceAssignmentId) return [];
         const supervisor = assignments.find(
           (assignment) => assignment.id === counter.supervisorSourceAssignmentId
@@ -896,7 +909,8 @@ export function createMobileSupervisorCoverageScheduleGuard(): ScheduleGuard {
               ruleId: "mobile-supervisor",
               assignmentId: counter.id,
               message:
-                counterRule?.coverageRole === "supervisor-fill"
+                counterRule?.coverageRole === "supervisor-fill" ||
+                Boolean(counter.supervisorFillRuleId)
                   ? `${counter.flightNo}/${counter.position}的督导补位关联无效，拒绝提交`
                   : `${counter.flightNo}/${counter.position}的机动督导兼任关联无效，拒绝提交`,
             },

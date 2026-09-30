@@ -21,7 +21,11 @@ import { durationHours } from "../shared/time";
 import type { SchedulePreparation } from "../kernel/schedule-preparation";
 import { halfRestPeriodViolation } from "../rules/half-rest";
 import { schedulingDecision } from "../rules/schedule-rule-contract";
-import { fillConfiguredSupervisorTargets } from "./supervisor-fill";
+import {
+  fillConfiguredSupervisorTargets,
+  prepareConfiguredSupervisorFillUnderShortage,
+  prepareConfiguredSupervisorFillUnderShortageByReassignment,
+} from "./supervisor-fill";
 
 export interface FinalizeMobileSupervisorsOptions {
   solver: SolverPort;
@@ -117,8 +121,63 @@ export async function finalizeMobileSupervisors({
           selection.candidates.indexOf(left) -
             selection.candidates.indexOf(right)
       );
-    const selected = orderedCandidates[0];
+    let selected = orderedCandidates[0];
     const runnerUp = orderedCandidates[1];
+    let preferredConfiguredFill = false;
+    let configuredFillFallbackReason: string | null = null;
+    const recordConfiguredFillFailure = (reason: string): void => {
+      configuredFillFallbackReason = `配置的督导补位失败：${reason}；已恢复原班表，改走原有安排`;
+    };
+    const addConfiguredFillFallback = (assignment: Assignment): void => {
+      if (!configuredFillFallbackReason) return;
+      assignment.decisionTrace = [
+        ...(assignment.decisionTrace ?? []),
+        schedulingDecision(
+          "mobile-supervisor",
+          "fallback",
+          configuredFillFallbackReason
+        ),
+      ];
+    };
+    const preparePreferredConfiguredFill = async () => {
+      const byReassignment =
+        await prepareConfiguredSupervisorFillUnderShortageByReassignment(
+          solver,
+          state,
+          assignments,
+          task.flight,
+          task.rule,
+          date,
+          preparation.runFacts,
+          lockedAssignmentIds,
+          "automatic",
+          (staffId) =>
+            !halfRestPeriodViolation({
+              facts: preparation.runFacts.halfRest,
+              staffId,
+              startTime: task.flight.startTime,
+            }),
+          recordConfiguredFillFailure
+        );
+      return (
+        byReassignment ??
+        prepareConfiguredSupervisorFillUnderShortage(
+          state,
+          assignments,
+          task.flight,
+          task.rule,
+          lockedAssignmentIds,
+          "automatic",
+          (staffId) =>
+            !halfRestPeriodViolation({
+              facts: preparation.runFacts.halfRest,
+              staffId,
+              startTime: task.flight.startTime,
+            }),
+          recordConfiguredFillFailure
+        )
+      );
+    };
     const repeatedIndependentSupervisorCanBeReleased = Boolean(
       ke166 &&
       selected &&
@@ -139,6 +198,16 @@ export async function finalizeMobileSupervisors({
         ))
     );
     if (repeatedIndependentSupervisorCanBeReleased) {
+      const fillPreferred = await preparePreferredConfiguredFill();
+      if (fillPreferred) {
+        selected = fillPreferred;
+        preferredConfiguredFill = true;
+      }
+    }
+    if (
+      repeatedIndependentSupervisorCanBeReleased &&
+      !preferredConfiguredFill
+    ) {
       const reused = await assignMobileSupervisorByCounterCoverage(
         solver,
         state,
@@ -151,9 +220,17 @@ export async function finalizeMobileSupervisors({
         selected!.id
       );
       if (reused) {
+        addConfiguredFillFallback(reused);
         assignments.push(reused);
         processedTasks.add(task.key);
         continue;
+      }
+    }
+    if (!selected) {
+      const fillPreferred = await preparePreferredConfiguredFill();
+      if (fillPreferred) {
+        selected = fillPreferred;
+        preferredConfiguredFill = true;
       }
     }
     if (!selected) {
@@ -168,13 +245,24 @@ export async function finalizeMobileSupervisors({
         lockedAssignmentIds
       );
       if (reused) {
+        addConfiguredFillFallback(reused);
         assignments.push(reused);
         processedTasks.add(task.key);
         continue;
       }
     }
     if (!selected) {
-      assignments.push(makeUnfilled(task.flight, task.rule.name, task.rule));
+      const unfilled = makeUnfilled(task.flight, task.rule.name, task.rule);
+      if (configuredFillFallbackReason) {
+        unfilled.decisionTrace = [
+          schedulingDecision(
+            "mobile-supervisor",
+            "fallback",
+            configuredFillFallbackReason
+          ),
+        ];
+      }
+      assignments.push(unfilled);
       processedTasks.add(task.key);
       continue;
     }
@@ -219,6 +307,15 @@ export async function finalizeMobileSupervisors({
         )
       );
     }
+    if (configuredFillFallbackReason) {
+      decisionTrace.push(
+        schedulingDecision(
+          "mobile-supervisor",
+          "fallback",
+          configuredFillFallbackReason
+        )
+      );
+    }
     const supervisorAssignment = createAssignedPosition(
       task,
       selected,
@@ -231,7 +328,8 @@ export async function finalizeMobileSupervisors({
       state,
       assignments,
       supervisorAssignment,
-      "automatic"
+      "automatic",
+      preferredConfiguredFill ? { ignoreSafeRegularCandidate: true } : undefined
     );
     processedTasks.add(task.key);
   }

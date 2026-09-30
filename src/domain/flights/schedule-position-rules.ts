@@ -59,6 +59,26 @@ export function guideSourceStaff(
     : undefined;
 }
 
+/** A guide can legally reuse its regular-counter source on the same flight. */
+export function isLegalGuideReuse(
+  state: Pick<ScheduleGenerationFacts, "positionRules" | "staff">,
+  left: Assignment,
+  right: Assignment
+): boolean {
+  if (
+    !left.staffId ||
+    left.staffId !== right.staffId ||
+    left.flightId !== right.flightId
+  )
+    return false;
+  return (
+    (isGuideAssignment(state, left) &&
+      guideSourceStaff(state, right)?.id === left.staffId) ||
+    (isGuideAssignment(state, right) &&
+      guideSourceStaff(state, left)?.id === right.staffId)
+  );
+}
+
 export function compareGuideSourceAssignments(
   state: Pick<FlightRuleFacts, "positionRules">,
   displayIndex: ReadonlyMap<string, number>,

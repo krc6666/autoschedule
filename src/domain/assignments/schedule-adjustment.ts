@@ -146,22 +146,52 @@ export function normalizeSupervisorAssignments(
   state: AssignmentEligibilityFacts
 ): void {
   state.assignments.forEach((assignment) => {
-    if (!assignment.supervisorSourceAssignmentId) return;
-    const source = state.assignments.find(
-      (item) => item.id === assignment.supervisorSourceAssignmentId
-    );
-    const configuredFill = source
-      ? (["automatic", "manual"] as const).some((mode) => {
-          const evaluation = evaluateSupervisorFillFacts(
-            state,
-            state.assignments,
-            source,
-            assignment,
-            mode
-          );
-          return hasRecordedSupervisorFillLink(evaluation, assignment);
-        })
-      : false;
+    let source = assignment.supervisorSourceAssignmentId
+      ? state.assignments.find(
+          (item) => item.id === assignment.supervisorSourceAssignmentId
+        )
+      : undefined;
+    const inferredConfiguredFillSource =
+      !source &&
+      assignmentRule(state, assignment)?.coverageRole === "supervisor-fill"
+        ? state.assignments.find(
+            (candidate) =>
+              candidate.flightId === assignment.flightId &&
+              candidate.staffId === assignment.staffId &&
+              candidate.status === "assigned" &&
+              isSupervisorAssignment(state, candidate)
+          )
+        : undefined;
+    if (inferredConfiguredFillSource) source = inferredConfiguredFillSource;
+    const inferredFillEvaluation = inferredConfiguredFillSource
+      ? evaluateSupervisorFillFacts(
+          state,
+          state.assignments,
+          inferredConfiguredFillSource,
+          assignment,
+          "manual",
+          { ignoreSafeRegularCandidate: true }
+        )
+      : undefined;
+    const configuredFill = inferredFillEvaluation?.allowed
+      ? true
+      : source
+        ? (["automatic", "manual"] as const).some((mode) => {
+            const evaluation = evaluateSupervisorFillFacts(
+              state,
+              state.assignments,
+              source,
+              assignment,
+              mode,
+              { ignoreSafeRegularCandidate: true }
+            );
+            return hasRecordedSupervisorFillLink(evaluation, assignment);
+          })
+        : false;
+    if (inferredConfiguredFillSource && inferredFillEvaluation?.allowed) {
+      assignment.supervisorSourceAssignmentId = inferredConfiguredFillSource.id;
+      assignment.supervisorFillRuleId = inferredFillEvaluation.rule?.id;
+    }
     const valid = Boolean(
       source &&
       isSupervisorAssignment(state, source) &&

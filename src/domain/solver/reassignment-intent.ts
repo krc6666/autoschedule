@@ -5,6 +5,7 @@ export type CrossWorkdayReservationDisposition =
 
 export type ReassignmentIntent =
   | { kind: "mobile-supervisor-counter-coverage" }
+  | { kind: "configured-supervisor-fill-under-shortage" }
   | { kind: "team-leader-concurrent-gap-fill" }
   | { kind: "late-priority-frequency-review" }
   | { kind: "ke166-rotation-review" }
@@ -23,7 +24,10 @@ export interface ReassignmentIntentPolicy {
   allowCutoffProtectionRegression: boolean;
   allowCrossWorkdayRecoveryRegression: boolean;
   allowCrossWorkdayReservationRegression: boolean;
+  allowCrossFlightPriorityRegression: boolean;
   allowLoadProtectionRegression: boolean;
+  allowPositionTransitionRegression: boolean;
+  allowTr121CooldownRegression: boolean;
   allowDirectGuideReassignment: boolean;
 }
 
@@ -32,6 +36,7 @@ export function reassignmentIntentReview(
 ): RotationReview {
   switch (intent.kind) {
     case "mobile-supervisor-counter-coverage":
+    case "configured-supervisor-fill-under-shortage":
       return "mobile-supervisor";
     case "team-leader-concurrent-gap-fill":
     case "team-leader-gap-fill":
@@ -55,7 +60,10 @@ const STRICT_REASSIGNMENT_POLICY: ReassignmentIntentPolicy = {
   allowCutoffProtectionRegression: false,
   allowCrossWorkdayRecoveryRegression: false,
   allowCrossWorkdayReservationRegression: false,
+  allowCrossFlightPriorityRegression: false,
   allowLoadProtectionRegression: false,
+  allowPositionTransitionRegression: false,
+  allowTr121CooldownRegression: false,
   allowDirectGuideReassignment: false,
 };
 
@@ -77,6 +85,18 @@ export function reassignmentIntentPolicy(
           intent.crossWorkdayReservation === "yield-to-selected-vacancy",
         allowLoadProtectionRegression: true,
         allowDirectGuideReassignment: true,
+      };
+    case "configured-supervisor-fill-under-shortage":
+      return {
+        ...STRICT_REASSIGNMENT_POLICY,
+        allowWorkloadBalanceRegression: true,
+        allowCutoffProtectionRegression: true,
+        allowCrossWorkdayRecoveryRegression: true,
+        allowCrossWorkdayReservationRegression: true,
+        allowCrossFlightPriorityRegression: true,
+        allowLoadProtectionRegression: true,
+        allowPositionTransitionRegression: true,
+        allowTr121CooldownRegression: true,
       };
     case "mobile-supervisor-counter-coverage":
     case "team-leader-concurrent-gap-fill":

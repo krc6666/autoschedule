@@ -5,11 +5,19 @@ import { createOrdinarySchedulingState } from "../helpers/scheduling-scenario";
 import { generateSchedule } from "../helpers/generate-schedule";
 import { defaultHighsSolver } from "../../src/infrastructure/solver/highs-solver";
 import { assignMobileSupervisorByCounterCoverage } from "../../src/domain/assignments/ke166-assignment";
+import { finalizeMobileSupervisors } from "../../src/domain/assignments/ke166-supervisor-finalizer";
 import { createMobileSupervisorCoverageScheduleGuard } from "../../src/domain/kernel/schedule-guard";
 import { createScheduleLedger } from "../../src/domain/kernel/schedule-ledger";
+import { prepareSchedule } from "../../src/domain/kernel/schedule-preparation";
 import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
 import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
 import { evaluateSupervisorFillFacts } from "../../src/domain/coverage/supervisor-fill-facts";
+import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-in-rule-registry";
+import { schedulingDecision } from "../../src/domain/rules/schedule-rule-contract";
+import {
+  fillConfiguredSupervisorTargets,
+  prepareConfiguredSupervisorFillUnderShortage,
+} from "../../src/domain/assignments/supervisor-fill";
 
 const DATE = "2026-09-23";
 
@@ -170,6 +178,2233 @@ describe("all-flight mobile-supervisor scheduling", { timeout: 15_000 }, () => {
         0
       )
     ).toBe(5);
+  });
+
+  it("when short-staffed, binds KE166 supervisor to the configured fill counter instead of another concurrent counter", async () => {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const regular = state.staff[1]!;
+    state.staff = [supervisor, regular];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, regular.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, regular.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [supervisor.id, regular.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+
+    const result = await generateSchedule(state, DATE);
+    const source = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-supervisor"
+    )!;
+    const h03 = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h03"
+    )!;
+    const h05 = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+
+    const snapshot = result.assignments.map((assignment) => ({
+      position: assignment.position,
+      staffId: assignment.staffId,
+      source: assignment.supervisorSourceAssignmentId ?? null,
+      fill: assignment.supervisorFillRuleId ?? null,
+      hours: assignment.workHours,
+    }));
+
+    expect(source.staffId, JSON.stringify(snapshot)).toBe(supervisor.id);
+    expect(h05, JSON.stringify(snapshot)).toMatchObject({
+      staffId: supervisor.id,
+      status: "assigned",
+      supervisorSourceAssignmentId: source.id,
+      supervisorFillRuleId: "ke166-h05-fill",
+    });
+    expect(h03.staffId, JSON.stringify(snapshot)).not.toBe(supervisor.id);
+    expect(h03.staffId, JSON.stringify(snapshot)).toBe(regular.id);
+  });
+
+  it("when short-staffed, does not dump an unqualified H05 person onto another counter", () => {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const h05Only = state.staff[1]!;
+    const h03Capable = state.staff[2]!;
+    state.staff = [supervisor, h05Only, h03Capable];
+    h03Capable.teamLeader = true;
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, h03Capable.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [supervisor.id, h05Only.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const supervisorRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    const h03: Assignment = {
+      id: "a-h03",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h03",
+      position: "H03",
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const h05: Assignment = {
+      id: "a-h05",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h05",
+      position: "H05",
+      staffId: h05Only.id,
+      staffName: h05Only.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "申报",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const assignments = [h03, h05];
+
+    const chosen = prepareConfiguredSupervisorFillUnderShortage(
+      state,
+      assignments,
+      state.flights[0]!,
+      supervisorRule,
+      new Set(),
+      "automatic"
+    );
+
+    expect(chosen?.id).toBe(supervisor.id);
+    expect(h05.staffId).toBeNull();
+    expect(h03.staffId).toBe(h03Capable.id);
+    expect(h03.staffId).not.toBe(h05Only.id);
+
+    const source: Assignment = {
+      id: "a-supervisor",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-supervisor",
+      position: "督导",
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 4,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    fillConfiguredSupervisorTargets(
+      state,
+      [...assignments, source],
+      source,
+      "automatic",
+      { ignoreSafeRegularCandidate: true }
+    );
+    expect(h05).toMatchObject({
+      staffId: supervisor.id,
+      supervisorFillRuleId: "ke166-h05-fill",
+      supervisorSourceAssignmentId: source.id,
+      workHours: 0,
+    });
+  });
+
+  it("when short-staffed on many counters, frees H07 for a qualified refill and binds supervisor fill on H05", () => {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const h05Occupant = state.staff[1]!;
+    const h07Capable = state.staff[2]!;
+    state.staff = [supervisor, h05Occupant, h07Capable];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, h05Occupant.id],
+        fatiguePoints: 2,
+      },
+      {
+        ...base,
+        id: "ke166-h07",
+        flightNo: "KE166",
+        name: "H07",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, h07Capable.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const supervisorRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    const h07: Assignment = {
+      id: "a-h07",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h07",
+      position: "H07",
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const h05: Assignment = {
+      id: "a-h05",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h05",
+      position: "H05",
+      staffId: h05Occupant.id,
+      staffName: h05Occupant.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const assignments = [h07, h05];
+    const chosen = prepareConfiguredSupervisorFillUnderShortage(
+      state,
+      assignments,
+      state.flights[0]!,
+      supervisorRule,
+      new Set(),
+      "automatic"
+    );
+    expect(chosen?.id).toBe(supervisor.id);
+    expect(h07.staffId).toBe(h07Capable.id);
+    expect(h05.staffId).toBeNull();
+    expect(h07.staffId).not.toBe(supervisor.id);
+
+    const source: Assignment = {
+      id: "a-supervisor",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-supervisor",
+      position: "督导",
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 4,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    fillConfiguredSupervisorTargets(
+      state,
+      [...assignments, source],
+      source,
+      "automatic",
+      { ignoreSafeRegularCandidate: true }
+    );
+    expect(h05).toMatchObject({
+      staffId: supervisor.id,
+      supervisorFillRuleId: "ke166-h05-fill",
+      workHours: 0,
+    });
+  });
+
+  it("refuses refill candidates blocked by half-rest isStaffAllowed during shortage prepare", () => {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const blocked = state.staff[1]!;
+    const allowed = state.staff[2]!;
+    state.staff = [supervisor, blocked, allowed];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [blocked.id, allowed.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const h03: Assignment = {
+      id: "a-h03",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h03",
+      position: "H03",
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const h05: Assignment = {
+      id: "a-h05",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h05",
+      position: "H05",
+      staffId: null,
+      staffName: "",
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "",
+      manualRemark: "",
+      status: "unfilled",
+    };
+    const assignments = [h03, h05];
+    const supervisorRule = state.positionRules[0]!;
+    const chosen = prepareConfiguredSupervisorFillUnderShortage(
+      state,
+      assignments,
+      state.flights[0]!,
+      supervisorRule,
+      new Set(),
+      "automatic",
+      (staffId) => staffId !== blocked.id
+    );
+    expect(chosen?.id).toBe(supervisor.id);
+    expect(h03.staffId).toBe(allowed.id);
+    expect(h03.staffId).not.toBe(blocked.id);
+  });
+
+  it("generateSchedule keeps H05 with safe regular when an independent supervisor candidate exists", async () => {
+    // 合同裁决：独立督导有合法候选 = 人手够，不得为补位抢 H05。
+    // S/A/B 三人、两柜台时常见结果是 S 空闲上督、H05=A；这不是短员腾挪路径。
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const h05Only = state.staff[1]!;
+    const h03Capable = state.staff[2]!;
+    state.staff = [supervisor, h05Only, h03Capable];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, h03Capable.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [supervisor.id, h05Only.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+
+    const result = await generateSchedule(state, DATE);
+    const source = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-supervisor"
+    )!;
+    const h05 = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+    const snapshot = result.assignments.map((assignment) => ({
+      position: assignment.position,
+      staffId: assignment.staffId,
+      source: assignment.supervisorSourceAssignmentId ?? null,
+      fill: assignment.supervisorFillRuleId ?? null,
+    }));
+    expect(source.staffId, JSON.stringify(snapshot)).toBe(supervisor.id);
+    expect(h05.staffId, JSON.stringify(snapshot)).toBe(h05Only.id);
+    expect(h05.supervisorSourceAssignmentId).toBeUndefined();
+    expect(h05.supervisorFillRuleId).toBeUndefined();
+  });
+
+  it("generateSchedule prioritizes configured H05 fill before repeated KE166 counter reuse", async () => {
+    // 连续督导释放分支也必须先走配置补位；否则旧兼任逻辑会把 S 放到 H03，H05 仍由 A 承担。
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const h05Only = state.staff[1]!;
+    const h03Capable = state.staff[2]!;
+    state.staff = [supervisor, h05Only, h03Capable];
+    state.settings.positionRotationEnabled = true;
+    state.flights = [
+      {
+        id: "early",
+        flightNo: "CX937",
+        startTime: "06:00",
+        endTime: "08:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "early-g09",
+        flightNo: "CX937",
+        name: "G09",
+        category: "常规",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 1,
+      },
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, h03Capable.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [h05Only.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-ke166-supervisor",
+        date: "2026-09-22",
+        flightNo: "KE166",
+        position: "督导",
+        staffId: supervisor.id,
+        staffName: supervisor.name,
+        startTime: "09:15",
+        endTime: "11:15",
+        workHours: 0,
+        fatiguePoints: 0,
+        remark: "",
+      },
+    ];
+
+    const result = await generateSchedule(state, DATE);
+    const source = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-supervisor"
+    )!;
+    const h03 = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h03"
+    )!;
+    const h05 = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+    const snapshot = result.assignments.map((assignment) => ({
+      position: assignment.position,
+      staffId: assignment.staffId,
+      source: assignment.supervisorSourceAssignmentId ?? null,
+      fill: assignment.supervisorFillRuleId ?? null,
+    }));
+    expect(source.staffId, JSON.stringify(snapshot)).toBe(supervisor.id);
+    expect(h05, JSON.stringify(snapshot)).toMatchObject({
+      staffId: supervisor.id,
+      supervisorSourceAssignmentId: source.id,
+      supervisorFillRuleId: "ke166-h05-fill",
+    });
+    expect(h03.staffId, JSON.stringify(snapshot)).toBe(h03Capable.id);
+    expect(h03.staffId, JSON.stringify(snapshot)).not.toBe(h05Only.id);
+  });
+
+  it("uses a legal same-flight counter chain before falling back from configured H05 fill", async () => {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const h02Only = state.staff[1]!;
+    const h05Only = state.staff[2]!;
+    const h03AndH06 = {
+      ...h05Only,
+      id: "h03-h06-worker",
+      name: "H03H06人员",
+    };
+    const h07GuideWorker = {
+      ...h05Only,
+      id: "h07-guide-worker",
+      name: "H07引导复用人员",
+    };
+    state.staff = [supervisor, h02Only, h05Only, h03AndH06, h07GuideWorker];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h02",
+        flightNo: "KE166",
+        name: "H02",
+        category: "常规",
+        remark: "一号",
+        qualifiedStaffIds: [h02Only.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, h03AndH06.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, h05Only.id],
+        fatiguePoints: 2,
+      },
+      {
+        ...base,
+        id: "ke166-h06",
+        flightNo: "KE166",
+        name: "H06",
+        category: "常规",
+        remark: "申报",
+        qualifiedStaffIds: [h05Only.id, h03AndH06.id],
+        fatiguePoints: 2,
+      },
+      {
+        ...base,
+        id: "ke166-h07",
+        flightNo: "KE166",
+        name: "H07",
+        category: "常规",
+        remark: "",
+        qualifiedStaffIds: [h07GuideWorker.id],
+        fatiguePoints: 2,
+      },
+      {
+        ...base,
+        id: "ke166-guide",
+        flightNo: "KE166",
+        name: "柜台引导",
+        category: "引导",
+        remark: "",
+        qualifiedStaffIds: [h07GuideWorker.id],
+        fatiguePoints: 0,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    state.history = [
+      {
+        id: "previous-ke166-supervisor",
+        date: "2026-09-22",
+        flightNo: "KE166",
+        position: "督导",
+        staffId: supervisor.id,
+        staffName: supervisor.name,
+        startTime: "09:15",
+        endTime: "11:15",
+        workHours: 0,
+        fatiguePoints: 0,
+        remark: "",
+      },
+    ];
+    const assignment = (
+      id: string,
+      ruleId: string,
+      position: string,
+      person: typeof supervisor
+    ): Assignment => ({
+      id,
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: ruleId,
+      position,
+      staffId: person.id,
+      staffName: person.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    });
+    const assignments = [
+      assignment("h02", "ke166-h02", "H02", h02Only),
+      assignment("h03", "ke166-h03", "H03", supervisor),
+      assignment("h05", "ke166-h05", "H05", h05Only),
+      assignment("h06", "ke166-h06", "H06", h03AndH06),
+      assignment("h07", "ke166-h07", "H07", h07GuideWorker),
+      {
+        ...assignment("guide", "ke166-guide", "柜台引导", h07GuideWorker),
+        workHours: 0,
+        fatiguePoints: 0,
+      },
+    ];
+
+    const result = await finalizeMobileSupervisors({
+      solver: defaultHighsSolver,
+      state,
+      date: DATE,
+      assignments,
+      preparation: prepareSchedule(
+        state,
+        DATE,
+        evaluateAutomaticHardConstraints
+      ),
+      lockedAssignmentIds: new Set(),
+    });
+    const source = result.find(
+      (item) => item.positionRuleId === "ke166-supervisor"
+    )!;
+    const h03 = result.find((item) => item.id === "h03")!;
+    const h05 = result.find((item) => item.id === "h05")!;
+    const h06 = result.find((item) => item.id === "h06")!;
+    const snapshot = result.map((item) => ({
+      position: item.position,
+      staffId: item.staffId,
+      source: item.supervisorSourceAssignmentId ?? null,
+      fill: item.supervisorFillRuleId ?? null,
+    }));
+
+    expect(h05, JSON.stringify(snapshot)).toMatchObject({
+      staffId: supervisor.id,
+      supervisorSourceAssignmentId: source.id,
+      supervisorFillRuleId: "ke166-h05-fill",
+    });
+    expect(h03.staffId, JSON.stringify(snapshot)).toBe(h03AndH06.id);
+    expect(h06.staffId, JSON.stringify(snapshot)).toBe(h05Only.id);
+  });
+
+  it("generateSchedule short-staff with only counter-bound staff frees H05 for supervisor fill", async () => {
+    // 两人两柜台：无人可独立空闲督导 → 进入短员 prepare；覆盖完整 generateSchedule 链路。
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const regular = state.staff[1]!;
+    state.staff = [supervisor, regular];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, regular.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, regular.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [supervisor.id, regular.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+
+    const result = await generateSchedule(state, DATE);
+    const source = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-supervisor"
+    )!;
+    const h03 = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h03"
+    )!;
+    const h05 = result.assignments.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+    const snapshot = result.assignments.map((assignment) => ({
+      position: assignment.position,
+      staffId: assignment.staffId,
+      source: assignment.supervisorSourceAssignmentId ?? null,
+      fill: assignment.supervisorFillRuleId ?? null,
+    }));
+
+    expect(source.staffId, JSON.stringify(snapshot)).toBeTruthy();
+    expect(h05, JSON.stringify(snapshot)).toMatchObject({
+      staffId: source.staffId,
+      supervisorSourceAssignmentId: source.id,
+      supervisorFillRuleId: "ke166-h05-fill",
+    });
+    expect(h03.staffId, JSON.stringify(snapshot)).not.toBe(source.staffId);
+  });
+
+  it("prepare rejects a source supervisor blocked by cross-flight time conflict and restores", () => {
+    const state = singleFlightState();
+    const blocked = state.staff[0]!;
+    const freeSupervisor = state.staff[1]!;
+    const refill = state.staff[2]!;
+    state.staff = [blocked, freeSupervisor, refill];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "other",
+        flightNo: "CX937",
+        startTime: "09:00",
+        endTime: "11:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [blocked.id, freeSupervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [blocked.id, freeSupervisor.id, refill.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [blocked.id, freeSupervisor.id],
+        fatiguePoints: 2,
+      },
+      {
+        ...base,
+        id: "other-g18",
+        flightNo: "CX937",
+        name: "G18",
+        category: "常规",
+        remark: "",
+        qualifiedStaffIds: [blocked.id],
+        fatiguePoints: 3,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const supervisorRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    const other: Assignment = {
+      id: "a-other",
+      flightId: "other",
+      flightNo: "CX937",
+      positionRuleId: "other-g18",
+      position: "G18",
+      staffId: blocked.id,
+      staffName: blocked.name,
+      startTime: "09:00",
+      endTime: "11:00",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+      decisionEvidence: {
+        scheduleRunId: "run-keep",
+        ruleFingerprint: "fp-keep",
+      },
+      teamLeaderGapFill: true,
+    };
+    const h03: Assignment = {
+      id: "a-h03",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h03",
+      position: "H03",
+      staffId: freeSupervisor.id,
+      staffName: freeSupervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const h05: Assignment = {
+      id: "a-h05",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h05",
+      position: "H05",
+      staffId: blocked.id,
+      staffName: blocked.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "申报",
+      manualRemark: "",
+      status: "assigned",
+    };
+    // Intentionally leave H05 occupied by blocked (also on CX937) is wrong —
+    // blocked is on other; H05 should be occupied by someone else for prepare to free.
+    h05.staffId = refill.id;
+    h05.staffName = refill.name;
+    const assignments = [other, h03, h05];
+    const before = structuredClone(assignments);
+
+    const chosen = prepareConfiguredSupervisorFillUnderShortage(
+      state,
+      assignments,
+      state.flights[0]!,
+      supervisorRule,
+      new Set(),
+      "automatic"
+    );
+
+    expect(chosen?.id).toBe(freeSupervisor.id);
+    expect(chosen?.id).not.toBe(blocked.id);
+    expect(h05.staffId).toBeNull();
+    expect(h03.staffId).toBe(refill.id);
+    expect(other).toMatchObject({
+      staffId: blocked.id,
+      decisionEvidence: before[0]!.decisionEvidence,
+      teamLeaderGapFill: true,
+    });
+  });
+
+  it("prepare leaves manual-status and below-threshold counters untouched", () => {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const refill = state.staff[1]!;
+    const parked = state.staff[2]!;
+    state.staff = [supervisor, refill, parked];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 50,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id, refill.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 2,
+      },
+      {
+        ...base,
+        id: "ke166-h08",
+        flightNo: "KE166",
+        name: "H08",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        minPassengers: 200,
+        qualifiedStaffIds: [parked.id, refill.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h09",
+        flightNo: "KE166",
+        name: "H09",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [parked.id, refill.id],
+        fatiguePoints: 3,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const supervisorRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    const h03: Assignment = {
+      id: "a-h03",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h03",
+      position: "H03",
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const h05: Assignment = {
+      id: "a-h05",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h05",
+      position: "H05",
+      staffId: refill.id,
+      staffName: refill.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "申报",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const lowPassenger: Assignment = {
+      id: "a-h08",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h08",
+      position: "H08",
+      staffId: null,
+      staffName: "",
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "unfilled",
+    };
+    const manualSlot: Assignment = {
+      id: "a-h09",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h09",
+      position: "H09",
+      staffId: null,
+      staffName: "",
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "人工锁定",
+      status: "manual",
+      decisionEvidence: {
+        scheduleRunId: "manual-run",
+        ruleFingerprint: "manual-fp",
+      },
+    };
+    const assignments = [h03, h05, lowPassenger, manualSlot];
+
+    const chosen = prepareConfiguredSupervisorFillUnderShortage(
+      state,
+      assignments,
+      state.flights[0]!,
+      supervisorRule,
+      new Set(),
+      "automatic"
+    );
+
+    expect(chosen?.id).toBe(supervisor.id);
+    expect(h05.staffId).toBeNull();
+    expect(h03.staffId).toBe(refill.id);
+    expect(lowPassenger.staffId).toBeNull();
+    expect(manualSlot).toMatchObject({
+      staffId: null,
+      staffName: "",
+      status: "manual",
+      manualRemark: "人工锁定",
+      decisionEvidence: {
+        scheduleRunId: "manual-run",
+        ruleFingerprint: "manual-fp",
+      },
+    });
+  });
+
+  it("prepare rejects a source supervisor blocked only by minimum flight transition and restores", () => {
+    const state = singleFlightState();
+    const tightGap = state.staff[0]!;
+    const freeSupervisor = state.staff[1]!;
+    const refill = state.staff[2]!;
+    state.staff = [tightGap, freeSupervisor, refill];
+    state.settings.minimumRegularTransitionMinutes = 90;
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "early",
+        flightNo: "CX937",
+        startTime: "06:45",
+        endTime: "08:45",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [tightGap.id, freeSupervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [tightGap.id, freeSupervisor.id, refill.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [tightGap.id, freeSupervisor.id],
+        fatiguePoints: 2,
+      },
+      {
+        ...base,
+        id: "early-g18",
+        flightNo: "CX937",
+        name: "G18",
+        category: "常规",
+        remark: "",
+        qualifiedStaffIds: [tightGap.id],
+        fatiguePoints: 3,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const supervisorRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    // 08:45→09:15 间隔 30 分钟，小于 90；与 KE166 无时段重叠。
+    const early: Assignment = {
+      id: "a-early",
+      flightId: "early",
+      flightNo: "CX937",
+      positionRuleId: "early-g18",
+      position: "G18",
+      staffId: tightGap.id,
+      staffName: tightGap.name,
+      startTime: "06:45",
+      endTime: "08:45",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+      decisionEvidence: {
+        scheduleRunId: "gap-run",
+        ruleFingerprint: "gap-fp",
+      },
+    };
+    const h03: Assignment = {
+      id: "a-h03",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h03",
+      position: "H03",
+      staffId: freeSupervisor.id,
+      staffName: freeSupervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const h05: Assignment = {
+      id: "a-h05",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h05",
+      position: "H05",
+      staffId: refill.id,
+      staffName: refill.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "申报",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const assignments = [early, h03, h05];
+
+    const chosen = prepareConfiguredSupervisorFillUnderShortage(
+      state,
+      assignments,
+      state.flights[0]!,
+      supervisorRule,
+      new Set(),
+      "automatic"
+    );
+
+    expect(chosen?.id).toBe(freeSupervisor.id);
+    expect(chosen?.id).not.toBe(tightGap.id);
+    expect(early).toMatchObject({
+      staffId: tightGap.id,
+      decisionEvidence: {
+        scheduleRunId: "gap-run",
+        ruleFingerprint: "gap-fp",
+      },
+    });
+  });
+
+  it("finalizeMobileSupervisors passes real halfRest facts so banned refill stays off counters", async () => {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const halfRestBlocked = state.staff[1]!;
+    const allowedRefill = state.staff[2]!;
+    // Need a fourth person to hold H05 initially.
+    const h05Holder = {
+      ...allowedRefill,
+      id: "h05-holder",
+      name: "H05占位",
+    };
+    state.staff = [supervisor, halfRestBlocked, allowedRefill, h05Holder];
+    state.staff.forEach((person) => {
+      person.teamLeader = false;
+      person.dutyQualified = false;
+      person.nightShift = true;
+    });
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [
+          supervisor.id,
+          halfRestBlocked.id,
+          allowedRefill.id,
+        ],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [supervisor.id, h05Holder.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const preferences = {
+      halfRestStaffIds: [halfRestBlocked.id],
+      halfRestModes: { [halfRestBlocked.id]: "late-start" as const },
+    };
+    const preparation = prepareSchedule(
+      state,
+      DATE,
+      evaluateAutomaticHardConstraints,
+      preferences
+    );
+    expect(
+      preparation.runFacts.halfRest.activeStaffIds.has(halfRestBlocked.id)
+    ).toBe(true);
+
+    const assignments: Assignment[] = [
+      {
+        id: "a-h03",
+        flightId: "ke166",
+        flightNo: "KE166",
+        positionRuleId: "ke166-h03",
+        position: "H03",
+        staffId: supervisor.id,
+        staffName: supervisor.name,
+        startTime: "09:15",
+        endTime: "11:15",
+        workHours: 2,
+        fatiguePoints: 3,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "a-h05",
+        flightId: "ke166",
+        flightNo: "KE166",
+        positionRuleId: "ke166-h05",
+        position: "H05",
+        staffId: h05Holder.id,
+        staffName: h05Holder.name,
+        startTime: "09:15",
+        endTime: "11:15",
+        workHours: 2,
+        fatiguePoints: 2,
+        remark: "申报",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+
+    const result = await finalizeMobileSupervisors({
+      solver: defaultHighsSolver,
+      state,
+      date: DATE,
+      assignments,
+      preparation,
+      lockedAssignmentIds: new Set(),
+    });
+
+    const source = result.find(
+      (assignment) => assignment.positionRuleId === "ke166-supervisor"
+    )!;
+    const h03 = result.find(
+      (assignment) => assignment.positionRuleId === "ke166-h03"
+    )!;
+    const h05 = result.find(
+      (assignment) => assignment.positionRuleId === "ke166-h05"
+    )!;
+    const snapshot = result.map((assignment) => ({
+      position: assignment.position,
+      staffId: assignment.staffId,
+      source: assignment.supervisorSourceAssignmentId ?? null,
+      fill: assignment.supervisorFillRuleId ?? null,
+    }));
+
+    expect(source.staffId, JSON.stringify(snapshot)).toBe(supervisor.id);
+    expect(h05, JSON.stringify(snapshot)).toMatchObject({
+      staffId: supervisor.id,
+      supervisorSourceAssignmentId: source.id,
+      supervisorFillRuleId: "ke166-h05-fill",
+    });
+    expect(h03.staffId, JSON.stringify(snapshot)).toBe(allowedRefill.id);
+    expect(h03.staffId, JSON.stringify(snapshot)).not.toBe(halfRestBlocked.id);
+  });
+
+  it("prepare failure restores state and records the generic-coverage fallback reason", async () => {
+    const state = singleFlightState();
+    const supervisor = state.staff[0]!;
+    const other = state.staff[1]!;
+    state.staff = [supervisor, other];
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        // No one can legally take H03 after supervisor is cleared → prepare must fail.
+        qualifiedStaffIds: [supervisor.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [supervisor.id, other.id],
+        fatiguePoints: 2,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const supervisorRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    const h03: Assignment = {
+      id: "a-h03",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h03",
+      position: "H03",
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+      decisionTrace: [
+        schedulingDecision("mobile-supervisor", "selected", "keep-me"),
+      ],
+      systemNotes: ["note-keep"],
+      decisionEvidence: {
+        scheduleRunId: "run-1",
+        ruleFingerprint: "fp-1",
+      },
+      teamLeaderGapFill: true,
+    };
+    const h05: Assignment = {
+      id: "a-h05",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h05",
+      position: "H05",
+      staffId: other.id,
+      staffName: other.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "申报",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const assignments = [h03, h05];
+    const before = structuredClone(assignments);
+    let failureReason = "";
+
+    const chosen = prepareConfiguredSupervisorFillUnderShortage(
+      state,
+      assignments,
+      state.flights[0]!,
+      supervisorRule,
+      new Set(),
+      "automatic",
+      undefined,
+      (reason) => {
+        failureReason = reason;
+      }
+    );
+
+    expect(chosen).toBeNull();
+    expect(assignments).toEqual(before);
+    expect(failureReason).toContain("其他普通柜台没有合法替补");
+
+    const preparation = prepareSchedule(
+      state,
+      DATE,
+      evaluateAutomaticHardConstraints
+    );
+    const finalized = await finalizeMobileSupervisors({
+      solver: defaultHighsSolver,
+      state,
+      date: DATE,
+      assignments,
+      preparation,
+      lockedAssignmentIds: new Set(),
+    });
+    const source = finalized.find(
+      (assignment) => assignment.positionRuleId === "ke166-supervisor"
+    )!;
+    expect(
+      source.decisionTrace?.some(
+        (decision) =>
+          decision.outcome === "fallback" &&
+          decision.message.includes("其他普通柜台没有合法替补")
+      )
+    ).toBe(true);
+  });
+
+  it("rejects orphan supervisorFillRuleId without a source link", () => {
+    const state = singleFlightState();
+    const worker = state.staff[0]!;
+    state.staff = [worker];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "CX931",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [worker.id],
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "CX931",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "",
+        qualifiedStaffIds: [worker.id],
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "fill-rule",
+        enabled: true,
+        sourceFlightNo: "CX931",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "CX931",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const runFacts = createScheduleRunFacts(state, DATE);
+    const ledger = createScheduleLedger([], {
+      safetySession: createScheduleSafetySession({
+        phase: "final",
+        state,
+        date: DATE,
+        runFacts,
+        guards: [createMobileSupervisorCoverageScheduleGuard()],
+      }),
+    });
+    expect(() =>
+      ledger.commit({
+        type: "replace",
+        assignments: [
+          {
+            id: "orphan-fill",
+            flightId: "cx931",
+            flightNo: "CX931",
+            positionRuleId: "ke166-h05",
+            position: "H05",
+            staffId: worker.id,
+            staffName: worker.name,
+            startTime: "21:00",
+            endTime: "23:00",
+            workHours: 0,
+            fatiguePoints: 0,
+            remark: "",
+            manualRemark: "",
+            status: "assigned",
+            supervisorFillRuleId: "fill-rule",
+          },
+        ],
+      })
+    ).toThrow(/督导补位关联缺少来源/);
+  });
+
+  it("rejects supervisor-fill whose source assignment id does not exist", () => {
+    const state = singleFlightState();
+    const worker = state.staff[0]!;
+    state.staff = [worker];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "CX931",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [worker.id],
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "CX931",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "",
+        qualifiedStaffIds: [worker.id],
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "fill-rule",
+        enabled: true,
+        sourceFlightNo: "CX931",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "CX931",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const runFacts = createScheduleRunFacts(state, DATE);
+    const ledger = createScheduleLedger([], {
+      safetySession: createScheduleSafetySession({
+        phase: "final",
+        state,
+        date: DATE,
+        runFacts,
+        guards: [createMobileSupervisorCoverageScheduleGuard()],
+      }),
+    });
+    expect(() =>
+      ledger.commit({
+        type: "replace",
+        assignments: [
+          {
+            id: "dangling-fill",
+            flightId: "cx931",
+            flightNo: "CX931",
+            positionRuleId: "ke166-h05",
+            position: "H05",
+            staffId: worker.id,
+            staffName: worker.name,
+            startTime: "21:00",
+            endTime: "23:00",
+            workHours: 0,
+            fatiguePoints: 0,
+            remark: "",
+            manualRemark: "",
+            status: "assigned",
+            supervisorSourceAssignmentId: "missing-supervisor",
+            supervisorFillRuleId: "fill-rule",
+          },
+        ],
+      })
+    ).toThrow(/督导补位关联无效/);
+  });
+
+  it("rejects supervisor-fill whose fill rule id does not match a valid recorded link", () => {
+    const state = singleFlightState();
+    const worker = state.staff[0]!;
+    state.staff = [worker];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "CX931",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [worker.id],
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "CX931",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "",
+        qualifiedStaffIds: [worker.id],
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "fill-rule",
+        enabled: true,
+        sourceFlightNo: "CX931",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "CX931",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const runFacts = createScheduleRunFacts(state, DATE);
+    const ledger = createScheduleLedger([], {
+      safetySession: createScheduleSafetySession({
+        phase: "final",
+        state,
+        date: DATE,
+        runFacts,
+        guards: [createMobileSupervisorCoverageScheduleGuard()],
+      }),
+    });
+    expect(() =>
+      ledger.commit({
+        type: "replace",
+        assignments: [
+          {
+            id: "src",
+            flightId: "cx931",
+            flightNo: "CX931",
+            positionRuleId: "ke166-supervisor",
+            position: "督导",
+            staffId: worker.id,
+            staffName: worker.name,
+            startTime: "21:00",
+            endTime: "23:00",
+            workHours: 2,
+            fatiguePoints: 5,
+            remark: "",
+            manualRemark: "",
+            status: "assigned",
+          },
+          {
+            id: "bad-rule-fill",
+            flightId: "cx931",
+            flightNo: "CX931",
+            positionRuleId: "ke166-h05",
+            position: "H05",
+            staffId: worker.id,
+            staffName: worker.name,
+            startTime: "21:00",
+            endTime: "23:00",
+            workHours: 0,
+            fatiguePoints: 0,
+            remark: "",
+            manualRemark: "",
+            status: "assigned",
+            supervisorSourceAssignmentId: "src",
+            supervisorFillRuleId: "wrong-rule-id",
+          },
+        ],
+      })
+    ).toThrow(/督导补位关联无效/);
+  });
+
+  it("prepare rejects a source supervisor who would exceed daily hours and restores", () => {
+    const state = singleFlightState();
+    const overloaded = state.staff[0]!;
+    const freeSupervisor = state.staff[1]!;
+    const refill = state.staff[2]!;
+    state.staff = [overloaded, freeSupervisor, refill];
+    state.settings.maxDailyHours = 2;
+    state.flights = [
+      {
+        id: "ke166",
+        flightNo: "KE166",
+        startTime: "09:15",
+        endTime: "11:15",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+      {
+        id: "early",
+        flightNo: "CX937",
+        startTime: "06:00",
+        endTime: "08:00",
+        bookedPassengers: 100,
+        positions: [],
+        remark: "",
+      },
+    ];
+    const base = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...base,
+        id: "ke166-supervisor",
+        flightNo: "KE166",
+        name: "督导",
+        category: "机动督导",
+        remark: "",
+        qualifiedStaffIds: [overloaded.id, freeSupervisor.id],
+        fatiguePoints: 4,
+      },
+      {
+        ...base,
+        id: "ke166-h03",
+        flightNo: "KE166",
+        name: "H03",
+        category: "常规",
+        coverageRole: "none",
+        remark: "",
+        qualifiedStaffIds: [overloaded.id, freeSupervisor.id, refill.id],
+        fatiguePoints: 3,
+      },
+      {
+        ...base,
+        id: "ke166-h05",
+        flightNo: "KE166",
+        name: "H05",
+        category: "常规",
+        coverageRole: "supervisor-fill",
+        remark: "申报",
+        qualifiedStaffIds: [overloaded.id, freeSupervisor.id],
+        fatiguePoints: 2,
+      },
+      {
+        ...base,
+        id: "early-g18",
+        flightNo: "CX937",
+        name: "G18",
+        category: "常规",
+        remark: "",
+        qualifiedStaffIds: [overloaded.id],
+        fatiguePoints: 3,
+      },
+    ];
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+    const supervisorRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    const early: Assignment = {
+      id: "a-early",
+      flightId: "early",
+      flightNo: "CX937",
+      positionRuleId: "early-g18",
+      position: "G18",
+      staffId: overloaded.id,
+      staffName: overloaded.name,
+      startTime: "06:00",
+      endTime: "08:00",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+      decisionEvidence: {
+        scheduleRunId: "keep-run",
+        ruleFingerprint: "keep-fp",
+      },
+    };
+    const h03: Assignment = {
+      id: "a-h03",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h03",
+      position: "H03",
+      staffId: freeSupervisor.id,
+      staffName: freeSupervisor.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 3,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const h05: Assignment = {
+      id: "a-h05",
+      flightId: "ke166",
+      flightNo: "KE166",
+      positionRuleId: "ke166-h05",
+      position: "H05",
+      staffId: refill.id,
+      staffName: refill.name,
+      startTime: "09:15",
+      endTime: "11:15",
+      workHours: 2,
+      fatiguePoints: 2,
+      remark: "申报",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const assignments = [early, h03, h05];
+
+    const chosen = prepareConfiguredSupervisorFillUnderShortage(
+      state,
+      assignments,
+      state.flights[0]!,
+      supervisorRule,
+      new Set(),
+      "automatic"
+    );
+
+    expect(chosen?.id).toBe(freeSupervisor.id);
+    expect(chosen?.id).not.toBe(overloaded.id);
+    expect(early).toMatchObject({
+      staffId: overloaded.id,
+      decisionEvidence: {
+        scheduleRunId: "keep-run",
+        ruleFingerprint: "keep-fp",
+      },
+    });
   });
 
   it("keeps a configured supervisor-fill target with its safe regular worker", async () => {

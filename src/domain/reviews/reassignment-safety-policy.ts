@@ -143,6 +143,7 @@ export interface ReassignmentCandidateSafetyOptions {
   latePriorityFatigueRelief?: LatePriorityFatigueReliefPolicy;
   allowCutoffProtectionRegression?: boolean;
   allowCrossWorkdayRecoveryRegression?: boolean;
+  allowTr121CooldownRegression?: boolean;
   allowDirectGuideReassignment?: boolean;
 }
 
@@ -158,6 +159,7 @@ export function reassignmentCandidateSafetyReasons({
   latePriorityFatigueRelief,
   allowCutoffProtectionRegression = false,
   allowCrossWorkdayRecoveryRegression = false,
+  allowTr121CooldownRegression = false,
 }: ReassignmentCandidateSafetyOptions): string[] {
   if (!assignment.staffId) return ["交换后会造成其他岗位空缺"];
   const rule = assignmentRule(state, assignment);
@@ -214,6 +216,7 @@ export function reassignmentCandidateSafetyReasons({
       remark: assignment.remark,
     }) &&
     state.settings.lateShiftRecoveryEnabled &&
+    !allowCrossWorkdayRecoveryRegression &&
     facts?.crossDayRecovery.previousWorkday.protectedStaffIds.has(
       assignment.staffId
     ) &&
@@ -233,6 +236,7 @@ export function reassignmentCandidateSafetyReasons({
     reasons.push("严格跨工作日恢复限制不允许该人员承担次班目标岗位");
   }
   if (
+    !allowTr121CooldownRegression &&
     exceedsTr121NumberOneAutomaticLimit(
       state,
       assignment.staffId,
@@ -399,6 +403,7 @@ export interface ReassignmentDynamicSafetyOptions {
   primaryAssignment: Assignment;
   review: RotationReview;
   allowLoadProtectionRegression?: boolean;
+  allowPositionTransitionRegression?: boolean;
 }
 
 export function reassignmentDynamicSafetyReasons({
@@ -408,6 +413,7 @@ export function reassignmentDynamicSafetyReasons({
   primaryAssignment,
   review,
   allowLoadProtectionRegression = false,
+  allowPositionTransitionRegression = false,
 }: ReassignmentDynamicSafetyOptions): string[] {
   if (!assignment.staffId) return ["交换后会造成其他岗位空缺"];
   const flight = state.flights.find((item) => item.id === assignment.flightId);
@@ -428,6 +434,7 @@ export function reassignmentDynamicSafetyReasons({
     reasons.push("交换后违反普通岗位最小航班衔接间隔");
   }
   if (
+    !allowPositionTransitionRegression &&
     positionTransitionInsertionCost(
       assignments,
       assignment.staffId,
