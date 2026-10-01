@@ -3,6 +3,7 @@ import type { MobileSupervisorFillRule } from "../rules/structured-policy-contra
 import type { AssignmentEligibilityFacts } from "../shared/scheduling-facts";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
 import { assignmentRule } from "../flights/schedule-position-rules";
+import { isDisplayOnlyGuideReuse } from "../candidates/assignment-eligibility-facts";
 
 export type SupervisorFillMode = "automatic" | "manual";
 
@@ -172,6 +173,7 @@ export function evaluateSupervisorFillFacts(
   };
   const otherAssignments = assignments.filter((assignment) => {
     if (assignment.id === target.id) return false;
+    if (isDisplayOnlyGuideReuse(state, assignments, assignment)) return false;
     return source.flightId === target.flightId
       ? assignment.id !== source.id
       : true;

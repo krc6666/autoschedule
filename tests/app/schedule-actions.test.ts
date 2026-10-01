@@ -135,6 +135,58 @@ describe("督导机动补位编辑", () => {
     ).toContain("督导机动补位：张奇兼任KE166/H04");
   });
 
+  it("拖动顶部督导到配置 H05 时忽略同航班的引导复用", () => {
+    const state = supervisorSchedule();
+    const supervisor = state.staff[0]!;
+    const target = state.assignments.find(
+      (item) => item.id === "h04-assignment"
+    )!;
+    const targetRule = state.positionRules.find((rule) => rule.id === "h04")!;
+    target.position = "H05";
+    targetRule.name = "H05";
+    targetRule.coverageRole = "supervisor-fill";
+    state.positionRules.push({
+      ...targetRule,
+      id: "guide",
+      name: "柜台引导",
+      category: "引导",
+      coverageRole: "none",
+      qualifiedStaffIds: [],
+    });
+    state.assignments.push({
+      ...target,
+      id: "guide-assignment",
+      positionRuleId: "guide",
+      position: "柜台引导",
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      status: "assigned",
+      workHours: 0,
+      fatiguePoints: 0,
+    });
+    state.settings.mobileSupervisorFillRules = [
+      {
+        id: "ke166-h05-fill",
+        enabled: true,
+        sourceFlightNo: "KE166",
+        sourcePositionKeyword: "督导",
+        targetFlightNo: "KE166",
+        targetPositionKeyword: "H05",
+        allowAutomatic: true,
+        allowManual: true,
+      },
+    ];
+
+    expect(
+      assignStaff(state, target.id, supervisor.id, "supervisor-assignment")
+    ).toMatchObject({ changed: true });
+    expect(target).toMatchObject({
+      staffId: supervisor.id,
+      supervisorSourceAssignmentId: "supervisor-assignment",
+      supervisorFillRuleId: "ke166-h05-fill",
+    });
+  });
+
   it("拒绝把督导拖入已有人员的柜台", () => {
     const state = supervisorSchedule();
     const target = state.assignments.find(

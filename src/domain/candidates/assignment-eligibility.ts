@@ -555,6 +555,7 @@ export function diagnoseManualAssignmentEligibility(
   const factOptions = {
     state,
     assignments: others,
+    assignment,
     flight,
     rule: eligibilityRule,
     person,

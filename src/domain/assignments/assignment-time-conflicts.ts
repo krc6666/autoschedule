@@ -168,12 +168,18 @@ export function timeConflictAssignmentIds(
       (candidate) => candidate.id === assignment.flightId
     );
     if (!person || !flight) continue;
+    const assignmentWindow = {
+      id: assignment.flightId,
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+    };
     const conflicts = assignmentConflictFacts({
       state,
       assignments: assigned.filter(
         (candidate) => candidate.id !== assignment.id
       ),
-      flight,
+      assignment,
+      flight: assignmentWindow,
       rule: assignmentRule(state, assignment),
       person,
       sameFlightConflict: "block",

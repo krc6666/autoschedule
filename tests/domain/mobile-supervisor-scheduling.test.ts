@@ -2519,6 +2519,89 @@ describe("all-flight mobile-supervisor scheduling", { timeout: 15_000 }, () => {
     expect(result.warnings).toContain("TR121 / H05 无可用人员");
   });
 
+  it("ignores a legal guide display when a cross-flight supervisor fill starts after release", () => {
+    const { state, supervisor } = configuredSupervisorFillState(false);
+    const sourceFlight = state.flights.find((flight) => flight.id === "ke166")!;
+    const targetFlight = {
+      ...sourceFlight,
+      id: "target-flight",
+      flightNo: "TR121",
+      startTime: "22:00",
+      endTime: "23:30",
+    };
+    state.flights.push(targetFlight);
+    const sourceRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-supervisor"
+    )!;
+    const targetRule = state.positionRules.find(
+      (rule) => rule.id === "ke166-h05"
+    )!;
+    targetRule.flightNo = targetFlight.flightNo;
+    state.settings.mobileSupervisorFillRules[0]!.targetFlightNo =
+      targetFlight.flightNo;
+    const guideRule: PositionRule = {
+      ...targetRule,
+      id: "ke166-guide",
+      flightNo: sourceFlight.flightNo,
+      name: "柜台引导",
+      category: "引导",
+      coverageRole: "none",
+      qualifiedStaffIds: [],
+    };
+    state.positionRules.push(guideRule);
+    const source: Assignment = {
+      id: "released-supervisor",
+      flightId: sourceFlight.id,
+      flightNo: sourceFlight.flightNo,
+      positionRuleId: sourceRule.id,
+      position: sourceRule.name,
+      staffId: supervisor.id,
+      staffName: supervisor.name,
+      startTime: sourceFlight.startTime,
+      endTime: "21:30",
+      workHours: 0.5,
+      fatiguePoints: sourceRule.fatiguePoints,
+      remark: "",
+      manualRemark: "",
+      status: "assigned",
+    };
+    const guide: Assignment = {
+      ...source,
+      id: "ke166-guide-assignment",
+      positionRuleId: guideRule.id,
+      position: guideRule.name,
+      endTime: sourceFlight.endTime,
+      workHours: 0,
+      fatiguePoints: 0,
+    };
+    const target: Assignment = {
+      ...source,
+      id: "tr121-h05",
+      flightId: targetFlight.id,
+      flightNo: targetFlight.flightNo,
+      positionRuleId: targetRule.id,
+      position: targetRule.name,
+      startTime: targetFlight.startTime,
+      endTime: targetFlight.endTime,
+      staffId: null,
+      staffName: "",
+      workHours: 1.5,
+      fatiguePoints: targetRule.fatiguePoints,
+      status: "unfilled",
+    };
+
+    expect(
+      evaluateSupervisorFillFacts(
+        state,
+        [source, guide, target],
+        source,
+        target,
+        "manual",
+        { ignoreSafeRegularCandidate: true }
+      )
+    ).toMatchObject({ allowed: true });
+  });
+
   it("automatically binds a non-KE166 supervisor to an allowed counter when staffing is short", async () => {
     const state = singleFlightState();
     const worker = state.staff[0]!;

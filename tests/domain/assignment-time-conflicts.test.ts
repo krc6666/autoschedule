@@ -9,6 +9,7 @@ import type {
 } from "../../src/model";
 import { evaluateAutomaticHardConstraints } from "../../src/domain/rules/built-in-rule-registry";
 import { timeConflictAssignmentIds } from "../../src/domain/assignments/assignment-time-conflicts";
+import { assignmentConflictFacts } from "../../src/domain/candidates/assignment-eligibility-facts";
 
 function conflictState(): AppState {
   const state = createDefaultState();
@@ -209,6 +210,83 @@ describe("assignment time conflict display facts", () => {
     guide.fatiguePoints = 0;
 
     expectNoConflict(state, source, guide);
+  });
+
+  it("does not let a released source's guide display block another flight", () => {
+    const state = conflictState();
+    const sourceFlight = addFlight(
+      state,
+      "guide-source-flight",
+      "08:00",
+      "10:00"
+    );
+    const targetFlight = addFlight(
+      state,
+      "guide-target-flight",
+      "09:00",
+      "11:00"
+    );
+    const source = addAssignment(state, sourceFlight, {
+      id: "released-guide-source",
+      name: "H01",
+    });
+    source.endTime = "08:30";
+    source.workHours = 0.5;
+    const guide = addAssignment(state, sourceFlight, {
+      id: "released-guide",
+      name: "柜台引导",
+      category: "引导",
+    });
+    guide.workHours = 0;
+    guide.fatiguePoints = 0;
+    const target = addAssignment(state, targetFlight, {
+      id: "guide-only-target",
+      name: "H02",
+    });
+
+    const targetRule = state.positionRules.find(
+      (rule) => rule.id === target.positionRuleId
+    )!;
+    expect(
+      assignmentConflictFacts({
+        state,
+        assignments: [source, guide],
+        flight: targetFlight,
+        rule: targetRule,
+        person: state.staff[0]!,
+        workHours: target.workHours,
+      }).blockingConflicts
+    ).toEqual([]);
+    expectNoConflict(state, source, guide, target);
+  });
+
+  it("keeps a dangling cross-flight guide as a conflict", () => {
+    const state = conflictState();
+    const guideFlight = addFlight(
+      state,
+      "dangling-guide-flight",
+      "08:00",
+      "10:00"
+    );
+    const targetFlight = addFlight(
+      state,
+      "dangling-target-flight",
+      "09:00",
+      "11:00"
+    );
+    const guide = addAssignment(state, guideFlight, {
+      id: "dangling-guide",
+      name: "柜台引导",
+      category: "引导",
+    });
+    guide.workHours = 0;
+    guide.fatiguePoints = 0;
+    const target = addAssignment(state, targetFlight, {
+      id: "dangling-target",
+      name: "H02",
+    });
+
+    expectConflict(state, guide, target);
   });
 
   it("keeps a mobile supervisor purple for a real cross-flight overlap", () => {

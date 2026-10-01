@@ -6,7 +6,10 @@ import {
   projectedAssignedHours,
   staffConflicts,
 } from "../assignments/assignment-timing";
-import { isReusableAssignment } from "../flights/schedule-position-rules";
+import {
+  isLegalGuideReuse,
+  isReusableAssignment,
+} from "../flights/schedule-position-rules";
 import { durationHours, isNightInterval } from "../shared/time";
 
 export interface StaffAssignmentFacts {
@@ -22,6 +25,7 @@ export type SameFlightConflict = "block" | "allow-reusable" | "allow-all";
 export interface AssignmentLoadFactsOptions {
   state: AssignmentEligibilityFacts;
   assignments: readonly Assignment[];
+  assignment?: Assignment;
   flight: Pick<Flight, "id" | "startTime" | "endTime">;
   rule?: PositionRule;
   person: Staff;
@@ -44,6 +48,23 @@ export type AssignmentHoursFacts = Pick<
   AssignmentLoadFacts,
   "projectedHours" | "withinDailyHours"
 >;
+
+export function isDisplayOnlyGuideReuse(
+  state: AssignmentEligibilityFacts,
+  assignments: readonly Assignment[],
+  assignment: Assignment,
+  subject?: Assignment
+): boolean {
+  return (
+    isReusableAssignment(state, assignment) &&
+    (assignments.some(
+      (other) =>
+        other.id !== assignment.id &&
+        isLegalGuideReuse(state, assignment, other)
+    ) ||
+      Boolean(subject && isLegalGuideReuse(state, assignment, subject)))
+  );
+}
 
 export function staffAssignmentFacts(
   state: AssignmentEligibilityFacts,
@@ -69,16 +90,21 @@ export function staffAssignmentFacts(
 export function assignmentConflictFacts({
   state,
   assignments,
+  assignment: subject,
   flight,
   rule,
   person,
   sameFlightConflict = "block",
 }: AssignmentLoadFactsOptions): AssignmentConflictFacts {
+  if (subject && isDisplayOnlyGuideReuse(state, assignments, subject))
+    return { blockingConflicts: [] };
   const blockingConflicts = staffConflicts(
     assignments,
     person.id,
     flight
   ).filter((assignment) => {
+    if (isDisplayOnlyGuideReuse(state, assignments, assignment, subject))
+      return false;
     if (assignment.flightId === flight.id) {
       if (sameFlightConflict === "allow-all") return false;
       if (
