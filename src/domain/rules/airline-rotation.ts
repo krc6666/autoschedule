@@ -2,6 +2,16 @@ import type { Assignment, PositionRule } from "../../model";
 import { normalizedPolicyValue } from "../reviews/schedule-protection";
 import { isCombinedDeclarationDeliveryPosition } from "./priority-position-semantics";
 
+export const SAME_DAY_PRIORITY_CONFLICT_REASON =
+  "调整会新增同日同航司控制/一号冲突";
+
+export function sameAirlinePriorityConflictMessage(
+  left: Pick<Assignment, "flightNo" | "position" | "staffId" | "staffName">,
+  right: Pick<Assignment, "flightNo" | "position" | "staffId" | "staffName">
+): string {
+  return `${left.staffName || left.staffId} 已在${left.flightNo}/${left.position}承担同日同航司控制/一号，跨航班组合优先避免但当前无安全替代或已人工落位，保留当前安排并允许提交，继续承担${right.flightNo}/${right.position}（琥珀色警告）`;
+}
+
 /** Returns the carrier code from a normalized flight number such as CX931. */
 export function airlineCode(flightNo: string): string {
   const normalized = normalizedPolicyValue(flightNo).replaceAll(/\s+/g, "");
@@ -87,4 +97,78 @@ export function sameAirlinePriorityAssignmentConflict(
     { flightNo: left.flightNo, ...leftRule },
     { flightNo: right.flightNo, ...rightRule }
   );
+}
+
+export function sameAirlinePriorityConflictPairs(
+  assignments: readonly Assignment[],
+  positionRules: readonly Pick<
+    PositionRule,
+    "id" | "flightNo" | "category" | "name" | "remark"
+  >[]
+): Array<[Assignment, Assignment]> {
+  const rulesById = new Map(positionRules.map((rule) => [rule.id, rule]));
+  const assignedByStaff = new Map<string, Assignment[]>();
+  for (const assignment of assignments) {
+    if (assignment.status !== "assigned" || !assignment.staffId) continue;
+    const own = assignedByStaff.get(assignment.staffId) ?? [];
+    own.push(assignment);
+    assignedByStaff.set(assignment.staffId, own);
+  }
+  const pairs: Array<[Assignment, Assignment]> = [];
+  for (const staffAssignments of assignedByStaff.values()) {
+    for (
+      let leftIndex = 0;
+      leftIndex < staffAssignments.length;
+      leftIndex += 1
+    ) {
+      const left = staffAssignments[leftIndex]!;
+      const leftRule = left.positionRuleId
+        ? rulesById.get(left.positionRuleId)
+        : undefined;
+      if (!leftRule) continue;
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < staffAssignments.length;
+        rightIndex += 1
+      ) {
+        const right = staffAssignments[rightIndex]!;
+        const rightRule = right.positionRuleId
+          ? rulesById.get(right.positionRuleId)
+          : undefined;
+        if (
+          !rightRule ||
+          left.flightId === right.flightId ||
+          !sameAirlinePriorityAssignmentConflict(
+            { ...left, positionRule: leftRule },
+            { ...right, positionRule: rightRule }
+          )
+        )
+          continue;
+        pairs.push([left, right]);
+      }
+    }
+  }
+  return pairs;
+}
+
+export function sameAirlinePriorityWarningsByAssignment(
+  assignments: readonly Assignment[],
+  positionRules: readonly Pick<
+    PositionRule,
+    "id" | "flightNo" | "category" | "name" | "remark"
+  >[]
+): ReadonlyMap<string, readonly { code: string; message: string }[]> {
+  const warnings = new Map<string, { code: string; message: string }[]>();
+  for (const [left, right] of sameAirlinePriorityConflictPairs(
+    assignments,
+    positionRules
+  )) {
+    const own = warnings.get(right.id) ?? [];
+    own.push({
+      code: "same-day-cross-flight-priority",
+      message: sameAirlinePriorityConflictMessage(left, right),
+    });
+    warnings.set(right.id, own);
+  }
+  return warnings;
 }

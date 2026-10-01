@@ -30,6 +30,10 @@ import {
 } from "../rules/half-rest";
 import { worsensTr121H02Cooldown } from "../rules/tr121-h02-cooldown";
 import {
+  SAME_DAY_PRIORITY_CONFLICT_REASON,
+  sameAirlinePriorityConflictPairs,
+} from "../rules/airline-rotation";
+import {
   reassignmentIntentReview,
   reassignmentIntentPolicy,
   type ReassignmentIntent,
@@ -92,6 +96,20 @@ export function isRotationLocked(
     !rule ||
     rule.category !== "常规" ||
     rule.manual
+  );
+}
+
+function sameDayPriorityConflictKeys(
+  state: ScheduleGenerationFacts,
+  assignments: readonly Assignment[]
+): Set<string> {
+  return new Set(
+    sameAirlinePriorityConflictPairs(assignments, state.positionRules).map(
+      ([left, right]) =>
+        `${left.staffId}:${[left.id, right.id]
+          .sort((a, b) => a.localeCompare(b))
+          .join("|")}`
+    )
   );
 }
 
@@ -162,6 +180,13 @@ function plannedAssignmentSafetyReasons(
   const policy = ROTATION_REVIEW_POLICIES[review];
   const primaryAssignment = originalById.get(primaryAssignmentId)!;
   const reasons: string[] = [];
+  if (state.settings.sameDayCrossFlightPriorityEnabled !== false) {
+    const before = sameDayPriorityConflictKeys(state, assignments);
+    const after = sameDayPriorityConflictKeys(state, planned);
+    if ([...after].some((key) => !before.has(key))) {
+      reasons.push(SAME_DAY_PRIORITY_CONFLICT_REASON);
+    }
+  }
   if (!intentPolicy.allowCrossFlightPriorityRegression) {
     reasons.push(
       ...crossFlightPriorityReassignmentReasons(

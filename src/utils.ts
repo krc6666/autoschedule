@@ -93,12 +93,24 @@ export function persistedAssignmentRemark(
 export function assignmentWarningRemark(
   positionRemark: unknown,
   manualRemark: unknown,
-  warnings: readonly { message: string }[] | undefined
+  warnings: readonly { message: string; code?: string }[] | undefined
 ): string {
+  const hasRuleWarning = warnings?.some(
+    (warning) => warning.code === "same-day-cross-flight-priority"
+  );
+  const hasManualWarning = warnings?.some(
+    (warning) => warning.code !== "same-day-cross-flight-priority"
+  );
+  const warningPrefix =
+    hasRuleWarning && hasManualWarning
+      ? "规则/人工调整提醒"
+      : hasRuleWarning
+        ? "规则提醒"
+        : "人工调整提醒";
   return persistedAssignmentRemark(
     persistedAssignmentRemark(positionRemark, manualRemark),
     warnings?.length
-      ? `人工调整提醒：${warnings.map((warning) => warning.message).join("；")}`
+      ? `${warningPrefix}：${warnings.map((warning) => warning.message).join("；")}`
       : ""
   );
 }

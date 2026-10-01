@@ -43,7 +43,10 @@ import {
 import { assessDutyPositionSnapshot } from "../assignments/duty-assignment";
 import { assessScarceQualificationSnapshot } from "../candidates/candidate-priority";
 import { timeToMinutes } from "../shared/time";
-import { sameAirlinePriorityAssignmentConflict } from "../rules/airline-rotation";
+import {
+  sameAirlinePriorityAssignmentConflict,
+  sameAirlinePriorityConflictMessage,
+} from "../rules/airline-rotation";
 import {
   halfRestMinimumWorkViolation,
   halfRestPeriodViolation,
@@ -347,7 +350,7 @@ export function createSameAirlinePriorityScheduleGuard(): ScheduleGuard {
               ruleId: "same-day-cross-flight-priority",
               assignmentId: right.id,
               severity: "warning",
-              message: `${left.staffName || left.staffId} → 已在${left.flightNo}/${left.position}承担同日同航司控制/一号 → 跨航班组合优先避免但当前无安全替代或已人工落位 → 保留当前安排并允许提交 → 继续承担${right.flightNo}/${right.position}（琥珀色警告）`,
+              message: sameAirlinePriorityConflictMessage(left, right),
             });
           }
         }

@@ -327,6 +327,18 @@ describe("workbook boundary", () => {
     const state = createDefaultState();
     const assignments = (await generateSchedule(state, "2026-07-18"))
       .assignments;
+    const earlyPriority = assignments.find(
+      (assignment) =>
+        assignment.flightNo === "CX937" && assignment.position === "G20"
+    );
+    const latePriority = assignments.find(
+      (assignment) =>
+        assignment.flightNo === "CX931" && assignment.position === "G20"
+    );
+    expect(earlyPriority).toBeDefined();
+    expect(latePriority).toBeDefined();
+    latePriority!.staffId = earlyPriority!.staffId;
+    latePriority!.staffName = earlyPriority!.staffName;
     assignments[0]!.manualOverrideWarnings = [
       { code: "daily-hours", message: "人员A 将超过每日工时上限" },
     ];
@@ -347,6 +359,7 @@ describe("workbook boundary", () => {
     expect(machineRows.flat().join(" ")).toContain(
       "人工调整提醒：人员A 将超过每日工时上限"
     );
+    expect(machineRows.flat().join(" ")).toContain("规则提醒：");
     const detailRows = XLSX.utils.sheet_to_json<unknown[]>(
       workbook.Sheets["保障明细"]!,
       { header: 1, raw: false, defval: "" }

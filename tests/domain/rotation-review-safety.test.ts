@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { Assignment } from "../../src/model";
+import type { Assignment, Flight, PositionRule } from "../../src/model";
+import { SAME_DAY_PRIORITY_CONFLICT_REASON } from "../../src/domain/rules/airline-rotation";
 import { ROTATION_REVIEW_POLICIES } from "../../src/domain/reviews/reassignment-safety-policy";
 import { reassignmentSafetyReasons } from "../../src/domain/reviews/rotation-review-safety";
 import { halfRestRegressionReasons } from "../../src/domain/rules/half-rest";
@@ -17,6 +18,70 @@ import {
 } from "../helpers/scheduling-scenario";
 
 describe("rotation review safety", () => {
+  it("rejects an automatic post-review change that newly joins same-day CX priority work", () => {
+    const { state, target, originalWorker, replacementWorker } =
+      createRotationReviewFrequencyScenario();
+    const earlyFlight: Flight = {
+      ...state.flights[0]!,
+      flightNo: "CX937（晚）",
+      startTime: "09:25",
+      endTime: "11:25",
+    };
+    const lateFlight: Flight = {
+      ...earlyFlight,
+      id: "late-flight",
+      flightNo: "CX931",
+      startTime: "17:50",
+      endTime: "19:50",
+    };
+    const earlyRule: PositionRule = {
+      ...state.positionRules[0]!,
+      flightNo: earlyFlight.flightNo,
+      remark: "一号",
+    };
+    const lateRule: PositionRule = {
+      ...earlyRule,
+      id: "late-rule",
+      flightNo: lateFlight.flightNo,
+    };
+    const lateAssignment: Assignment = {
+      ...target,
+      id: "late-assignment",
+      flightId: lateFlight.id,
+      flightNo: lateFlight.flightNo,
+      positionRuleId: lateRule.id,
+      staffId: replacementWorker.id,
+      staffName: replacementWorker.name,
+      startTime: lateFlight.startTime,
+      endTime: lateFlight.endTime,
+      remark: "一号",
+    };
+    target.flightId = earlyFlight.id;
+    target.flightNo = earlyFlight.flightNo;
+    target.positionRuleId = earlyRule.id;
+    target.staffId = originalWorker.id;
+    target.staffName = originalWorker.name;
+    target.startTime = earlyFlight.startTime;
+    target.endTime = earlyFlight.endTime;
+    target.remark = "一号";
+    state.flights = [earlyFlight, lateFlight];
+    state.positionRules = [earlyRule, lateRule];
+    state.assignments = [target, lateAssignment];
+    state.settings.sameDayCrossFlightPriorityEnabled = true;
+
+    const reasons = reassignmentSafetyReasons({
+      kind: "plan",
+      state,
+      assignments: state.assignments,
+      changes: [{ assignmentId: target.id, staffId: replacementWorker.id }],
+      primaryAssignmentId: target.id,
+      date: "2026-07-30",
+      intent: { kind: "position-frequency-review" },
+    });
+
+    expect(reasons).toContain(SAME_DAY_PRIORITY_CONFLICT_REASON);
+  });
+
   it("does not impose a global retain-work requirement on a local frequency review", () => {
     const { state, worker, assignment } =
       createRotationReviewRetainWorkScenario();

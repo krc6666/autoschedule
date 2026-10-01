@@ -2,6 +2,7 @@ import type { Assignment } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { reassignmentSafetyReasons } from "./rotation-review-safety";
 import { isManualOverrideSafetyReason } from "../candidates/manual-assignment-override";
+import { SAME_DAY_PRIORITY_CONFLICT_REASON } from "../rules/airline-rotation";
 
 export type ManualSwapOutcome = "safe" | "soft-tradeoff" | "blocked";
 
@@ -34,6 +35,7 @@ const SOFT_TRADEOFF_MARKERS = [
   "滚动负荷保护",
   "扩大工时或疲劳差",
   "本月已承担2次TR121一号",
+  SAME_DAY_PRIORITY_CONFLICT_REASON,
 ] as const;
 
 function isSoftTradeoff(reason: string): boolean {

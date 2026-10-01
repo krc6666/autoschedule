@@ -100,7 +100,7 @@ export const SCHEDULING_RULES = [
     stage: "protection",
     label: "同日同航司控制与一号岗位优先避免（无替代可接受）",
     feedbackMode: "aggregated",
-    optimization: "best-effort",
+    optimization: "required",
   },
   {
     id: "cross-workday-qualification-reservation",

@@ -1175,6 +1175,39 @@ describe("daily schedule module interfaces", () => {
     );
   });
 
+  it("protects same-day CX control/number-one assignments before ordinary frequency fairness", async () => {
+    const state = modelState(
+      [
+        flight("early", "CX937（晚）", "09:25", "11:25", ["G20"]),
+        flight("late", "CX931", "17:50", "19:50", ["G20"]),
+      ],
+      (rule) => ({
+        ...rule,
+        remark: "一号",
+        qualifiedStaffIds: ["worker", "worker-2"],
+      })
+    );
+    state.staff.push({
+      ...state.staff[0]!,
+      id: "worker-2",
+      name: "替代人员",
+    });
+    state.settings.positionRotationEnabled = true;
+
+    const problem = await captureProblem(state);
+    const sameDayIndex = problem.objectives.findIndex(
+      (objective) => objective.id === "candidate:same-day-cross-flight-priority"
+    );
+    const firstBestEffortIndex = problem.objectives.findIndex(
+      (objective) => objective.optimality === "best-effort"
+    );
+
+    expect(sameDayIndex).toBeGreaterThanOrEqual(0);
+    expect(firstBestEffortIndex).toBeGreaterThanOrEqual(0);
+    expect(sameDayIndex).toBeLessThan(firstBestEffortIndex);
+    expect(problem.objectives[sameDayIndex]?.optimality).toBe("required");
+  });
+
   it("records why another overlapping flight yielded to a protected position", () => {
     const state = modelState([
       flight("ke", "KE166", "08:00", "10:00", ["H02"]),

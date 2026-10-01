@@ -37,6 +37,7 @@ import {
 import { mergeLatePriorityFrequencyAdjustments } from "../domain/statistics/late-priority-frequency-adjustment";
 import { mergeOrdinaryPriorityFrequencyAdjustments } from "../domain/statistics/ordinary-priority-frequency-adjustment";
 import { normalizeOrdinaryPriorityPositions } from "../domain/reviews/position-rotation-policy";
+import { sameAirlinePriorityWarningsByAssignment } from "../domain/rules/airline-rotation";
 import {
   createEmptyWeeklyFlightPlans,
   replaceWeeklyFlightPlan,
@@ -1005,6 +1006,13 @@ export function buildScheduleWorkbook(
 ): XLSX.WorkBook {
   const workbook = XLSX.utils.book_new();
   const assignments = state.assignments;
+  const sameDayWarningsByAssignment =
+    state.settings.sameDayCrossFlightPriorityEnabled === false
+      ? new Map<string, readonly { code: string; message: string }[]>()
+      : sameAirlinePriorityWarningsByAssignment(
+          assignments,
+          state.positionRules
+        );
   const flights = [...new Set(assignments.map((item) => item.flightNo))];
   const grouped = flights.map((flightNo) =>
     assignments.filter((item) => item.flightNo === flightNo)
@@ -1236,11 +1244,10 @@ export function buildScheduleWorkbook(
         item.endTime,
         item.workHours,
         item.fatiguePoints,
-        assignmentWarningRemark(
-          item.remark,
-          item.manualRemark,
-          item.manualOverrideWarnings
-        ),
+        assignmentWarningRemark(item.remark, item.manualRemark, [
+          ...(item.manualOverrideWarnings ?? []),
+          ...(sameDayWarningsByAssignment.get(item.id) ?? []),
+        ]),
         item.status === "assigned"
           ? "已排"
           : item.status === "manual"
