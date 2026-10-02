@@ -1013,6 +1013,18 @@
 | 后置重排 -> 最终结果     | `crossFlightPriorityReassignmentReasons`       | 已留在优先航班后不得被一般轮换撤销              |
 | 配置 -> Worker           | 现有 settings 快照和当天整体模型入口           | 不新增消息字段或浏览器专用分支                  |
 
+## 2026-10-01：督导补位关系归一化收口
+
+- 类别：业务关系事实 / 后置复核 / 恢复与人工调整。
+- 唯一事实 owner：`src/domain/coverage/supervisor-fill-facts.ts` 负责补位关系评估与关联字段读写；`normalizeSupervisorAssignments` 只负责消费该事实并恢复/清理 assignment 投影。
+- 业务合同：`supervisorSourceAssignmentId` 与 `supervisorFillRuleId` 必须成对表示有效的督导补位；只有普通同航班督导兼任时允许保留来源而不带补位规则 ID；孤儿或过期补位字段必须在恢复、人工调整后清理，最终守卫继续拒绝未清理的非法状态。
+  | 环节 | 消费点 | 边界与回退 | 回归 |
+  | --- | --- | --- | --- |
+  | 自动填充 / KE166 收尾 | `fillConfiguredSupervisorTargets` 使用统一关联写入 | 无合法评估时不写关联 | `mobile-supervisor-scheduling` |
+  | 恢复 / 人工调整 | `normalizeSupervisorAssignments`、`clearSupervisorLink` 使用统一清理 | 恢复失败保留普通 assignment，不保留孤儿关联字段 | `schedule-adjustment` |
+  | 最终复核 / 冲突投影 | `createMobileSupervisorCoverageScheduleGuard`、`assignment-time-conflicts` 消费统一评估 | 非法关联拒绝提交，合法普通兼任不误报冲突 | 既有守卫与冲突测试 |
+  | 持久化 / Excel / UI | 本轮不改变现有 assignment 字段的持久化、导入或展示合同 | 不新增字段、不改 schema；恢复后的关系仍由归一化收口 | 现有往返测试 |
+
 ## 2026-09-29：配置导出导入值班、备勤及月度轮值明细
 
 - 类别：持久化字段 / Excel 配置合同。

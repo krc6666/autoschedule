@@ -1,5 +1,6 @@
 import type { Assignment, Staff, StaffStatus } from "../../model";
 import type { StaffAssignmentFacts } from "../shared/scheduling-facts";
+import { clearSupervisorFillLink } from "../coverage/supervisor-fill-facts";
 
 function linkedStaff(
   state: StaffAssignmentFacts,
@@ -38,7 +39,7 @@ export function removeUnavailableStaffAssignments(
       rule?.category === "行政支援"
         ? "manual"
         : "unfilled";
-    delete assignment.supervisorSourceAssignmentId;
+    clearSupervisorFillLink(assignment);
     delete assignment.systemNotes;
   });
 }

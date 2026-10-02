@@ -14,6 +14,35 @@ export interface SupervisorFillEvaluation {
   hasSafeRegularCandidate: boolean;
 }
 
+export function clearSupervisorFillRule(
+  target: Pick<Assignment, "supervisorFillRuleId">
+): void {
+  delete target.supervisorFillRuleId;
+}
+
+export function clearSupervisorFillLink(
+  target: Pick<
+    Assignment,
+    "supervisorSourceAssignmentId" | "supervisorFillRuleId"
+  >
+): void {
+  delete target.supervisorSourceAssignmentId;
+  clearSupervisorFillRule(target);
+}
+
+export function setSupervisorFillLink(
+  target: Pick<
+    Assignment,
+    "supervisorSourceAssignmentId" | "supervisorFillRuleId"
+  >,
+  sourceAssignmentId: string,
+  fillRuleId?: string
+): void {
+  target.supervisorSourceAssignmentId = sourceAssignmentId;
+  if (fillRuleId) target.supervisorFillRuleId = fillRuleId;
+  else clearSupervisorFillRule(target);
+}
+
 function normalize(value: string): string {
   return value.trim().toLocaleLowerCase("zh-CN");
 }

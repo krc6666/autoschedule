@@ -4,8 +4,11 @@ import { clearAutomaticAssignmentEvidence } from "./assignment-evidence";
 import { durationHours } from "../shared/time";
 import { evaluateMobileSupervisorCoverage } from "../coverage/mobile-supervisor-coverage";
 import {
+  clearSupervisorFillLink,
+  clearSupervisorFillRule,
   evaluateSupervisorFillFacts,
   hasRecordedSupervisorFillLink,
+  setSupervisorFillLink,
 } from "../coverage/supervisor-fill-facts";
 
 function assignmentRule(
@@ -52,9 +55,9 @@ function resetSupervisorLinkedAssignment(
   state: AssignmentEligibilityFacts,
   assignment: Assignment
 ): void {
-  if (!assignment.supervisorSourceAssignmentId) return;
-  delete assignment.supervisorSourceAssignmentId;
-  delete assignment.supervisorFillRuleId;
+  const hadSourceLink = Boolean(assignment.supervisorSourceAssignmentId);
+  clearSupervisorFillLink(assignment);
+  if (!hadSourceLink) return;
   const flight = state.flights.find((item) => item.id === assignment.flightId);
   const rule = assignmentRule(state, assignment);
   assignment.staffId = null;
@@ -127,10 +130,11 @@ export function moveSupervisorWithinFlight(
   target.fatiguePoints = configuredFill.allowed
     ? 0
     : (targetRule?.fatiguePoints ?? 0);
-  target.supervisorSourceAssignmentId = supervisor.id;
-  if (configuredFill.allowed)
-    target.supervisorFillRuleId = configuredFill.rule?.id;
-  else delete target.supervisorFillRuleId;
+  setSupervisorFillLink(
+    target,
+    supervisor.id,
+    configuredFill.allowed ? configuredFill.rule?.id : undefined
+  );
   clearAutomaticAssignmentEvidence(target);
   return null;
 }
@@ -189,8 +193,11 @@ export function normalizeSupervisorAssignments(
           })
         : false;
     if (inferredConfiguredFillSource && inferredFillEvaluation?.allowed) {
-      assignment.supervisorSourceAssignmentId = inferredConfiguredFillSource.id;
-      assignment.supervisorFillRuleId = inferredFillEvaluation.rule?.id;
+      setSupervisorFillLink(
+        assignment,
+        inferredConfiguredFillSource.id,
+        inferredFillEvaluation.rule?.id
+      );
     }
     const valid = Boolean(
       source &&
@@ -210,6 +217,7 @@ export function normalizeSupervisorAssignments(
       resetSupervisorLinkedAssignment(state, assignment);
       return;
     }
+    if (!configuredFill) clearSupervisorFillRule(assignment);
     const rule = assignmentRule(state, assignment);
     const changed =
       assignment.staffId !== source.staffId ||

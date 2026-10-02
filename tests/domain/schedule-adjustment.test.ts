@@ -420,6 +420,37 @@ describe("督导同航班机动补位", () => {
     );
   });
 
+  it("normalization clears an orphan supervisor fill rule", () => {
+    const state = stateWithSupervisor();
+    const target = state.assignments.find(
+      (assignment) => assignment.id === "h04-assignment"
+    )!;
+    target.supervisorFillRuleId = "stale-fill-rule";
+
+    normalizeSupervisorAssignments(state);
+
+    expect(target.supervisorSourceAssignmentId).toBeUndefined();
+    expect(target.supervisorFillRuleId).toBeUndefined();
+  });
+
+  it("normalization clears a stale rule from a recorded supervisor link", () => {
+    const state = stateWithSupervisor();
+    const target = state.assignments.find(
+      (assignment) => assignment.id === "h04-assignment"
+    )!;
+    target.staffId = state.staff[0]!.id;
+    target.staffName = state.staff[0]!.name;
+    target.status = "assigned";
+    target.workHours = 0;
+    target.supervisorSourceAssignmentId = "supervisor-assignment";
+    target.supervisorFillRuleId = "stale-fill-rule";
+
+    normalizeSupervisorAssignments(state);
+
+    expect(target.supervisorSourceAssignmentId).toBe("supervisor-assignment");
+    expect(target.supervisorFillRuleId).toBeUndefined();
+  });
+
   it("拒绝兼任规则禁止的备注岗位并清理旧违规关联", () => {
     const state = stateWithSupervisor();
     const target = state.assignments.find(

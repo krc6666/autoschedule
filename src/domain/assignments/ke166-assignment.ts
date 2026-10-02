@@ -28,6 +28,7 @@ import type { SolverPort } from "../solver/solver-port";
 import { assignmentWarningMessage } from "../reviews/schedule-warning-message";
 import { halfRestPeriodViolation } from "../rules/half-rest";
 import { crossFlightPriorityPolicyRank } from "../rules/cross-flight-priority";
+import { setSupervisorFillLink } from "../coverage/supervisor-fill-facts";
 
 interface CounterPlacementPlan {
   target: Assignment;
@@ -692,6 +693,6 @@ export async function assignMobileSupervisorByCounterCoverage(
     ...(recoveryOverride ? [recoveryOverride] : []),
   ];
   regularAssignment.workHours = 0;
-  regularAssignment.supervisorSourceAssignmentId = supervisorAssignment.id;
+  setSupervisorFillLink(regularAssignment, supervisorAssignment.id);
   return supervisorAssignment;
 }

@@ -21,6 +21,10 @@ import type { HalfRestFacts } from "../rules/half-rest";
 import { halfRestPeriodViolation } from "../rules/half-rest";
 import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
 import { isOrdinaryPriorityPosition } from "../reviews/position-rotation-policy";
+import {
+  clearSupervisorFillLink,
+  setSupervisorFillLink,
+} from "./supervisor-fill-facts";
 
 export function preNoonShortageNote(
   state: ScheduleGenerationFacts,
@@ -354,7 +358,7 @@ export function compactRegularAssignments(
       const placement = placementBySlot.get(slot.assignment.id);
       delete slot.assignment.systemNotes;
       delete slot.assignment.decisionTrace;
-      delete slot.assignment.supervisorSourceAssignmentId;
+      clearSupervisorFillLink(slot.assignment);
       if (!placement) {
         slot.assignment.staffId = null;
         slot.assignment.staffName = "";
@@ -385,8 +389,10 @@ export function compactRegularAssignments(
               ),
             ];
       if (placement.supervisorSourceAssignmentId) {
-        slot.assignment.supervisorSourceAssignmentId =
-          placement.supervisorSourceAssignmentId;
+        setSupervisorFillLink(
+          slot.assignment,
+          placement.supervisorSourceAssignmentId
+        );
       }
     }
     changedFlightIds.add(flight.id);

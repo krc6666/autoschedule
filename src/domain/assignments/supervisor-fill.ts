@@ -4,7 +4,9 @@ import type {
   ScheduleGenerationFacts,
 } from "../shared/scheduling-facts";
 import {
+  clearSupervisorFillLink,
   evaluateSupervisorFillFacts,
+  setSupervisorFillLink,
   type SupervisorFillMode,
 } from "../coverage/supervisor-fill-facts";
 import { eligibleStaffForRule } from "../candidates/assignment-eligibility";
@@ -39,8 +41,7 @@ function clearStaffFromAssignment(
   const flight = state.flights.find((item) => item.id === assignment.flightId);
   const rule = assignmentRule(state, assignment);
   clearAutomaticAssignmentEvidence(assignment);
-  delete assignment.supervisorSourceAssignmentId;
-  delete assignment.supervisorFillRuleId;
+  clearSupervisorFillLink(assignment);
   assignment.staffId = null;
   assignment.staffName = "";
   assignment.status =
@@ -61,8 +62,7 @@ function placeStaffOnAssignment(
   const flight = state.flights.find((item) => item.id === assignment.flightId);
   const rule = assignmentRule(state, assignment);
   clearAutomaticAssignmentEvidence(assignment);
-  delete assignment.supervisorSourceAssignmentId;
-  delete assignment.supervisorFillRuleId;
+  clearSupervisorFillLink(assignment);
   assignment.staffId = person.id;
   assignment.staffName = person.name;
   assignment.status = "assigned";
@@ -246,12 +246,12 @@ function restoreAssignments(snapshot: readonly AssignmentSnapshot[]): void {
     entry.assignment.workHours = entry.workHours;
     entry.assignment.fatiguePoints = entry.fatiguePoints;
     if (entry.supervisorSourceAssignmentId)
-      entry.assignment.supervisorSourceAssignmentId =
-        entry.supervisorSourceAssignmentId;
-    else delete entry.assignment.supervisorSourceAssignmentId;
-    if (entry.supervisorFillRuleId)
-      entry.assignment.supervisorFillRuleId = entry.supervisorFillRuleId;
-    else delete entry.assignment.supervisorFillRuleId;
+      setSupervisorFillLink(
+        entry.assignment,
+        entry.supervisorSourceAssignmentId,
+        entry.supervisorFillRuleId
+      );
+    else clearSupervisorFillLink(entry.assignment);
     if (entry.decisionTrace)
       entry.assignment.decisionTrace = entry.decisionTrace;
     else delete entry.assignment.decisionTrace;
@@ -632,8 +632,7 @@ export function fillConfiguredSupervisorTargets(
     target.status = "assigned";
     target.workHours = 0;
     target.fatiguePoints = 0;
-    target.supervisorSourceAssignmentId = source.id;
-    target.supervisorFillRuleId = evaluation.rule?.id;
+    setSupervisorFillLink(target, source.id, evaluation.rule?.id);
     clearAutomaticAssignmentEvidence(target);
     target.decisionTrace = [
       ...(target.decisionTrace ?? []),
