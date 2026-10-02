@@ -263,6 +263,97 @@ describe("workbook boundary", () => {
       "同航班人员互斥第2行：人员B编号“missing”不存在"
     );
   });
+
+  it("round-trips per-row same-flight exclusion state and defaults old sheets to enabled", () => {
+    const state = createDefaultState();
+    state.settings.sameFlightStaffExclusions = [
+      {
+        id: "disabled-pair",
+        enabled: false,
+        firstStaffId: state.staff[0]!.id,
+        secondStaffId: state.staff[1]!.id,
+        flightNo: "KE166",
+      },
+    ];
+    const exported = buildConfigWorkbook(state);
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(
+      exported.Sheets["同航班人员互斥"]!,
+      { header: 1, raw: false, defval: "" }
+    );
+
+    expect(rows[0]).toContain("启用");
+    expect(
+      parseWorkbook(exported, state.staff).settings?.sameFlightStaffExclusions
+    ).toEqual(state.settings.sameFlightStaffExclusions);
+
+    const legacy = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      legacy,
+      XLSX.utils.aoa_to_sheet([
+        [
+          "规则ID",
+          "适用航班（空白表示全部）",
+          "人员A编号",
+          "人员A姓名",
+          "人员B编号",
+          "人员B姓名",
+        ],
+        [
+          "legacy-pair",
+          "KE166",
+          state.staff[0]!.id,
+          state.staff[0]!.name,
+          state.staff[1]!.id,
+          state.staff[1]!.name,
+        ],
+      ]),
+      "同航班人员互斥"
+    );
+
+    expect(
+      parseWorkbook(legacy, state.staff).settings?.sameFlightStaffExclusions
+    ).toEqual([
+      {
+        id: "legacy-pair",
+        enabled: true,
+        firstStaffId: state.staff[0]!.id,
+        secondStaffId: state.staff[1]!.id,
+        flightNo: "KE166",
+      },
+    ]);
+
+    const invalid = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      invalid,
+      XLSX.utils.aoa_to_sheet([
+        [
+          "规则ID",
+          "适用航班（空白表示全部）",
+          "人员A编号",
+          "人员A姓名",
+          "人员B编号",
+          "人员B姓名",
+          "启用",
+        ],
+        [
+          "invalid-pair",
+          "KE166",
+          state.staff[0]!.id,
+          state.staff[0]!.name,
+          state.staff[1]!.id,
+          state.staff[1]!.name,
+          "未知",
+        ],
+      ]),
+      "同航班人员互斥"
+    );
+    const rejected = parseWorkbook(invalid, state.staff);
+
+    expect(rejected.settings?.sameFlightStaffExclusions).toBeUndefined();
+    expect(rejected.warnings).toContain(
+      "同航班人员互斥第2行：启用必须填写是或否"
+    );
+  });
   it("round-trips manual late-priority frequency corrections by flight and category", () => {
     const state = createDefaultState();
     state.latePriorityFrequencyAdjustments = [

@@ -187,6 +187,7 @@ function normalizeSameFlightStaffExclusions(
         id:
           String(exclusion.id ?? "").trim() ||
           `same-flight-staff-exclusion-${index + 1}`,
+        enabled: exclusion.enabled !== false,
         firstStaffId: pair[0]!,
         secondStaffId: pair[1]!,
         flightNo,

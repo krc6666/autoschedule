@@ -176,6 +176,7 @@ export function addSameFlightStaffExclusion(
   const [first, second] = state.staff;
   const exclusion: SameFlightStaffExclusion = {
     id: createId("same-flight-staff-exclusion"),
+    enabled: true,
     firstStaffId: first?.id ?? "",
     secondStaffId: second?.id ?? "",
     flightNo: "",
@@ -205,6 +206,8 @@ function updateSameFlightStaffExclusion(
     state.settings.sameFlightStaffExclusions,
     id,
     (exclusion) => {
+      if (field === "enabled")
+        return replacePolicyValue(exclusion, "enabled", Boolean(value));
       if (field === "flightNo")
         return replacePolicyValue(
           exclusion,

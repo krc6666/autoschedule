@@ -2441,6 +2441,7 @@ describe("all-flight mobile-supervisor scheduling", { timeout: 15_000 }, () => {
     state.settings.sameFlightStaffExclusions = [
       {
         id: "supervisor-regular-exclusion",
+        enabled: true,
         firstStaffId: supervisor.id,
         secondStaffId: regular.id,
         flightNo: "KE166",

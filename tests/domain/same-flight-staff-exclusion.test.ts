@@ -16,10 +16,14 @@ import {
 } from "../../src/domain/kernel/schedule-guard";
 import { createScheduleSafetySession } from "../../src/domain/kernel/schedule-safety-session";
 import { createScheduleRunFacts } from "../../src/domain/shared/schedule-run-facts";
-import { sameFlightStaffExclusionViolations } from "../../src/domain/rules/same-flight-staff-exclusion";
+import {
+  matchingSameFlightStaffExclusion,
+  sameFlightStaffExclusionViolations,
+} from "../../src/domain/rules/same-flight-staff-exclusion";
 
 interface ExclusionInput {
   id: string;
+  enabled: boolean;
   firstStaffId: string;
   secondStaffId: string;
   flightNo: string;
@@ -80,6 +84,7 @@ function positionRule(
 function scenario(
   options: {
     flightNo?: string;
+    enabled?: boolean;
     pair?: readonly [string, string];
     scopedFlightNo?: string;
     staffIds?: readonly string[];
@@ -114,6 +119,7 @@ function scenario(
   (state.settings as SettingsWithExclusions).sameFlightStaffExclusions = [
     {
       id: "exclusion-1",
+      enabled: options.enabled ?? true,
       firstStaffId: pair[0],
       secondStaffId: pair[1],
       flightNo: options.scopedFlightNo ?? "",
@@ -138,6 +144,25 @@ describe("same-flight staff exclusion", () => {
     expect(new Set(assigned)).toEqual(
       new Set([expect.stringMatching(/^worker-[ab]$/)])
     );
+  });
+
+  it("ignores a disabled exclusion during initial scheduling", async () => {
+    const assigned = await assignedStaffIds(scenario({ enabled: false }));
+
+    expect(assigned).toHaveLength(2);
+  });
+
+  it("ignores disabled rows during candidate conflict checks", () => {
+    const state = scenario({ enabled: false });
+
+    expect(
+      matchingSameFlightStaffExclusion(state, "worker-a", "worker-b", "F100")
+    ).toBeUndefined();
+
+    state.settings.sameFlightStaffExclusions[0]!.enabled = true;
+    expect(
+      matchingSameFlightStaffExclusion(state, "worker-a", "worker-b", "F100")
+    ).toMatchObject({ id: "exclusion-1", enabled: true });
   });
 
   it("applies to another configured pair without relying on names", async () => {
@@ -241,5 +266,48 @@ describe("same-flight staff exclusion", () => {
       ])
     );
     expect(ledger.snapshot()).toEqual([legal]);
+  });
+
+  it("ignores a disabled exclusion in the final post-stage guard", () => {
+    const state = scenario({ enabled: false });
+    const [firstRule, secondRule] = state.positionRules;
+    const first = {
+      id: "assignment-a",
+      flightId: state.flights[0]!.id,
+      flightNo: "F100",
+      positionRuleId: firstRule!.id,
+      position: firstRule!.name,
+      staffId: "worker-a",
+      staffName: "WORKER-A",
+      startTime: "08:00",
+      endTime: "10:00",
+      workHours: 2,
+      fatiguePoints: 1,
+      remark: "",
+      manualRemark: "",
+      status: "assigned" as const,
+    };
+    const second = {
+      ...first,
+      id: "assignment-b",
+      positionRuleId: secondRule!.id,
+      position: secondRule!.name,
+      staffId: "worker-b",
+      staffName: "WORKER-B",
+    };
+    const ledger = createScheduleLedger([first], {
+      safetySession: createScheduleSafetySession({
+        phase: "partial",
+        state,
+        date: "2026-09-28",
+        runFacts: createScheduleRunFacts(state, "2026-09-28"),
+        guards: createDefaultScheduleGuards(),
+      }),
+    });
+
+    expect(() =>
+      ledger.commit({ type: "replace", assignments: [first, second] })
+    ).not.toThrow();
+    expect(ledger.snapshot()).toEqual([first, second]);
   });
 });

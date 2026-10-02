@@ -71,6 +71,7 @@ export interface CrossFlightPriorityPolicy {
 
 export interface SameFlightStaffExclusion {
   id: string;
+  enabled: boolean;
   firstStaffId: string;
   secondStaffId: string;
   /** Empty means every flight. */

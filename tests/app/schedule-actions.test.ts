@@ -263,6 +263,7 @@ describe("人工调整后的规则证据", () => {
     state.settings.sameFlightStaffExclusions = [
       {
         id: "pair-1",
+        enabled: true,
         firstStaffId: first!.id,
         secondStaffId: second!.id,
         flightNo: "",

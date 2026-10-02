@@ -452,6 +452,7 @@ describe("configuration actions", () => {
     state.settings.sameFlightStaffExclusions = [
       {
         id: "exclusion-1",
+        enabled: true,
         firstStaffId: first!.id,
         secondStaffId: second!.id,
         flightNo: template.flightNo,
@@ -478,6 +479,7 @@ describe("configuration actions", () => {
     state.settings.sameFlightStaffExclusions = [
       {
         id: "exclusion-1",
+        enabled: true,
         firstStaffId: first!.id,
         secondStaffId: second!.id,
         flightNo: "",
@@ -499,12 +501,14 @@ describe("configuration actions", () => {
     state.settings.sameFlightStaffExclusions = [
       {
         id: "remove-me",
+        enabled: true,
         firstStaffId: first!.id,
         secondStaffId: second!.id,
         flightNo: "",
       },
       {
         id: "keep-me",
+        enabled: false,
         firstStaffId: second!.id,
         secondStaffId: third!.id,
         flightNo: "",
@@ -515,6 +519,7 @@ describe("configuration actions", () => {
     expect(state.settings.sameFlightStaffExclusions).toEqual([
       {
         id: "keep-me",
+        enabled: false,
         firstStaffId: second!.id,
         secondStaffId: third!.id,
         flightNo: "",

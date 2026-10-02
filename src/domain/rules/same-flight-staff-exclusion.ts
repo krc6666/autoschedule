@@ -18,8 +18,9 @@ export function sameFlightStaffExclusionApplies(
   flightNo: string
 ): boolean {
   return (
-    !exclusion.flightNo ||
-    exclusion.flightNo.trim().toUpperCase() === flightNo.trim().toUpperCase()
+    exclusion.enabled !== false &&
+    (!exclusion.flightNo ||
+      exclusion.flightNo.trim().toUpperCase() === flightNo.trim().toUpperCase())
   );
 }
 

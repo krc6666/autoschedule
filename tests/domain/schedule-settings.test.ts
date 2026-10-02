@@ -102,18 +102,21 @@ describe("schedule settings module", () => {
       sameFlightStaffExclusions: [
         {
           id: " first ",
+          enabled: false,
           firstStaffId: "worker-b",
           secondStaffId: "worker-a",
           flightNo: " ke166 ",
         },
         {
           id: "duplicate",
+          enabled: true,
           firstStaffId: "worker-a",
           secondStaffId: "worker-b",
           flightNo: "KE166",
         },
         {
           id: "invalid",
+          enabled: true,
           firstStaffId: "worker-a",
           secondStaffId: "worker-a",
           flightNo: "",
@@ -124,6 +127,7 @@ describe("schedule settings module", () => {
     expect(normalized.sameFlightStaffExclusions).toEqual([
       {
         id: "first",
+        enabled: false,
         firstStaffId: "worker-a",
         secondStaffId: "worker-b",
         flightNo: "KE166",

@@ -49,6 +49,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
         "全部航班",
         "新增互斥规则",
         items.map((item) => [
+          item.enabled ? "启用" : "停用",
           this.model.staff.find((person) => person.id === item.firstStaffId)
             ?.name,
           this.model.staff.find((person) => person.id === item.secondStaffId)
@@ -66,7 +67,10 @@ export class PolicyStructuredRulesElement extends LightDomElement {
       <summary>
         <span
           ><strong>同航班人员互斥</strong
-          ><small>${items.length} 条规则 · 自动排班硬禁止</small></span
+          ><small
+            >${items.filter((item) => item.enabled).length}/${items.length}
+            条启用 · 启用项为硬互斥</small
+          ></span
         ><i class="bi bi-chevron-down"></i>
       </summary>
       <div class="policy-rule-content">
@@ -76,7 +80,16 @@ export class PolicyStructuredRulesElement extends LightDomElement {
         <div class="supervisor-coverage-list">
           ${items.map(
             (item) =>
-              html`<div class="supervisor-coverage-row">
+              html`<div
+                class="supervisor-coverage-row same-flight-exclusion-row"
+              >
+                ${this.toggle(
+                  "same-flight-staff-exclusion",
+                  item.id,
+                  "enabled",
+                  item.enabled,
+                  "启用"
+                )}
                 ${this.staffSelect(
                   item.id,
                   "firstStaffId",
@@ -755,7 +768,7 @@ export class PolicyStructuredRulesElement extends LightDomElement {
     checked: boolean,
     label: string
   ) {
-    return html`<label class="form-check form-switch"
+    return html`<label class="form-check form-switch supervisor-coverage-switch"
       ><input
         class="form-check-input"
         type="checkbox"

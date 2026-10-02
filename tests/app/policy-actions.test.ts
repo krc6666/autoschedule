@@ -176,6 +176,7 @@ describe("policy actions", () => {
     const exclusion = addSameFlightStaffExclusion(state);
 
     expect(exclusion).toMatchObject({
+      enabled: true,
       firstStaffId: state.staff[0]!.id,
       secondStaffId: state.staff[1]!.id,
       flightNo: "",
@@ -199,11 +200,25 @@ describe("policy actions", () => {
       )
     ).toBe("saved");
     expect(exclusion).toMatchObject({
+      enabled: true,
       firstStaffId: state.staff[2]!.id,
       secondStaffId: state.staff[1]!.id,
       flightNo: "KE166",
     });
+    state.schedulePolicyStale = false;
+    const assignments = structuredClone(state.assignments);
+    expect(
+      updatePolicyEntityField(
+        state,
+        "same-flight-staff-exclusion",
+        exclusion.id,
+        "enabled",
+        false
+      )
+    ).toBe("saved");
+    expect(exclusion.enabled).toBe(false);
     expect(state.schedulePolicyStale).toBe(true);
+    expect(state.assignments).toEqual(assignments);
     expect(deleteSameFlightStaffExclusion(state, exclusion.id)).toBe(true);
     expect(state.settings.sameFlightStaffExclusions).toEqual([]);
   });

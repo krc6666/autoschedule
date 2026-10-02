@@ -100,12 +100,14 @@ describe("workbook actions", () => {
     source.settings.sameFlightStaffExclusions = [
       {
         id: "same-flight-pair",
+        enabled: false,
         firstStaffId: source.staff[0]!.id,
         secondStaffId: source.staff[1]!.id,
         flightNo: "KE166",
       },
       {
         id: "all-flight-pair",
+        enabled: true,
         firstStaffId: source.staff[2]!.id,
         secondStaffId: source.staff[3]!.id,
         flightNo: "",
@@ -492,6 +494,7 @@ describe("workbook actions", () => {
     state.groups.B.staff = [otherA, otherB];
     const otherRule = {
       id: "b-pair",
+      enabled: false,
       flightNo: "KE166",
       firstStaffId: otherA.id,
       secondStaffId: otherB.id,
@@ -499,6 +502,7 @@ describe("workbook actions", () => {
     state.settings.sameFlightStaffExclusions = [otherRule];
     const currentRule = {
       id: "a-pair",
+      enabled: true,
       flightNo: "CX937",
       firstStaffId: state.staff[0]!.id,
       secondStaffId: state.staff[1]!.id,

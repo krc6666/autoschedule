@@ -562,9 +562,12 @@ function parseSameFlightStaffExclusions(
     workbook,
     structuredPolicySheet("sameFlightStaffExclusions"),
     (row, header) => {
+      const enabledIndex = headerIndex(header, ["启用"], -1);
+      const enabled = enabledIndex < 0 ? true : parseBoolean(row[enabledIndex]);
       const firstStaffId = cell(row, header, ["人员A编号", "人员A"], 2);
       const secondStaffId = cell(row, header, ["人员B编号", "人员B"], 4);
       const errors = [
+        enabled === undefined ? "启用必须填写是或否" : "",
         !firstStaffId ? "人员A编号不能为空" : "",
         !secondStaffId ? "人员B编号不能为空" : "",
         firstStaffId && !staffIds.has(firstStaffId)
@@ -585,6 +588,7 @@ function parseSameFlightStaffExclusions(
             cell(row, header, ["规则ID", "ID"], 0),
             "same-flight-staff-exclusion"
           ),
+          enabled: enabled ?? true,
           flightNo: cell(row, header, ["适用航班", "航班号"], 1).toUpperCase(),
           firstStaffId,
           secondStaffId,
@@ -937,6 +941,7 @@ export function appendScheduleRuleSheets(
         "人员A姓名",
         "人员B编号",
         "人员B姓名",
+        "启用",
       ],
       ...state.settings.sameFlightStaffExclusions.map((exclusion) => [
         exclusion.id,
@@ -947,9 +952,10 @@ export function appendScheduleRuleSheets(
         exclusion.secondStaffId,
         state.staff.find((person) => person.id === exclusion.secondStaffId)
           ?.name ?? "",
+        exclusion.enabled ? "是" : "否",
       ]),
     ],
-    [32, 24, 16, 16, 16, 16]
+    [32, 24, 16, 16, 16, 16, 10]
   );
   append(
     workbook,

@@ -82,6 +82,7 @@ describe("rules page", () => {
     state.settings.sameFlightStaffExclusions = [
       {
         id: "pair-1",
+        enabled: false,
         firstStaffId: state.staff[0]!.id,
         secondStaffId: state.staff[1]!.id,
         flightNo: "KE166",
@@ -96,6 +97,10 @@ describe("rules page", () => {
 
     expect(card?.textContent).toContain("同航班人员互斥");
     expect(card?.textContent).toContain("新增互斥规则");
+    expect(card?.textContent?.replace(/\s+/g, " ")).toContain("0/1 条启用");
+    expect(
+      card?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked
+    ).toBe(false);
     const selects = card?.querySelectorAll<HTMLSelectElement>("select");
     expect(selects).toHaveLength(3);
     expect(selects?.[0]?.value).toBe(state.staff[0]!.id);

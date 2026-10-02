@@ -1018,12 +1018,12 @@
 - 类别：业务关系事实 / 后置复核 / 恢复与人工调整。
 - 唯一事实 owner：`src/domain/coverage/supervisor-fill-facts.ts` 负责补位关系评估与关联字段读写；`normalizeSupervisorAssignments` 只负责消费该事实并恢复/清理 assignment 投影。
 - 业务合同：`supervisorSourceAssignmentId` 与 `supervisorFillRuleId` 必须成对表示有效的督导补位；只有普通同航班督导兼任时允许保留来源而不带补位规则 ID；孤儿或过期补位字段必须在恢复、人工调整后清理，最终守卫继续拒绝未清理的非法状态。
-  | 环节 | 消费点 | 边界与回退 | 回归 |
-  | --- | --- | --- | --- |
-  | 自动填充 / KE166 收尾 | `fillConfiguredSupervisorTargets` 使用统一关联写入 | 无合法评估时不写关联 | `mobile-supervisor-scheduling` |
-  | 恢复 / 人工调整 | `normalizeSupervisorAssignments`、`clearSupervisorLink` 使用统一清理 | 恢复失败保留普通 assignment，不保留孤儿关联字段 | `schedule-adjustment` |
-  | 最终复核 / 冲突投影 | `createMobileSupervisorCoverageScheduleGuard`、`assignment-time-conflicts` 消费统一评估 | 非法关联拒绝提交，合法普通兼任不误报冲突 | 既有守卫与冲突测试 |
-  | 持久化 / Excel / UI | 本轮不改变现有 assignment 字段的持久化、导入或展示合同 | 不新增字段、不改 schema；恢复后的关系仍由归一化收口 | 现有往返测试 |
+  | 环节                  | 消费点                                                                                  | 边界与回退                                          | 回归                           |
+  | --------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------ |
+  | 自动填充 / KE166 收尾 | `fillConfiguredSupervisorTargets` 使用统一关联写入                                      | 无合法评估时不写关联                                | `mobile-supervisor-scheduling` |
+  | 恢复 / 人工调整       | `normalizeSupervisorAssignments`、`clearSupervisorLink` 使用统一清理                    | 恢复失败保留普通 assignment，不保留孤儿关联字段     | `schedule-adjustment`          |
+  | 最终复核 / 冲突投影   | `createMobileSupervisorCoverageScheduleGuard`、`assignment-time-conflicts` 消费统一评估 | 非法关联拒绝提交，合法普通兼任不误报冲突            | 既有守卫与冲突测试             |
+  | 持久化 / Excel / UI   | 本轮不改变现有 assignment 字段的持久化、导入或展示合同                                  | 不新增字段、不改 schema；恢复后的关系仍由归一化收口 | 现有往返测试                   |
 
 ## 2026-09-29：配置导出导入值班、备勤及月度轮值明细
 
@@ -1053,3 +1053,32 @@
 | 配置导入预览       | `parseWorkbook` -> `applyWorkbookImport`             | 先完整校验人员 ID、日期、槽位和重复，再提交 clone |
 | Store/localStorage | 现有 `replaceModel` 与组投影                         | 导入后通过既有持久化保存，不复制字段              |
 | 月度页面/统计      | `getMonthlyDutyRoster` / `getMonthlyDutyRosterStats` | 统一消费恢复后的 `dutyRosterOverrides`            |
+
+## 2026-10-02：同航班人员互斥逐组启停
+
+- 类别：业务硬规则 / 持久化配置字段 / 规则页交互。
+- 唯一配置事实 owner：`SameFlightStaffExclusion.enabled`；缺字段时由 `normalizeSameFlightStaffExclusions` 默认启用，历史 JSON 与无启用列的旧 Excel 保持原行为。
+- 唯一规则编译点：`sameFlightStaffExclusionApplies` 同时判断逐组启用状态和航班范围；候选检查、整体模型和最终违规扫描只消费该判断。
+- 行为合同：关闭行保留配置，但从后续自动排班、人工调整校验、后置候选复核和最终守卫忽略；配置修改只将已有班表标为需重排，不改写 assignments；关闭其他组无影响。启用时原硬互斥和人工红色越权告警不变。
+
+| 环节                       | 是否适用 | 消费点 / 目标                                                                          | 失败或边界                                                       | 回归保护                            |
+| -------------------------- | -------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------- |
+| 配置事实 / 默认 / 状态恢复 | 是       | `SameFlightStaffExclusion.enabled`；`normalizeSameFlightStaffExclusions` 默认 `true`   | 旧 JSON 缺字段不改变既有硬互斥                                   | 默认值与旧状态恢复测试              |
+| 候选资格 / 人工改派        | 是       | `matchingSameFlightStaffExclusion` -> `sameFlightStaffExclusionApplies`                | 关闭组不报冲突；其他开启组继续阻断自动候选并允许人工受控越权     | 开/关候选与人工 warning 测试        |
+| HiGHS 整体模型             | 是       | `daily-combination-model.ts` 调用统一 applicability 判断                               | 关闭组不创建互斥约束；开启组仍按 `flightId` 排斥人员对           | 开/关完整排班结果测试               |
+| 补缺 / 恢复 / 轮岗 / KE166 | 是       | 各自安全检查经 built-in hard-constraint/assignment eligibility 消费统一判断            | 关闭组可正常通过；不放宽其他硬约束或岗位完整性                   | 后置候选和 KE166 旧行为回归         |
+| 最终复核 / 守卫 / 凭证     | 是       | `sameFlightStaffExclusionViolations`、final guard、安全凭证快照消费同一 enabled 配置   | 开启组被后置改坏仍拒绝；关闭组不拒绝；规则配置仍进入安全凭证指纹 | 正反向 ledger/guard/credential 测试 |
+| 人工调整 / 当前班表        | 是       | policy action 修改单行并通过 `markActiveScheduleStale`                                 | 现有 assignments 不自动换人；再次编辑和提交按当前开关执行        | 标 stale 且 assignments 原样测试    |
+| 页面 / Store               | 是       | 规则行使用既有类型化 `update-policy` toggle                                            | 每一行独立开关，显示启用数量；不新增影子状态                     | UI 开关投影和命令测试               |
+| localStorage / 迁移        | 是       | 现有 structured policy normalize + AppState 持久化                                     | 不升 schema 版本；旧行默认启用                                   | enabled 开/关往返和旧数据默认测试   |
+| Excel 读取 / 写入 / 组投影 | 是       | `excel-rule-settings.ts` 导入/导出；`workbook-actions.ts` 保留 enabled；当前组独立应用 | 新模板写“启用”；旧表缺列默认启用；错误值按现有整表原子校验回退   | 新旧模板与开关往返测试              |
+| 统计 / 历史归档            | 否       | 互斥只控制同日 assignments，不改变历史已发生事实或次数统计                             | 不从历史推断启用状态；不重写归档                                 | 历史 assignments/统计不变           |
+| 测试                       | 是       | domain 规则、求解、action、UI、localStorage、Excel 与工作簿 group merge                | 同时验证新行为、硬互斥不变、后置反向、旧配置和往返               | 定向测试 + `npm.cmd run verify`     |
+
+### 写入路径盘点
+
+| 写入路径               | 统一消费点                                                    | 最终边界                                                 |
+| ---------------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
+| 规则页 toggle          | `updatePolicyEntityField` -> `updateSameFlightStaffExclusion` | 只更新选中规则行的 `enabled`，并标记班表需重排           |
+| Excel 配置导入         | `parseSameFlightStaffExclusions` -> `applyWorkbookImport`     | 先校验整表，再按现有当前组人员规则合并，不覆盖另一组状态 |
+| 自动排班/人工改派/守卫 | `sameFlightStaffExclusionApplies`                             | disabled 行从所有消费者统一排除                          |
