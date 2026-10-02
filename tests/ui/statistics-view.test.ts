@@ -255,6 +255,71 @@ describe("statistics page", () => {
     });
   });
 
+  it("switches duty and standby roster months while preserving workday parity", async () => {
+    const state = createDefaultState();
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-08-18" });
+    const roster = element.querySelector<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-duty-roster-details")!;
+    const monthInput = roster.querySelector<HTMLInputElement>(
+      'input[aria-label="值班与备勤轮换月份"]'
+    )!;
+    const commands: UiCommandEvent["detail"][] = [];
+    element.addEventListener("autoschedule-command", (event) =>
+      commands.push((event as UiCommandEvent).detail)
+    );
+
+    expect(monthInput.value).toBe("2026-08");
+    monthInput.value = "2026-07";
+    monthInput.dispatchEvent(new Event("change"));
+    await roster.updateComplete;
+
+    const rosterSections = roster.querySelectorAll(".duty-roster-details");
+    expect(
+      rosterSections[0]!.querySelector('select[aria-label="2026-08-18 CX航前"]')
+    ).not.toBeNull();
+    const generalSection = rosterSections[1]!;
+    const target = generalSection.querySelector<HTMLSelectElement>(
+      'select[aria-label="2026-07-02 值班人员"]'
+    )!;
+    expect(target).not.toBeNull();
+    expect(
+      generalSection.querySelector('select[aria-label="2026-07-01 值班人员"]')
+    ).toBeNull();
+    expect(
+      element.querySelector<HTMLInputElement>(
+        'input[aria-label="普通重点岗位统计月份"]'
+      )?.value
+    ).toBe("2026-08");
+    expect(
+      element.querySelector<HTMLInputElement>(
+        'input[aria-label="末班重点岗位统计月份"]'
+      )?.value
+    ).toBe("2026-08");
+
+    const replacement = [...target.options].find(
+      (option) => option.value && option.value !== target.value
+    )!.value;
+    target.value = replacement;
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(commands).toContainEqual({
+      type: "update-duty-roster",
+      date: "2026-07-02",
+      slot: "duty",
+      staffId: replacement,
+    });
+
+    roster
+      .querySelector<HTMLButtonElement>('button[aria-label="下载值班备勤模板"]')
+      ?.click();
+    expect(commands).toContainEqual({
+      type: "download-duty-roster-template",
+      date: "2026-07-02",
+    });
+  });
+
   it("keeps monthly roster, relaxed shifts, position counts, and roster actions", async () => {
     const state = createDefaultState();
     const rule = state.positionRules.find(

@@ -22,9 +22,15 @@ export class DutyRosterDetailsElement extends LightDomElement {
   };
   model!: AppState;
   date = "";
+  private selectedDutyStandbyMonth = "";
 
   protected override render() {
     const view = buildDutyRosterPageModel(this.model, this.date);
+    const dutyStandbyDate = this.dutyStandbyReferenceDate();
+    const dutyStandbyView = buildDutyRosterPageModel(
+      this.model,
+      dutyStandbyDate
+    );
     return html`<section class="workspace-section duty-roster-details-section">
       <div class="section-heading">
         <div>
@@ -32,24 +38,39 @@ export class DutyRosterDetailsElement extends LightDomElement {
           <span>${this.date} · 值班对应工作班，备勤对应次日休息日</span>
         </div>
         <div class="d-flex flex-wrap gap-2">
+          <label class="d-inline-flex align-items-center gap-2 mb-0">
+            <span class="small text-body-secondary">轮值月份</span>
+            <input
+              class="form-control form-control-sm"
+              type="month"
+              aria-label="值班与备勤轮换月份"
+              .value=${this.dutyStandbyMonth()}
+              @change=${(event: Event) =>
+                this.selectDutyStandbyMonth(
+                  (event.currentTarget as HTMLInputElement).value
+                )}
+            />
+          </label>
           <button
             class="btn btn-sm btn-outline-secondary"
             type="button"
-            @click=${() => dispatchUiCommand(this, { type: "download-duty-roster-template", date: this.date })}
+            aria-label="下载值班备勤模板"
+            @click=${() => dispatchUiCommand(this, { type: "download-duty-roster-template", date: dutyStandbyDate })}
           >
             <i class="bi bi-download me-1"></i>下载值班备勤模板
           </button>
           <button
             class="btn btn-sm btn-primary"
             type="button"
-            @click=${() => dispatchUiCommand(this, { type: "open-import", mode: "duty-roster", date: this.date })}
+            @click=${() => dispatchUiCommand(this, { type: "open-import", mode: "duty-roster", date: dutyStandbyDate })}
           >
             <i class="bi bi-file-earmark-arrow-up me-1"></i>导入值班备勤表
           </button>
         </div>
       </div>
       <div class="duty-roster-groups">
-        ${this.cxSection(view)} ${this.generalSection(view)}
+        ${this.cxSection(view)}
+        ${this.generalSection(dutyStandbyView, dutyStandbyDate)}
       </div>
     </section>`;
   }
@@ -138,7 +159,7 @@ export class DutyRosterDetailsElement extends LightDomElement {
     </details>`;
   }
 
-  private generalSection(view: DutyRosterPageModel) {
+  private generalSection(view: DutyRosterPageModel, date: string) {
     return html`<details class="duty-roster-details">
       <summary>
         <span><i class="bi bi-people me-2"></i>值班与备勤轮换</span
@@ -162,7 +183,7 @@ export class DutyRosterDetailsElement extends LightDomElement {
             <strong>${this.model.settings.dutyFatiguePoints} 点</strong></span
           >
         </div>
-        ${this.dutyBalanceNotice(view)} ${this.standbyNotice(view)}
+        ${this.dutyBalanceNotice(view, date)} ${this.standbyNotice(view)}
         <div class="table-responsive">
           <table class="table table-sm align-middle duty-roster-fairness-table">
             <thead>
@@ -236,7 +257,7 @@ export class DutyRosterDetailsElement extends LightDomElement {
     </details>`;
   }
 
-  private dutyBalanceNotice(view: DutyRosterPageModel) {
+  private dutyBalanceNotice(view: DutyRosterPageModel, date: string) {
     if (
       (view.missingDuty.length && !view.dutySeatShortage) ||
       view.dutyRange.difference > 1
@@ -254,7 +275,7 @@ export class DutyRosterDetailsElement extends LightDomElement {
             >${view.hasMonthlyAdjustments ? "本月存在人工调整，自动均衡不会覆盖手工结果。" : "请恢复本月自动均衡，系统会先补齐 0 次人员并将次数差控制在 1 以内。"}</span
           >
         </div>
-        ${view.hasMonthlyAdjustments ? html`<button class="btn btn-sm btn-outline-danger" type="button" @click=${() => dispatchUiCommand(this, { type: "rebalance-duty-roster-month", date: this.date })}><i class="bi bi-arrow-repeat me-1"></i>重新均衡本月</button>` : null}
+        ${view.hasMonthlyAdjustments ? html`<button class="btn btn-sm btn-outline-danger" type="button" @click=${() => dispatchUiCommand(this, { type: "rebalance-duty-roster-month", date })}><i class="bi bi-arrow-repeat me-1"></i>重新均衡本月</button>` : null}
       </div>`;
     return view.missingDuty.length && view.dutySeatShortage
       ? html`<div class="duty-balance-alert is-info">
@@ -372,6 +393,24 @@ export class DutyRosterDetailsElement extends LightDomElement {
   private shortDates(dates: string[]): string {
     return dates.length ? dates.map((date) => date.slice(5)).join("、") : "-";
   }
+
+  private dutyStandbyMonth(): string {
+    return this.selectedDutyStandbyMonth || this.date.slice(0, 7);
+  }
+
+  private dutyStandbyReferenceDate(): string {
+    const month = this.dutyStandbyMonth();
+    const day = Number(this.date.slice(8, 10));
+    const parityDay = day > 0 && day % 2 === 0 ? "02" : "01";
+    return `${month}-${parityDay}`;
+  }
+
+  private selectDutyStandbyMonth(month: string): void {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return;
+    this.selectedDutyStandbyMonth = month;
+    this.requestUpdate();
+  }
+
   private warning(message: string) {
     return html`<div class="duty-roster-warning">
       <i class="bi bi-exclamation-triangle"></i><span>${message}</span>
