@@ -400,6 +400,7 @@ describe("state persistence", () => {
         staffName: person.name,
         startTime: "21:55",
         endTime: "23:55",
+        flightCutoffTime: "23:05",
         workHours: 2,
         fatiguePoints: 2,
         remark: "人员A",
@@ -411,6 +412,7 @@ describe("state persistence", () => {
 
     expect(record).toMatchObject({
       historyCoverage: "late-priority-only",
+      flightCutoffTime: "23:05",
       remark: "一号",
       fatiguePoints: 10,
     });

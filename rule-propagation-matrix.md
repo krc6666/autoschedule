@@ -1082,3 +1082,33 @@
 | 规则页 toggle          | `updatePolicyEntityField` -> `updateSameFlightStaffExclusion` | 只更新选中规则行的 `enabled`，并标记班表需重排           |
 | Excel 配置导入         | `parseSameFlightStaffExclusions` -> `applyWorkbookImport`     | 先校验整表，再按现有当前组人员规则合并，不覆盖另一组状态 |
 | 自动排班/人工改派/守卫 | `sameFlightStaffExclusionApplies`                             | disabled 行从所有消费者统一排除                          |
+
+## 2026-10-02：提前下班统计排除 23:00 后截载航班
+
+- 类别：统计业务规则 / 历史记录持久化事实。
+- 唯一统计事实 owner：`src/domain/statistics/relaxed-shift-statistics.ts` 的 `buildMonthlyRelaxedShiftStatistics`；页面、班表标记和 Excel 摘要只消费该统计投影。
+- 业务合同：按“人员 + 工作日”计算；任一已排航班的计划截载严格晚于 `23:00`，当天不计提前下班。恰好 `23:00` 不触发排除；没有晚于 `23:00` 的航班时保留原来的“非值班人员、最后一班严格早于配置节点”口径。提前撤岗优化和下午无航班口径不变。
+- 计划截载来源：当前班表从 assignment 对应的 `Flight.endTime` 读取；新归档保存 `HistoryRecord.flightCutoffTime` 快照。旧历史缺快照时回退到已有 `HistoryRecord.endTime`，不从当前航班模板推测过去时刻。
+
+| 环节                        | 是否适用 | 消费点 / 目标                                                        | 失败或边界                                                 | 回归保护                                     |
+| --------------------------- | -------- | -------------------------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------- |
+| 输入事实 / 当前 assignments | 是       | `assignment.flightId` -> 当天 `Flight.endTime`                       | 找不到航班时回退 assignment 原结束时间；无效时间不触发排除 | AK151/G09 23:05 时当天被排除                 |
+| 候选池 / 求解 / 补缺覆盖    | 否       | 这是排班后的统计归类，不参与自动候选、求解或补缺                     | 不改变岗位完整性、人员资格或排班选择                       | 排班 assignment 与早撤行为保持测试           |
+| 提前撤岗 / 人工调整         | 是       | 时间计算保持现状；人工调整后从最终 assignment 与对应 Flight 重新投影 | 不因排除统计事件改写 assignment、workHours 或撤岗分钟      | 人工换人和 early release 不变量回归          |
+| 历史 / 归档                 | 是       | `currentScheduleHistory` 保存计划 `flightCutoffTime`；统计读取该快照 | 旧记录缺快照回退 `endTime`；已丢失的原始截载时刻不猜测     | HistoryRecord 归档/恢复测试                  |
+| 最终复核 / 守卫 / 凭证      | 否       | 统计标签不是排班硬约束，不进入最终 assignments 守卫                  | 不允许统计结果阻止或改写排班                               | 现有安全守卫保持不变                         |
+| 保存 / localStorage / 恢复  | 是       | 可选 `HistoryRecord.flightCutoffTime` 经现有历史保存和状态恢复保留   | 缺字段旧状态继续回退；不升 AppState 版本                   | 新字段恢复及旧状态缺字段测试                 |
+| Excel 读 / 写               | 是       | 配置历史表与单日排班结果写入、读取计划截载快照                       | 旧工作簿回退 `结束时间`；无效快照不覆盖其他合法历史字段    | 历史 Excel 与排班结果往返测试                |
+| 统计页 / 排班页 / 导出      | 是       | 月度表、今日摘要、最后岗位标记与 Excel 摘要共用 `buildMonthly...`    | 只排除提前下班日期；下午无航班和值班排除语义不变           | UI、班表投影与导出一致性测试                 |
+| 测试                        | 是       | 先复现 AK151/G09 23:05 的排除，再验 23:00 边界、历史快照与旧记录回退 | 不能通过改变提前撤岗、配置节点或下午统计口径让新断言转绿   | domain、history、storage、Excel、UI 定向回归 |
+
+### 写入路径盘点
+
+| 写入路径                 | 统一消费点                                              | 最终边界                                          |
+| ------------------------ | ------------------------------------------------------- | ------------------------------------------------- |
+| 当前班表统计             | `buildMonthlyRelaxedShiftStatistics` + `Flight.endTime` | 用航班计划截载判断，不用分流岗位折减工时          |
+| 归档                     | `currentScheduleHistory`                                | 每条记录保存来源航班原始计划截载                  |
+| localStorage 恢复        | `restoreHistory`                                        | 保留有效快照，旧状态不因缺字段丢失                |
+| 配置 Excel               | `parseHistory` / 历史工作表写出                         | 读写同一快照，旧表继续可导入                      |
+| 单日排班 Excel           | `buildScheduleWorkbook` / `parseHistory`                | 排班结果含计划截载，导入历史后统计不丢原时刻      |
+| 页面、班表标记与导出摘要 | `buildMonthlyRelaxedShiftStatistics`                    | 所有消费者使用同一事实，不在 UI 或 Excel 二次计算 |

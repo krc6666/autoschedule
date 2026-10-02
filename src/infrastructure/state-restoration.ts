@@ -41,6 +41,7 @@ import {
 } from "../domain/reviews/position-rotation-policy";
 import { airlineCode } from "../domain/rules/airline-rotation";
 import { scheduleRuleFingerprint } from "../domain/rules/schedule-rule-fingerprint";
+import { normalizeTime } from "../domain/shared/time";
 
 type PersistedSettings = Partial<ScheduleSettings>;
 type PersistedAppState = Record<string, unknown> & {
@@ -398,6 +399,10 @@ function restoreHistory(value: unknown[]): HistoryRecord[] {
       item.historyCoverage === "late-priority-only"
         ? item.historyCoverage
         : undefined;
+    const flightCutoffTime =
+      typeof item.flightCutoffTime === "string"
+        ? normalizeTime(item.flightCutoffTime)
+        : "";
     return [
       {
         id: item.id,
@@ -408,6 +413,7 @@ function restoreHistory(value: unknown[]): HistoryRecord[] {
         staffName: item.staffName,
         startTime: item.startTime,
         endTime: item.endTime,
+        ...(flightCutoffTime ? { flightCutoffTime } : {}),
         workHours: item.workHours,
         fatiguePoints: item.fatiguePoints,
         remark: item.remark,

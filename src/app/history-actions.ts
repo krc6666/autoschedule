@@ -115,7 +115,7 @@ export function currentScheduleHistory(
   date: string,
   options: { includeUnavailableStaff?: boolean } = {}
 ): HistoryRecord[] {
-  const records = state.assignments
+  const records: HistoryRecord[] = state.assignments
     .filter((item) => item.status === "assigned" && item.staffName)
     .filter(
       (item) =>
@@ -132,6 +132,9 @@ export function currentScheduleHistory(
       staffName: item.staffName,
       startTime: item.startTime,
       endTime: item.endTime,
+      flightCutoffTime:
+        state.flights.find((flight) => flight.id === item.flightId)?.endTime ??
+        item.endTime,
       workHours: item.workHours,
       fatiguePoints: item.fatiguePoints,
       remark: assignmentWarningRemark(

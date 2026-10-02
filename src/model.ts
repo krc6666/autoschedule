@@ -77,6 +77,8 @@ export interface HistoryRecord {
   staffName: string;
   startTime: string;
   endTime: string;
+  /** Original scheduled end of the source flight, before an early release. */
+  flightCutoffTime?: string;
   workHours: number;
   fatiguePoints: number;
   remark: string;

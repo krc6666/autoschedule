@@ -34,6 +34,38 @@ function assignment(
 }
 
 describe("history actions", () => {
+  it("archives the source flight cutoff separately from an early-released assignment", () => {
+    const state = createOrdinarySchedulingState();
+    state.settings.dutyFatiguePoints = 0;
+    const person = state.staff[0]!;
+    state.flights = [
+      {
+        id: "flight-ak151",
+        flightNo: "AK151",
+        startTime: "21:05",
+        endTime: "23:05",
+        bookedPassengers: 0,
+        positions: ["G09"],
+        remark: "",
+      },
+    ];
+    state.assignments = [
+      {
+        ...assignment("released-ak151", person.id, person.name),
+        flightId: "flight-ak151",
+        flightNo: "AK151",
+        startTime: "21:05",
+        endTime: "22:10",
+        workHours: 1.08,
+      },
+    ];
+
+    expect(currentScheduleHistory(state, "2026-10-01")[0]).toMatchObject({
+      endTime: "22:10",
+      flightCutoffTime: "23:05",
+    });
+  });
+
   it("archives the team-leader gap-fill source with normal workload", () => {
     const state = createOrdinarySchedulingState();
     state.settings.dutyFatiguePoints = 0;

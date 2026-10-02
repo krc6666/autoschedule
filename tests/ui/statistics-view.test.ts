@@ -13,6 +13,61 @@ import { mountElement } from "./lit-test-helpers";
 import type { UiCommandEvent } from "../../src/ui/events/ui-command";
 
 describe("statistics page", () => {
+  it("hides an early departure date if any assigned flight cuts off after 23:00", async () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => item.status === "正常")!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.activeScheduleDate = "2026-10-01";
+    state.settings.earlyDepartureCutoffTime = "23:30";
+    state.flights = [
+      {
+        id: "flight-AK151",
+        flightNo: "AK151",
+        startTime: "21:05",
+        endTime: "23:05",
+        bookedPassengers: 0,
+        positions: ["G09"],
+        remark: "",
+      },
+    ];
+    state.assignments = [
+      {
+        id: "released-ak151",
+        flightId: "flight-AK151",
+        flightNo: "AK151",
+        positionRuleId: null,
+        position: "G09",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:05",
+        endTime: "22:10",
+        workHours: 1.08,
+        fatiguePoints: 3.5,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", {
+      model: state,
+      date: "2026-10-01",
+    });
+    const row = [
+      ...element.querySelectorAll<HTMLTableRowElement>(
+        ".relaxed-shift-table tbody tr"
+      ),
+    ].find((candidate) =>
+      candidate.cells[0]?.textContent?.includes(person.name)
+    );
+
+    expect(row?.cells[1]?.textContent?.trim()).toBe("0");
+    expect(row?.cells[2]?.textContent?.trim()).toBe("-");
+  });
+
   it("summarizes ordinary priority positions by staff with expandable count cells", async () => {
     const state = createDefaultState();
     const staff = state.staff

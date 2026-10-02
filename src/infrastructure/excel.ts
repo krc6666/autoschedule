@@ -596,6 +596,7 @@ function parseHistory(
   const nameIndex = headerIndex(header, ["姓名"], 2);
   const startIndex = headerIndex(header, ["开始时间"], -1);
   const endIndex = headerIndex(header, ["结束时间"], -1);
+  const flightCutoffIndex = headerIndex(header, ["航班截载时间"], -1);
   const hoursIndex = headerIndex(header, ["工作时长"], 3);
   const fatigueIndex = headerIndex(header, ["疲劳点"], -1);
   const remarkIndex = headerIndex(header, ["备注"], 4);
@@ -612,6 +613,10 @@ function parseHistory(
       startIndex >= 0 ? normalizeTime(normalizeText(row[startIndex])) : "";
     const endTime =
       endIndex >= 0 ? normalizeTime(normalizeText(row[endIndex])) : "";
+    const flightCutoffTime =
+      flightCutoffIndex >= 0
+        ? normalizeTime(normalizeText(row[flightCutoffIndex]))
+        : "";
     const rawHours = row[hoursIndex];
     const parsedHours = Number(rawHours);
     const hours =
@@ -647,6 +652,7 @@ function parseHistory(
         staffName,
         startTime,
         endTime,
+        ...(flightCutoffTime ? { flightCutoffTime } : {}),
         workHours: hours,
         fatiguePoints:
           normalizeText(rawFatigue) !== "" && Number.isFinite(parsedFatigue)
@@ -978,6 +984,7 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
         "备注",
         "历史覆盖范围",
         "分队长补差",
+        "航班截载时间",
       ],
       ...state.history.map((record) => [
         record.id,
@@ -993,9 +1000,10 @@ export function buildConfigWorkbook(state: AppState): XLSX.WorkBook {
         record.remark,
         record.historyCoverage ?? "",
         record.teamLeaderGapFill ? "是" : "否",
+        record.flightCutoffTime ?? record.endTime,
       ]),
     ],
-    [18, 12, 12, 18, 16, 14, 12, 12, 16, 12, 32, 20, 14]
+    [18, 12, 12, 18, 16, 14, 12, 12, 16, 12, 32, 20, 14, 12]
   );
   return workbook;
 }
@@ -1234,6 +1242,7 @@ export function buildScheduleWorkbook(
         "疲劳点数",
         "备注",
         "状态",
+        "航班截载时间",
       ],
       ...assignments.map((item) => [
         date,
@@ -1253,9 +1262,11 @@ export function buildScheduleWorkbook(
           : item.status === "manual"
             ? "可留空"
             : "待补位",
+        state.flights.find((flight) => flight.id === item.flightId)?.endTime ??
+          item.endTime,
       ]),
     ],
-    [12, 12, 16, 14, 12, 12, 16, 12, 24, 12]
+    [12, 12, 16, 14, 12, 12, 16, 12, 24, 12, 12]
   );
   const people = new Map<string, Assignment[]>();
   assignments

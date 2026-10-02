@@ -11,6 +11,7 @@ interface ActualTask {
   staffName: string;
   startTime: string;
   endTime: string;
+  flightCutoffTime: string;
 }
 
 export interface EarlyDepartureEvent {
@@ -61,7 +62,8 @@ function operationalInterval(
 
 function fromAssignment(
   date: string,
-  assignment: Assignment
+  assignment: Assignment,
+  flightCutoffTime: string
 ): ActualTask | null {
   if (
     assignment.status !== "assigned" ||
@@ -77,6 +79,7 @@ function fromAssignment(
     staffName: assignment.staffName,
     startTime: assignment.startTime,
     endTime: assignment.endTime,
+    flightCutoffTime,
   };
 }
 
@@ -97,6 +100,7 @@ function fromHistory(record: HistoryRecord): ActualTask | null {
     staffName: record.staffName,
     startTime: record.startTime,
     endTime: record.endTime,
+    flightCutoffTime: record.flightCutoffTime || record.endTime,
   };
 }
 
@@ -155,7 +159,14 @@ export function buildMonthlyRelaxedShiftStatistics(
   const activeTasks = activeDate
     ? state.assignments
         .filter((assignment) => isCountedWorkloadAssignment(state, assignment))
-        .map((assignment) => fromAssignment(activeDate, assignment))
+        .map((assignment) =>
+          fromAssignment(
+            activeDate,
+            assignment,
+            state.flights.find((flight) => flight.id === assignment.flightId)
+              ?.endTime ?? assignment.endTime
+          )
+        )
         .filter((task): task is ActualTask => Boolean(task))
         .filter((task) =>
           state.staff.some(
@@ -178,6 +189,7 @@ export function buildMonthlyRelaxedShiftStatistics(
   const earlyByStaff = new Map<string, EarlyDepartureEvent[]>();
   const afternoonByStaff = new Map<string, string[]>();
   const earlyCutoff = timeToMinutes(state.settings.earlyDepartureCutoffTime);
+  const lateFlightCutoff = timeToMinutes("23:00");
 
   for (const taskDate of dates) {
     const dailyTasks = tasks.filter((task) => task.date === taskDate);
@@ -211,8 +223,17 @@ export function buildMonthlyRelaxedShiftStatistics(
             state.settings.nightEnd
           )?.[1]
         : undefined;
+      const hasLateCutoffFlight = staffTasks.some((task) => {
+        const interval = operationalInterval(
+          task.startTime,
+          task.flightCutoffTime,
+          state.settings.nightEnd
+        );
+        return interval !== null && interval[1] > lateFlightCutoff;
+      });
       if (
         lastTask &&
+        !hasLateCutoffFlight &&
         staffId !== dutyStaffId &&
         lastEnd !== undefined &&
         Number.isFinite(earlyCutoff) &&

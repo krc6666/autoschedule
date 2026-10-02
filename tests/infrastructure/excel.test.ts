@@ -95,6 +95,7 @@ describe("workbook boundary", () => {
         staffName: "历史人员",
         startTime: "08:00",
         endTime: "10:00",
+        flightCutoffTime: "10:30",
         workHours: 0,
         fatiguePoints: 0,
         remark: "岗位原始备注；人工备注",
@@ -123,6 +124,7 @@ describe("workbook boundary", () => {
       staffId: "retired-person",
       staffName: "历史人员",
       workHours: 0,
+      flightCutoffTime: "10:30",
       fatiguePoints: 0,
       remark: "岗位原始备注；人工备注",
       historyCoverage: "late-priority-only",
@@ -518,6 +520,89 @@ describe("workbook boundary", () => {
     expect(earlyRow?.[1]).toBe("TR：钱七\nTW：孙八");
     expect(earlyRow?.[1]).not.toContain("TR999");
     expect(earlyRow?.[1]).not.toContain("13:00");
+  });
+
+  it("keeps the flight cutoff in a schedule workbook and excludes late-cutoff dates", () => {
+    const state = createDefaultState();
+    const person = state.staff[0]!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.positionRules = [];
+    state.activeScheduleDate = "2026-10-01";
+    state.settings.earlyDepartureCutoffTime = "23:30";
+    state.flights = [
+      {
+        id: "flight-AK151",
+        flightNo: "AK151",
+        startTime: "21:05",
+        endTime: "23:05",
+        bookedPassengers: 0,
+        positions: ["G09"],
+        remark: "",
+      },
+      {
+        id: "flight-TGT123",
+        flightNo: "TGT123",
+        startTime: "22:10",
+        endTime: "22:50",
+        bookedPassengers: 0,
+        positions: ["G01"],
+        remark: "",
+      },
+    ];
+    state.assignments = [
+      {
+        id: "released-ak151",
+        flightId: "flight-AK151",
+        flightNo: "AK151",
+        positionRuleId: null,
+        position: "G09",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:05",
+        endTime: "22:10",
+        workHours: 1.08,
+        fatiguePoints: 3.5,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "target-g01",
+        flightId: "flight-TGT123",
+        flightNo: "TGT123",
+        positionRuleId: null,
+        position: "G01",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "22:10",
+        endTime: "22:50",
+        workHours: 2,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+
+    const workbook = buildScheduleWorkbook(state, "2026-10-01");
+    const scheduleRows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["排班结果"]!,
+      { header: 1, raw: false, defval: "" }
+    );
+    const cutoffColumn = scheduleRows[0]!.indexOf("航班截载时间");
+    const akRow = scheduleRows.find((row) => row[1] === "AK151");
+    const detailRows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["保障明细"]!,
+      { header: 1, raw: false, defval: "" }
+    );
+
+    expect(akRow?.[cutoffColumn]).toBe("23:05");
+    expect(detailRows.find((row) => row[0] === "提前下班")?.[1]).toBe("无");
+    expect(parseWorkbook(workbook, state.staff).history?.[0]).toMatchObject({
+      endTime: "22:10",
+      flightCutoffTime: "23:05",
+    });
   });
 
   it("imports a flight configuration sheet as reusable templates", () => {

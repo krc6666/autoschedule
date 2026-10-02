@@ -66,7 +66,7 @@ export class StatisticsPageElement extends LightDomElement {
         <div>
           <strong>今日提前下班</strong
           ><small
-            >最后航班截载严格早于
+            >任一航班截载晚于 23:00 不计；否则最后航班截载严格早于
             ${this.model.settings.earlyDepartureCutoffTime}，排除当日值班</small
           >
           <div>

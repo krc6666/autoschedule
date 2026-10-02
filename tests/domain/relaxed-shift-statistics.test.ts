@@ -31,6 +31,127 @@ function assignment(
 }
 
 describe("monthly relaxed shift statistics", () => {
+  it("excludes the whole date when any flight's planned cutoff is after 23:00 despite early release", () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => item.status === "正常")!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.activeScheduleDate = "2026-10-01";
+    state.settings.earlyDepartureCutoffTime = "23:30";
+    state.flights = [
+      {
+        id: "flight-AK151",
+        flightNo: "AK151",
+        startTime: "21:05",
+        endTime: "23:05",
+        bookedPassengers: 0,
+        positions: ["G09"],
+        remark: "",
+      },
+      {
+        id: "flight-TGT123",
+        flightNo: "TGT123",
+        startTime: "22:10",
+        endTime: "22:50",
+        bookedPassengers: 0,
+        positions: ["G01"],
+        remark: "",
+      },
+    ];
+    state.assignments = [
+      {
+        ...assignment(
+          "ak151-g09",
+          "AK151",
+          person.id,
+          person.name,
+          "21:05",
+          "22:10"
+        ),
+        workHours: 1.08,
+      },
+      assignment(
+        "target-g01",
+        "TGT123",
+        person.id,
+        person.name,
+        "22:10",
+        "22:50"
+      ),
+    ];
+
+    const row = buildMonthlyRelaxedShiftStatistics(state, "2026-10-01")
+      .rows[0]!;
+
+    expect(row.earlyDepartures).toEqual([]);
+  });
+
+  it("does not suppress early departure when a flight cutoff is exactly 23:00", () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => item.status === "正常")!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.activeScheduleDate = "2026-10-01";
+    state.settings.earlyDepartureCutoffTime = "23:30";
+    state.flights = [
+      {
+        id: "flight-AK151",
+        flightNo: "AK151",
+        startTime: "21:05",
+        endTime: "23:00",
+        bookedPassengers: 0,
+        positions: ["G09"],
+        remark: "",
+      },
+    ];
+    state.assignments = [
+      {
+        ...assignment(
+          "ak151-g09",
+          "AK151",
+          person.id,
+          person.name,
+          "21:05",
+          "22:10"
+        ),
+        workHours: 1.08,
+      },
+    ];
+
+    const row = buildMonthlyRelaxedShiftStatistics(state, "2026-10-01")
+      .rows[0]!;
+
+    expect(row.earlyDepartures).toHaveLength(1);
+  });
+
+  it("uses the saved end time for archived rows without a flight cutoff snapshot", () => {
+    const state = createDefaultState();
+    const person = state.staff.find((item) => item.status === "正常")!;
+    person.dutyQualified = false;
+    state.staff = [person];
+    state.settings.earlyDepartureCutoffTime = "23:30";
+    state.history = [
+      {
+        id: "legacy-ak151",
+        date: "2026-10-01",
+        flightNo: "AK151",
+        position: "G09",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "21:05",
+        endTime: "23:05",
+        workHours: 1.08,
+        fatiguePoints: 3.5,
+        remark: "",
+      },
+    ];
+
+    const row = buildMonthlyRelaxedShiftStatistics(state, "2026-10-02")
+      .rows[0]!;
+
+    expect(row.earlyDepartures).toEqual([]);
+  });
+
   it("uses a strict cutoff, excludes duty from early departure, and keeps duty and standby in afternoon rest", () => {
     const state = createDefaultState();
     const [duty, standby, afternoon, exactCutoff] = state.staff
