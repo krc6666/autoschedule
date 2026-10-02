@@ -30,6 +30,7 @@ export class StatisticsPageElement extends LightDomElement {
   private selectedLatePriorityStatisticsMonth = "";
   private selectedLatePriorityCategory:
     "全部" | LatePriorityStatisticsCategory = "全部";
+  private selectedOrdinaryPriorityStatisticsMonth = "";
   private selectedOrdinaryPriorityKey = "全部";
 
   protected override render() {
@@ -273,8 +274,11 @@ export class StatisticsPageElement extends LightDomElement {
   }
 
   private ordinaryPriorityStatistics() {
-    const month = this.date.slice(0, 7);
-    const rows = buildOrdinaryPriorityStatistics(this.model, this.date);
+    const month = this.ordinaryPriorityStatisticsMonth();
+    const rows = buildOrdinaryPriorityStatistics(
+      this.model,
+      this.ordinaryPriorityStatisticsDate()
+    );
     const columns = this.ordinaryPriorityColumns(rows);
     const selectedKey = columns.some(
       (column) => column.key === this.selectedOrdinaryPriorityKey
@@ -288,33 +292,48 @@ export class StatisticsPageElement extends LightDomElement {
           <h3>普通重点岗位</h3>
           <span>${month} · 只统计集合内岗位；次数进入一般同岗轮换</span>
         </div>
-        <div
-          class="ordinary-priority-filter"
-          role="group"
-          aria-label="普通重点岗位筛选"
-        >
-          ${[
-            { key: "全部", label: "全部" },
-            ...columns.map((column) => ({
-              key: column.key,
-              label: `${column.airlineCode} / ${column.position}`,
-            })),
-          ].map(
-            (option) =>
-              html`<button
-                class=${`btn btn-sm ${
-                  selectedKey === option.key
-                    ? "btn-primary"
-                    : "btn-outline-secondary"
-                }`}
-                type="button"
-                aria-label=${`普通重点岗位筛选：${option.label}`}
-                aria-pressed=${selectedKey === option.key}
-                @click=${() => this.selectOrdinaryPriority(option.key)}
-              >
-                ${option.label}
-              </button>`
-          )}
+        <div class="ordinary-priority-toolbar">
+          <label class="d-inline-flex align-items-center gap-2 mb-0">
+            <span class="small text-body-secondary">统计月份</span>
+            <input
+              class="form-control form-control-sm"
+              type="month"
+              aria-label="普通重点岗位统计月份"
+              .value=${month}
+              @change=${(event: Event) =>
+                this.selectOrdinaryPriorityStatisticsMonth(
+                  (event.currentTarget as HTMLInputElement).value
+                )}
+            />
+          </label>
+          <div
+            class="ordinary-priority-filter"
+            role="group"
+            aria-label="普通重点岗位筛选"
+          >
+            ${[
+              { key: "全部", label: "全部" },
+              ...columns.map((column) => ({
+                key: column.key,
+                label: `${column.airlineCode} / ${column.position}`,
+              })),
+            ].map(
+              (option) =>
+                html`<button
+                  class=${`btn btn-sm ${
+                    selectedKey === option.key
+                      ? "btn-primary"
+                      : "btn-outline-secondary"
+                  }`}
+                  type="button"
+                  aria-label=${`普通重点岗位筛选：${option.label}`}
+                  aria-pressed=${selectedKey === option.key}
+                  @click=${() => this.selectOrdinaryPriority(option.key)}
+                >
+                  ${option.label}
+                </button>`
+            )}
+          </div>
         </div>
       </div>
       ${
@@ -602,6 +621,26 @@ export class StatisticsPageElement extends LightDomElement {
 
   private latePriorityStatisticsMonth(): string {
     return this.selectedLatePriorityStatisticsMonth || this.date.slice(0, 7);
+  }
+
+  private ordinaryPriorityStatisticsMonth(): string {
+    return (
+      this.selectedOrdinaryPriorityStatisticsMonth || this.date.slice(0, 7)
+    );
+  }
+
+  private ordinaryPriorityStatisticsDate(): string {
+    const month = this.ordinaryPriorityStatisticsMonth();
+    if (this.model.activeScheduleDate?.startsWith(month))
+      return this.model.activeScheduleDate;
+    if (this.date.startsWith(month)) return this.date;
+    return `${month}-01`;
+  }
+
+  private selectOrdinaryPriorityStatisticsMonth(month: string): void {
+    if (!/^\d{4}-\d{2}$/.test(month)) return;
+    this.selectedOrdinaryPriorityStatisticsMonth = month;
+    this.requestUpdate();
   }
 
   private latePriorityStatisticsDate(): string {

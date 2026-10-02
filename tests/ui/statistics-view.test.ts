@@ -146,6 +146,115 @@ describe("statistics page", () => {
     ).toBe("true");
   });
 
+  it("switches ordinary-priority statistics months independently", async () => {
+    const state = createDefaultState();
+    const person = state.staff.find(
+      (item) => item.staffType === "常规" && item.status === "正常"
+    )!;
+    state.settings.ordinaryPriorityPositions = [
+      { airlineCode: "AK", position: "G08" },
+    ];
+    const baseRule = state.positionRules[0]!;
+    state.positionRules = [
+      {
+        ...baseRule,
+        id: "ordinary-monthly-ak-g08",
+        flightNo: "AK151",
+        name: "G08",
+        category: "常规",
+        remark: "",
+        qualifiedStaffIds: [person.id],
+      },
+    ];
+    state.activeScheduleDate = "2026-08-18";
+    state.assignments = [
+      {
+        id: "ordinary-month-current-assignment",
+        flightId: "ordinary-month-ak151",
+        flightNo: "AK151",
+        positionRuleId: "ordinary-monthly-ak-g08",
+        position: "G08",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+    state.history = ["2026-07-16", "2026-07-18", "2026-08-02"].map(
+      (date, index) => ({
+        id: `ordinary-month-${index}`,
+        date,
+        flightNo: "AK151",
+        position: "G08",
+        staffId: person.id,
+        staffName: person.name,
+        startTime: "08:00",
+        endTime: "10:00",
+        workHours: 2,
+        fatiguePoints: 5,
+        remark: "",
+      })
+    );
+    state.ordinaryPriorityFrequencyAdjustments = [
+      {
+        month: "2026-07",
+        staffId: person.id,
+        airlineCode: "AK",
+        position: "G08",
+        delta: 1,
+      },
+    ];
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-statistics-page", { model: state, date: "2026-08-18" });
+    const monthInput = element.querySelector<HTMLInputElement>(
+      'input[aria-label="普通重点岗位统计月份"]'
+    )!;
+    const count = () =>
+      element
+        .querySelector<HTMLElement>(
+          `.ordinary-priority-count-detail[data-staff-id="${person.id}"]`
+        )
+        ?.querySelector("summary")
+        ?.textContent?.trim();
+
+    expect(monthInput.value).toBe("2026-08");
+    expect(count()).toBe("2");
+    monthInput.value = "2026-07";
+    monthInput.dispatchEvent(new Event("change"));
+    await element.updateComplete;
+
+    expect(count()).toBe("3");
+    expect(
+      element.querySelector<HTMLInputElement>(
+        'input[aria-label="末班重点岗位统计月份"]'
+      )?.value
+    ).toBe("2026-08");
+
+    const commands: UiCommandEvent["detail"][] = [];
+    element.addEventListener("autoschedule-command", (event) =>
+      commands.push((event as UiCommandEvent).detail)
+    );
+    element
+      .querySelector<HTMLButtonElement>(
+        `.ordinary-priority-count-detail[data-staff-id="${person.id}"] button[aria-label="AK/G08增加一次"]`
+      )
+      ?.click();
+    expect(commands).toContainEqual({
+      type: "adjust-ordinary-priority-frequency",
+      month: "2026-07",
+      staffId: person.id,
+      airlineCode: "AK",
+      position: "G08",
+      delta: 1,
+    });
+  });
+
   it("keeps monthly roster, relaxed shifts, position counts, and roster actions", async () => {
     const state = createDefaultState();
     const rule = state.positionRules.find(

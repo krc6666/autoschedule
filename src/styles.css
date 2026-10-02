@@ -1321,7 +1321,8 @@ select {
   margin-left: 0;
 }
 
-.late-priority-toolbar {
+.late-priority-toolbar,
+.ordinary-priority-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3252,7 +3253,8 @@ autoschedule-previous-schedule-comparison {
   .ordinary-priority-statistics > .section-heading {
     flex-direction: column;
   }
-  .late-priority-toolbar {
+  .late-priority-toolbar,
+  .ordinary-priority-toolbar {
     width: 100%;
     justify-content: flex-start;
   }
