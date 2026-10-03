@@ -550,6 +550,18 @@ function restoredAssignment(value: unknown): Assignment | null {
   if (Array.isArray(value.systemNotes)) {
     assignment.systemNotes = value.systemNotes.map(String).filter(Boolean);
   }
+  if (isRecord(value.vacancyEvidence)) {
+    const reason = value.vacancyEvidence.reason;
+    const blockers = value.vacancyEvidence.blockers;
+    if (
+      (reason === "daily-flight-count-balance" ||
+        reason === "no-qualified-candidate") &&
+      Array.isArray(blockers) &&
+      blockers.every((item) => typeof item === "string")
+    ) {
+      assignment.vacancyEvidence = { reason, blockers: [...blockers] };
+    }
+  }
   if (Array.isArray(value.decisionTrace)) {
     assignment.decisionTrace = value.decisionTrace.filter(validDecision);
   }

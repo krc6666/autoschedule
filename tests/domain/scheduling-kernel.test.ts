@@ -6912,14 +6912,21 @@ describe("scheduler domain", { timeout: 15_000 }, () => {
         .reduce((sum, item) => sum + item.fatiguePoints, 0),
     }));
     expect(assignments.every((item) => item.status === "assigned")).toBe(true);
+    const flightsByStaff = state.staff.map(
+      (person) =>
+        new Set(
+          assignments
+            .filter((item) => item.staffId === person.id)
+            .map((item) => item.flightNo)
+        ).size
+    );
     expect(
-      Math.max(...loads.map((item) => item.hours)) -
-        Math.min(...loads.map((item) => item.hours))
-    ).toBeLessThanOrEqual(2);
+      Math.max(...flightsByStaff) - Math.min(...flightsByStaff)
+    ).toBeLessThanOrEqual(1);
     expect(
       Math.max(...loads.map((item) => item.fatigue)) -
         Math.min(...loads.map((item) => item.fatigue))
-    ).toBe(5);
+    ).toBeLessThanOrEqual(5);
   });
 
   it("uses an archived day to rotate the lower-load worker into the next duty day", async () => {

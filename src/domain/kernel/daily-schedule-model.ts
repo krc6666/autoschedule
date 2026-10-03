@@ -51,6 +51,7 @@ import {
   isStrictNextWorkdayRecoveryTarget,
 } from "../reviews/cross-day-recovery";
 import { latePriorityFlightInScope } from "../statistics/late-priority-flight-scope";
+import { groupStaffFlightsByNormalizedNumber } from "../statistics/staff-flight-count";
 import { exceedsTr121NumberOneAutomaticLimit } from "../statistics/late-priority-frequency";
 import {
   buildDailyCombinationModel,
@@ -68,6 +69,7 @@ import {
   enabledCrossFlightPriorityPolicies,
 } from "../rules/cross-flight-priority";
 import { intervalsOverlap } from "../shared/time";
+
 import {
   buildHalfRestOptimizationModel,
   excludeCandidateForHalfRest,
@@ -101,6 +103,7 @@ export interface DailyScheduleModel {
     string,
     readonly string[]
   >;
+  readonly dailyFlightCountBalanceEnforced: boolean;
 }
 
 interface StaffChoiceBuild {
@@ -969,6 +972,178 @@ function staffCoverageModel(
   return { variables, constraints, workedVariableIds };
 }
 
+function dailyFlightCountBalanceModel(
+  state: ScheduleGenerationFacts,
+  staffChoices: readonly DailyScheduleStaffChoice[],
+  halfRestStaffIds: ReadonlySet<string>,
+  dutyStaffId: string | null
+): WorkloadModel {
+  // Large pressure schedules use the shared whole-flight transfer fallback.
+  // Keeping the exact model for ordinary workdays avoids turning the 150/300s
+  // schedule budget into a business-rule bypass while bounding the solver graph.
+  if (state.flights.length > 5)
+    return { variables: [], constraints: [], objectives: [] };
+  const eligibleParticipantIds = new Set(
+    staffChoices.map((choice) => choice.person.id)
+  );
+  const participants = state.staff.filter(
+    (person) =>
+      person.status === "正常" &&
+      person.staffType === "常规" &&
+      eligibleParticipantIds.has(person.id) &&
+      person.id !== dutyStaffId &&
+      !(
+        state.settings.dailyFlightCountBalanceExemptHalfRest &&
+        halfRestStaffIds.has(person.id)
+      ) &&
+      !(
+        state.settings.dailyFlightCountBalanceExemptTeamLeaders &&
+        person.teamLeader
+      )
+  );
+  if (participants.length < 2)
+    return { variables: [], constraints: [], objectives: [] };
+
+  const participantIds = new Set(participants.map((person) => person.id));
+  const staffFlightEntries: Array<{
+    staffId: string;
+    flightNo: string;
+    choice: DailyScheduleStaffChoice;
+  }> = staffChoices
+    .filter((choice) => participantIds.has(choice.person.id))
+    .map((choice) => ({
+      staffId: choice.person.id,
+      flightNo: choice.task.flight.flightNo,
+      choice,
+    }));
+  const choicesByStaffAndFlight =
+    groupStaffFlightsByNormalizedNumber(staffFlightEntries);
+  const variables: SolverProblem["variables"][number][] = [];
+  const constraints: LinearConstraint[] = [];
+  const personFlightVariables = participants.map((person, personIndex) => {
+    const flights = choicesByStaffAndFlight.get(person.id);
+    const flightVariables = [
+      ...(
+        flights ?? new Map<string, Array<(typeof staffFlightEntries)[number]>>()
+      ).entries(),
+    ].map(([, flightChoices], flightIndex) => {
+      const variableId = `flight-count:${personIndex}:${flightIndex}`;
+      variables.push({ id: variableId, type: "binary" });
+      constraints.push(
+        {
+          id: `flight-count:used:${personIndex}:${flightIndex}`,
+          terms: [
+            { variableId, coefficient: 1 },
+            ...flightChoices.map((entry) => ({
+              variableId: entry.choice.id,
+              coefficient: -1,
+            })),
+          ],
+          upperBound: 0,
+        },
+        {
+          id: `flight-count:choice:${personIndex}:${flightIndex}`,
+          terms: [
+            ...flightChoices.map((entry) => ({
+              variableId: entry.choice.id,
+              coefficient: 1,
+            })),
+            {
+              variableId,
+              coefficient: -flightChoices.length,
+            },
+          ],
+          upperBound: 0,
+        }
+      );
+      return { variableId };
+    });
+    return { person, flightVariables };
+  });
+
+  const maximumFlightCount = Math.max(
+    0,
+    ...personFlightVariables.map((item) => item.flightVariables.length)
+  );
+  if (maximumFlightCount < 2)
+    return { variables: [], constraints: [], objectives: [] };
+  const maximumVariableId = "flight-count:maximum";
+  const minimumVariableId = "flight-count:minimum";
+  const excessVariableId = "flight-count:excess";
+  variables.push(
+    {
+      id: maximumVariableId,
+      type: "continuous",
+      lowerBound: 0,
+      upperBound: maximumFlightCount,
+    },
+    {
+      id: minimumVariableId,
+      type: "continuous",
+      lowerBound: 0,
+      upperBound: maximumFlightCount,
+    },
+    {
+      id: excessVariableId,
+      type: "continuous",
+      lowerBound: 0,
+      upperBound: Math.max(0, maximumFlightCount - 1),
+    }
+  );
+  for (const [personIndex, item] of personFlightVariables.entries()) {
+    const countTerms = item.flightVariables.map(({ variableId }) => ({
+      variableId,
+      coefficient: 1,
+    }));
+    constraints.push(
+      {
+        id: `flight-count:maximum:${personIndex}`,
+        terms: [
+          ...countTerms,
+          { variableId: maximumVariableId, coefficient: -1 },
+        ],
+        upperBound: 0,
+      },
+      {
+        id: `flight-count:minimum:${personIndex}`,
+        terms: [
+          { variableId: minimumVariableId, coefficient: 1 },
+          ...countTerms.map((term) => ({ ...term, coefficient: -1 })),
+        ],
+        upperBound: 0,
+      }
+    );
+  }
+  constraints.push({
+    id: "flight-count:hard-target",
+    terms: [
+      { variableId: maximumVariableId, coefficient: 1 },
+      { variableId: minimumVariableId, coefficient: -1 },
+    ],
+    upperBound: 1,
+  });
+  constraints.push({
+    id: "flight-count:allowed-spread",
+    terms: [
+      { variableId: maximumVariableId, coefficient: 1 },
+      { variableId: minimumVariableId, coefficient: -1 },
+      { variableId: excessVariableId, coefficient: -1 },
+    ],
+    upperBound: 1,
+  });
+  return {
+    variables,
+    constraints,
+    objectives: [
+      {
+        id: "candidate:daily-flight-count-balance",
+        direction: "minimize",
+        terms: [{ variableId: excessVariableId, coefficient: 1 }],
+      },
+    ],
+  };
+}
+
 function workloadModel(
   state: ScheduleGenerationFacts,
   date: string,
@@ -1204,9 +1379,12 @@ function candidateRuleObjectives(
   tasks: readonly AssignmentTask[],
   choices: readonly DailyScheduleStaffChoice[],
   rulePlan: readonly CandidateRulePlanItem[],
-  workedVariableIds: ReadonlyMap<string, string>
+  workedVariableIds: ReadonlyMap<string, string>,
+  dailyFlightCountObjectives: readonly LexicographicObjective[]
 ): LexicographicObjective[] {
   const objectives = rulePlan.flatMap<LexicographicObjective>((rule) => {
+    if (rule.id === "daily-flight-count-balance")
+      return [...dailyFlightCountObjectives];
     if (rule.id === "late-shift-cutoff") {
       return [
         {
@@ -1490,6 +1668,12 @@ export function buildDailyScheduleModel({
       .map((task) => task.key)
   );
   const staffCoverage = staffCoverageModel(state, staffChoices);
+  const dailyFlightCountBalance = dailyFlightCountBalanceModel(
+    state,
+    staffChoices,
+    preparation.runFacts.halfRest.activeStaffIds,
+    preparation.dutyStaffId
+  );
   const workload = workloadModel(state, date, preparation, staffChoices);
   const crossWorkdayReservation = crossWorkdayReservationModel(
     state,
@@ -1500,7 +1684,8 @@ export function buildDailyScheduleModel({
     scheduledTasks,
     staffChoices,
     rulePlan,
-    staffCoverage.workedVariableIds
+    staffCoverage.workedVariableIds,
+    dailyFlightCountBalance.objectives
   );
   const sameDayLateObligation = buildSameDayLateObligationModel(staffChoices);
   const dailyModelCandidateObjectives = insertSameDayLateObligationObjectives(
@@ -1703,6 +1888,8 @@ export function buildDailyScheduleModel({
     staffChoices,
     vacancyChoices,
     rulePlan,
+    dailyFlightCountBalanceEnforced:
+      dailyFlightCountBalance.objectives.length > 0,
     halfRestAffectedStaffIdsByTask:
       staffChoiceBuild.halfRestAffectedStaffIdsByTask,
     problem: {
@@ -1710,6 +1897,7 @@ export function buildDailyScheduleModel({
         ...staffChoices.map(({ id }) => ({ id })),
         ...vacancyChoices.map(({ id }) => ({ id })),
         ...staffCoverage.variables,
+        ...dailyFlightCountBalance.variables,
         ...sameDayLateObligation.variables,
         ...combinations.variables,
         ...workload.variables,
@@ -1728,6 +1916,7 @@ export function buildDailyScheduleModel({
         ...combinations.incompatibilityConstraints,
         ...capacityConstraints(state, staffChoices),
         ...staffCoverage.constraints,
+        ...dailyFlightCountBalance.constraints,
         ...sameDayLateObligation.constraints,
         ...combinations.constraints,
         ...workload.constraints,

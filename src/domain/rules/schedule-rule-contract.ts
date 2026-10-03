@@ -227,6 +227,15 @@ export const SCHEDULING_RULES = [
     optimization: "best-effort",
   },
   {
+    id: "daily-flight-count-balance",
+    stage: "protection",
+    label: "同一工作班航班数均衡",
+    feedbackMode: "dedicated",
+    feedbackKey: "daily-flight-count-balance",
+    optimization: "best-effort",
+    feedbackOrder: 9,
+  },
+  {
     id: "rolling-load",
     stage: "protection",
     label: "滚动负荷保护",

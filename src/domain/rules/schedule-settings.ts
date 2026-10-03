@@ -239,6 +239,20 @@ export const SCHEDULE_SETTING_DEFINITIONS: readonly ScheduleSettingDefinition[] 
       defaultValue: true,
     },
     {
+      key: "dailyFlightCountBalanceExemptHalfRest",
+      label: "航班数均衡豁免半休人员",
+      type: "boolean",
+      description: "勾选后半休人员不参与同一工作班航班数比较",
+      defaultValue: true,
+    },
+    {
+      key: "dailyFlightCountBalanceExemptTeamLeaders",
+      label: "航班数均衡豁免分队长",
+      type: "boolean",
+      description: "勾选后分队长不参与同一工作班航班数比较",
+      defaultValue: true,
+    },
+    {
       key: "maxWorkHoursDifference",
       label: "最大工时差",
       type: "number",

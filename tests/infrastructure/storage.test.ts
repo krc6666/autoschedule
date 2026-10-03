@@ -51,6 +51,17 @@ describe("state persistence", () => {
     expect(loaded.settings.tr121H02CooldownWorkdays).toBe(3);
   });
 
+  it("defaults missing flight-count exemption switches when restoring older state", () => {
+    const persisted = JSON.parse(JSON.stringify(createDefaultState()));
+    delete persisted.settings.dailyFlightCountBalanceExemptHalfRest;
+    delete persisted.settings.dailyFlightCountBalanceExemptTeamLeaders;
+
+    const loaded = loadState({ getItem: () => JSON.stringify(persisted) });
+
+    expect(loaded.settings.dailyFlightCountBalanceExemptHalfRest).toBe(true);
+    expect(loaded.settings.dailyFlightCountBalanceExemptTeamLeaders).toBe(true);
+  });
+
   it("restores same-flight exclusions and defaults older state to none", () => {
     const state = createDefaultState();
     state.settings.sameFlightStaffExclusions = [

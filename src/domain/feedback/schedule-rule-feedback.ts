@@ -1,6 +1,9 @@
 import type { Assignment } from "../../model";
 import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import type { RuleFeedbackKey } from "../rules/schedule-rule-contract";
+import { diagnoseAutomaticAssignmentEligibility } from "../candidates/assignment-eligibility";
+import { groupStaffFlightsByNormalizedNumber } from "../statistics/staff-flight-count";
+import type { ScheduleFeedbackOptions } from "./schedule-feedback";
 import { compileSchedulingPlan } from "../rules/scheduling-execution-plan";
 import { recentArchivedWorkdays } from "../statistics/fatigue";
 import {
@@ -35,6 +38,10 @@ import {
   assignmentDecisionMessages,
   assignmentDecisions,
 } from "../assignments/assignment-evidence";
+import {
+  DAILY_FLIGHT_COUNT_BALANCE_VACANCY_NOTE,
+  NO_QUALIFIED_CANDIDATE_VACANCY_NOTE,
+} from "../assignments/vacancy-evidence";
 import {
   conciseNames,
   operationalStart,
@@ -766,16 +773,18 @@ function dutyRosterFeedback(
 
 export function buildRuleScheduleFeedback(
   state: ScheduleGenerationFacts,
-  date: string
+  date: string,
+  options: ScheduleFeedbackOptions = {}
 ): ScheduleFeedbackItem[] {
   return compileSchedulingPlan(state.settings).feedbackKeys.map((key) =>
-    RULE_FEEDBACK_BUILDERS[key](state, date)
+    RULE_FEEDBACK_BUILDERS[key](state, date, options)
   );
 }
 
 type RuleFeedbackBuilder = (
   state: ScheduleGenerationFacts,
-  date: string
+  date: string,
+  options: ScheduleFeedbackOptions
 ) => ScheduleFeedbackItem;
 
 const RULE_FEEDBACK_BUILDERS: Readonly<
@@ -792,4 +801,214 @@ const RULE_FEEDBACK_BUILDERS: Readonly<
   "previous-late": previousLateFeedback,
   "current-late": (state) => currentLateFeedback(state),
   "duty-roster": dutyRosterFeedback,
+  "daily-flight-count-balance": (state, date, options) =>
+    dailyFlightCountBalanceFeedback(state, date, options),
 };
+
+function dailyFlightCountBalanceFeedback(
+  state: ScheduleGenerationFacts,
+  date: string,
+  options: ScheduleFeedbackOptions
+): ScheduleFeedbackItem {
+  const halfRestStaffIds = new Set(options.halfRestStaffIds ?? []);
+  const dutyStaffId = getDutyRosterForDate(state, date).dutyStaffId;
+  const participants = state.staff.filter(
+    (person) =>
+      person.status === "正常" &&
+      person.staffType === "常规" &&
+      person.id !== dutyStaffId &&
+      !(
+        state.settings.dailyFlightCountBalanceExemptHalfRest &&
+        halfRestStaffIds.has(person.id)
+      ) &&
+      !(
+        state.settings.dailyFlightCountBalanceExemptTeamLeaders &&
+        person.teamLeader
+      )
+  );
+  const participantIds = new Set(participants.map((person) => person.id));
+  const assignedEntries = state.assignments.filter(
+    (assignment) =>
+      assignment.status === "assigned" &&
+      assignment.staffId &&
+      participantIds.has(assignment.staffId)
+  );
+  const groupedAssignments = groupStaffFlightsByNormalizedNumber(
+    assignedEntries.map((assignment) => ({
+      assignment,
+      staffId: assignment.staffId!,
+      flightNo: assignment.flightNo,
+    }))
+  );
+  const rows = participants.map((person) => ({
+    person,
+    flights: groupedAssignments.get(person.id) ?? new Map(),
+    count: groupedAssignments.get(person.id)?.size ?? 0,
+  }));
+  const maximumCount = Math.max(0, ...rows.map((row) => row.count));
+  const minimumCount = rows.length
+    ? Math.min(...rows.map((row) => row.count))
+    : 0;
+  const spread = maximumCount - minimumCount;
+  const balanceVacancies = state.assignments.filter(
+    (assignment) =>
+      assignment.status === "unfilled" &&
+      assignment.vacancyEvidence?.reason === "daily-flight-count-balance"
+  );
+  const noCandidateVacancies = state.assignments.filter(
+    (assignment) =>
+      assignment.status === "unfilled" &&
+      assignment.vacancyEvidence?.reason === "no-qualified-candidate"
+  );
+  if (balanceVacancies.length || noCandidateVacancies.length) {
+    const vacancySummary = balanceVacancies
+      .map(
+        (assignment) =>
+          `${assignment.flightNo}/${assignment.position}：${assignment.systemNotes?.[0] ?? DAILY_FLIGHT_COUNT_BALANCE_VACANCY_NOTE}`
+      )
+      .join("；");
+    const noCandidateSummary = noCandidateVacancies
+      .map(
+        (assignment) =>
+          `${assignment.flightNo}/${assignment.position}：${assignment.systemNotes?.[0] ?? NO_QUALIFIED_CANDIDATE_VACANCY_NOTE}`
+      )
+      .join("；");
+    return feedbackItem(
+      "rule-execution",
+      "daily-flight-count-balance",
+      "同一工作班航班数均衡",
+      "attention",
+      `${date}航班数差值为 ${spread}；航班数均衡回退空岗：${vacancySummary || "无"}；真实无候选人员空岗：${noCandidateSummary || "无"}`
+    );
+  }
+  if (participants.length < 2) {
+    return feedbackItem(
+      "rule-execution",
+      "daily-flight-count-balance",
+      "同一工作班航班数均衡",
+      "ok",
+      `${date}参与比较的正常常规人员不足两人，不构成航班数差距。`
+    );
+  }
+  if (spread <= 1) {
+    return feedbackItem(
+      "rule-execution",
+      "daily-flight-count-balance",
+      "同一工作班航班数均衡",
+      "ok",
+      `${date}参与比较 ${participants.length} 人；最多 ${maximumCount}、最少 ${minimumCount}、差距 ${spread}，在目标范围内。`
+    );
+  }
+
+  const highRows = rows.filter((row) => row.count === maximumCount);
+  const lowRows = rows.filter((row) => row.count === minimumCount);
+  const blockerDetails = directFlightCountReplacementChecks(
+    state,
+    highRows,
+    lowRows
+  );
+  const people = (items: typeof rows): string =>
+    items.map((row) => `${row.person.name} ${row.count} 个`).join("、");
+  const allPeople = people(rows);
+  const evidence = blockerDetails.length
+    ? blockerDetails.join("；")
+    : "未找到可按单个航班岗位组直接替换的低航班数人员；需结合整班联动和后置调整复核。";
+  return feedbackItem(
+    "rule-execution",
+    "daily-flight-count-balance",
+    "同一工作班航班数均衡",
+    "attention",
+    `${date}航班数超出目标：最多 ${maximumCount}、最少 ${minimumCount}、差距 ${spread}；高航班数人员：${people(highRows)}；低航班数人员：${people(lowRows)}；全部参与人员：${allPeople}。直接替换核对：${evidence}`
+  );
+}
+
+function directFlightCountReplacementChecks(
+  state: ScheduleGenerationFacts,
+  highRows: Array<{
+    person: ScheduleGenerationFacts["staff"][number];
+    flights: Map<string, Array<{ assignment: Assignment }>>;
+    count: number;
+  }>,
+  lowRows: Array<{
+    person: ScheduleGenerationFacts["staff"][number];
+    flights: Map<string, Array<{ assignment: Assignment }>>;
+    count: number;
+  }>
+): string[] {
+  const details: string[] = [];
+  for (const highRow of highRows) {
+    for (const [flightNo, entries] of highRow.flights) {
+      const bundle = entries.map((entry) => entry.assignment);
+      const replacements = lowRows.map((lowRow) =>
+        checkFlightBundleReplacement(state, bundle, lowRow.person)
+      );
+      const feasible = replacements.find((item) => item.eligible);
+      const label = bundle
+        .map((assignment) => `${assignment.flightNo}/${assignment.position}`)
+        .join(", ");
+      if (feasible) {
+        details.push(
+          `${highRow.person.name}的${flightNo}（${label}）可由${feasible.staffName}直接接手`
+        );
+      } else {
+        const reasons = replacements.flatMap((item) => item.reasons);
+        details.push(
+          `${highRow.person.name}的${flightNo}（${label}）无低航班数人员可直接接手：${[...new Set(reasons)].slice(0, 3).join("、") || "岗位未关联可核验的当前配置规则"}`
+        );
+      }
+    }
+  }
+  return details.slice(0, 4);
+}
+
+function checkFlightBundleReplacement(
+  state: ScheduleGenerationFacts,
+  bundle: readonly Assignment[],
+  person: ScheduleGenerationFacts["staff"][number]
+): { eligible: boolean; staffName: string; reasons: string[] } {
+  const bundleIds = new Set(bundle.map((assignment) => assignment.id));
+  const simulatedAssignments = state.assignments.filter(
+    (assignment) => !bundleIds.has(assignment.id)
+  );
+  const reasons: string[] = [];
+  for (const assignment of bundle) {
+    const rule = state.positionRules.find(
+      (item) => item.id === assignment.positionRuleId
+    );
+    const flight = state.flights.find(
+      (item) => item.id === assignment.flightId
+    ) ?? {
+      id: assignment.flightId,
+      flightNo: assignment.flightNo,
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+      bookedPassengers: 0,
+      positions: [assignment.position],
+      remark: "",
+    };
+    if (!rule) {
+      reasons.push(
+        `${assignment.flightNo}/${assignment.position}无法匹配当前岗位配置`
+      );
+      return { eligible: false, staffName: person.name, reasons };
+    }
+    const diagnostic = diagnoseAutomaticAssignmentEligibility({
+      state: { ...state, assignments: simulatedAssignments },
+      assignments: simulatedAssignments,
+      flight,
+      rule,
+      person,
+      workHours: assignment.workHours,
+    });
+    if (!diagnostic.eligible) {
+      reasons.push(...diagnostic.violations.map((item) => item.message));
+      return { eligible: false, staffName: person.name, reasons };
+    }
+    simulatedAssignments.push({
+      ...assignment,
+      staffId: person.id,
+      staffName: person.name,
+    });
+  }
+  return { eligible: true, staffName: person.name, reasons };
+}

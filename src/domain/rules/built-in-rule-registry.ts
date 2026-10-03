@@ -328,6 +328,7 @@ const RULE_EXECUTION: Readonly<
         Number(right.teamLeader || rightPriority.alreadyAssignedToday),
     },
   ],
+  "daily-flight-count-balance": [candidate(() => 0)],
   "rolling-load": [
     candidate((left, right) =>
       compareNumber(left.rollingLoadExcess, right.rollingLoadExcess)

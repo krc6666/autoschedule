@@ -129,6 +129,7 @@ function applyCandidate(
     change.assignment.workHours = change.workHours;
     change.assignment.status = "assigned";
     delete change.assignment.systemNotes;
+    delete change.assignment.vacancyEvidence;
     lockedAssignmentIds.add(change.assignment.id);
   }
   const affectedAssignments = new Map(

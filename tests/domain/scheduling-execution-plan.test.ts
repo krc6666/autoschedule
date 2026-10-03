@@ -36,6 +36,7 @@ describe("compiled scheduling execution plan", () => {
       "high-fatigue-position-consecutive",
       "preferred-position-transition",
       "staff-coverage",
+      "daily-flight-count-balance",
       "rolling-load",
       "high-load-recovery",
       "cross-workday-load",
@@ -82,6 +83,7 @@ describe("compiled scheduling execution plan", () => {
       "previous-late",
       "current-late",
       "duty-roster",
+      "daily-flight-count-balance",
     ]);
   });
 

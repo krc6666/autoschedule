@@ -74,6 +74,7 @@ export class SchedulePageElement extends LightDomElement {
       field: this.loadSortField,
       direction: this.loadSortDirection,
       zoom: this.zoom,
+      halfRestStaffIds: this.halfRestStaffIds,
     });
     const previousSchedule = buildPreviousArchivedScheduleView(
       this.model,

@@ -22,13 +22,219 @@ describe("schedule feedback", () => {
     expect(coverage?.text).toContain(regularWorker!.name);
   });
 
+  it("reports final flight-count spread and refreshes after a manual assignment change", () => {
+    const state = createDefaultState();
+    const [first, second, zero] = state.staff;
+    state.staff = [first!, second!, zero!];
+    first!.teamLeader = false;
+    second!.teamLeader = false;
+    zero!.teamLeader = false;
+    [first!, second!, zero!].forEach((person) => {
+      person.dutyQualified = false;
+    });
+    state.activeScheduleDate = "2026-10-04";
+    state.assignments = [
+      {
+        id: "a-1",
+        flightId: "flight-a",
+        flightNo: "AA100",
+        positionRuleId: null,
+        position: "G01",
+        staffId: first!.id,
+        staffName: first!.name,
+        startTime: "06:00",
+        endTime: "07:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "a-2",
+        flightId: "flight-a",
+        flightNo: "AA100",
+        positionRuleId: null,
+        position: "G02",
+        staffId: first!.id,
+        staffName: first!.name,
+        startTime: "06:00",
+        endTime: "07:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "b-1",
+        flightId: "flight-b",
+        flightNo: "BB200",
+        positionRuleId: null,
+        position: "G01",
+        staffId: first!.id,
+        staffName: first!.name,
+        startTime: "09:00",
+        endTime: "10:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "c-1",
+        flightId: "flight-c",
+        flightNo: "CC300",
+        positionRuleId: null,
+        position: "G01",
+        staffId: second!.id,
+        staffName: second!.name,
+        startTime: "12:00",
+        endTime: "13:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "d-1",
+        flightId: "flight-d",
+        flightNo: "DD400",
+        positionRuleId: null,
+        position: "G01",
+        staffId: first!.id,
+        staffName: first!.name,
+        startTime: "15:00",
+        endTime: "16:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+
+    const firstFeedback = buildScheduleFeedback(state, "2026-10-04").find(
+      (item) => item.key === "daily-flight-count-balance"
+    );
+
+    expect(firstFeedback).toMatchObject({
+      level: "attention",
+      status: "需复核",
+    });
+    expect(firstFeedback?.text).toContain(first!.name);
+    expect(firstFeedback?.text).toContain(second!.name);
+    expect(firstFeedback?.text).toContain(zero!.name);
+    expect(firstFeedback?.text).toContain("最多 3、最少 0、差距 3");
+
+    state.assignments.find((item) => item.id === "b-1")!.staffId = zero!.id;
+    state.assignments.find((item) => item.id === "b-1")!.staffName = zero!.name;
+    const refreshed = buildScheduleFeedback(state, "2026-10-04").find(
+      (item) => item.key === "daily-flight-count-balance"
+    );
+
+    expect(refreshed?.level).toBe("ok");
+    expect(refreshed?.text).toContain("最多 2、最少 1、差距 1");
+  });
+
+  it("excludes the current duty worker from the final flight-count feedback", () => {
+    const state = createDefaultState();
+    const [duty, worker] = state.staff;
+    state.staff = [duty!, worker!];
+    state.dutyRosterOverrides = [
+      {
+        date: "2026-10-04",
+        cxPreflightStaffId: null,
+        dutyStaffId: duty!.id,
+        standbyStaffIds: [null, null],
+      },
+    ];
+    state.activeScheduleDate = "2026-10-04";
+    state.assignments = [
+      {
+        id: "duty-flight",
+        flightId: "flight-a",
+        flightNo: "AA100",
+        positionRuleId: null,
+        position: "G01",
+        staffId: duty!.id,
+        staffName: duty!.name,
+        startTime: "06:00",
+        endTime: "07:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+      {
+        id: "worker-flight",
+        flightId: "flight-b",
+        flightNo: "BB200",
+        positionRuleId: null,
+        position: "G01",
+        staffId: worker!.id,
+        staffName: worker!.name,
+        startTime: "08:00",
+        endTime: "09:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+
+    const feedback = buildScheduleFeedback(state, "2026-10-04").find(
+      (item) => item.key === "daily-flight-count-balance"
+    );
+
+    expect(feedback?.level).toBe("ok");
+    expect(feedback?.text).toContain("参与比较的正常常规人员不足两人");
+    expect(feedback?.text).not.toContain(duty!.name);
+  });
+
+  it("excludes selected half-rest staff from final flight-count feedback when configured", () => {
+    const state = createDefaultState();
+    const [first, second] = state.staff;
+    state.staff = [first!, second!];
+    state.activeScheduleDate = "2026-10-04";
+    state.assignments = [
+      {
+        id: "first-flight",
+        flightId: "flight-a",
+        flightNo: "AA100",
+        positionRuleId: null,
+        position: "G01",
+        staffId: first!.id,
+        staffName: first!.name,
+        startTime: "06:00",
+        endTime: "07:00",
+        workHours: 1,
+        fatiguePoints: 1,
+        remark: "",
+        manualRemark: "",
+        status: "assigned",
+      },
+    ];
+
+    const feedback = buildScheduleFeedback(state, "2026-10-04", {
+      halfRestStaffIds: [second!.id],
+    }).find((item) => item.key === "daily-flight-count-balance");
+
+    expect(feedback?.level).toBe("ok");
+    expect(feedback?.text).not.toContain(second!.name);
+  });
+
   it("returns concise evidence-based items including duty arrangements and a missing history baseline", async () => {
     const state = createDefaultState();
     state.assignments = (
       await generateSchedule(state, "2026-07-20")
     ).assignments;
     const feedback = buildScheduleFeedback(state, "2026-07-20");
-    expect(feedback).toHaveLength(13);
+    expect(feedback).toHaveLength(14);
     expect(feedback.map((item) => item.label)).toEqual([
       "人员覆盖",
       "负荷均衡",
@@ -43,6 +249,7 @@ describe("schedule feedback", () => {
       "上一工作日晚班人员跟踪",
       "本班末班人员预告",
       "值班与轮值",
+      "同一工作班航班数均衡",
     ]);
     expect(
       feedback.slice(0, 3).every((item) => item.group === "flight-staff")

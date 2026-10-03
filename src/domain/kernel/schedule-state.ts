@@ -41,6 +41,7 @@ export function removeUnavailableStaffAssignments(
         : "unfilled";
     clearSupervisorFillLink(assignment);
     delete assignment.systemNotes;
+    delete assignment.vacancyEvidence;
   });
 }
 

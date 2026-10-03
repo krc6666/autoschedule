@@ -836,6 +836,8 @@ describe("workbook boundary", () => {
 
   it("round-trips every editable scheduling setting and rule table", () => {
     const state = createDefaultState();
+    state.settings.dailyFlightCountBalanceExemptHalfRest = false;
+    state.settings.dailyFlightCountBalanceExemptTeamLeaders = false;
     state.settings.maxDailyHours = 9.5;
     state.settings.historyWindowDays = 12;
     state.settings.nightStart = "21:30";
@@ -953,6 +955,34 @@ describe("workbook boundary", () => {
     ).toMatchObject({ category: "常规", coverageRole: "supervisor-fill" });
     expect(imported.settings).not.toHaveProperty("adminSupportEnabled");
     expect(workbook.SheetNames).not.toContain("值班备勤表");
+  });
+
+  it("defaults missing flight-count exemption rows when importing an older rule sheet", () => {
+    const state = createDefaultState();
+    state.settings.dailyFlightCountBalanceExemptHalfRest = false;
+    state.settings.dailyFlightCountBalanceExemptTeamLeaders = false;
+    const workbook = buildConfigWorkbook(state);
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(
+      workbook.Sheets["规则参数"]!,
+      { header: 1, raw: false, defval: "" }
+    );
+    workbook.Sheets["规则参数"] = XLSX.utils.aoa_to_sheet(
+      rows.filter(
+        (row, index) =>
+          index === 0 ||
+          ![
+            "dailyFlightCountBalanceExemptHalfRest",
+            "dailyFlightCountBalanceExemptTeamLeaders",
+          ].includes(String(row[0]))
+      )
+    );
+
+    const imported = parseWorkbook(workbook, state.staff);
+
+    expect(imported.settings?.dailyFlightCountBalanceExemptHalfRest).toBe(true);
+    expect(imported.settings?.dailyFlightCountBalanceExemptTeamLeaders).toBe(
+      true
+    );
   });
 
   it("rejects an invalid team-leader gap-fill protection sheet without partial import", () => {

@@ -39,6 +39,7 @@ export async function optimizeDailySchedule({
     return {
       assignments: [],
       lockedAssignmentIds: new Set(),
+      dailyFlightCountBalanceFallback: false,
       warnings: [],
       optimizationQuality: "all-objectives-optimal",
     };

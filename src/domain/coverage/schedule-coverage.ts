@@ -25,6 +25,7 @@ import {
   clearSupervisorFillLink,
   setSupervisorFillLink,
 } from "./supervisor-fill-facts";
+import { clearAutomaticVacancyEvidence } from "../assignments/vacancy-evidence";
 
 export function preNoonShortageNote(
   state: ScheduleGenerationFacts,
@@ -370,6 +371,7 @@ export function compactRegularAssignments(
         slot.assignment.status = "unfilled";
         continue;
       }
+      clearAutomaticVacancyEvidence(slot.assignment);
       slot.assignment.staffId = placement.person.id;
       slot.assignment.staffName = placement.person.name;
       slot.assignment.workHours = placement.supervisorSourceAssignmentId
@@ -446,6 +448,7 @@ export function compactRegularAssignments(
         guide.workHours = 0;
         guide.status = source ? "assigned" : "unfilled";
         delete guide.systemNotes;
+        clearAutomaticVacancyEvidence(guide);
         if (source) usedStaffIds.add(source.person.id);
       });
   }
@@ -459,6 +462,7 @@ export function compactRegularAssignments(
         assignmentRule(state, assignment)?.category === "常规"
     )
     .forEach((assignment) => {
+      if (assignment.vacancyEvidence) return;
       const flight = state.flights.find(
         (item) => item.id === assignment.flightId
       )!;

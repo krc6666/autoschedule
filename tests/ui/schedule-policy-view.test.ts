@@ -8,6 +8,41 @@ import "../../src/ui/components/policy-page";
 import { mountElement, settleLit } from "./lit-test-helpers";
 
 describe("rules page", () => {
+  it("offers the two flight-count exemption checkboxes and saves their values", async () => {
+    const state = createDefaultState();
+    const element = await mountElement<
+      HTMLElement & { updateComplete: Promise<unknown> }
+    >("autoschedule-policy-page", { model: state });
+    const form = element.querySelector("autoschedule-policy-settings")!;
+    const halfRest = form.querySelector<HTMLInputElement>(
+      'input[data-policy-setting="dailyFlightCountBalanceExemptHalfRest"]'
+    )!;
+    const teamLeader = form.querySelector<HTMLInputElement>(
+      'input[data-policy-setting="dailyFlightCountBalanceExemptTeamLeaders"]'
+    )!;
+    let command: CustomEvent | undefined;
+    element.addEventListener("autoschedule-command", (event) => {
+      command = event as CustomEvent;
+    });
+
+    expect(halfRest.checked).toBe(true);
+    expect(teamLeader.checked).toBe(true);
+    expect(form.textContent).toContain("半休人员豁免");
+    expect(form.textContent).toContain("分队长豁免");
+
+    halfRest.checked = false;
+    halfRest.dispatchEvent(new Event("change", { bubbles: true }));
+    form.querySelector<HTMLButtonElement>("button.btn-primary")!.click();
+
+    expect(command?.detail).toMatchObject({
+      type: "apply-policy",
+      input: {
+        dailyFlightCountBalanceExemptHalfRest: false,
+        dailyFlightCountBalanceExemptTeamLeaders: true,
+      },
+    });
+  });
+
   it("shows editable supervisor-fill relationships separately from coverage rules", async () => {
     const state = createDefaultState();
     state.settings.mobileSupervisorFillRules = [

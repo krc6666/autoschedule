@@ -1112,3 +1112,37 @@
 | 配置 Excel               | `parseHistory` / 历史工作表写出                         | 读写同一快照，旧表继续可导入                      |
 | 单日排班 Excel           | `buildScheduleWorkbook` / `parseHistory`                | 排班结果含计划截载，导入历史后统计不丢原时刻      |
 | 页面、班表标记与导出摘要 | `buildMonthlyRelaxedShiftStatistics`                    | 所有消费者使用同一事实，不在 UI 或 Excel 二次计算 |
+
+## 2026-10-03：同一工作班航班数均衡与空岗证据
+
+### 规则合同
+
+- 唯一事实源：`src/domain/statistics/staff-flight-count.ts` 定义人员 × 规范化航班号的去重口径；模型、最终 assignments、反馈、页面统计和历史统计只消费该口径。
+- 参与者：当前工作班正常在岗的常规人员；行政支援、病假、休假和值班人员不参与。半休与分队长是否豁免由 `ScheduleSettings` 开关控制；人员必须至少有一个当天安全候选航班。
+- 目标：参与者不同航班数最大值与最小值之差 `<= 1`。同航班多岗位只计一次，零航班参与者计 0。
+- 优先级：岗位完整性、值班、`KE166`、资质、状态、时间、最小衔接、工时等安全规则先锁定；均衡只能在受控回退阶段留下空岗。
+- 空岗证据：有候选但因均衡留空使用 `daily-flight-count-balance`；无任何候选使用 `no-qualified-candidate`。最终反馈读取结构化 `vacancyEvidence`，不从中文备注猜测。
+- 后置覆盖、恢复、轮岗和人工调整：重新分配 assignment 时清除旧空岗证据；未被重新分配的均衡空岗保留证据；这些流程不得为均衡制造新的空岗。
+
+| 环节                | 消费点                                                                                 | 失败或边界                                                                                                                  | 回归保护                                            |
+| ------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 领域事实与默认值    | `staff-flight-count.ts`、`schedule-settings.ts`                                        | 航班号规范化失败时沿用现有安全口径；缺字段使用当前默认值                                                                    | `staff-flight-count.test.ts`、设置默认值测试        |
+| 规则页与投影        | `built-in-rule-registry.ts`、`policy-rule-presentation.ts`、设置表单                   | 半休/分队长豁免和开关必须与 domain 同步                                                                                     | UI 规则页测试                                       |
+| 模型与求解          | `daily-schedule-model.ts`、`daily-schedule-result.ts`、`daily-flight-count-balance.ts` | 参与者少于两人时不追加均衡模型；人员×航班变量聚合岗位 choices，避免重复计数并保持差值硬约束                                 | optimizer、kernel、大候选集回归                     |
+| 最终 assignments    | `daily-schedule-result.ts`、`schedule-finalizer.ts`、`daily-flight-count-balance.ts`   | 初排物化、KE166/覆盖/轮岗后都复核同一差值；性能规模不得关闭硬约束，无法安全释放时保留结构化阻塞证据并由最终守卫拒绝超差结果 | 空岗证据、后置回退、KE166 同航班去重与超 5 航班回归 |
+| 覆盖/恢复/轮岗/人工 | `schedule-coverage.ts`、`schedule-state.ts`、人工调整入口                              | assignment 被改写时清理失效证据，不产生均衡空岗                                                                             | 后置覆盖和人工调整测试                              |
+| 反馈                | `schedule-feedback.ts`、`schedule-rule-feedback.ts`                                    | 只消费结构化 reason；基础岗位告警与结构化说明可并存                                                                         | 反馈定向测试                                        |
+| localStorage / 恢复 | `state-restoration.ts`                                                                 | 旧状态缺少 `vacancyEvidence` 时按无证据恢复，不伪造原因                                                                     | storage 往返测试                                    |
+| Excel               | `excel-rule-settings.ts`、排班/历史读写                                                | 新设置字段缺失使用默认值；不丢 assignment 证据                                                                              | Excel 往返测试                                      |
+| 页面统计            | `daily-staff-flight-statistics.ts`、页面 projection                                    | 同航班多岗位不重复计数；零航班人员按合同显示                                                                                | 统计与 UI 测试                                      |
+| 文档与历史          | `spec.md`、`README.md`、`history.md`                                                   | 只能维护当前方案 B，不保留“普通软目标且不得留空”的冲突描述                                                                  | `git diff --check`、人工核对                        |
+
+### 写入路径盘点
+
+| 写入路径             | 统一消费点                  | 最终边界                        |
+| -------------------- | --------------------------- | ------------------------------- |
+| 模型初排             | `daily-schedule-result.ts`  | 由最终 assignments 编译空岗证据 |
+| 覆盖/恢复/轮岗       | assignment evidence helpers | 改写 assignment 必须清理旧证据  |
+| 人工调整             | 唯一人工调整入口            | 清除自动证据并写入人工越权事实  |
+| localStorage / Excel | restore / parse / serialize | 字段往返一致，缺字段使用默认值  |
+| 页面反馈             | `vacancyEvidence.reason`    | 不从展示文案反推业务原因        |

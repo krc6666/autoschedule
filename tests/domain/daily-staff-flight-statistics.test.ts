@@ -105,6 +105,31 @@ describe("daily staff flight statistics", () => {
     expect(result.unassignedStaffNames).toEqual([]);
   });
 
+  it("counts KE166 supervisor, counter, guide, and zero-hour supervisor fill as one assignment-level flight", () => {
+    const state = createDefaultState();
+    const regular = state.staff.find((person) => person.staffType === "常规")!;
+    state.staff = [regular];
+    state.activeScheduleDate = "2026-09-13";
+    state.assignments = [
+      assignment("ke166-supervisor", regular.id, regular.name, "KE166", "督导"),
+      assignment("ke166-counter", regular.id, regular.name, "KE166", "H04"),
+      assignment("ke166-guide", regular.id, regular.name, "KE166", "柜台引导"),
+      {
+        ...assignment("ke166-fill", regular.id, regular.name, "KE166", "H05"),
+        workHours: 0,
+        supervisorSourceAssignmentId: "ke166-supervisor",
+        supervisorFillRuleId: "fill-rule",
+      },
+    ];
+
+    const result = buildDailyStaffFlightStatistics(state, "2026-09-13");
+
+    expect(result.rows).toMatchObject([
+      { staffId: regular.id, flightNumbers: ["KE166"], flightCount: 1 },
+    ]);
+    expect(result.totalFlightCount).toBe(1);
+  });
+
   it("queries a complete archived workday without mixing in the current schedule", () => {
     const state = createDefaultState();
     const [first, second] = state.staff.filter(

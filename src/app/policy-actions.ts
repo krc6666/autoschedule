@@ -56,6 +56,8 @@ export interface SchedulePolicyInput {
   lateShiftEndTime: string;
   teamLeaderConcurrentSupervisionMaxOverlapMinutes: number;
   workloadBalanceEnabled: boolean;
+  dailyFlightCountBalanceExemptHalfRest?: boolean;
+  dailyFlightCountBalanceExemptTeamLeaders?: boolean;
   maxWorkHoursDifference: number;
   maxTodayFatigueDifference: number;
   dutyFatiguePoints: number;

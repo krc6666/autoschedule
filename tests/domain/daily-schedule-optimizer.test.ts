@@ -19,6 +19,7 @@ import type { ScheduleGenerationFacts } from "../../src/domain/shared/scheduling
 import type { ScheduleRunPreferences } from "../../src/domain/shared/schedule-run-preferences";
 import { createSchedulingScenario } from "../helpers/scheduling-scenario";
 import { generateSchedule } from "../helpers/generate-schedule";
+import { groupStaffFlightsByNormalizedNumber } from "../../src/domain/statistics/staff-flight-count";
 
 class ModelCaptured extends Error {}
 
@@ -1472,6 +1473,101 @@ describe("daily schedule conflict constraints", () => {
 });
 
 describe("daily schedule solver performance model", () => {
+  it("retains the flight-count fallback instead of expanding the large-flight solver graph", async () => {
+    const state = modelState(
+      Array.from({ length: 6 }, (_, index) =>
+        flight(
+          `flight-${index}`,
+          `AA${100 + index}`,
+          `${String(6 + index * 2).padStart(2, "0")}:00`,
+          `${String(7 + index * 2).padStart(2, "0")}:00`,
+          ["A1", "A2", "A3", "A4"]
+        )
+      )
+    );
+    const workers = Array.from({ length: 13 }, (_, index) => ({
+      ...state.staff[0]!,
+      id: `worker-${index + 2}`,
+      name: `测试人员${index + 2}`,
+    }));
+    state.staff.push(...workers);
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+    });
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds.push(...workers.map((person) => person.id));
+    });
+
+    const problem = await captureProblem(state);
+
+    expect(
+      problem.objectives.some(
+        (objective) => objective.id === "candidate:daily-flight-count-balance"
+      )
+    ).toBe(false);
+    const result = await generateSchedule(state, "2026-08-03");
+    const grouped = groupStaffFlightsByNormalizedNumber(
+      result.assignments.flatMap((assignment) =>
+        assignment.status === "assigned" && assignment.staffId
+          ? [{ staffId: assignment.staffId, flightNo: assignment.flightNo }]
+          : []
+      )
+    );
+    const counts = state.staff.map(
+      (person) => grouped.get(person.id)?.size ?? 0
+    );
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+  });
+
+  it("keeps the final flight-count spread within one for large candidate sets", async () => {
+    const state = modelState([
+      flight("first", "AA100", "06:00", "07:00", ["A1", "A2", "A3", "A4"]),
+      flight("second", "BB200", "09:00", "10:00", ["B1", "B2", "B3", "B4"]),
+      flight("third", "CC300", "12:00", "13:00", ["C1", "C2", "C3", "C4"]),
+      flight("fourth", "DD400", "15:00", "16:00", ["D1", "D2", "D3", "D4"]),
+      flight("fifth", "EE500", "18:00", "19:00", ["E1", "E2", "E3", "E4"]),
+    ]);
+    const workers = Array.from({ length: 13 }, (_, index) => ({
+      ...state.staff[0]!,
+      id: `worker-${index + 2}`,
+      name: `测试人员${index + 2}`,
+    }));
+    state.staff.push(...workers);
+    state.staff.forEach((person) => {
+      person.dutyQualified = false;
+    });
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds.push(...workers.map((person) => person.id));
+    });
+
+    const result = await generateSchedule(state, "2026-08-03");
+    const grouped = groupStaffFlightsByNormalizedNumber(
+      result.assignments.flatMap((assignment) =>
+        assignment.status === "assigned" && assignment.staffId
+          ? [
+              {
+                staffId: assignment.staffId,
+                flightNo: assignment.flightNo,
+              },
+            ]
+          : []
+      )
+    );
+    const counts = state.staff.map(
+      (person) => grouped.get(person.id)?.size ?? 0
+    );
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+    expect(
+      result.assignments
+        .filter((assignment) => assignment.status === "unfilled")
+        .every(
+          (assignment) =>
+            !assignment.vacancyEvidence ||
+            assignment.vacancyEvidence.reason === "daily-flight-count-balance"
+        )
+    ).toBe(true);
+  });
+
   it("marks recovery and later fairness goals as best effort", async () => {
     const state = modelState([
       flight("first", "AA100", "08:00", "10:00", ["A1"]),
@@ -1511,6 +1607,7 @@ describe("daily schedule solver performance model", () => {
 
     expect(bestEffortIds).toEqual([
       "candidate:staff-coverage",
+      "candidate:daily-flight-count-balance",
       "candidate:cross-workday-load",
       "candidate:workload-balance:target",
       "candidate:workload-balance:today-hours-excess",
@@ -1540,6 +1637,195 @@ describe("daily schedule solver performance model", () => {
         .filter((objective) => objective.optimality === "best-effort")
         .every((objective) => objective.acceptedGap?.relative === 0.05)
     ).toBe(true);
+  });
+
+  it("places flight-count balance after staff coverage in model objectives", async () => {
+    const state = modelState([
+      flight("first", "AA100", "06:00", "07:00", ["A1"]),
+      flight("second", "BB200", "09:00", "10:00", ["B1"]),
+    ]);
+    const secondWorker = {
+      ...state.staff[0]!,
+      id: "second-worker",
+      name: "第二名测试人员",
+    };
+    state.staff.push(secondWorker);
+    state.settings.rollingLoadProtectionEnabled = true;
+    state.positionRules.forEach((rule) =>
+      rule.qualifiedStaffIds.push(secondWorker.id)
+    );
+
+    const problem = await captureProblem(state);
+    const objectiveIds = problem.objectives.map((objective) => objective.id);
+
+    expect(objectiveIds.indexOf("candidate:staff-coverage")).toBeLessThan(
+      objectiveIds.indexOf("candidate:daily-flight-count-balance")
+    );
+    expect(
+      problem.objectives.find(
+        (objective) => objective.id === "candidate:daily-flight-count-balance"
+      )
+    ).toMatchObject({
+      optimality: "best-effort",
+      acceptedGap: { relative: 0.05 },
+    });
+    expect(
+      problem.objectives.find(
+        (objective) => objective.id === "candidate:daily-flight-count-balance"
+      )?.acceptedGap?.absolute
+    ).toBeUndefined();
+  });
+
+  it("excludes half-rest workers and team leaders from balance when they are not candidates", async () => {
+    const state = modelState([
+      flight("morning", "AA100", "08:00", "10:00", ["A1"]),
+      flight("afternoon", "BB200", "13:00", "15:00", ["B1"]),
+    ]);
+    const secondWorker = {
+      ...state.staff[0]!,
+      id: "second-worker",
+      name: "第二名测试人员",
+    };
+    state.staff.push(secondWorker);
+    state.positionRules.forEach((rule) =>
+      rule.qualifiedStaffIds.push(secondWorker.id)
+    );
+    const halfRestDefault = await captureProblem(state, {
+      halfRestStaffIds: [state.staff[0]!.id],
+    });
+    state.settings.dailyFlightCountBalanceExemptHalfRest = false;
+    const halfRestIncluded = await captureProblem(state, {
+      halfRestStaffIds: [state.staff[0]!.id],
+    });
+
+    expect(
+      halfRestDefault.objectives.some(
+        (objective) => objective.id === "candidate:daily-flight-count-balance"
+      )
+    ).toBe(false);
+    expect(
+      halfRestIncluded.objectives.some(
+        (objective) => objective.id === "candidate:daily-flight-count-balance"
+      )
+    ).toBe(true);
+
+    state.settings.dailyFlightCountBalanceExemptHalfRest = true;
+    state.staff[0]!.teamLeader = true;
+    const leaderDefault = await captureProblem(state);
+    state.settings.dailyFlightCountBalanceExemptTeamLeaders = false;
+    const leaderIncluded = await captureProblem(state);
+
+    expect(
+      leaderDefault.objectives.some(
+        (objective) => objective.id === "candidate:daily-flight-count-balance"
+      )
+    ).toBe(false);
+    expect(
+      leaderIncluded.objectives.some(
+        (objective) => objective.id === "candidate:daily-flight-count-balance"
+      )
+    ).toBe(false);
+  });
+
+  it("splits four safe flights evenly without changing the complete assignment set", async () => {
+    const state = modelState([
+      flight("first", "AA100", "06:00", "07:00", ["A1"]),
+      flight("second", "BB200", "09:00", "10:00", ["B1"]),
+      flight("third", "CC300", "12:00", "13:00", ["C1"]),
+      flight("fourth", "DD400", "15:00", "16:00", ["D1"]),
+    ]);
+    const secondWorker = {
+      ...state.staff[0]!,
+      id: "second-worker",
+      name: "第二名测试人员",
+    };
+    state.staff.push(secondWorker);
+    state.positionRules.forEach((rule) =>
+      rule.qualifiedStaffIds.push(secondWorker.id)
+    );
+
+    const result = await generateSchedule(state, "2026-08-03");
+    expect(result.unfilledCount).toBe(0);
+    expect(
+      result.assignments.filter((item) => item.staffId === state.staff[0]!.id)
+    ).toHaveLength(2);
+    expect(
+      result.assignments.filter((item) => item.staffId === secondWorker.id)
+    ).toHaveLength(2);
+  });
+
+  it("keeps every job filled when only one qualified worker is available", async () => {
+    const state = modelState([
+      flight("first", "AA100", "06:00", "07:00", ["A1"]),
+      flight("second", "BB200", "09:00", "10:00", ["B1"]),
+      flight("third", "CC300", "12:00", "13:00", ["C1"]),
+    ]);
+    const unqualified = {
+      ...state.staff[0]!,
+      id: "unqualified-worker",
+      name: "无资质人员",
+    };
+    state.staff.push(unqualified);
+
+    const result = await generateSchedule(state, "2026-08-03");
+    expect(result.unfilledCount).toBe(0);
+    expect(
+      result.assignments.filter((item) => item.staffId === unqualified.id)
+    ).toHaveLength(0);
+  });
+
+  it("leaves only a balance-caused vacancy when a complete <=1 spread is impossible", async () => {
+    const state = modelState([
+      flight("first", "AA100", "06:00", "07:00", ["A1"]),
+      flight("second", "BB200", "09:00", "10:00", ["B1"]),
+      flight("third", "CC300", "12:00", "13:00", ["C1"]),
+      flight("fourth", "DD400", "15:00", "16:00", ["D1"]),
+    ]);
+    const constrainedWorker = state.staff[0]!;
+    const alternate = {
+      ...constrainedWorker,
+      id: "balance-alternate",
+      name: "鍧囪　澶囩敤浜哄憳",
+    };
+    state.staff.push(alternate);
+    state.positionRules.forEach((rule) => {
+      rule.qualifiedStaffIds =
+        rule.flightNo === "AA100"
+          ? [constrainedWorker.id, alternate.id]
+          : [constrainedWorker.id];
+    });
+
+    const result = await generateSchedule(state, "2026-08-03");
+
+    expect(result.unfilledCount).toBe(1);
+    expect(
+      result.assignments.filter(
+        (item) => item.status === "assigned" && item.staffId === alternate.id
+      )
+    ).toHaveLength(1);
+    const balanceVacancy = result.assignments.find(
+      (item) => item.status === "unfilled"
+    );
+    expect(balanceVacancy?.systemNotes?.join(" ")).toContain("航班数均衡");
+    expect(result.warnings.join(" ")).toContain("航班数均衡");
+  });
+
+  it("marks a vacancy with no qualified candidate separately from balance fallback", async () => {
+    const state = modelState([
+      flight("missing", "AA100", "15:00", "16:00", ["A1"]),
+    ]);
+    state.positionRules[0]!.qualifiedStaffIds = [];
+
+    const result = await generateSchedule(state, "2026-08-03");
+    const vacancy = result.assignments.find(
+      (assignment) => assignment.status === "unfilled"
+    );
+
+    expect(vacancy?.vacancyEvidence).toEqual({
+      reason: "no-qualified-candidate",
+      blockers: ["没有通过人员状态、资质、时段和安全约束的候选人员"],
+    });
+    expect(vacancy?.systemNotes?.[0]).toContain("真实无候选人员");
   });
 
   it("does not use team leaders to satisfy the daily staff coverage objective", async () => {
@@ -1698,7 +1984,7 @@ describe("daily schedule solver performance model", () => {
     expect(morning?.staffId).not.toBe(evening?.staffId);
   });
 
-  it("keeps a later same-airline priority position staffed when no alternate is qualified", async () => {
+  it("keeps same-airline priority positions staffed when only one qualified worker is available", async () => {
     const state = modelState([
       flight("morning-cx", "CX100", "08:00", "10:00", ["G20"]),
       flight("evening-cx", "CX200", "20:00", "22:00", ["G20"]),
@@ -1710,7 +1996,6 @@ describe("daily schedule solver performance model", () => {
     };
     state.staff.push(alternate);
     const result = await generateSchedule(state, "2026-08-03");
-
     expect(result.unfilledCount).toBe(0);
     expect(
       result.assignments.filter((assignment) =>

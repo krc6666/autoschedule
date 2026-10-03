@@ -91,6 +91,8 @@ const USER_RULE_DESCRIPTIONS: Readonly<Record<SchedulingRuleId, string>> = {
     "多人都能胜任时，优先选择岗位衔接更顺畅的人。",
   "staff-coverage":
     "条件允许时优先让当天还没有实际工时的普通人员参与；分队长不要求每天上班。",
+  "daily-flight-count-balance":
+    "常规在岗人员按最终承担的不同航班数比较，差值必须不超过 1；无法安全做到时保留岗位空缺并说明阻塞原因。",
   "rolling-load": "优先避开短时间内已经接近疲劳上限的人。",
   "high-load-recovery": "刚完成高负荷岗位的人优先获得恢复时间。",
   "late-priority-frequency":

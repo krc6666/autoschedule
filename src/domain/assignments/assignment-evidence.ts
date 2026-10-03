@@ -6,6 +6,7 @@ import type {
 
 export function clearAutomaticAssignmentEvidence(assignment: Assignment): void {
   delete assignment.systemNotes;
+  delete assignment.vacancyEvidence;
   delete assignment.decisionTrace;
   delete assignment.decisionEvidence;
   delete assignment.teamLeaderGapFill;

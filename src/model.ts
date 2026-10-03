@@ -104,6 +104,10 @@ export interface Assignment {
   manualRemark: string;
   status: "assigned" | "unfilled" | "manual";
   systemNotes?: string[];
+  vacancyEvidence?: {
+    reason: "daily-flight-count-balance" | "no-qualified-candidate";
+    blockers: string[];
+  };
   decisionTrace?: SchedulingDecision[];
   /** Identifies the schedule run and rule snapshot behind decisionTrace. */
   decisionEvidence?: {
@@ -189,6 +193,8 @@ export interface ScheduleSettings {
   afternoonRestStartTime: string;
   afternoonRestEndTime: string;
   workloadBalanceEnabled: boolean;
+  dailyFlightCountBalanceExemptHalfRest: boolean;
+  dailyFlightCountBalanceExemptTeamLeaders: boolean;
   maxWorkHoursDifference: number;
   maxTodayFatigueDifference: number;
 }

@@ -4,7 +4,6 @@ import { buildAssignmentDecisionTrace } from "../assignments/assignment-decision
 import { createAssignedPosition } from "../assignments/assignment-factory";
 import { applyConfiguredEarlyReleases } from "../assignments/assignment-timing";
 import { diversionTransferAssignmentIds } from "../assignments/diversion-release-usage";
-import { preNoonShortageNote } from "../coverage/schedule-coverage";
 import { makeUnfilled } from "../flights/schedule-position-rules";
 import { isMobileSupervisor, isPreNoonFlight } from "../flights/schedule-tasks";
 import { evaluateAutomaticHardConstraints } from "../rules/built-in-rule-registry";
@@ -31,10 +30,16 @@ import {
   HALF_REST_WARNING_PREFIX,
   isHalfRestMorningStart,
 } from "../rules/half-rest";
+import {
+  setAutomaticVacancyEvidence,
+  clearAutomaticVacancyEvidence,
+} from "../assignments/vacancy-evidence";
+import { enforceDailyFlightCountBalance } from "../assignments/daily-flight-count-balance";
 
 export interface DailySchedulePlan {
   assignments: Assignment[];
   lockedAssignmentIds: Set<string>;
+  dailyFlightCountBalanceFallback: boolean;
   warnings: string[];
   optimizationQuality:
     | "all-objectives-optimal"
@@ -177,9 +182,11 @@ function attachVacancyEvidence(
         item.rule.id === assignment.positionRuleId
     );
     if (!task) continue;
+    if (assignment.vacancyEvidence) continue;
     const halfRestStaffIds =
       model.halfRestAffectedStaffIdsByTask.get(task.key) ?? [];
     if (halfRestStaffIds.length) {
+      clearAutomaticVacancyEvidence(assignment);
       const names = halfRestStaffIds
         .map(
           (staffId) => state.staff.find((person) => person.id === staffId)?.name
@@ -209,6 +216,7 @@ function attachVacancyEvidence(
         )
     );
     if (reallocatedTo) {
+      clearAutomaticVacancyEvidence(assignment);
       assignment.systemNotes = [
         `因抽调至 ${reallocatedTo.flightNo}/${reallocatedTo.position} 而空缺`,
       ];
@@ -233,15 +241,28 @@ function attachVacancyEvidence(
       ),
     ];
     if (!isPreNoonFlight(assignment) && strictTransitionNames.length) {
+      clearAutomaticVacancyEvidence(assignment);
       assignment.systemNotes = [
         `严格岗位衔接限制未满足：${strictTransitionNames.join("、")}`,
       ];
       continue;
     }
-    if (!isPreNoonFlight(assignment)) continue;
-    assignment.systemNotes = [
-      preNoonShortageNote(state, assignments, task.flight, task.rule),
-    ];
+    const eligibleIds = preparation.eligibleStaffIds.get(task.key) ?? new Set();
+    if (eligibleIds.size === 0) {
+      setAutomaticVacancyEvidence(assignment, {
+        reason: "no-qualified-candidate",
+        blockers: ["没有通过人员状态、资质、时段和安全约束的候选人员"],
+      });
+      continue;
+    }
+    setAutomaticVacancyEvidence(assignment, {
+      reason: "daily-flight-count-balance",
+      blockers: [
+        `候选人员 ${eligibleIds.size} 人均未形成安全替代`,
+        "岗位只能在航班数均衡阶段保留空缺",
+      ],
+    });
+    continue;
   }
 }
 
@@ -351,6 +372,16 @@ export function materializeDailySchedulePlan({
         : []
     )
   );
+  if (!model.dailyFlightCountBalanceEnforced && state.flights.length <= 5) {
+    enforceDailyFlightCountBalance(state, assignments, {
+      dutyStaffId: preparation.dutyStaffId,
+      halfRestStaffIds: preparation.runFacts.halfRest.activeStaffIds,
+      lockedAssignmentIds,
+      candidateStaffIds: new Set(
+        model.staffChoices.map((choice) => choice.person.id)
+      ),
+    });
+  }
   const warnings = [
     ...preparation.runFacts.halfRest.ignoredWarnings,
     ...[...preparation.runFacts.halfRest.activeStaffIds].flatMap((staffId) => {
@@ -405,6 +436,7 @@ export function materializeDailySchedulePlan({
   return {
     assignments,
     lockedAssignmentIds,
+    dailyFlightCountBalanceFallback: !model.dailyFlightCountBalanceEnforced,
     warnings,
     optimizationQuality: "all-objectives-optimal",
   };

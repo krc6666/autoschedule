@@ -137,6 +137,15 @@ function parseScalarSettings(workbook: XLSX.WorkBook): {
     }
     (settings as Record<string, unknown>)[key] = value;
   }
+  for (const key of [
+    "dailyFlightCountBalanceExemptHalfRest",
+    "dailyFlightCountBalanceExemptTeamLeaders",
+  ] as const) {
+    if (seen.has(key)) continue;
+    const descriptor = descriptors.get(key);
+    if (descriptor)
+      (settings as Record<string, unknown>)[key] = descriptor.defaultValue;
+  }
   return { present: true, settings, warnings };
 }
 
@@ -673,6 +682,16 @@ export function parseScheduleRuleSettings(
   const settings: Partial<ScheduleSettings> | undefined = hasImportableSettings
     ? { ...(scalar.settings ?? {}) }
     : undefined;
+  if (settings && !scalar.present) {
+    for (const key of [
+      "dailyFlightCountBalanceExemptHalfRest",
+      "dailyFlightCountBalanceExemptTeamLeaders",
+    ] as const) {
+      const descriptor = SETTING_DESCRIPTORS.find((item) => item.key === key);
+      if (descriptor)
+        (settings as Record<string, unknown>)[key] = descriptor.defaultValue;
+    }
+  }
   if (settings && transitions.value)
     settings.positionTransitionPolicies = transitions.value;
   if (settings && dutyPriorities.value)

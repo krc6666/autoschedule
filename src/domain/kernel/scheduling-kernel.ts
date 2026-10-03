@@ -97,6 +97,10 @@ async function finalizeDailyPlan({
     flights: preparation.flights,
     displayRulesByFlight: preparation.displayRulesByFlight,
     lockedAssignmentIds: plan.lockedAssignmentIds,
+    dailyFlightCountBalanceFallback: plan.dailyFlightCountBalanceFallback,
+    candidateStaffIds: new Set(
+      [...preparation.eligibleStaffIds.values()].flatMap((ids) => [...ids])
+    ),
     runFacts: preparation.runFacts,
     automaticTasks: preparation.tasks,
     preservedAssignments: plan.assignments

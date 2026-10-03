@@ -80,10 +80,28 @@ describe("schedule settings module", () => {
     expect(createDefaultScheduleSettings()).toMatchObject({
       minimumRegularTransitionMinutes: 90,
       sameDayCrossFlightPriorityEnabled: true,
+      dailyFlightCountBalanceExemptHalfRest: true,
+      dailyFlightCountBalanceExemptTeamLeaders: true,
       tr121H02CooldownWorkdays: 3,
       nextWorkdayRecoveryMode: "prefer",
       crossWorkdayQualificationReservations: [],
     });
+  });
+
+  it("keeps both flight-count exemption switches configurable with legacy defaults", () => {
+    const normalized = normalizeScheduleSettings({
+      dailyFlightCountBalanceExemptHalfRest: false,
+      dailyFlightCountBalanceExemptTeamLeaders: false,
+    });
+
+    expect(normalized.dailyFlightCountBalanceExemptHalfRest).toBe(false);
+    expect(normalized.dailyFlightCountBalanceExemptTeamLeaders).toBe(false);
+    expect(
+      normalizeScheduleSettings({}).dailyFlightCountBalanceExemptHalfRest
+    ).toBe(true);
+    expect(
+      normalizeScheduleSettings({}).dailyFlightCountBalanceExemptTeamLeaders
+    ).toBe(true);
   });
 
   it("normalizes the cross-workday recovery target strength", () => {

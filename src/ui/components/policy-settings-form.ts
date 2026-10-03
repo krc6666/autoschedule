@@ -25,6 +25,8 @@ const POLICY_FIELDS: readonly (keyof SchedulePolicyInput)[] = [
   "lateShiftEndTime",
   "teamLeaderConcurrentSupervisionMaxOverlapMinutes",
   "workloadBalanceEnabled",
+  "dailyFlightCountBalanceExemptHalfRest",
+  "dailyFlightCountBalanceExemptTeamLeaders",
   "maxWorkHoursDifference",
   "maxTodayFatigueDifference",
   "dutyFatiguePoints",
@@ -64,6 +66,11 @@ const POLICY_SETTING_SEARCH_TEXT = [
   "分队长并行督导最大重叠",
   "工时与疲劳均衡",
   "压力不宽松时启用",
+  "同一工作班航班数均衡",
+  "半休人员豁免",
+  "分队长豁免",
+  "勾选后不参与航班数比较",
+  "航班数差值必须不超过 1，无法安全做到时保留岗位空缺并说明原因",
   "最大工时差",
   "最大当日疲劳差",
   "值班疲劳点",
@@ -131,6 +138,8 @@ export class PolicySettingsFormElement extends LightDomElement {
             ${this.toggle("lateShiftRecoveryEnabled", "跨工作日恢复保护", "全局开放链优先避免连续晚间重岗位")}
             ${this.time("lateShiftEndTime", "末班结束界线（晚于）")}
             ${this.toggle("workloadBalanceEnabled", "工时与疲劳均衡", "压力不宽松时启用")}
+            ${this.toggle("dailyFlightCountBalanceExemptHalfRest", "半休人员豁免", "勾选后半休人员不参与航班数比较")}
+            ${this.toggle("dailyFlightCountBalanceExemptTeamLeaders", "分队长豁免", "勾选后分队长不参与航班数比较")}
             ${this.number("maxWorkHoursDifference", "最大工时差", 0, 24, 0.5)}
             ${this.number("maxTodayFatigueDifference", "最大当日疲劳差", 0, 100, 0.5)}
             ${this.number("dutyFatiguePoints", "值班疲劳点", 0, 100, 0.5)}
@@ -166,6 +175,7 @@ export class PolicySettingsFormElement extends LightDomElement {
       ><span class="form-check form-switch m-0"
         ><input
           class="form-check-input"
+          data-policy-setting=${field}
           type="checkbox"
           .checked=${Boolean(this.draft[field])}
           @change=${(event: Event) => this.updateDraft(field, (event.currentTarget as HTMLInputElement).checked as never)} /></span

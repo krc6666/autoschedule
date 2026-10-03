@@ -21,6 +21,7 @@ export interface SchedulePageOptions {
   field: LoadSortField;
   direction: LoadSortDirection;
   zoom: number;
+  halfRestStaffIds?: readonly string[];
 }
 
 export interface ScheduleFlightGroup {
@@ -145,7 +146,9 @@ export function buildSchedulePageModel(
       date
     ),
     loads,
-    feedback: buildScheduleFeedback(state, date),
+    feedback: buildScheduleFeedback(state, date, {
+      halfRestStaffIds: options.halfRestStaffIds,
+    }),
     candidateStaffByAssignmentId,
     timeConflictAssignmentIds,
     primaryRowCount:

@@ -32,6 +32,7 @@ import { scheduleOptimizationWarning } from "../reviews/schedule-warning-message
 import { isHalfRestWarning } from "../rules/half-rest";
 import type { ScheduleSafetySession } from "./schedule-safety-session";
 import { scheduleRuleFingerprint } from "../rules/schedule-rule-fingerprint";
+import { enforceDailyFlightCountBalance } from "../assignments/daily-flight-count-balance";
 
 export interface ScheduleFinalizerOptions {
   solver: SolverPort;
@@ -43,6 +44,8 @@ export interface ScheduleFinalizerOptions {
   flights: readonly Flight[];
   displayRulesByFlight: ReadonlyMap<string, readonly PositionRule[]>;
   lockedAssignmentIds: Set<string>;
+  dailyFlightCountBalanceFallback: boolean;
+  candidateStaffIds: ReadonlySet<string>;
   runFacts: ScheduleRunFacts;
   automaticTasks: readonly AssignmentTask[];
   preservedAssignments: readonly Assignment[];
@@ -98,6 +101,16 @@ function rebuildWarnings(
   persistentRunWarnings: readonly string[]
 ): string[] {
   const warnings = assignments.flatMap((assignment) => {
+    if (assignment.status === "unfilled" && assignment.systemNotes?.length) {
+      const category = assignmentRule(state, assignment)?.category;
+      const baseWarning = `${assignment.flightNo} / ${assignment.position} ${category === "\u5f15\u5bfc" ? "\u6ca1\u6709\u53ef\u590d\u7528\u7684\u5e38\u89c4\u4eba\u5458" : "\u65e0\u53ef\u7528\u4eba\u5458"}`;
+      return [
+        baseWarning,
+        ...assignment.systemNotes.map(
+          (note) => `${assignment.flightNo} / ${assignment.position} ${note}`
+        ),
+      ];
+    }
     if (assignment.systemNotes?.length)
       return assignment.systemNotes.map(
         (note) => `${assignment.flightNo} / ${assignment.position} ${note}`
@@ -159,6 +172,7 @@ export async function finalizeSchedule({
   flights,
   displayRulesByFlight,
   lockedAssignmentIds,
+  candidateStaffIds,
   runFacts,
   automaticTasks,
   preservedAssignments,
@@ -189,6 +203,21 @@ export async function finalizeSchedule({
   }
 
   const assignments = workingAssignments(ledger);
+  // Recheck after every coverage, rotation, and KE166 mutation. Those stages
+  // can add a valid same-flight reuse or a new flight after the solver plan.
+  // The shared fallback only releases unlocked flight groups and records why.
+  const balance = enforceDailyFlightCountBalance(state, assignments, {
+    dutyStaffId: runFacts.currentDutyStaffId,
+    halfRestStaffIds: runFacts.halfRest.activeStaffIds,
+    lockedAssignmentIds,
+    candidateStaffIds,
+    useFullEligibility: true,
+  });
+  if (balance.spread > 1) {
+    throw new Error(
+      `最终班表航班数差值为 ${balance.spread}，无法在不移动锁定岗位的情况下满足差值不超过 1`
+    );
+  }
   applyPreNoonDecisionNotes(state, assignments);
   sortAssignments(assignments, flights, displayRulesByFlight);
   ledger.commit({ type: "replace", assignments });

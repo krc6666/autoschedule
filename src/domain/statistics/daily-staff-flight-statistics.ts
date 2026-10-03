@@ -1,4 +1,5 @@
 import type { SchedulingFacts } from "../shared/scheduling-facts";
+import { groupStaffFlightsByNormalizedNumber } from "./staff-flight-count";
 
 export interface DailyStaffFlightRow {
   staffId: string;
@@ -25,10 +26,6 @@ interface StaffFlightEntry {
   startTime: string;
 }
 
-function normalizedFlightNumber(value: string): string {
-  return value.trim().replaceAll(/\s+/g, "").toUpperCase();
-}
-
 function rowsFromEntries(
   state: Pick<SchedulingFacts, "staff">,
   entries: readonly StaffFlightEntry[],
@@ -38,27 +35,25 @@ function rowsFromEntries(
     (person) => person.staffType === "常规" && person.status === "正常"
   );
   const regularStaffIds = new Set(regularStaff.map((person) => person.id));
-  const flightsByStaffId = new Map<string, Map<string, string>>();
-
-  for (const entry of entries) {
-    if (!regularStaffIds.has(entry.staffId)) continue;
-    const flightNo = normalizedFlightNumber(entry.flightNo);
-    if (!flightNo || flightNo === "轮值") continue;
-    const flights = flightsByStaffId.get(entry.staffId) ?? new Map();
-    const previousStart = flights.get(flightNo);
-    if (previousStart === undefined || entry.startTime < previousStart)
-      flights.set(flightNo, entry.startTime);
-    flightsByStaffId.set(entry.staffId, flights);
-  }
+  const flightsByStaffId =
+    groupStaffFlightsByNormalizedNumber<StaffFlightEntry>(
+      entries.filter((entry) => regularStaffIds.has(entry.staffId))
+    );
 
   return regularStaff.flatMap((person): DailyStaffFlightRow[] => {
     const flights = flightsByStaffId.get(person.id);
     if (!flights?.size && !includeEmpty) return [];
-    const flightNumbers = [...(flights ?? new Map()).entries()]
+    const flightNumbers = [
+      ...(flights ?? new Map<string, StaffFlightEntry[]>()).entries(),
+    ]
       .sort(
-        ([leftFlight, leftStart], [rightFlight, rightStart]) =>
-          leftStart.localeCompare(rightStart) ||
-          leftFlight.localeCompare(rightFlight)
+        ([leftFlight, leftEntries], [rightFlight, rightEntries]) =>
+          leftEntries
+            .map((entry) => entry.startTime)
+            .sort()[0]!
+            .localeCompare(
+              rightEntries.map((entry) => entry.startTime).sort()[0]!
+            ) || leftFlight.localeCompare(rightFlight)
       )
       .map(([flightNo]) => flightNo);
     return [

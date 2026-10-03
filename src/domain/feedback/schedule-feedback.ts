@@ -2,6 +2,10 @@ import type { ScheduleGenerationFacts } from "../shared/scheduling-facts";
 import { buildOperationalScheduleFeedback } from "./schedule-operational-feedback";
 import { buildRuleScheduleFeedback } from "./schedule-rule-feedback";
 
+export interface ScheduleFeedbackOptions {
+  halfRestStaffIds?: readonly string[];
+}
+
 export type {
   ScheduleFeedbackGroup,
   ScheduleFeedbackItem,
@@ -11,10 +15,11 @@ export type {
 
 export function buildScheduleFeedback(
   state: ScheduleGenerationFacts,
-  date: string
+  date: string,
+  options: ScheduleFeedbackOptions = {}
 ) {
   return [
     ...buildOperationalScheduleFeedback(state, date),
-    ...buildRuleScheduleFeedback(state, date),
+    ...buildRuleScheduleFeedback(state, date, options),
   ];
 }
